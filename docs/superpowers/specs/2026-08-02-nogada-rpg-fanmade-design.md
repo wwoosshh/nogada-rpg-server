@@ -411,6 +411,32 @@ placeholder가 아니라, **언제 어떤 기준으로 결정할지가 확정된
 
 ---
 
+## 11-1. M1 구현이 이 문서와 다른 지점 (2026-08-02, M0+M1 기반 완료 후 기록)
+
+M0(Task 1~4) 구현과 브랜치 전체 리뷰에서 드러난, **의도적으로 미룬 구조 결정**들이다.
+M2 계획을 쓸 때 이 표를 먼저 읽는다. 지금 고치지 않은 이유와 나중에 치를 비용을 함께 적는다.
+
+| 지점 | 현재 M1 구현 | 이 문서가 말하는 최종형 | 미룬 이유 / 나중 비용 |
+|---|---|---|---|
+| 아이템 정의 | `items.csv` 에 아이템 1종 = 1행, `ItemDef.icon` 은 문자열 하나 | §5.3 형태 × 재질 × 접두사 조합 생성 (`shapes/materials/affixes.csv`) | M1은 13종뿐이라 조합 엔진이 과잉. **M2에서 `items.csv` 와 `ItemDef` 를 통째로 교체**하고, 이름·아이콘·스탯 파생 규칙이 `packages/shared` 에 새로 들어간다 |
+| `ItemInstance` | `instanceId` + `itemId` + `enhanceLevel` | §6.3 은 접두사(affix)까지 포함한다 | 필드 추가는 지금 공짜이나 M1에 소비처가 없다. 영속 계층이 생긴 뒤 추가하면 마이그레이션이 된다 |
+| `equipped` | `Partial<Record<SkillId, string>>` — 생활기술을 슬롯 키로 씀 | 무기·방어구는 생활기술에 속하지 않는다 | M1은 기술당 도구 1개라 정확하다. **장비 종류가 늘면 키 공간을 바꿔야 한다** |
+| `instances` | 배열 | — | `instanceId` 조회가 강화·거래소·우편의 주 연산인데 배열은 전부 O(n)이다. M1 규모에선 무의미하나 M2에서 레코드로 바꾸는 편이 낫다 |
+| 통신 스키마 | zod 스키마가 아직 없다. 응답 타입은 `apps/server` 안에 있다 | §3.2 는 `packages/shared` 를 스키마의 집으로 지정 | Task 7~9에서 결정할 사항. 지금 구조면 `apps/client → apps/server` 가 구조적 의존이 되고 `packages/data` 는 재사용할 수 없는 층 아래 놓인다. **Task 8 착수 시 의식적으로 정할 것** |
+
+### 남아 있는 알려진 Minor (차단 요소 아님)
+
+- `parseCsv` 의 칸 수 불일치 오류가 파일명 없이 줄 번호만 낸다 (`nodes.csv` 와 `recipes.csv` 의 같은 줄이 구분되지 않음)
+- `loadGameData()` 신선도 검사가 id 집합만 비교한다. CSV 값만 바꾸고 재빌드하지 않은 채 `vitest` 를 직접 돌리면 낡은 값이 통과한다 (루트 스크립트는 항상 재빌드하므로 실사용 경로는 안전)
+- `loadGameData()` 반환 타입이 `Readonly<GameData>` 가 아니라 `GameData` 다. 변경 방지는 런타임 동결로만 이뤄진다
+- 헬스 체크 테스트가 프로덕션과 같은 방식으로 개수를 계산한다 (같은 버그를 양쪽이 공유하면 잡지 못함)
+- `pnpm install` 이 `Ignored build scripts: esbuild` 경고를 낸다
+- `PORT` 가 빈 문자열이면 0번 포트에 바인딩된다
+- CORS 가 무조건 `origin: true` 다 — **Task 7에서 플레이어 식별이 들어오기 전에 환경별로 좁혀야 한다**
+- README 와 CI 가 없다. `git clone && pnpm install && pnpm test` 가 개발자 1인의 Windows 장비에서만 검증돼 있다
+
+---
+
 ## 12. 참고 자료
 
 **에셋 — 채택**
