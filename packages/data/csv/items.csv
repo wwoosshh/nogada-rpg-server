@@ -7,8 +7,8 @@ iron_ingot,철 주괴,material,,,ingot_iron
 mithril_ingot,미스릴 주괴,material,,,ingot_mithril
 reinforced_plate,강화 판금,material,,,plate_reinforced
 copper_pickaxe,구리 곡괭이,tool,mining,1,pickaxe_copper
-iron_pickaxe,철 곡괭이,tool,mining,2,pickaxe_iron
-mithril_pickaxe,미스릴 곡괭이,tool,mining,3,pickaxe_mithril
+reinforced_pickaxe,강화 곡괭이,tool,mining,2,pickaxe_reinforced
+iron_pickaxe,철 곡괭이,tool,mining,3,pickaxe_iron
 copper_hammer,구리 망치,tool,smithing,1,hammer_copper
 iron_hammer,철 망치,tool,smithing,2,hammer_iron
 mithril_hammer,미스릴 망치,tool,smithing,3,hammer_mithril

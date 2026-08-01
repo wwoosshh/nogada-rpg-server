@@ -3,8 +3,8 @@ copper_ingot,구리 주괴,smithing,1,copper_ore:2,copper_ingot,1
 iron_ingot,철 주괴,smithing,10,iron_ore:2,iron_ingot,1
 mithril_ingot,미스릴 주괴,smithing,25,mithril_ore:2,mithril_ingot,1
 copper_pickaxe,구리 곡괭이,smithing,3,copper_ingot:3,copper_pickaxe,1
+reinforced_pickaxe,강화 곡괭이,smithing,8,copper_ingot:6,reinforced_pickaxe,1
 iron_pickaxe,철 곡괭이,smithing,12,iron_ingot:3,iron_pickaxe,1
-mithril_pickaxe,미스릴 곡괭이,smithing,28,mithril_ingot:3,mithril_pickaxe,1
 copper_hammer,구리 망치,smithing,5,copper_ingot:2,copper_hammer,1
 iron_hammer,철 망치,smithing,15,iron_ingot:2,iron_hammer,1
 reinforced_plate,강화 판금,smithing,18,copper_ingot:1|iron_ingot:1,reinforced_plate,1

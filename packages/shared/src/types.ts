@@ -2,6 +2,13 @@ export type SkillId = 'mining' | 'smithing'
 
 export const SKILL_IDS: readonly SkillId[] = ['mining', 'smithing'] as const
 
+/**
+ * 신규 플레이어가 지급받는 시작 도구 ID.
+ * 게임 규칙이므로 여기 한 곳에 둔다 — `packages/data`의 도달 가능성 검증과
+ * Task 7의 `createInitialPlayer` 가 같은 상수를 참조해 시작 장비를 정한다.
+ */
+export const STARTING_TOOL_IDS: readonly string[] = ['copper_pickaxe'] as const
+
 export interface SkillState {
   level: number
   xp: number
