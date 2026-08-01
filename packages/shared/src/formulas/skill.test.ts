@@ -3,6 +3,12 @@ import { applyXp, xpGainForGather, xpToNext } from './skill.js'
 
 describe('xpToNext', () => {
   it('레벨이 오를수록 필요 경험치가 증가한다', () => {
+    for (let level = 1; level < 20; level += 1) {
+      expect(xpToNext(level + 1)).toBeGreaterThan(xpToNext(level))
+    }
+  })
+
+  it('공식대로 정확한 값을 반환한다', () => {
     expect(xpToNext(1)).toBe(60)
     expect(xpToNext(2)).toBe(90)
     expect(xpToNext(10)).toBe(1050)

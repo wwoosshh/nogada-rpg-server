@@ -11,7 +11,9 @@ const copperIngot: RecipeDef = {
   output: { item: 'copper_ingot', count: 1 },
 }
 
-const mithrilPickaxe: RecipeDef = { ...copperIngot, id: 'mithril_pickaxe', requiredLevel: 28 }
+// 실제 카탈로그에 없는 합성 픽스처 — 배포된 CSV의 어떤 아이템도 가리키지 않도록
+// 이름을 일부러 가짜스럽게 짓는다 (요구 레벨이 높은 레시피를 흉내 낼 뿐).
+const fixtureHighLevelRecipe: RecipeDef = { ...copperIngot, id: 'fixture_high_level_recipe', requiredLevel: 28 }
 
 describe('canCraft', () => {
   it('숙련도를 충족하면 제작할 수 있다', () => {
@@ -19,13 +21,13 @@ describe('canCraft', () => {
   })
 
   it('숙련도가 모자라면 제작할 수 없다', () => {
-    expect(canCraft({ skillLevel: 27, toolTier: 3, recipe: mithrilPickaxe })).toBe(false)
+    expect(canCraft({ skillLevel: 27, toolTier: 3, recipe: fixtureHighLevelRecipe })).toBe(false)
   })
 })
 
 describe('calcCraftSuccess', () => {
   it('제작 불가 조건에서는 0 을 반환한다', () => {
-    expect(calcCraftSuccess({ skillLevel: 1, toolTier: 3, recipe: mithrilPickaxe })).toBe(0)
+    expect(calcCraftSuccess({ skillLevel: 1, toolTier: 3, recipe: fixtureHighLevelRecipe })).toBe(0)
   })
 
   it('망치 없이 요구 숙련도만 만족하면 기본 확률이다', () => {
