@@ -135,11 +135,20 @@ apps/server  ── Node + TypeScript
 
 | 영역 | 스타일 | 규격 |
 |---|---|---|
-| 맵, 캐릭터, 몬스터, 채집 노드 | 픽셀아트 | **32×32 그리드 고정** |
+| 맵, 캐릭터, 몬스터, 채집 노드 | 픽셀아트 | **32×32 그리드 기준** |
 | 인벤토리·제작·강화·거래소 UI | CSS (이미지 0장) | — |
-| 아이템 아이콘 | SVG 벡터 | 32×32 캔버스에 스냅 |
+| 아이템 아이콘 | 픽셀아트 | 32×32 |
+| 인터페이스 기호 (닫기·정렬·탭·화살표) | SVG 벡터 | — |
 
-**32×32 선정 근거:** 모바일 세로 화면(논리 360×640 기준)에서 11×20 타일이 보여 시야가 확보된다. 48×48이면 7×13에 그쳐 답답하다. 또한 itch.io의 32px 탑다운 에셋 풀이 가장 두껍다.
+**32×32 선정 근거:** 모바일 세로 화면(논리 360×640 기준)에서 11×20 타일이 보여 시야가 확보된다. 48×48이면 7×13에 그쳐 답답하다. 또한 Pipoya(무료)와 finalbossblues(유료, 엔진 무관 라이선스)가 타일셋·캐릭터·몬스터·아이콘을 모두 32×32로 제공하므로 하나의 생태계에서 일관되게 조달할 수 있다.
+
+**16×16 에셋 혼용 규칙**
+
+채집·제작 장르는 16×16 에셋 풀이 더 두껍다. 좋은 16×16 소재를 발견하면 사용하되 다음 규칙을 지킨다.
+
+> **16×16 에셋을 32×32 타일 크기로 확대하지 않는다.** 게임 전체가 배율 N으로 렌더링될 때 16×16 스프라이트도 동일한 배율 N으로 그린다. 화면상 반 타일 크기를 차지하지만 **아트 픽셀 밀도가 32×32 에셋과 정확히 일치**하여 자연스럽게 섞인다. 반대로 2배 확대해 타일을 채우면 픽셀이 두 배로 굵어져 즉시 이질감이 발생한다.
+
+따라서 16×16 에셋은 **소품**(약초, 광석 조각, 도구, 장식물)으로 사용하고, 바닥 타일과 캐릭터는 32×32로 유지한다.
 
 ### 4.3 팔레트 통일 (혼합 스타일의 핵심 규칙)
 
@@ -157,29 +166,54 @@ apps/client/src/styles/tokens.css
 
 ### 4.5 아이템 아이콘 — 물량 문제의 해법
 
-[game-icons.net](https://game-icons.net/)에 **4,180개의 SVG 아이콘이 CC BY 3.0**으로 공개되어 있다. 상업 이용 가능하며 크레딧 표기가 조건이다. 무기·방어구·광물·식물·물약·재료 계열이 두터워 이 장르에 부합한다.
+아이콘은 용도에 따라 두 소스로 분리한다.
 
-**SVG라는 점이 결정적이다.** 픽셀 이미지는 아이콘 1장 = 아이템 1종이지만, SVG는 코드로 변형된다:
+| 용도 | 소스 | 근거 |
+|---|---|---|
+| **아이템 아이콘** (인벤토리·제작·거래소) | [finalbossblues 1000+ Fantasy RPG Icons](https://finalbossblues.itch.io/icons) — $6, 1,000개 이상, 32×32, 상업 이용 가능, **엔진 제한 없음, 크레딧 불필요** | 인벤토리 아이템은 UI 장식이 아니라 게임 콘텐츠다. 맵과 동일한 픽셀 스타일이어야 이질감이 없다 |
+| **인터페이스 기호** (닫기·정렬·탭·화살표) | [game-icons.net](https://game-icons.net/) — 4,180개 SVG, CC BY 3.0 (크레딧 의무) 또는 CSS | 순수 UI 요소이므로 벡터가 적합 |
 
-- **재질을 색상으로**: 동일 실루엣 + 색상 변경 → 구리/철/강철/미스릴/오리하르콘 = 아이콘 1장으로 5종
+**「형태 × 재질 색상」 조합 생성은 픽셀아트에서도 그대로 성립한다.** 캔버스 팔레트 스왑은 픽셀아트의 표준 기법이며, 색상 램프를 명시적으로 정의할 수 있어 SVG 필터보다 결과가 정밀하다.
+
+- **재질을 색상으로**: 동일 실루엣 + 팔레트 치환 → 구리/철/강철/미스릴/오리하르콘 = 아이콘 1장으로 5종
 - **희귀도를 CSS로**: 테두리 광택, 배경 그라데이션, 파티클 → 이미지 추가 0장
 - **강화 수치·세트 마크**: 오버레이
 
-아이콘 200장 × 재질 6단계 × 희귀도 5등급 = 시각적으로 구분되는 6,000종을 이미지 200장으로 커버한다. RPG Maker에서는 아이콘시트가 고정 PNG라 불가능한 접근이다.
+아이콘 200장 × 재질 6단계 × 희귀도 5등급 = 시각적으로 구분되는 6,000종을 이미지 200장으로 커버한다.
 
-### 4.6 라이선스 대장
+### 4.6 라이선스 관리
 
-`assets/CREDITS.md`에 팩별 출처·라이선스·구매처를 기록한다. game-icons.net은 CC BY이므로 크레딧 표기가 **의무**다. **에셋을 추가하는 시점에 함께 기록하는 것을 규칙으로 한다** — 배포 직전에 소급 정리하는 것은 사실상 불가능하다.
+**① 팩 추가 전 확인 항목**
+
+itch.io의 "Free" 표시는 자유 이용을 의미하지 않는다. 인기 팩 상당수가 **무료판은 비상업 전용, 상업 이용은 유료판**이라는 이중 라이선스를 사용한다 (Sprout Lands, Mystic Woods 등). 팩을 추가할 때마다 다음을 확인한다:
+
+- [ ] 상업 이용이 가능한가 (무료판/유료판 구분 확인)
+- [ ] 엔진 제한이 없는가 ("RPG Maker 전용" 표기 확인)
+- [ ] 편집·개변이 허용되는가
+- [ ] 크레딧 표기가 의무인가
+- [ ] 재배포 조항 — 리포지토리 업로드 가능 여부
+
+**동일 팩이라도 판매처에 따라 라이선스가 다르다.** finalbossblues 계열은 itch.io 판이 엔진 무관, RPG Maker 공식 스토어 판이 RPG Maker 전용이다. **에셋은 itch.io에서 구매한다.**
+
+**② 에셋은 버전 관리에서 제외한다**
+
+유료 픽셀 에셋에는 "재배포 금지(리포지토리 업로드 포함)" 조항이 흔하다. 에셋을 커밋하면 3.4에서 확보한 "서버 코드 공개" 선택지가 나중에 막힌다.
+
+- `assets/licensed/` 를 `.gitignore` 에 포함하고 로컬에서만 관리한다
+- `assets/CREDITS.md` 에는 **어느 팩을 어디서 구매했는지만** 기록해 커밋한다. 이것만으로 다른 환경에서 재구성이 가능하다
+
+game-icons.net은 CC BY이므로 크레딧 표기가 **의무**다. **에셋을 추가하는 시점에 함께 기록하는 것을 규칙으로 한다** — 배포 직전에 소급 정리하는 것은 사실상 불가능하다.
 
 ### 4.7 예산
 
-| 항목 | 금액 |
-|---|---|
-| 타일셋 팩 2~4개 | $10~30 / 팩 |
-| 캐릭터·몬스터 스프라이트 팩 1~2개 | $10~30 / 팩 |
-| 아이템 아이콘 | 0원 (game-icons.net, CC BY) |
-| UI | 0원 (CSS) |
-| **합계** | **10~20만원 (일회성)** |
+| 시점 | 항목 | 금액 |
+|---|---|---|
+| **M0 착수** | [Pipoya FREE RPG Tileset 32×32](https://pipoya.itch.io/pipoya-rpg-tileset-32x32) + [Character Sprites 32×32](https://pipoya.itch.io/pipoya-free-rpg-character-sprites-32x32) — 무료, 상업 이용 가능 | **0원** |
+| **M0 착수** | finalbossblues 1000+ Fantasy RPG Icons | **$6** |
+| M1 통과 후 | [Fantasy RPG Tileset Pack](https://finalbossblues.itch.io/fantasy-rpg-tileset-pack), [Time Fantasy 몬스터](https://finalbossblues.itch.io/time-fantasy-monsters) 등 | 10~20만원 |
+| 상시 | UI | 0원 (CSS) |
+
+**프로토타입에 유료 에셋을 구매하지 않는다.** M0~M1은 무료 에셋과 $6 아이콘 팩만으로 진행하고, **M1에서 재미가 검증된 뒤에 본격 구매한다.** M1을 거치면 실제로 필요한 소재가 무엇인지 파악되어 구매 판단이 정확해지는 부수 효과도 있다.
 
 AI 이미지 생성은 아이콘·초상화 등 독립 이미지에는 사용 가능하나, 타일셋은 이음새 문제로 부적합하다. 보조 수단으로만 취급한다.
 
@@ -351,7 +385,8 @@ AI는 보일러플레이트, API 구현, 데이터 변환, 리팩터링, 테스�
 | 항목 | 금액 | 시점 |
 |---|---|---|
 | 개발 단계 (M0~M3) | **0원** | 전부 로컬 |
-| 에셋 팩 | 10~20만원 | 일회성, M0 |
+| 에셋 — 아이콘 팩 | **$6** | 일회성, M0 |
+| 에셋 — 타일셋·스프라이트 본격 구매 | 10~20만원 | 일회성, **M1 통과 후** |
 | 플레이스토어 개발자 계정 | $25 | 일회성, M5 |
 | 서버 | 월 2~5만원 (동접 100 기준) | M4부터 |
 | 도메인 | 연 2만원 | M4부터 |
@@ -378,9 +413,25 @@ placeholder가 아니라, **언제 어떤 기준으로 결정할지가 확정된
 
 ## 12. 참고 자료
 
-- [Game-icons.net](https://game-icons.net/) — 4,180개 SVG 아이콘, CC BY 3.0
-- [Game-icons.net FAQ (라이선스)](https://game-icons.net/faq.html)
+**에셋 — 채택**
+
+- [Pipoya FREE RPG Tileset 32×32](https://pipoya.itch.io/pipoya-rpg-tileset-32x32) — 무료, 상업 이용 가능
+- [Pipoya FREE RPG Character Sprites 32×32](https://pipoya.itch.io/pipoya-free-rpg-character-sprites-32x32) — 무료, 캐릭터 생성기 포함
+- [finalbossblues 1000+ Fantasy RPG Icons](https://finalbossblues.itch.io/icons) — $6, 32×32, 엔진 무관, 크레딧 불필요
+- [finalbossblues Fantasy RPG Tileset Pack](https://finalbossblues.itch.io/fantasy-rpg-tileset-pack) — M1 통과 후 검토
+- [finalbossblues Time Fantasy RPG Sprites 2 (몬스터)](https://finalbossblues.itch.io/time-fantasy-monsters) — M1 통과 후 검토
+- [Game-icons.net](https://game-icons.net/) — 4,180개 SVG, CC BY 3.0, 인터페이스 기호용
+
+**에셋 — 라이선스 주의 사례** (무료판 비상업 전용)
+
+- [Sprout Lands](https://cupnooble.itch.io/sprout-lands-asset-pack) / [Mystic Woods](https://game-endeavor.itch.io/mystic-woods) — 16×16, 품질은 우수하나 상업 이용 시 유료판 필수, 재배포 금지
+
+**도구·기술**
+
 - [Tiled Map Editor](https://thorbjorn.itch.io/tiled)
-- [itch.io RPG Maker 태그 에셋](https://itch.io/game-assets/tag-rpgmaker)
 - [Phaser + Tiled 튜토리얼](https://gamedevacademy.org/phaser-rpg-tiled-tutorial/)
-- 장르 참조: [인디사이드 「노가다 RPG」 2.1](https://indiside.com/Completed_game/1441931)
+- [itch.io RPG Maker 태그 에셋](https://itch.io/game-assets/tag-rpgmaker)
+
+**장르 참조**
+
+- [인디사이드 「노가다 RPG」 2.1](https://indiside.com/Completed_game/1441931)
