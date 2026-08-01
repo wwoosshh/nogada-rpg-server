@@ -2,7 +2,7 @@
   "name": "nogada-rpg-fanmade",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=20.10.0" },
   "scripts": {
     "test": "pnpm data:build && vitest run",
     "test:watch": "pnpm data:build && vitest",
