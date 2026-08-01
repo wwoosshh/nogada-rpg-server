@@ -1,0 +1,4 @@
+id,name,skill,tier,requiredLevel,yieldItem,yieldMin,yieldMax,respawnMs
+copper_vein,구리 광맥,mining,1,1,copper_ore,1,3,5000
+iron_vein,철 광맥,mining,2,10,iron_ore,1,3,9000
+mithril_vein,미스릴 광맥,mining,3,25,mithril_ore,1,2,15000

@@ -9,7 +9,7 @@ out/
 *.tsbuildinfo
 
 # packages/data 가 CSV 에서 생성하는 JSON (빌드 타임 생성물)
-packages/data/generated/
+packages/data/src/generated/
 
 # 구매 에셋 — 재배포 금지 조항이 흔하므로 버전 관리에서 제외한다.
 # 출처와 구매처는 assets/CREDITS.md 에만 기록한다.
