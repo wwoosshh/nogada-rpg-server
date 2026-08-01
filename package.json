@@ -5,11 +5,11 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "test": "pnpm data:build && vitest run",
-    "test:watch": "vitest",
+    "test:watch": "pnpm data:build && vitest",
     "typecheck": "pnpm data:build && tsc --build",
     "data:build": "pnpm --filter @nogada/data build",
-    "dev:server": "pnpm --filter @nogada/server dev",
-    "dev:client": "pnpm --filter @nogada/client dev"
+    "dev:server": "pnpm data:build && pnpm --filter @nogada/server dev",
+    "dev:client": "pnpm data:build && pnpm --filter @nogada/client dev"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
