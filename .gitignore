@@ -1,0 +1,49 @@
+# 의존성
+node_modules/
+.pnpm-store/
+
+# 빌드 산출물
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# packages/data 가 CSV 에서 생성하는 JSON (빌드 타임 생성물)
+packages/data/generated/
+
+# 환경변수 — 서버 주소, DB 접속 정보
+.env
+.env.*
+!.env.example
+
+# Vite / 번들러 캐시
+.vite/
+.turbo/
+.cache/
+
+# 테스트
+coverage/
+
+# Capacitor 빌드 산출물 (android/ 자체는 커밋 대상)
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+ios/App/build/
+ios/App/Pods/
+
+# 에디터
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로그
+*.log
+npm-debug.log*
+pnpm-debug.log*
