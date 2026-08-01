@@ -44,6 +44,14 @@ describe('parseItems', () => {
       icon: 'pickaxe_iron',
     })
   })
+
+  it('알 수 없는 toolSkill 값을 거부한다', () => {
+    expect(() =>
+      parseItems([
+        { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'minig', toolTier: '2', icon: 'pickaxe_iron' },
+      ]),
+    ).toThrow('items.csv[iron_pickaxe]: skill "minig" 는 알 수 없다 (허용값: mining, smithing)')
+  })
 })
 
 describe('parseNodes', () => {
@@ -58,6 +66,17 @@ describe('parseNodes', () => {
       id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1,
       requiredLevel: 1, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
     })
+  })
+
+  it('알 수 없는 skill 값을 거부한다', () => {
+    expect(() =>
+      parseNodes([
+        {
+          id: 'copper_vein', name: '구리 광맥', skill: 'minig', tier: '1',
+          requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+        },
+      ]),
+    ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: mining, smithing)')
   })
 })
 
@@ -84,5 +103,16 @@ describe('parseRecipes', () => {
       { item: 'copper_ingot', count: 1 },
       { item: 'iron_ingot', count: 1 },
     ])
+  })
+
+  it('알 수 없는 skill 값을 거부한다', () => {
+    expect(() =>
+      parseRecipes([
+        {
+          id: 'copper_ingot', name: '구리 주괴', skill: 'smithng', requiredLevel: '1',
+          inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
+        },
+      ]),
+    ).toThrow('recipes.csv[copper_ingot]: skill "smithng" 는 알 수 없다 (허용값: mining, smithing)')
   })
 })

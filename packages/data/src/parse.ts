@@ -1,4 +1,5 @@
 import type { ItemDef, NodeDef, RecipeDef, RecipeInput, SkillId } from '@nogada/shared'
+import { SKILL_IDS } from '@nogada/shared'
 
 type Row = Record<string, string>
 
@@ -35,6 +36,18 @@ function toInt(value: string, context: string): number {
   return n
 }
 
+function isSkillId(value: string): value is SkillId {
+  return (SKILL_IDS as readonly string[]).includes(value)
+}
+
+/** CSV 의 skill/toolSkill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. 오타가 조용히 통과하는 것을 막는다. */
+function toSkillId(value: string, context: string): SkillId {
+  if (!isSkillId(value)) {
+    throw new Error(`${context}: skill "${value}" 는 알 수 없다 (허용값: ${SKILL_IDS.join(', ')})`)
+  }
+  return value
+}
+
 export function parseItems(rows: Row[]): Record<string, ItemDef> {
   const out: Record<string, ItemDef> = {}
   for (const row of rows) {
@@ -50,7 +63,7 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
       icon: requireCell(row, 'icon', `items.csv[${id}]`),
     }
     if (kind === 'tool') {
-      def.toolSkill = requireCell(row, 'toolSkill', `items.csv[${id}]`) as SkillId
+      def.toolSkill = toSkillId(requireCell(row, 'toolSkill', `items.csv[${id}]`), `items.csv[${id}]`)
       def.toolTier = toInt(requireCell(row, 'toolTier', `items.csv[${id}]`), `items.csv[${id}]`)
     }
     out[id] = def
@@ -66,7 +79,7 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
     out[id] = {
       id,
       name: requireCell(row, 'name', ctx),
-      skill: requireCell(row, 'skill', ctx) as SkillId,
+      skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
       tier: toInt(requireCell(row, 'tier', ctx), ctx),
       requiredLevel: toInt(requireCell(row, 'requiredLevel', ctx), ctx),
       yieldItem: requireCell(row, 'yieldItem', ctx),
@@ -95,7 +108,7 @@ export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
     out[id] = {
       id,
       name: requireCell(row, 'name', ctx),
-      skill: requireCell(row, 'skill', ctx) as SkillId,
+      skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
       requiredLevel: toInt(requireCell(row, 'requiredLevel', ctx), ctx),
       inputs: parseInputs(requireCell(row, 'inputs', ctx), ctx),
       output: {

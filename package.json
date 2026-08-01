@@ -4,9 +4,9 @@
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
-    "test": "vitest run",
+    "test": "pnpm data:build && vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --build",
+    "typecheck": "pnpm data:build && tsc --build",
     "data:build": "pnpm --filter @nogada/data build",
     "dev:server": "pnpm --filter @nogada/server dev",
     "dev:client": "pnpm --filter @nogada/client dev"

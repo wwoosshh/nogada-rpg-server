@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NodeDef } from '../types.js'
-import { calcGatherChance, canGather } from './gather.js'
+import { calcGatherChance, canGather, toolCoversNode } from './gather.js'
 
 const copperVein: NodeDef = {
   id: 'copper_vein',
@@ -15,6 +15,20 @@ const copperVein: NodeDef = {
 }
 
 const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', tier: 2, requiredLevel: 10 }
+
+describe('toolCoversNode', () => {
+  it('도구 등급이 노드 등급보다 높으면 true 다', () => {
+    expect(toolCoversNode(2, copperVein)).toBe(true)
+  })
+
+  it('도구 등급이 노드 등급과 정확히 같으면 true 다', () => {
+    expect(toolCoversNode(1, copperVein)).toBe(true)
+  })
+
+  it('도구 등급이 노드 등급보다 낮으면 false 다', () => {
+    expect(toolCoversNode(1, ironVein)).toBe(false)
+  })
+})
 
 describe('canGather', () => {
   it('도구 등급과 숙련도를 모두 충족하면 채집할 수 있다', () => {

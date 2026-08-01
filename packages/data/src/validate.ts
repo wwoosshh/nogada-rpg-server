@@ -1,5 +1,5 @@
 import type { GameData } from '@nogada/shared'
-import { STARTING_TOOL_IDS } from '@nogada/shared'
+import { STARTING_TOOL_IDS, toolCoversNode } from '@nogada/shared'
 
 /**
  * 시작 도구에서 출발해 고정점(fixpoint)까지 확장한 "도달 가능한 아이템" 집합을 구한다.
@@ -26,7 +26,7 @@ function computeReachableItems(data: GameData): Set<string> {
         (tool) =>
           reachable.has(tool.id) &&
           tool.toolSkill === node.skill &&
-          (tool.toolTier ?? 0) >= node.tier,
+          toolCoversNode(tool.toolTier ?? 0, node),
       )
       if (hasCoveringTool) {
         reachable.add(node.yieldItem)
