@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { GameData } from '@nogada/shared'
+import type { GameData, ItemDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { validateGameData } from './validate.js'
 
@@ -37,8 +37,9 @@ function baseData(): GameData {
 
 /**
  * 광석(iron_ore)이 등급 2 채집 노드에서만 나오는데, 그 노드를 캘 유일한 방법인
- * 등급 2 도구(iron_pickaxe)가 하필 그 광석으로만 제작되는 순환 — 실제로 출하된
- * CSV 가 갖고 있던 결함을 그대로 축소 재현한 픽스처.
+ * 등급 2 도구(iron_pickaxe)가 하필 그 광석으로만 제작되는 순환 — 계획서 초안의
+ * CSV 설계가 갖고 있던 결함을 그대로 축소 재현한 픽스처. 실제로 출하된 CSV는
+ * reinforced_pickaxe(등급 2, 구리만으로 제작)를 넣어 이 데드락을 피해 간다.
  */
 function deadlockedTierData(): GameData {
   return {
@@ -155,9 +156,8 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     )
   })
 
-  it('시작 도구만으로 도달 가능한 데이터는 위반이 없다', () => {
-    expect(validateGameData(baseData())).toEqual([])
-  })
+  // '정상 데이터는 위반이 없다' (위 baseData 스위트)와 동일한 단언이라 여기서는 생략한다 —
+  // baseData 는 시작 도구만으로 전부 도달 가능하므로 그 테스트가 이미 이 사실을 검증한다.
 
   it('실제로 출하되는 CSV 데이터는 도달 가능성 검사를 통과한다', () => {
     const here = dirname(fileURLToPath(import.meta.url))
@@ -171,5 +171,66 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     }
 
     expect(validateGameData(data)).toEqual([])
+  })
+})
+
+describe('validateGameData 의 조기 반환', () => {
+  it('참조 무결성 위반이 있으면 도달 가능성 검사를 건너뛰어 연쇄 보고를 막는다', () => {
+    const data = baseData()
+    // copper_ingot 레시피의 재료를 오타로 망가뜨린다. 고치지 않으면 copper_ingot 과
+    // 그걸 재료로 쓰는 copper_pickaxe 까지 도달 불가로 잡혀 오타 하나가 3줄이 된다.
+    data.recipes.copper_ingot!.inputs = [{ item: 'ghost_ore', count: 1 }]
+
+    expect(validateGameData(data)).toEqual([
+      'recipes[copper_ingot]: 존재하지 않는 재료 "ghost_ore" 를 요구한다',
+    ])
+  })
+
+  it('STARTING_TOOL_IDS 항목이 가리키는 아이템이 없으면 그 사실 하나만 보고한다', () => {
+    // CSV에서 copper_pickaxe 를 renamed_pickaxe 로 참조까지 전부 일관되게 개명했지만
+    // 코드의 STARTING_TOOL_IDS 상수(copper_pickaxe)는 갱신을 놓친 상황을 재현한다.
+    // 고치지 않으면 시드가 빈 채로 도달 가능성 계산이 돌아 데이터의 모든 아이템이
+    // "도달 불가"로 잡힌다.
+    const data: GameData = {
+      items: {
+        copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
+        copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
+        renamed_pickaxe: {
+          id: 'renamed_pickaxe', name: '개명된 곡괭이', kind: 'tool',
+          toolSkill: 'mining', toolTier: 1, icon: 'pickaxe_copper',
+        },
+      },
+      nodes: {
+        copper_vein: {
+          id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1, requiredLevel: 1,
+          yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+        },
+      },
+      recipes: {
+        copper_ingot: {
+          id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: 1,
+          inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
+        },
+        renamed_pickaxe: {
+          id: 'renamed_pickaxe', name: '개명된 곡괭이', skill: 'smithing', requiredLevel: 3,
+          inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'renamed_pickaxe', count: 1 },
+        },
+      },
+    }
+
+    expect(validateGameData(data)).toEqual([
+      'STARTING_TOOL_IDS: 존재하지 않는 아이템 "copper_pickaxe" 를 가리킨다',
+    ])
+  })
+
+  it('STARTING_TOOL_IDS 항목이 도구가 아니면 그 사실 하나만 보고한다', () => {
+    const data = baseData()
+    // copper_pickaxe 를 material 로 바꾼다. output/재료 참조는 여전히 유효하므로
+    // (recipes.copper_pickaxe 는 그대로 이 id 를 산출한다) 다른 참조 무결성 위반은
+    // 섞이지 않고 "도구가 아니다" 검사 하나만 측정한다.
+    const notATool: ItemDef = { id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'material', icon: 'pickaxe_copper' }
+    data.items.copper_pickaxe = notATool
+
+    expect(validateGameData(data)).toEqual(['STARTING_TOOL_IDS: "copper_pickaxe" 는 도구가 아니다'])
   })
 })

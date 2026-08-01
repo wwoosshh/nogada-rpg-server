@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeDef } from '../types.js'
-import { calcGatherChance, canGather, toolCoversNode } from './gather.js'
+import type { ItemDef, NodeDef } from '../types.js'
+import { calcGatherChance, canGather, toolAppliesTo, toolCoversNode } from './gather.js'
 
 const copperVein: NodeDef = {
   id: 'copper_vein',
@@ -16,6 +16,15 @@ const copperVein: NodeDef = {
 
 const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', tier: 2, requiredLevel: 10 }
 
+const copperPickaxe: ItemDef = {
+  id: 'copper_pickaxe',
+  name: '구리 곡괭이',
+  kind: 'tool',
+  toolSkill: 'mining',
+  toolTier: 1,
+  icon: 'pickaxe_copper',
+}
+
 describe('toolCoversNode', () => {
   it('도구 등급이 노드 등급보다 높으면 true 다', () => {
     expect(toolCoversNode(2, copperVein)).toBe(true)
@@ -27,6 +36,26 @@ describe('toolCoversNode', () => {
 
   it('도구 등급이 노드 등급보다 낮으면 false 다', () => {
     expect(toolCoversNode(1, ironVein)).toBe(false)
+  })
+})
+
+describe('toolAppliesTo', () => {
+  it('숙련 종류가 다르면 false 다', () => {
+    const smithingHammer: ItemDef = { ...copperPickaxe, id: 'copper_hammer', toolSkill: 'smithing' }
+    expect(toolAppliesTo(smithingHammer, copperVein)).toBe(false)
+  })
+
+  it('도구가 아닌 아이템이면 false 다', () => {
+    const oreItem: ItemDef = { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' }
+    expect(toolAppliesTo(oreItem, copperVein)).toBe(false)
+  })
+
+  it('등급이 노드에 못 미치면 false 다', () => {
+    expect(toolAppliesTo(copperPickaxe, ironVein)).toBe(false)
+  })
+
+  it('숙련 종류가 같고 등급이 정확히 일치하면 true 다', () => {
+    expect(toolAppliesTo(copperPickaxe, copperVein)).toBe(true)
   })
 })
 

@@ -16,6 +16,18 @@ describe('parseCsv', () => {
   it('빈 칸은 빈 문자열이 된다', () => {
     expect(parseCsv('a,b\n1,')).toEqual([{ a: '1', b: '' }])
   })
+
+  it('헤더보다 칸이 많은 행을 거부한다', () => {
+    expect(() => parseCsv('a,b\n1,2,3')).toThrow(
+      '2행: 칸 개수가 헤더와 다르다 (헤더 2개, 이 행 3개)',
+    )
+  })
+
+  it('헤더보다 칸이 적은 행을 거부한다', () => {
+    expect(() => parseCsv('a,b\n1')).toThrow(
+      '2행: 칸 개수가 헤더와 다르다 (헤더 2개, 이 행 1개)',
+    )
+  })
 })
 
 describe('parseItems', () => {
@@ -52,6 +64,19 @@ describe('parseItems', () => {
       ]),
     ).toThrow('items.csv[iron_pickaxe]: skill "minig" 는 알 수 없다 (허용값: mining, smithing)')
   })
+
+  it('toolTier 가 0 이하이면 거부한다', () => {
+    expect(() =>
+      parseItems([
+        { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mining', toolTier: '0', icon: 'pickaxe_iron' },
+      ]),
+    ).toThrow('items.csv[iron_pickaxe]: toolTier "0" 는 1 이상이어야 한다')
+  })
+
+  it('중복된 id 를 거부한다', () => {
+    const row = { id: 'copper_ore', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '', icon: 'ore_copper' }
+    expect(() => parseItems([row, row])).toThrow('items.csv: 중복된 id "copper_ore"')
+  })
 })
 
 describe('parseNodes', () => {
@@ -77,6 +102,50 @@ describe('parseNodes', () => {
         },
       ]),
     ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: mining, smithing)')
+  })
+
+  function validNodeRow(overrides: Record<string, string> = {}): Record<string, string> {
+    return {
+      id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: '1',
+      requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+      ...overrides,
+    }
+  }
+
+  it('tier 가 0 이하이면 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ tier: '0' })])).toThrow(
+      'nodes.csv[copper_vein]: tier "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('requiredLevel 이 0 이하이면 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ requiredLevel: '0' })])).toThrow(
+      'nodes.csv[copper_vein]: requiredLevel "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('yieldMin 이 음수이면 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ yieldMin: '-1' })])).toThrow(
+      'nodes.csv[copper_vein]: yieldMin "-1" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('yieldMax 가 0 이하이면 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ yieldMax: '0' })])).toThrow(
+      'nodes.csv[copper_vein]: yieldMax "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('respawnMs 가 0 이하이면 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ respawnMs: '0' })])).toThrow(
+      'nodes.csv[copper_vein]: respawnMs "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('중복된 id 를 거부한다', () => {
+    expect(() => parseNodes([validNodeRow(), validNodeRow()])).toThrow(
+      'nodes.csv: 중복된 id "copper_vein"',
+    )
   })
 })
 
@@ -114,5 +183,37 @@ describe('parseRecipes', () => {
         },
       ]),
     ).toThrow('recipes.csv[copper_ingot]: skill "smithng" 는 알 수 없다 (허용값: mining, smithing)')
+  })
+
+  function validRecipeRow(overrides: Record<string, string> = {}): Record<string, string> {
+    return {
+      id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: '1',
+      inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
+      ...overrides,
+    }
+  }
+
+  it('requiredLevel 이 0 이하이면 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ requiredLevel: '0' })])).toThrow(
+      'recipes.csv[copper_ingot]: requiredLevel "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('outputCount 가 0 이하이면 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ outputCount: '0' })])).toThrow(
+      'recipes.csv[copper_ingot]: outputCount "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('재료 개수가 0 이하이면 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ inputs: 'copper_ore:0' })])).toThrow(
+      'recipes.csv[copper_ingot]: inputs(copper_ore) "0" 는 1 이상이어야 한다',
+    )
+  })
+
+  it('중복된 id 를 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow(), validRecipeRow()])).toThrow(
+      'recipes.csv: 중복된 id "copper_ingot"',
+    )
   })
 })

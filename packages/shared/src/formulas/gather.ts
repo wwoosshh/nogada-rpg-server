@@ -1,4 +1,4 @@
-import type { NodeDef } from '../types.js'
+import type { ItemDef, NodeDef } from '../types.js'
 import { clamp } from './clamp.js'
 
 export interface GatherContext {
@@ -14,6 +14,17 @@ export interface GatherContext {
  */
 export function toolCoversNode(toolTier: number, node: NodeDef): boolean {
   return toolTier >= node.tier
+}
+
+/**
+ * 아이템이 이 노드를 채집할 수 있는 도구인지 — "이 도구가 이 노드에 적용되는가"
+ * 라는 질문 전체에 답한다: 도구 종류이고, 숙련 종류가 노드와 같고, 등급이
+ * 노드를 충족해야 true. `packages/data`의 도달 가능성 검사와 (Task 8이 추가할)
+ * `equippedToolTier` 가 이 하나의 정의를 공유한다 — 절반만 여기 두면 반드시
+ * 어긋난다.
+ */
+export function toolAppliesTo(tool: ItemDef, node: NodeDef): boolean {
+  return tool.kind === 'tool' && tool.toolSkill === node.skill && toolCoversNode(tool.toolTier ?? 0, node)
 }
 
 /** 도구 등급이나 숙련도가 모자라면 시도 자체가 불가능하다. */
