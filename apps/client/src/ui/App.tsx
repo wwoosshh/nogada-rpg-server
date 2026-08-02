@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createPhaserGame } from '../game/PhaserGame.js'
 import { useGameStore } from '../store/gameStore.js'
+import { CraftPanel } from './CraftPanel.js'
 import { Feed } from './Feed.js'
 import { Inventory } from './Inventory.js'
 import { SkillBar } from './SkillBar.js'
@@ -45,8 +46,8 @@ export function App(): JSX.Element {
           <Feed />
         </div>
         <div>
+          <CraftPanel />
           <Inventory />
-          {/* CraftPanel 은 Task 13 에서 여기에 들어간다 */}
         </div>
       </div>
     </div>

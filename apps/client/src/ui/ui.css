@@ -121,3 +121,70 @@
   color: var(--c-parchment-dim);
   margin-bottom: var(--space-1);
 }
+
+.craft__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.recipe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  font-size: 12px;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.recipe:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.recipe__inputs {
+  color: var(--c-parchment-dim);
+  font-size: 11px;
+}
+
+.recipe__short {
+  color: var(--c-danger);
+}
+
+.recipe__chance {
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.tabs__button {
+  flex: 1;
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  color: var(--c-parchment-dim);
+  font-family: inherit;
+  font-size: 12px;
+  padding: var(--space-1);
+  cursor: pointer;
+}
+
+.tabs__button--active {
+  background: var(--c-panel-edge);
+  color: var(--c-parchment);
+}
