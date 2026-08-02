@@ -36,6 +36,9 @@ android/local.properties
 ios/App/build/
 ios/App/Pods/
 
+# Tiled 맵 에디터 설치 위치 (프로젝트 산출물이 아님)
+tail/
+
 # 에디터
 .vscode/*
 !.vscode/extensions.json
