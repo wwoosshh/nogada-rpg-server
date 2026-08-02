@@ -60,11 +60,34 @@ assets/licensed/
 **미해결:** 아이콘 파일명이 `icon001.png` 형식이라 `items.csv` 의 `icon` 컬럼(`ore_copper` 등)과 직접 대응하지 않는다.
 13종이면 수동 개명으로 충분하지만 M2 에서 아이템이 수백 종이 되면 무너진다. **Task 11 착수 시 결정한다.**
 
+### `apps/client/public/` 복원 방법
+
+빌드에는 에셋이 필요하지만 **리포지토리에 올리면 재배포에 해당**하므로
+`apps/client/public/` 아래 `tilesets/` · `sprites/` · `icons/` 는 `.gitignore` 대상이다.
+새 환경에서는 아래를 실행해 복원한다 (Git Bash 기준, 저장소 루트에서):
+
+```bash
+mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/maps
+
+cp "assets/licensed/Pipoya RPG Tileset 32x32/Pipoya RPG Tileset 32x32/[Base]BaseChip_pipo.png" \
+   apps/client/public/tilesets/pipoya-basechip.png
+
+cp "assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32/Male/Male 01-1.png" \
+   apps/client/public/sprites/player.png
+```
+
+파일명 개명은 필수다. 원본 이름의 대괄호와 공백이 URL 인코딩 문제를 일으킨다.
+
+> 반대로 **맵 파일(`apps/client/public/maps/world.json`)은 우리가 만든 저작물이므로 커밋한다.**
+
 ### 도구
 
 | 도구 | 용도 | 상태 |
 |---|---|---|
-| [Tiled](https://www.mapeditor.org) | 맵 편집 | ✅ 설치됨 |
+| [Tiled](https://www.mapeditor.org) | 맵 편집 | ✅ 설치됨 (1.12.2) |
+
+Tiled **프로젝트 파일은 선택 사항**이다. 맵 하나를 다루는 동안은 `.tmx` 를 직접 열고 닫는 편이 단순하다.
+`.tiled-session` 은 사용자별 편집 상태이므로 커밋하지 않는다.
 
 ## 도입 검토 (M1 통과 후)
 
