@@ -15,25 +15,14 @@ import {
   type GatherOutcomeDto,
 } from '../api/GameClient.js'
 
-/** 화면에 잠깐 띄우는 최근 행동 결과 */
-export interface FeedEntry {
-  id: number
-  kind: 'gather' | 'craft' | 'error'
-  text: string
-  success: boolean
-}
-
 interface GameStore {
   data: GameData
   player: PlayerState | null
   loading: boolean
-  feed: FeedEntry[]
   refresh: () => Promise<void>
   gather: (nodeId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
 }
-
-let feedSeq = 0
 
 /**
  * 게임 상태의 단일 소유자.
@@ -41,11 +30,10 @@ let feedSeq = 0
  * 어느 쪽도 플레이어 상태 사본을 따로 들고 있지 않는다 — 사본이 생기는 순간
  * "인벤토리 UI 엔 반영됐는데 맵엔 안 됐다" 류의 버그가 시작된다.
  */
-export const useGameStore = create<GameStore>((set, get) => ({
+export const useGameStore = create<GameStore>((set) => ({
   data: loadGameData(),
   player: null,
   loading: false,
-  feed: [],
 
   refresh: async () => {
     set({ loading: true })
@@ -54,41 +42,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ player, loading: false })
     } catch (err) {
       set({ loading: false })
-      pushFeed(set, get, 'error', describeError(err), false)
     }
   },
 
   gather: async (nodeId) => {
-    const { data } = get()
+    const { data } = useGameStore.getState()
     try {
       const outcome: GatherOutcomeDto = await GameClient.gather(nodeId)
       set({ player: outcome.player })
-
-      const nodeName = data.nodes[nodeId]?.name ?? nodeId
-      const text =
-        outcome.success && outcome.gained
-          ? `${nodeName} — ${labelOf(data, outcome.gained.item)} x${outcome.gained.count} (경험치 +${outcome.xpGained})`
-          : `${nodeName} — 실패`
-      pushFeed(set, get, 'gather', text, outcome.success)
     } catch (err) {
-      pushFeed(set, get, 'error', describeError(err), false)
     }
   },
 
   craft: async (recipeId) => {
-    const { data } = get()
+    const { data } = useGameStore.getState()
     try {
       const outcome: CraftOutcomeDto = await GameClient.craft(recipeId)
       set({ player: outcome.player })
-
-      const recipeName = data.recipes[recipeId]?.name ?? recipeId
-      let text = outcome.success
-        ? `${recipeName} 제작 성공 (경험치 +${outcome.xpGained})`
-        : `${recipeName} 제작 실패 — 재료 일부 손실`
-      if (outcome.autoEquipped) text += ' · 자동 착용됨'
-      pushFeed(set, get, 'craft', text, outcome.success)
     } catch (err) {
-      pushFeed(set, get, 'error', describeError(err), false)
     }
   },
 }))
@@ -113,20 +84,6 @@ function describeError(err: unknown): string {
     default:
       return `오류: ${err.code}`
   }
-}
-
-type SetFn = (partial: Partial<GameStore>) => void
-type GetFn = () => GameStore
-
-function pushFeed(
-  set: SetFn,
-  get: GetFn,
-  kind: FeedEntry['kind'],
-  text: string,
-  success: boolean,
-): void {
-  const entry: FeedEntry = { id: ++feedSeq, kind, text, success }
-  set({ feed: [entry, ...get().feed].slice(0, 6) })
 }
 
 // ---- 셀렉터 ----

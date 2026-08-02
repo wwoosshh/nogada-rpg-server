@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { createPhaserGame } from '../game/PhaserGame.js'
 import { useGameStore } from '../store/gameStore.js'
-import { CraftPanel } from './CraftPanel.js'
-import { Feed } from './Feed.js'
-import { Inventory } from './Inventory.js'
-import { SkillBar } from './SkillBar.js'
+import { startClockSync } from '../time/clock.js'
+import { TopBar } from './TopBar.js'
 import './ui.css'
 
 export function App(): JSX.Element {
@@ -37,18 +35,15 @@ export function App(): JSX.Element {
     void useGameStore.getState().refresh()
   }, [])
 
+  // 서버 시계와 맞춘다. 복귀·주기 재동기까지 여기서 관리한다.
+  useEffect(() => startClockSync(), [])
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
       <div className="overlay">
-        <div>
-          <SkillBar />
-          <Feed />
-        </div>
-        <div>
-          <CraftPanel />
-          <Inventory />
-        </div>
+        <TopBar />
+        {/* 인벤토리·제작 패널은 온스크린 컨트롤러 버튼으로 여닫는다 (별도 작업) */}
       </div>
     </div>
   )
