@@ -531,7 +531,7 @@ export * from './time.js'
 pnpm vitest run packages/shared/src/time.test.ts
 ```
 
-기대: `Tests  20 passed (20)`
+기대: `Tests  19 passed (19)`
 
 - [ ] **Step 6: 전체 테스트와 타입 검사를 확인하고 커밋한다**
 
