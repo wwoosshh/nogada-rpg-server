@@ -38,3 +38,12 @@
   min-width: 32px;
   min-height: 24px;
 }
+
+/*
+ * 아이콘은 32x32 픽셀아트다. 정수 배율로만 확대하고 보간을 끈다.
+ * 소수 배율을 쓰면 픽셀 맵과 아이콘의 픽셀 밀도가 어긋난다.
+ */
+.icon {
+  image-rendering: pixelated;
+  flex: none;
+}
