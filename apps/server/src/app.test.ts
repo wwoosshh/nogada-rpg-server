@@ -84,3 +84,98 @@ describe('GET /api/state', () => {
     await app.close()
   })
 })
+
+describe('POST /api/gather', () => {
+  it('구리 광맥 채집 요청을 처리한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { nodeId: 'copper_vein' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { chance: number; player: { id: string } }
+    expect(body.chance).toBeCloseTo(0.5)
+    expect(body.player.id).toBe('local')
+
+    await app.close()
+  })
+
+  it('판정 결과를 저장해서 다음 조회에 반영한다', async () => {
+    const app = buildTestApp()
+
+    const gather = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { nodeId: 'copper_vein' },
+    })
+    const outcome = gather.json() as { player: { nodeCooldowns: Record<string, number> } }
+
+    const state = await app.inject({ method: 'GET', url: '/api/state' })
+    const saved = state.json() as { player: { nodeCooldowns: Record<string, number> } }
+
+    // 성패는 서버 난수라 단정할 수 없지만, 쿨다운은 성패와 무관하게 걸리고 저장된다.
+    expect(saved.player.nodeCooldowns.copper_vein).toBe(outcome.player.nodeCooldowns.copper_vein)
+
+    await app.close()
+  })
+
+  it('쿨다운 중 재요청은 409 와 해제 시각을 반환한다', async () => {
+    const app = buildTestApp()
+
+    await app.inject({ method: 'POST', url: '/api/gather', payload: { nodeId: 'copper_vein' } })
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { nodeId: 'copper_vein' },
+    })
+
+    expect(res.statusCode).toBe(409)
+    const body = res.json() as { code: string; availableAt: number }
+    expect(body.code).toBe('on_cooldown')
+    expect(body.availableAt).toBeGreaterThan(Date.now())
+
+    await app.close()
+  })
+
+  it('도구 등급이 모자란 노드는 400 을 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { nodeId: 'iron_vein' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'cannot_gather' })
+
+    await app.close()
+  })
+
+  it('없는 노드는 400 을 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { nodeId: 'ghost_vein' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'unknown_node' })
+
+    await app.close()
+  })
+
+  it('nodeId 가 없으면 400 을 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({ method: 'POST', url: '/api/gather', payload: {} })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})

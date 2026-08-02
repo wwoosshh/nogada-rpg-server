@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import cors from '@fastify/cors'
 import { loadGameData } from '@nogada/data'
 import Fastify, { type FastifyInstance } from 'fastify'
+import { registerGatherRoutes } from './routes/gather.js'
 import { registerStateRoutes } from './routes/state.js'
 import { PlayerStore } from './state/store.js'
 
@@ -26,6 +27,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }))
 
   registerStateRoutes(app, store)
+  registerGatherRoutes(app, store, data)
 
   return app
 }
