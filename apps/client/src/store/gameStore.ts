@@ -41,25 +41,26 @@ export const useGameStore = create<GameStore>((set) => ({
       const { player } = await GameClient.getState()
       set({ player, loading: false })
     } catch (err) {
+      console.error(err)
       set({ loading: false })
     }
   },
 
   gather: async (nodeId) => {
-    const { data } = useGameStore.getState()
     try {
       const outcome: GatherOutcomeDto = await GameClient.gather(nodeId)
       set({ player: outcome.player })
     } catch (err) {
+      console.error(err)
     }
   },
 
   craft: async (recipeId) => {
-    const { data } = useGameStore.getState()
     try {
       const outcome: CraftOutcomeDto = await GameClient.craft(recipeId)
       set({ player: outcome.player })
     } catch (err) {
+      console.error(err)
     }
   },
 }))
