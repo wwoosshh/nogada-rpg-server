@@ -12,6 +12,9 @@
  * WorldScene 과 NodeMarker 가 함께 참조하는 단일 출처다. 씬이 노드 마커의
  * 깊이를 정의하거나 그 반대가 되지 않도록, 어느 쪽에도 속하지 않는 이
  * 작은 모듈에 둔다.
+ *
+ * `dayNight` 아래의 것은 밤에 어두워지고 위의 것은 어두워지지 않는다.
+ * 피드백 글자를 위에 두는 것은 연출보다 가독성이 우선이기 때문이다.
  */
 export const DEPTH = {
   ground: 0,
@@ -20,4 +23,6 @@ export const DEPTH = {
   node: 5, // 채집 노드 마커
   player: 10,
   overhead: 20,
+  dayNight: 30, // 낮밤 명암. 월드의 모든 것 위를 덮는다
+  floatingText: 40, // 행동 피드백. 밤에도 읽혀야 하므로 명암보다 위다
 } as const

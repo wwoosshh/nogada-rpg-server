@@ -1,6 +1,9 @@
 import Phaser from 'phaser'
+import { gameTimeAt } from '@nogada/shared'
 import { useGameStore } from '../../store/gameStore.js'
+import { worldNow } from '../../time/clock.js'
 import { DEPTH } from '../depth.js'
+import { DayNightOverlay } from '../DayNightOverlay.js'
 import { NodeMarker } from '../NodeMarker.js'
 
 const TILE = 32
@@ -21,6 +24,7 @@ export class WorldScene extends Phaser.Scene {
   /** 터치 조작용 목표 지점. null 이면 키보드 입력만 처리한다. */
   private moveTarget: Phaser.Math.Vector2 | null = null
   private markers: NodeMarker[] = []
+  private dayNight!: DayNightOverlay
 
   constructor() {
     super({ key: 'World' })
@@ -94,6 +98,12 @@ export class WorldScene extends Phaser.Scene {
     })
 
     this.spawnNodes(map)
+
+    this.dayNight = new DayNightOverlay(this)
+
+    // 씬이 사라질 때 리스너를 정리한다. 개발 중 HMR 로 씬이 여러 번
+    // 만들어졌다 사라지므로 정리하지 않으면 resize 리스너가 쌓인다.
+    this.events.once('shutdown', () => this.dayNight.destroy())
   }
 
   update(): void {
@@ -101,6 +111,7 @@ export class WorldScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body
     this.updateAnimation(body.velocity.x, body.velocity.y)
     this.refreshCooldowns()
+    this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
   }
 
   /**
