@@ -29,7 +29,8 @@ export class WorldScene extends Phaser.Scene {
     const tileset = map.addTilesetImage('pipoya-basechip', 'pipoya-basechip')
     if (!tileset) throw new Error('타일셋을 찾을 수 없다: Tiled 의 타일셋 이름을 확인하라')
 
-    map.createLayer('ground', tileset, 0, 0)
+    const ground = map.createLayer('ground', tileset, 0, 0)
+    if (!ground) throw new Error('ground 레이어를 찾을 수 없다')
     const walls = map.createLayer('walls', tileset, 0, 0)
     if (!walls) throw new Error('walls 레이어를 찾을 수 없다')
     walls.setCollisionByExclusion([-1])
