@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPhaserGame } from '../game/PhaserGame.js'
+import { useGameStore } from '../store/gameStore.js'
 
 export function App(): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -24,6 +25,11 @@ export function App(): JSX.Element {
       // Phaser 의 렌더러/씬/리스너 정리는 여전히 다음 프레임의 runDestroy() 에서 이루어진다.
       hostRef.current?.replaceChildren()
     }
+  }, [])
+
+  // 서버에서 플레이어 상태를 한 번 불러온다. 이후 갱신은 채집·제작 응답이 담당한다.
+  useEffect(() => {
+    void useGameStore.getState().refresh()
   }, [])
 
   return (
