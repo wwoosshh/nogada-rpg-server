@@ -26,21 +26,32 @@ export function worldNow(): number {
   return anchor.serverMs + (performance.now() - anchor.perfMs)
 }
 
+/**
+ * 동기화 요청 하나가 버틸 수 있는 최대 시간.
+ *
+ * fetch 는 연결은 됐지만 응답이 영영 오지 않는 상황(모바일 네트워크·사내망에서
+ * 흔하다)에는 스스로 실패하지 않고 그냥 멈춰 있는다. 타임아웃이 없으면 그런
+ * 요청 하나가 syncing 을 영원히 true 로 묶어놓고, 그 뒤로는 주기 재동기·화면
+ * 복귀 재동기·어긋남 감지 재동기가 전부 조용히 아무것도 안 하게 된다.
+ */
+const SYNC_TIMEOUT_MS = 10_000
+
 /** 서버에 한 번 물어 앵커를 다시 잡는다. */
 export async function syncClock(): Promise<void> {
   if (syncing) return
   syncing = true
   try {
     const sentAt = performance.now()
-    const { serverNowMs } = await GameClient.getTime()
+    const { serverNowMs } = await GameClient.getTime(AbortSignal.timeout(SYNC_TIMEOUT_MS))
     const receivedAt = performance.now()
     anchor = {
       serverMs: estimateServerNow(sentAt, serverNowMs, receivedAt),
       perfMs: receivedAt,
     }
   } catch {
-    // 서버에 닿지 못하면 앵커를 건드리지 않는다. 기존 앵커가 있으면 그대로
-    // 쓰고, 없으면 worldNow() 가 로컬 시계로 물러난다.
+    // 서버에 닿지 못하거나(타임아웃 포함) 응답이 늦어 요청이 중단됐으면 앵커를
+    // 건드리지 않는다. 기존 앵커가 있으면 그대로 쓰고, 없으면 worldNow() 가
+    // 로컬 시계로 물러난다.
   } finally {
     syncing = false
   }
@@ -87,7 +98,13 @@ export function startClockSync(): () => void {
   }
 }
 
-/** 테스트·개발용. 앵커를 버려 로컬 시계로 되돌린다. */
+/**
+ * 테스트·개발용. 앵커를 버려 로컬 시계로 되돌린다.
+ *
+ * syncing 도 같이 지운다 — 안 지우면 리셋 시점에 진행 중이던 동기화가 나중에
+ * 끝나면서 이후의 재동기 시도를 계속 막고 있을 수 있다.
+ */
 export function resetClock(): void {
   anchor = null
+  syncing = false
 }

@@ -65,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** 서버 통신의 단일 진입점. 다른 곳에서 fetch 를 직접 부르지 않는다. */
 export const GameClient = {
-  getTime: () => request<{ serverNowMs: number }>('/api/time'),
+  getTime: (signal?: AbortSignal) => request<{ serverNowMs: number }>('/api/time', { signal }),
 
   getState: () => request<{ player: PlayerState }>('/api/state'),
 
