@@ -3,8 +3,8 @@
  <editorsettings>
   <export target="world.json" format="json"/>
  </editorsettings>
- <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="1064" columns="8">
-  <image source="../tilesets/pipoya-basechip.png" width="256" height="4256"/>
+ <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="512" columns="8">
+  <image source="../tilesets/pipoya-basechip.png" width="256" height="2048"/>
  </tileset>
  <layer id="1" name="ground" width="30" height="30">
   <data encoding="csv">

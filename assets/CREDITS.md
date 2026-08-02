@@ -69,14 +69,43 @@ assets/licensed/
 ```bash
 mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/maps
 
-cp "assets/licensed/Pipoya RPG Tileset 32x32/Pipoya RPG Tileset 32x32/[Base]BaseChip_pipo.png" \
-   apps/client/public/tilesets/pipoya-basechip.png
-
 cp "assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32/Male/Male 01-1.png" \
    apps/client/public/sprites/player.png
 ```
 
+타일셋은 **단순 복사가 아니라 2048px 로 잘라야 한다** (아래 참조). PowerShell 에서:
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+$src = "assets\licensed\Pipoya RPG Tileset 32x32\Pipoya RPG Tileset 32x32\[Base]BaseChip_pipo.png"
+$img = [System.Drawing.Image]::FromFile((Resolve-Path $src))
+$bmp = New-Object System.Drawing.Bitmap(256, 2048, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
+$g.DrawImage($img, (New-Object System.Drawing.Rectangle(0,0,256,2048)),
+                   (New-Object System.Drawing.Rectangle(0,0,256,2048)), [System.Drawing.GraphicsUnit]::Pixel)
+$g.Dispose(); $img.Dispose()
+$bmp.Save("apps\client\public\tilesets\pipoya-basechip.png", [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+```
+
 파일명 개명은 필수다. 원본 이름의 대괄호와 공백이 URL 인코딩 문제를 일으킨다.
+
+### ⚠️ 타일셋을 2048px 로 자르는 이유 — 모바일 WebGL 텍스처 한계
+
+원본 `[Base]BaseChip_pipo.png` 는 **256×4256** 이다. 안드로이드 WebView 의 WebGL `MAX_TEXTURE_SIZE` 는
+기기에 따라 다르며 검증에 쓴 에뮬레이터는 **4096** 이었다. 160px 초과라 텍스처 업로드가 실패하고
+**맵 타일이 전부 검게 렌더링된다.** 데스크톱 GPU 는 한계가 높아 그대로 보이므로 브라우저 테스트만으로는
+드러나지 않는다. Task 6(안드로이드 빌드)에서 발견했다.
+
+**2048px 를 고른 근거:** 저사양 안드로이드 상당수가 `MAX_TEXTURE_SIZE = 2048` 이라 가장 넓은 호환성을 준다.
+64행 × 8열 = **512 타일**이며, 자연 지형·마을·건축·벽까지 포함한다. 현재 맵은 타일 ID 170 까지만 쓴다.
+
+**아래에서 잘라내므로 위쪽 타일 ID 는 그대로 보존된다.** 잘린 부분(실내 가구, 소품, 분수·음식·무기 등)이
+나중에 필요해지면 **별도 타일셋으로 추가한다** — Tiled 도 Phaser 도 맵당 여러 타일셋을 지원하며,
+큰 시트 하나보다 그쪽이 정석이다. 원본은 `assets/licensed/` 에 그대로 있으므로 잃는 것은 없다.
+
+타일셋 크기를 바꾸면 **맵 파일의 메타데이터도 함께 고쳐야 한다** — `world.tmx` 의 `tilecount`/`height`,
+`world.json` 의 `tilecount`/`imageheight`. 어긋나면 Phaser 가 잘못된 좌표를 계산한다.
 
 > 반대로 **맵 파일(`apps/client/public/maps/world.json`)은 우리가 만든 저작물이므로 커밋한다.**
 
