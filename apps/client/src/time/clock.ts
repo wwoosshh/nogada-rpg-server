@@ -20,6 +20,10 @@ let syncing = false
  *
  * 경과를 Date.now() 가 아니라 performance.now() 로 재는 이유는 세션 도중
  * 사용자가 기기 시계를 바꿔도 세계 시각이 튀지 않게 하기 위해서다.
+ *
+ * 단조 증가하지 않는다 — 재동기화가 앵커를 새 왕복 추정치로 통째로 갈아끼우므로,
+ * 재동기 직후 값이 최대 재동기 임계값만큼 뒤로 튈 수 있다. 시간을 판정하는 로직은
+ * 전부 서버 쪽에 있으므로 무해하다.
  */
 export function worldNow(): number {
   if (!anchor) return Date.now()

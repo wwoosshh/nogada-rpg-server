@@ -125,8 +125,8 @@ function lerpColor(a: number, b: number, t: number): number {
  * 구간으로 끊지 않고 코사인으로 연속 변화시킨다 — 경계에서 화면이 갑자기
  * 어두워지면 눈에 띄게 어색하다.
  *
- * 색은 어둠이 중간일 때(06:00, 18:00) 가장 따뜻하다. 그 지점이 곧 여명과
- * 황혼이므로 별도의 시각 조건 없이 자연스럽게 맞아떨어진다.
+ * 색은 어둠이 중간일 때(06:00, 18:00) 가장 따뜻하다. 그 지점이 곧 밤과 낮이
+ * 갈리는 전환 구간이므로 별도의 시각 조건 없이 자연스럽게 맞아떨어진다.
  */
 export function skyShade(minuteOfDay: number): SkyShade {
   const phase = (minuteOfDay / GAME_MINUTES_PER_DAY) * Math.PI * 2
@@ -149,7 +149,7 @@ export function estimateServerNow(
   return serverNowMs + (receivedAtMs - sentAtMs) / 2
 }
 
-/** 이 이상 어긋나면 앵커를 다시 잡는다 */
+/** 이 값을 초과해 어긋나면 앵커를 다시 잡는다 */
 export const RESYNC_THRESHOLD_MS = 2000
 
 export function needsResync(observedServerMs: number, predictedServerMs: number): boolean {

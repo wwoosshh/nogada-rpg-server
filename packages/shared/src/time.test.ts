@@ -136,8 +136,8 @@ describe('skyShade', () => {
     }
   })
 
-  it('여명·황혼에서 색이 가장 따뜻하고 자정·정오에서 밤색이다', () => {
-    // darkness 0.5 지점(06:00, 18:00)이 황혼의 정점이다.
+  it('낮밤 전환점에서 색이 가장 따뜻하고 자정·정오에서 밤색이다', () => {
+    // darkness 0.5 지점(06:00, 18:00)이 색 전환의 정점이다.
     const dawn = skyShade(360).color
     const dusk = skyShade(1080).color
     const midnight = skyShade(0).color

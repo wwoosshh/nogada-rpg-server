@@ -13,6 +13,11 @@ const MAX_NIGHT_ALPHA = 0.55
  *
  * 카메라에 고정하므로 맵을 스크롤해도 따라다니지 않고 화면에 붙어 있다.
  * 자체 시간을 세지 않고 매 프레임 받은 값을 그리기만 한다.
+ *
+ * setScrollFactor(0) 은 카메라 스크롤에서만 벗어나고 줌에서는 벗어나지 않는다.
+ * 지금은 카메라 줌을 쓰지 않아 무해하지만, 나중에 camera.setZoom(n) 을 쓰게 되면
+ * 이 사각형 크기를 cam.width / cam.zoom, cam.height / cam.zoom 으로 다시 맞춰야
+ * 화면 전체를 덮는다.
  */
 export class DayNightOverlay {
   private readonly rect: Phaser.GameObjects.Rectangle
