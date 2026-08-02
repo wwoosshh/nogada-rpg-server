@@ -237,3 +237,48 @@ describe('POST /api/craft', () => {
     await app.close()
   })
 })
+
+describe('GET /api/time', () => {
+  it('서버 현재 시각을 반환한다', async () => {
+    const app = buildTestApp()
+    const before = Date.now()
+    const res = await app.inject({ method: 'GET', url: '/api/time' })
+    const after = Date.now()
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { serverNowMs: number }
+    expect(body.serverNowMs).toBeGreaterThanOrEqual(before)
+    expect(body.serverNowMs).toBeLessThanOrEqual(after)
+
+    await app.close()
+  })
+})
+
+describe('x-server-now 헤더', () => {
+  it('모든 응답에 서버 시각이 실린다', async () => {
+    const app = buildTestApp()
+
+    for (const url of ['/api/health', '/api/state', '/api/time']) {
+      const res = await app.inject({ method: 'GET', url })
+      const header = res.headers['x-server-now']
+      expect(header, `${url} 에 헤더가 없다`).toBeDefined()
+      expect(Number(header)).toBeGreaterThan(0)
+    }
+
+    await app.close()
+  })
+
+  it('POST 응답에도 실린다', async () => {
+    const app = buildTestApp()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/craft',
+      payload: { recipeId: 'ghost' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(Number(res.headers['x-server-now'])).toBeGreaterThan(0)
+
+    await app.close()
+  })
+})
