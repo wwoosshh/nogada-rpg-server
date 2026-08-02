@@ -1,5 +1,7 @@
 import Phaser from 'phaser'
+import { useGameStore } from '../../store/gameStore.js'
 import { DEPTH } from '../depth.js'
+import { NodeMarker } from '../NodeMarker.js'
 
 const TILE = 32
 const PLAYER_SPEED = 120
@@ -18,6 +20,7 @@ export class WorldScene extends Phaser.Scene {
   private facing: Facing = 'down'
   /** 터치 조작용 목표 지점. null 이면 키보드 입력만 처리한다. */
   private moveTarget: Phaser.Math.Vector2 | null = null
+  private markers: NodeMarker[] = []
 
   constructor() {
     super({ key: 'World' })
@@ -82,15 +85,70 @@ export class WorldScene extends Phaser.Scene {
     this.cursors = this.input.keyboard!.createCursorKeys()
 
     // 터치·클릭 이동: 누른 지점을 목표로 삼는다.
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    // 두 번째 인자는 그 지점에서 적중한 인터랙티브 오브젝트 목록이다. 노드 마커를
+    // 눌렀다면 비어 있지 않으므로 이동을 건너뛴다 — 채집하려고 누른 것이지
+    // 그 자리로 걸어가려던 것이 아니다.
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer, hitObjects: unknown[]) => {
+      if (hitObjects.length > 0) return
       this.moveTarget = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY)
     })
+
+    this.spawnNodes(map)
   }
 
   update(): void {
     this.applyMovement()
     const body = this.player.body as Phaser.Physics.Arcade.Body
     this.updateAnimation(body.velocity.x, body.velocity.y)
+    this.refreshCooldowns()
+  }
+
+  /**
+   * Tiled 의 `nodes` 오브젝트 레이어를 읽어 채집 노드를 배치한다.
+   * 레이어가 없어도 오류가 아니다 — 채집 노드가 없는 맵도 정상이다.
+   */
+  private spawnNodes(map: Phaser.Tilemaps.Tilemap): void {
+    const { data } = useGameStore.getState()
+    const objects = map.getObjectLayer('nodes')?.objects ?? []
+
+    for (const obj of objects) {
+      const nodeId = obj.properties?.find(
+        (p: { name: string; value: unknown }) => p.name === 'nodeId',
+      )?.value as string | undefined
+      if (!nodeId) continue
+
+      const def = data.nodes[nodeId]
+      if (!def) {
+        console.warn(`맵에 정의되지 않은 노드가 있다: ${nodeId}`)
+        continue
+      }
+
+      this.markers.push(
+        new NodeMarker({
+          scene: this,
+          x: obj.x ?? 0,
+          y: obj.y ?? 0,
+          nodeId,
+          label: def.name,
+          tier: def.tier,
+          onTap: (id) => void useGameStore.getState().gather(id),
+        }),
+      )
+    }
+  }
+
+  /**
+   * 쿨다운 표시를 스토어의 플레이어 상태에서 새로 읽어 갱신한다.
+   * 씬은 남은 시간을 자체적으로 세지 않는다 — 세는 순간 서버가 내려준 값과
+   * 갈라져서, 화면은 채집 가능한데 서버는 거부하는 상태가 생긴다.
+   */
+  private refreshCooldowns(): void {
+    const player = useGameStore.getState().player
+    if (!player) return
+    const now = Date.now()
+    for (const marker of this.markers) {
+      marker.setCooldown((player.nodeCooldowns[marker.nodeId] ?? 0) - now)
+    }
   }
 
   /** 입력을 읽어 속도만 정한다. 애니메이션은 결과 속도를 보고 별도로 정한다. */
