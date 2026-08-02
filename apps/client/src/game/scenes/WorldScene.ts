@@ -119,13 +119,24 @@ export class WorldScene extends Phaser.Scene {
 
     this.dayNight = new DayNightOverlay(this)
 
-    // 씬이 사라질 때 리스너를 정리한다. 개발 중 HMR 로 씬이 여러 번
-    // 만들어졌다 사라지므로 정리하지 않으면 resize 리스너가 쌓인다.
-    this.events.once('shutdown', () => {
+    // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
+    // Systems.destroy() 만 부르고 Systems.shutdown() 은 부르지 않으므로 DESTROY 만
+    // 발생하고 SHUTDOWN 은 절대 발생하지 않는다. shutdown 에만 걸면 정리가 전혀 돌지
+    // 않아 스토어 구독이 살아남고, 나중에 그 구독이 불리면 이미 사라진 씬에
+    // scene.add.text 를 호출해 던진다 — zustand 의 setState 는 리스너를 forEach 로
+    // 돌리는데 하나가 던지면 그 뒤 리스너(다음 씬의 구독)는 아예 실행되지 않아 글자
+    // 표시가 조용히 멈춘다. 그래서 두 이벤트 모두에 같은 정리 함수를 걸고, 두 번
+    // 불려도 안전하도록 가드한다.
+    let cleanedUp = false
+    const cleanup = (): void => {
+      if (cleanedUp) return
+      cleanedUp = true
       this.dayNight.destroy()
       this.unsubscribeStore?.()
       this.unsubscribeStore = null
-    })
+    }
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
+    this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)
   }
 
   update(): void {
@@ -178,7 +189,9 @@ export class WorldScene extends Phaser.Scene {
   private refreshCooldowns(): void {
     const player = useGameStore.getState().player
     if (!player) return
-    const now = Date.now()
+    // player.nodeCooldowns 는 서버가 내려준 절대 시각이다. Date.now() 를 쓰면 기기
+    // 시계와 비교하게 되어, 이 기능 전체가 없애려는 드리프트가 그대로 되살아난다.
+    const now = worldNow()
     for (const marker of this.markers) {
       marker.setCooldown((player.nodeCooldowns[marker.nodeId] ?? 0) - now)
     }
