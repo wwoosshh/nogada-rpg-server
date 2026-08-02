@@ -21,14 +21,50 @@
 
 ---
 
-## 도입 예정 (M0)
+## 도입 완료 (2026-08-02 확인)
 
-| 팩 | 제작자 | 구매처 | 가격 | 용도 | 상업 | 엔진제한 | 편집 | 크레딧 | 상태 |
+| 팩 | 제작자 | 구매처 | 가격 | 용도 | 상업 | 엔진제한 | 편집 | 크레딧 | 재배포 |
 |---|---|---|---|---|---|---|---|---|---|
-| [FREE RPG Tileset 32×32](https://pipoya.itch.io/pipoya-rpg-tileset-32x32) | Pipoya | itch.io | 무료 | 맵 타일셋 | ✅ | 없음 | ✅ | 권장 | ⬜ 미도입 |
-| [FREE RPG Character Sprites 32×32](https://pipoya.itch.io/pipoya-free-rpg-character-sprites-32x32) | Pipoya | itch.io | 무료 | 플레이어·NPC | ✅ | 없음 | ✅ | 권장 | ⬜ 미도입 |
-| [1000+ Fantasy RPG Icons](https://finalbossblues.itch.io/icons) | finalbossblues | itch.io | $6 | 아이템 아이콘 (32×32) | ✅ | **없음** | ✅ | **불필요** | ⬜ 미도입 |
-| [game-icons.net](https://game-icons.net/) | 다수 | 웹 | 무료 | 인터페이스 기호 (SVG) | ✅ | 없음 | ✅ | **CC BY — 의무** | ⬜ 미도입 |
+| [FREE RPG Tileset 32×32](https://pipoya.itch.io/pipoya-rpg-tileset-32x32) | Pipoya | itch.io | 무료 | 맵 타일셋 | ✅ | 없음 | ✅ | 권장 | ❌ 금지 |
+| [FREE RPG Character Sprites 32×32](https://pipoya.itch.io/pipoya-free-rpg-character-sprites-32x32) | Pipoya | itch.io | 무료 | 플레이어·NPC | ✅ | 없음 | ✅ | 권장 | ❌ 금지 |
+| [1000+ Fantasy RPG Icons](https://finalbossblues.itch.io/icons) | finalbossblues | itch.io | $6 | 아이템 아이콘 | ✅ | **없음** | ✅ | **불필요** | ❌ 금지 |
+| [game-icons.net](https://game-icons.net/) | 다수 | 웹 | 무료 | 인터페이스 기호 (SVG) | ✅ | 없음 | ✅ | **CC BY — 의무** | — |
+
+**Pipoya 라이선스 원문:** `For commercial or personal use.` / `Use and edit freely.` / `Not redistribute or resell this assets.`
+
+마지막 조항이 `assets/licensed/` 를 버전 관리에서 제외하는 근거다. 에셋을 리포지토리에 커밋하면 재배포에 해당한다.
+
+### 로컬 배치 및 실제 규격
+
+```
+assets/licensed/
+├─ Pipoya RPG Tileset 32x32/
+│  ├─ [Base]BaseChip_pipo.png     256x4256 — 8x133 = 1,064 타일. ★ M1 은 이것만 사용
+│  ├─ LightShadow_pipo.png        256x192  — 그림자 오버레이
+│  ├─ [A]_type1/2/3/              각 34개, 32x160 — RPG Maker 오토타일 포맷.
+│  │                              Tiled 에서 직접 못 씀. M1 미사용
+│  └─ SampleMap/                  완성 .tmx + 외부 .tsx 예제
+├─ PIPOYA FREE RPG Character Sprites 32x32/
+│  └─ Male/ Female/ Enemy/ Boss/ Animal/ Soldier/ Other/ Xmas/ ...
+│     각 PNG 96x128 = 3열 x 4행, 프레임 32x32 (아래·왼쪽·오른쪽·위 4방향 걷기)
+├─ icons_8.13.20/                 finalbossblues Time Fantasy Icons (최신판)
+│  ├─ fullcolor/individual_32x32/ icon001.png ~ icon1023.png (1,023개)
+│  ├─ fullcolor/icons_full_32.png 통합 시트
+│  └─ quick_guide.png             아이콘 배치 개요 — 어떤 번호가 무엇인지 여기서 찾는다
+├─ icons_12.26.19/                같은 팩 구판. 사용하지 않음
+├─ game-icons.net.svg/icons/      CC BY 3.0 SVG 세트
+├─ Door_Animation/ · Unorganized Parts/            Pipoya 타일셋 팩 보너스
+└─ CharaMEL ver.0.4.0/ · Pipoya Character Sprite 32 Generator/   캐릭터 생성기 (선택)
+```
+
+**미해결:** 아이콘 파일명이 `icon001.png` 형식이라 `items.csv` 의 `icon` 컬럼(`ore_copper` 등)과 직접 대응하지 않는다.
+13종이면 수동 개명으로 충분하지만 M2 에서 아이템이 수백 종이 되면 무너진다. **Task 11 착수 시 결정한다.**
+
+### 도구
+
+| 도구 | 용도 | 상태 |
+|---|---|---|
+| [Tiled](https://www.mapeditor.org) | 맵 편집 | ✅ 설치됨 |
 
 ## 도입 검토 (M1 통과 후)
 
