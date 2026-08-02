@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { DEPTH } from '../depth.js'
 
 const TILE = 32
 const PLAYER_SPEED = 120
@@ -40,12 +41,20 @@ export class WorldScene extends Phaser.Scene {
 
     const ground = map.createLayer('ground', tileset, 0, 0)
     if (!ground) throw new Error('ground 레이어를 찾을 수 없다')
+    ground.setDepth(DEPTH.ground)
+
+    // decor 와 overhead 는 선택 레이어다. 장식이 없는 맵도 정상이므로 없어도 오류가 아니다.
+    map.createLayer('decor', tileset, 0, 0)?.setDepth(DEPTH.decor)
 
     const walls = map.createLayer('walls', tileset, 0, 0)
     if (!walls) throw new Error('walls 레이어를 찾을 수 없다')
+    walls.setDepth(DEPTH.walls)
     // 메서드 이름은 setCollisionByExclusion 이다 (Excluding 아님).
     // -1 은 빈 칸이므로, walls 의 비어있지 않은 모든 타일이 충돌한다.
     walls.setCollisionByExclusion([-1])
+
+    // 플레이어보다 나중이 아니라 깊이로 위에 올린다. 생성 순서와 무관하게 동작한다.
+    map.createLayer('overhead', tileset, 0, 0)?.setDepth(DEPTH.overhead)
 
     const spawn = map.findObject('spawn', (o) => o.name === 'player')
     const startX = spawn?.x ?? TILE * 2
@@ -53,6 +62,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.createAnimations()
     this.player = this.physics.add.sprite(startX, startY, 'player', this.idleFrame('down'))
+    this.player.setDepth(DEPTH.player)
     this.player.setSize(20, 16).setOffset(6, 14)
     this.physics.add.collider(this.player, walls)
 
