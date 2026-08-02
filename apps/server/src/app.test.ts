@@ -281,4 +281,58 @@ describe('x-server-now 헤더', () => {
 
     await app.close()
   })
+
+  it('없는 경로(404) 응답에도 실린다', async () => {
+    const app = buildTestApp()
+    const res = await app.inject({ method: 'GET', url: '/api/nope' })
+
+    expect(res.statusCode).toBe(404)
+    expect(Number(res.headers['x-server-now'])).toBeGreaterThan(0)
+
+    await app.close()
+  })
+
+  it('CORS 프리플라이트(OPTIONS) 응답에도 실린다', async () => {
+    const app = buildTestApp()
+
+    // onSend 훅이 캡슐화된 자식 컨텍스트로 옮겨지거나 누군가 OPTIONS 를 특별
+    // 취급하도록 리팩터링하면, 프리플라이트 응답에서만 헤더가 조용히 빠질 수 있다.
+    // 그러면 브라우저는 실제 요청을 보내기도 전에 드리프트 감지에 쓸 기준 시각을
+    // 하나 놓치게 되는데, 테스트가 없으면 이 회귀는 아무 것도 빨갛게 만들지 않는다.
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/time',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'GET',
+      },
+    })
+
+    expect(res.statusCode).toBe(204)
+    expect(Number(res.headers['x-server-now'])).toBeGreaterThan(0)
+
+    await app.close()
+  })
+})
+
+describe('CORS exposedHeaders 설정', () => {
+  it('Origin 요청에 access-control-expose-headers 로 x-server-now 를 실어 보낸다', async () => {
+    const app = buildTestApp()
+
+    // app.ts 의 exposedHeaders: ['x-server-now'] 한 줄이 빠지거나 값이 바뀌면, 헤더
+    // 자체는 여전히 응답에 실리지만 브라우저의 fetch 는 이 헤더를 볼 수 없게 된다.
+    // app.inject() 는 Node 의 raw 응답을 읽을 뿐 브라우저의 CORS 가시성 필터링을
+    // 적용하지 않으므로, 여기서는 서버가 Access-Control-Expose-Headers 를 실제로
+    // 보내는지만 확인한다 — 브라우저 쪽 강제 여부는 이 테스트의 검증 범위가 아니다.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/time',
+      headers: { origin: 'http://localhost:5173' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['access-control-expose-headers']).toBe('x-server-now')
+
+    await app.close()
+  })
 })
