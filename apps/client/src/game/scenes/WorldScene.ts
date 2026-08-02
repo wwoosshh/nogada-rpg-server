@@ -4,6 +4,7 @@ import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
+import { spawnFloatingText } from '../FloatingText.js'
 import { NodeMarker } from '../NodeMarker.js'
 
 const TILE = 32
@@ -25,6 +26,7 @@ export class WorldScene extends Phaser.Scene {
   private moveTarget: Phaser.Math.Vector2 | null = null
   private markers: NodeMarker[] = []
   private dayNight!: DayNightOverlay
+  private unsubscribeStore: (() => void) | null = null
 
   constructor() {
     super({ key: 'World' })
@@ -99,11 +101,31 @@ export class WorldScene extends Phaser.Scene {
 
     this.spawnNodes(map)
 
+    // 스토어가 여전히 게임 상태의 단일 소유자다. 씬은 결과를 따로 보관하지
+    // 않고 변화가 생길 때만 글자를 띄운다. update() 에서 폴링하면 같은
+    // 결과를 두 번 그리지 않도록 소비 여부를 씬이 기억해야 하고, 그게 곧
+    // 씬이 상태를 갖는 것이다.
+    this.unsubscribeStore = useGameStore.subscribe((state, prev) => {
+      const action = state.lastAction
+      if (!action || action.seq === prev.lastAction?.seq) return
+      spawnFloatingText(
+        this,
+        this.player.x,
+        this.player.y - this.player.displayHeight / 2,
+        action.text,
+        action.tone,
+      )
+    })
+
     this.dayNight = new DayNightOverlay(this)
 
     // 씬이 사라질 때 리스너를 정리한다. 개발 중 HMR 로 씬이 여러 번
     // 만들어졌다 사라지므로 정리하지 않으면 resize 리스너가 쌓인다.
-    this.events.once('shutdown', () => this.dayNight.destroy())
+    this.events.once('shutdown', () => {
+      this.dayNight.destroy()
+      this.unsubscribeStore?.()
+      this.unsubscribeStore = null
+    })
   }
 
   update(): void {

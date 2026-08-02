@@ -15,25 +15,40 @@ import {
   type GatherOutcomeDto,
 } from '../api/GameClient.js'
 
+/**
+ * 캐릭터 머리 위에 띄울 행동 결과.
+ *
+ * seq 는 같은 문구가 연달아 나올 때(구리 원석 +1 을 두 번 캐는 경우)도
+ * 구독자가 새 사건임을 알 수 있게 한다. 문구만 비교하면 두 번째를 놓친다.
+ */
+export interface ActionFeedback {
+  seq: number
+  text: string
+  tone: 'good' | 'bad'
+}
+
 interface GameStore {
   data: GameData
   player: PlayerState | null
   loading: boolean
+  lastAction: ActionFeedback | null
   refresh: () => Promise<void>
   gather: (nodeId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
 }
 
+let actionSeq = 0
+
 /**
  * 게임 상태의 단일 소유자.
  * Phaser 씬과 React 컴포넌트 둘 다 이 스토어만 읽고 쓴다.
- * 어느 쪽도 플레이어 상태 사본을 따로 들고 있지 않는다 — 사본이 생기는 순간
- * "인벤토리 UI 엔 반영됐는데 맵엔 안 됐다" 류의 버그가 시작된다.
+ * 어느 쪽도 플레이어 상태 사본을 따로 들고 있지 않다.
  */
 export const useGameStore = create<GameStore>((set) => ({
   data: loadGameData(),
   player: null,
   loading: false,
+  lastAction: null,
 
   refresh: async () => {
     set({ loading: true })
@@ -41,8 +56,8 @@ export const useGameStore = create<GameStore>((set) => ({
       const { player } = await GameClient.getState()
       set({ player, loading: false })
     } catch (err) {
-      console.error(err)
       set({ loading: false })
+      pushAction(set, describeError(err), 'bad')
     }
   },
 
@@ -50,8 +65,18 @@ export const useGameStore = create<GameStore>((set) => ({
     try {
       const outcome: GatherOutcomeDto = await GameClient.gather(nodeId)
       set({ player: outcome.player })
+
+      if (outcome.success && outcome.gained) {
+        const name = labelOf(useGameStore.getState().data, outcome.gained.item)
+        pushAction(set, `${name} +${outcome.gained.count}`, 'good')
+      } else {
+        pushAction(set, '실패', 'bad')
+      }
     } catch (err) {
-      console.error(err)
+      // 쿨다운은 조용히 넘긴다. 아직 회복되지 않은 노드를 누르는 것은 실수가
+      // 아니라 정상적인 조작이라, 매번 알리면 연타할수록 화면이 경고로 덮인다.
+      if (err instanceof ApiError && err.code === 'on_cooldown') return
+      pushAction(set, describeError(err), 'bad')
     }
   },
 
@@ -59,11 +84,25 @@ export const useGameStore = create<GameStore>((set) => ({
     try {
       const outcome: CraftOutcomeDto = await GameClient.craft(recipeId)
       set({ player: outcome.player })
+
+      if (outcome.success && outcome.produced) {
+        const name = labelOf(useGameStore.getState().data, outcome.produced.item)
+        const suffix = outcome.autoEquipped ? ' · 자동 착용' : ''
+        pushAction(set, `${name} +${outcome.produced.count}${suffix}`, 'good')
+      } else {
+        pushAction(set, '제작 실패', 'bad')
+      }
     } catch (err) {
-      console.error(err)
+      pushAction(set, describeError(err), 'bad')
     }
   },
 }))
+
+type SetFn = (partial: Partial<GameStore>) => void
+
+function pushAction(set: SetFn, text: string, tone: ActionFeedback['tone']): void {
+  set({ lastAction: { seq: ++actionSeq, text, tone } })
+}
 
 function labelOf(data: GameData, itemId: string): string {
   return data.items[itemId]?.name ?? itemId
@@ -72,16 +111,12 @@ function labelOf(data: GameData, itemId: string): string {
 function describeError(err: unknown): string {
   if (!(err instanceof ApiError)) return '서버에 연결할 수 없습니다'
   switch (err.code) {
-    case 'on_cooldown': {
-      const sec = Math.max(1, Math.ceil(((err.availableAt ?? 0) - Date.now()) / 1000))
-      return `아직 회복되지 않았습니다 (${sec}초)`
-    }
     case 'cannot_gather':
-      return '도구 등급이나 숙련도가 부족합니다'
+      return '도구나 숙련도 부족'
     case 'level_too_low':
-      return '숙련도가 부족합니다'
+      return '숙련도 부족'
     case 'missing_materials':
-      return '재료가 부족합니다'
+      return '재료 부족'
     default:
       return `오류: ${err.code}`
   }
