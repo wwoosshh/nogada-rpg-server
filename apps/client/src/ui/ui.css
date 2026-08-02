@@ -1,0 +1,123 @@
+/* 색은 전부 tokens.css 의 변수에서만 가져온다. 리터럴 색상을 쓰지 않는다. */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* 오버레이 자체는 터치를 통과시키고, 실제 패널만 터치를 받는다.
+   그래야 UI 사이 빈 공간을 눌렀을 때 캐릭터가 이동한다. */
+.panel {
+  pointer-events: auto;
+  background: var(--c-panel);
+  border: 2px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  margin: var(--space-2);
+}
+
+.skillbar {
+  display: flex;
+  gap: var(--space-3);
+  font-size: 13px;
+}
+
+.skillbar__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 96px;
+}
+
+.skillbar__name {
+  color: var(--c-parchment-dim);
+}
+
+.skillbar__level {
+  color: var(--c-accent);
+  font-weight: 700;
+}
+
+.xpbar {
+  height: 6px;
+  background: var(--c-ink);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.xpbar__fill {
+  height: 100%;
+  background: var(--c-accent);
+}
+
+.inventory__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: var(--space-1);
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+.slot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  font-size: 12px;
+}
+
+.slot__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.slot__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 아이콘은 32x32 픽셀아트다. 정수 배율로만 확대하고 보간을 끈다.
+ * 소수 배율을 쓰면 픽셀 맵과 아이콘의 픽셀 밀도가 어긋난다.
+ */
+.icon {
+  image-rendering: pixelated;
+  flex: none;
+}
+
+.slot--tier-1 { border-color: var(--c-tier-1); }
+.slot--tier-2 { border-color: var(--c-tier-2); }
+.slot--tier-3 { border-color: var(--c-tier-3); }
+
+.slot__count {
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12px;
+}
+
+.feed__line--ok { color: var(--c-success); }
+.feed__line--fail { color: var(--c-danger); }
+
+.section-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--c-parchment-dim);
+  margin-bottom: var(--space-1);
+}

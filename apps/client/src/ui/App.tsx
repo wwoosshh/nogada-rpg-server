@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { createPhaserGame } from '../game/PhaserGame.js'
 import { useGameStore } from '../store/gameStore.js'
+import { Feed } from './Feed.js'
+import { Inventory } from './Inventory.js'
+import { SkillBar } from './SkillBar.js'
+import './ui.css'
 
 export function App(): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -35,7 +39,16 @@ export function App(): JSX.Element {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
-      {/* UI 오버레이는 Task 11 부터 여기에 들어간다 */}
+      <div className="overlay">
+        <div>
+          <SkillBar />
+          <Feed />
+        </div>
+        <div>
+          <Inventory />
+          {/* CraftPanel 은 Task 13 에서 여기에 들어간다 */}
+        </div>
+      </div>
     </div>
   )
 }

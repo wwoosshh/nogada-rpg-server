@@ -57,8 +57,36 @@ assets/licensed/
 └─ CharaMEL ver.0.4.0/ · Pipoya Character Sprite 32 Generator/   캐릭터 생성기 (선택)
 ```
 
-**미해결:** 아이콘 파일명이 `icon001.png` 형식이라 `items.csv` 의 `icon` 컬럼(`ore_copper` 등)과 직접 대응하지 않는다.
-13종이면 수동 개명으로 충분하지만 M2 에서 아이템이 수백 종이 되면 무너진다. **Task 11 착수 시 결정한다.**
+### 아이콘 번호 → `items.csv` 이름 매핑 (Task 11 에서 결정)
+
+아이콘 파일명이 `icon001.png` 형식이라 `items.csv` 의 `icon` 컬럼(`ore_copper` 등)과 직접 대응하지 않는다.
+**M1 은 수동 개명으로 간다** — 13종뿐이고, 어떤 그림이 어떤 아이템인지는 사람이 눈으로 골라야 한다.
+
+M2 에서 아이템이 수백 종이 되면 이 방식은 무너지지만, 그때는 개명이 아니라 **설계 문서 4.5 의 「형태 × 재질 색상」
+조합 생성**으로 넘어간다 — 곡괭이 실루엣 하나에 팔레트를 갈아끼워 재질 5종을 만드는 방식이라 애초에 아이콘 파일이
+수백 개로 늘지 않는다. 즉 지금의 수동 개명은 그 방식으로 가기 전까지의 임시 조치이고, 확장할 계획이 없다.
+
+아래 매핑은 `icons_8.13.20/fullcolor/individual_32x32/` 기준이다.
+
+| items.csv 의 icon | 원본 | 그림 |
+|---|---|---|
+| `ore_copper` | icon945 | 갈색 광석 덩어리 |
+| `ore_iron` | icon946 | 광석 덩어리 |
+| `ore_mithril` | icon948 | 광석 덩어리 |
+| `ingot_copper` | icon964 | 황동빛 주괴 |
+| `ingot_iron` | icon961 | 회색 주괴 |
+| `ingot_mithril` | icon963 | 청회색 주괴 |
+| `plate_reinforced` | icon962 | 금속 판 |
+| `pickaxe_copper` | icon544 | 곡괭이 |
+| `pickaxe_reinforced` | icon545 | 곡괭이 |
+| `pickaxe_iron` | icon546 | 곡괭이 |
+| `hammer_copper` | icon933 | 망치 (붉은 머리) |
+| `hammer_iron` | icon934 | 망치 (회색 머리) |
+| `hammer_mithril` | icon940 | 망치 (청회색 머리) |
+
+재질별 색 구분은 팩에 있는 그림을 그대로 쓴 것이라 등급 간 대비가 약하다. 실제로 구분이 안 되면
+**아이콘을 더 찾기보다 M2 의 팔레트 스왑을 앞당기는 쪽이 맞다** — 같은 실루엣에 색만 다른 편이
+서로 다른 그림을 모아 놓은 것보다 등급 관계가 잘 읽힌다.
 
 ### `apps/client/public/` 복원 방법
 
@@ -67,10 +95,30 @@ assets/licensed/
 새 환경에서는 아래를 실행해 복원한다 (Git Bash 기준, 저장소 루트에서):
 
 ```bash
-mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/maps
+mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/maps apps/client/public/icons
 
 cp "assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32/Male/Male 01-1.png" \
    apps/client/public/sprites/player.png
+
+# 아이템 아이콘 13종 — 위 매핑 표와 같은 내용이다.
+SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
+while IFS=: read -r name num; do
+  cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
+done <<'ICONS'
+ore_copper:945
+ore_iron:946
+ore_mithril:948
+ingot_copper:964
+ingot_iron:961
+ingot_mithril:963
+plate_reinforced:962
+pickaxe_copper:544
+pickaxe_reinforced:545
+pickaxe_iron:546
+hammer_copper:933
+hammer_iron:934
+hammer_mithril:940
+ICONS
 ```
 
 타일셋은 **단순 복사가 아니라 2048px 로 잘라야 한다** (아래 참조). PowerShell 에서:
