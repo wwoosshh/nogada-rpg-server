@@ -6,7 +6,7 @@
   "scripts": {
     "test": "pnpm data:build && vitest run",
     "test:watch": "pnpm data:build && vitest",
-    "typecheck": "pnpm data:build && tsc --build",
+    "typecheck": "pnpm data:build && tsc --build && pnpm --filter @nogada/client typecheck",
     "data:build": "pnpm --filter @nogada/data build",
     "dev:server": "pnpm data:build && pnpm --filter @nogada/server dev",
     "dev:client": "pnpm data:build && pnpm --filter @nogada/client dev"

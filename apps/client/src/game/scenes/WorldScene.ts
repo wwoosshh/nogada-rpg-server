@@ -44,7 +44,14 @@ export class WorldScene extends Phaser.Scene {
     ground.setDepth(DEPTH.ground)
 
     // decor 와 overhead 는 선택 레이어다. 장식이 없는 맵도 정상이므로 없어도 오류가 아니다.
-    map.createLayer('decor', tileset, 0, 0)?.setDepth(DEPTH.decor)
+    // 존재하지 않는 레이어 이름으로 createLayer 를 호출하면 Phaser 가 콘솔에
+    // "Invalid Tilemap Layer ID" 경고를 남긴다 — 옵셔널 체이닝으로 실패를 허용하는 대신,
+    // 이름 목록으로 먼저 존재를 확인해 애초에 실패할 호출을 하지 않는다.
+    const tileLayerNames = map.getTileLayerNames()
+
+    if (tileLayerNames.includes('decor')) {
+      map.createLayer('decor', tileset, 0, 0)?.setDepth(DEPTH.decor)
+    }
 
     const walls = map.createLayer('walls', tileset, 0, 0)
     if (!walls) throw new Error('walls 레이어를 찾을 수 없다')
@@ -54,7 +61,9 @@ export class WorldScene extends Phaser.Scene {
     walls.setCollisionByExclusion([-1])
 
     // 플레이어보다 나중이 아니라 깊이로 위에 올린다. 생성 순서와 무관하게 동작한다.
-    map.createLayer('overhead', tileset, 0, 0)?.setDepth(DEPTH.overhead)
+    if (tileLayerNames.includes('overhead')) {
+      map.createLayer('overhead', tileset, 0, 0)?.setDepth(DEPTH.overhead)
+    }
 
     const spawn = map.findObject('spawn', (o) => o.name === 'player')
     const startX = spawn?.x ?? TILE * 2
