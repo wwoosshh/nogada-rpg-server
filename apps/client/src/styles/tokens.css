@@ -1,0 +1,27 @@
+/*
+ * 팔레트 단일 출처.
+ * 픽셀 타일셋에서 추출한 색만 여기에 정의하고, UI 와 아이콘은 이 변수만 사용한다.
+ * 이 파일 밖에서 색상 리터럴을 쓰지 않는다 — 픽셀 맵과 벡터 UI 가 따로 노는 원인이 된다.
+ */
+:root {
+  --c-ink: #241c1c;
+  --c-ink-soft: #4a3b3b;
+  --c-parchment: #e8dcc0;
+  --c-parchment-dim: #c9b895;
+  --c-panel: #3a2f2a;
+  --c-panel-edge: #6b5646;
+  --c-accent: #d9a441;
+  --c-success: #7fa650;
+  --c-danger: #b4543a;
+
+  /* 등급별 색 — 아이템 희귀도 표현에 사용한다 */
+  --c-tier-1: #a8785a;
+  --c-tier-2: #9aa3ad;
+  --c-tier-3: #6fc2d6;
+
+  --font-ui: system-ui, 'Malgun Gothic', sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --radius: 4px;
+}

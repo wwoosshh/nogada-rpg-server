@@ -1,0 +1,26 @@
+@import './tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--c-ink);
+  color: var(--c-parchment);
+  font-family: var(--font-ui);
+  /* 모바일에서 길게 눌렀을 때 선택·확대가 뜨지 않게 한다 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 픽셀아트 선명도. 정수 배율 스케일과 함께 사용해야 의미가 있다. */
+canvas {
+  image-rendering: pixelated;
+  display: block;
+}
