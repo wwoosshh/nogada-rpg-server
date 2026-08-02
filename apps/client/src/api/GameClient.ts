@@ -35,11 +35,25 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 응답 헤더의 서버 시각을 받는 콜백. clock.ts 가 등록한다.
+ * GameClient 가 clock 을 직접 import 하면 순환 의존이 되므로 주입받는다.
+ */
+type ServerTimeObserver = (serverNowMs: number) => void
+let observeServerTime: ServerTimeObserver = () => {}
+
+export function setServerTimeObserver(fn: ServerTimeObserver): void {
+  observeServerTime = fn
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   })
+
+  const serverNow = Number(res.headers.get('x-server-now'))
+  if (Number.isFinite(serverNow) && serverNow > 0) observeServerTime(serverNow)
 
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { code?: string; availableAt?: number }
@@ -51,6 +65,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 /** 서버 통신의 단일 진입점. 다른 곳에서 fetch 를 직접 부르지 않는다. */
 export const GameClient = {
+  getTime: () => request<{ serverNowMs: number }>('/api/time'),
+
   getState: () => request<{ player: PlayerState }>('/api/state'),
 
   gather: (nodeId: string) =>
