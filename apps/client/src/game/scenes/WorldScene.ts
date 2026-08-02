@@ -3,9 +3,18 @@ import Phaser from 'phaser'
 const TILE = 32
 const PLAYER_SPEED = 120
 
+type Facing = 'down' | 'left' | 'right' | 'up'
+
+/**
+ * Pipoya 32x32 캐릭터 시트는 3열 x 4행이다.
+ * 행 순서는 아래·왼쪽·오른쪽·위이고, 가운데 열이 대기 자세다.
+ */
+const WALK_ROW: Record<Facing, number> = { down: 0, left: 1, right: 2, up: 3 }
+
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys
+  private facing: Facing = 'down'
   /** 터치 조작용 목표 지점. null 이면 키보드 입력만 처리한다. */
   private moveTarget: Phaser.Math.Vector2 | null = null
 
@@ -31,15 +40,19 @@ export class WorldScene extends Phaser.Scene {
 
     const ground = map.createLayer('ground', tileset, 0, 0)
     if (!ground) throw new Error('ground 레이어를 찾을 수 없다')
+
     const walls = map.createLayer('walls', tileset, 0, 0)
     if (!walls) throw new Error('walls 레이어를 찾을 수 없다')
+    // 메서드 이름은 setCollisionByExclusion 이다 (Excluding 아님).
+    // -1 은 빈 칸이므로, walls 의 비어있지 않은 모든 타일이 충돌한다.
     walls.setCollisionByExclusion([-1])
 
     const spawn = map.findObject('spawn', (o) => o.name === 'player')
     const startX = spawn?.x ?? TILE * 2
     const startY = spawn?.y ?? TILE * 2
 
-    this.player = this.physics.add.sprite(startX, startY, 'player', 0)
+    this.createAnimations()
+    this.player = this.physics.add.sprite(startX, startY, 'player', this.idleFrame('down'))
     this.player.setSize(20, 16).setOffset(6, 14)
     this.physics.add.collider(this.player, walls)
 
@@ -56,6 +69,13 @@ export class WorldScene extends Phaser.Scene {
   }
 
   update(): void {
+    this.applyMovement()
+    const body = this.player.body as Phaser.Physics.Arcade.Body
+    this.updateAnimation(body.velocity.x, body.velocity.y)
+  }
+
+  /** 입력을 읽어 속도만 정한다. 애니메이션은 결과 속도를 보고 별도로 정한다. */
+  private applyMovement(): void {
     const body = this.player.body as Phaser.Physics.Arcade.Body
     const kx = (this.cursors.right.isDown ? 1 : 0) - (this.cursors.left.isDown ? 1 : 0)
     const ky = (this.cursors.down.isDown ? 1 : 0) - (this.cursors.up.isDown ? 1 : 0)
@@ -79,5 +99,41 @@ export class WorldScene extends Phaser.Scene {
     }
 
     body.setVelocity(0, 0)
+  }
+
+  private createAnimations(): void {
+    for (const facing of Object.keys(WALK_ROW) as Facing[]) {
+      const start = WALK_ROW[facing] * 3
+      this.anims.create({
+        key: `walk-${facing}`,
+        // 한 걸음 → 대기 → 반대 걸음 → 대기. RPG Maker 계열 4프레임 순환이다.
+        frames: [start, start + 1, start + 2, start + 1].map((frame) => ({
+          key: 'player',
+          frame,
+        })),
+        frameRate: 8,
+        repeat: -1,
+      })
+    }
+  }
+
+  /** 가운데 열이 대기 자세다. */
+  private idleFrame(facing: Facing): number {
+    return WALK_ROW[facing] * 3 + 1
+  }
+
+  private updateAnimation(vx: number, vy: number): void {
+    if (vx === 0 && vy === 0) {
+      this.player.anims.stop()
+      this.player.setFrame(this.idleFrame(this.facing))
+      return
+    }
+
+    // 대각선 이동에서 방향이 매 프레임 튀지 않도록 큰 축을 따른다.
+    this.facing =
+      Math.abs(vx) > Math.abs(vy) ? (vx > 0 ? 'right' : 'left') : vy > 0 ? 'down' : 'up'
+
+    // 두 번째 인자가 true 라 이미 같은 애니메이션이 돌고 있으면 다시 시작하지 않는다.
+    this.player.anims.play(`walk-${this.facing}`, true)
   }
 }
