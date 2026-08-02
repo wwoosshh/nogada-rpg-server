@@ -58,6 +58,7 @@ export const useGameStore = create<GameStore>((set) => ({
     } catch (err) {
       set({ loading: false })
       pushAction(set, describeError(err), 'bad')
+      console.error(err)
     }
   },
 
@@ -77,6 +78,7 @@ export const useGameStore = create<GameStore>((set) => ({
       // 아니라 정상적인 조작이라, 매번 알리면 연타할수록 화면이 경고로 덮인다.
       if (err instanceof ApiError && err.code === 'on_cooldown') return
       pushAction(set, describeError(err), 'bad')
+      console.error(err)
     }
   },
 
@@ -94,6 +96,7 @@ export const useGameStore = create<GameStore>((set) => ({
       }
     } catch (err) {
       pushAction(set, describeError(err), 'bad')
+      console.error(err)
     }
   },
 }))
