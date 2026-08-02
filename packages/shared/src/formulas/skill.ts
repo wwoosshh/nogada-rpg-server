@@ -16,6 +16,17 @@ export function xpGainForGather(nodeTier: number, skillLevel: number): number {
   return Math.max(1, Math.round(base * penalty))
 }
 
+/**
+ * 제작 1회당 획득 경험치.
+ * 숙련도가 레시피 요구 수준을 넘어설수록 감소하되 최소 1 은 보장한다.
+ */
+export function xpGainForCraft(recipeRequiredLevel: number, skillLevel: number): number {
+  const base = recipeRequiredLevel * 5 + 20
+  const excess = Math.max(0, skillLevel - recipeRequiredLevel)
+  const penalty = Math.max(0.1, 1 - excess * 0.04)
+  return Math.max(1, Math.round(base * penalty))
+}
+
 /** 경험치를 더하고 필요 시 레벨을 올린다. 원본을 변경하지 않는다. */
 export function applyXp(state: SkillState, gain: number): SkillState {
   let level = state.level

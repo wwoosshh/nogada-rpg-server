@@ -179,3 +179,61 @@ describe('POST /api/gather', () => {
     await app.close()
   })
 })
+
+describe('POST /api/craft', () => {
+  it('재료가 없으면 400 missing_materials 를 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/craft',
+      payload: { recipeId: 'copper_ingot' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'missing_materials' })
+
+    await app.close()
+  })
+
+  it('숙련도가 모자라면 400 level_too_low 를 반환한다', async () => {
+    const app = buildTestApp()
+
+    // 신규 플레이어는 대장 1레벨이라 요구 레벨이 높은 레시피에 닿지 못한다.
+    // 재료도 없지만 숙련도 검사가 먼저이므로 level_too_low 가 나와야 한다.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/craft',
+      payload: { recipeId: 'mithril_hammer' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'level_too_low' })
+
+    await app.close()
+  })
+
+  it('없는 레시피는 400 unknown_recipe 를 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/craft',
+      payload: { recipeId: 'ghost' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'unknown_recipe' })
+
+    await app.close()
+  })
+
+  it('recipeId 가 없으면 400 을 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({ method: 'POST', url: '/api/craft', payload: {} })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
