@@ -20,7 +20,7 @@
 - **클라이언트는 경과 측정에 `performance.now()` 를 쓴다.** `Date.now()` 를 쓰면 사용자가 기기 시계를 바꿀 때 세계 시각이 튄다.
 - **색상 리터럴은 `tokens.css` 밖에서 쓰지 않는다.** Phaser 는 CSS 변수를 읽을 수 없으므로 숫자로 옮겨 적되, 옮겨 적은 곳에 출처를 주석으로 남긴다.
 - **정수 배율 스케일만 허용한다.** Phaser `zoom` 은 정수여야 한다.
-- **클라이언트 UI 는 자동 테스트하지 않는다.** `vitest.workspace.ts` 가 `['packages/*', 'apps/server']` 라 `apps/client` 는 테스트 대상이 아니다. **순수 계산은 `packages/shared` 에 두어 테스트한다.**
+- **클라이언트 UI 는 자동 테스트하지 않는다.** `vitest.workspace.ts` 는 `['packages/*', 'apps/*']` 지만 `apps/client` 에는 vitest 설정도 DOM 환경도 없다. **순수 계산은 `packages/shared` 에 두어 테스트한다.**
 - **Node.js 20 이상**, 패키지 매니저는 **pnpm**.
 - **작업 트리에 커밋되지 않은 변경이 있을 수 있다.** `apps/client/src/ui/App.tsx` 에 개발용 `window.__debugGame` 훅 한 줄이 커밋되지 않은 채 남아 있다. App.tsx 를 수정할 때 **이 줄을 지우지 않는다.**
 
