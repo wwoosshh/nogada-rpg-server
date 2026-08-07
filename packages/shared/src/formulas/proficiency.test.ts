@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTION_INTERVAL_MAX_MS,
   ACTION_INTERVAL_MIN_MS,
+  CHANCE_DECADES,
+  MAX_SUCCESS_CHANCE,
   MAX_YIELD_BONUS,
   actionIntervalMs,
   proficiencyProgress,
@@ -102,5 +104,21 @@ describe('yieldBonus', () => {
       expect(Number.isInteger(b)).toBe(true)
       expect(b).toBeGreaterThanOrEqual(0)
     }
+  })
+})
+
+// 다른 모듈이 직접 사용하는 상수들 — 이 파일의 다른 함수들이 소비하지 않으므로
+// 잘못된 값이 여기서는 드러나지 않는다. 성공률 곡선을 만드는 다른 모듈에서 오류가 생길 것이다.
+describe('성공률 상수들', () => {
+  it('CHANCE_DECADES 는 5자리에서 상한에 닿는다', () => {
+    // 숙련도 99,999 는 log10(100,000) = 5, 5 / 5 = 1.0 에 닿는다
+    expect(proficiencyProgress(99_999, CHANCE_DECADES)).toBeCloseTo(1)
+    expect(CHANCE_DECADES).toBe(5)
+  })
+
+  it('MAX_SUCCESS_CHANCE 는 0.98 이다', () => {
+    // 판정을 살리기 위해 1 에 미치지 못하지만,
+    // 초당 20회 행동에서도 실패가 무시되지 않을 높이다
+    expect(MAX_SUCCESS_CHANCE).toBe(0.98)
   })
 })
