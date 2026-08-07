@@ -42,7 +42,7 @@ function baseData(): GameData {
     },
     recipes: {
       copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 1, baseChance: 0.6,
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
@@ -64,7 +64,8 @@ function baseData(): GameData {
  * copper_chisel·copper_axe·copper_sickle 은 이 데드락과 무관하지만, STARTING_TOOL_IDS
  * 검사가 넷 모두의 존재를 요구하므로 빠지면 그 자체로 위반이 생겨 참조 무결성
  * 검사에서 조기 반환되고 만다 — 그러면 이 테스트가 실제로 보려는 도달 가능성
- * 위반이 계산되지 않는다.
+ * 위반이 계산되지 않는다. 같은 이유로 copper_ingot 의 requiredSkill 도 0 이다 —
+ * 부트스트랩 검사 위반까지 섞이면 똑같이 조기 반환되어 도달 가능성 위반을 가린다.
  */
 function deadlockedTierData(): GameData {
   return {
@@ -108,7 +109,7 @@ function deadlockedTierData(): GameData {
     },
     recipes: {
       copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 1, baseChance: 0.6,
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
@@ -238,6 +239,36 @@ describe('validateGameData 의 도달 가능성 검사', () => {
   })
 })
 
+describe('validateGameData 의 조합 부트스트랩 검사', () => {
+  it('스킬의 모든 레시피가 requiredSkill 0 초과면 그 스킬은 영원히 부트스트랩할 수 없다고 잡아낸다', () => {
+    const data = baseData()
+    // crafting 스킬의 두 레시피 중 requiredSkill 0 이던 copper_ingot 마저 1로 올린다.
+    // 조합 숙련도는 레시피 성공 경로(craftService)에서만 오르고 그 경로 자체가
+    // requiredSkill 게이트(canCraft) 뒤에 있으므로, crafting 레시피 전부가 1 이상을
+    // 요구하면 숙련도 0에서 시작하는 플레이어는 어떤 레시피도 영원히 열 수 없다.
+    data.recipes.copper_ingot!.requiredSkill = 1
+
+    expect(validateGameData(data)).toContain(
+      'skills[crafting]: requiredSkill 0 인 레시피가 없어 영원히 부트스트랩할 수 없다',
+    )
+  })
+
+  it('실제로 출하되는 CSV 데이터는 스킬마다 requiredSkill 0 인 레시피를 갖고 있다', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const csvDir = join(here, '..', 'csv')
+    const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+
+    const data: GameData = {
+      items: parseItems(readRealCsv('items.csv')),
+      nodes: parseNodes(readRealCsv('nodes.csv')),
+      recipes: parseRecipes(readRealCsv('recipes.csv')),
+    }
+
+    const violations = validateGameData(data).filter((v) => v.startsWith('skills['))
+    expect(violations).toEqual([])
+  })
+})
+
 describe('validateGameData 의 조기 반환', () => {
   it('참조 무결성 위반이 있으면 도달 가능성 검사를 건너뛰어 연쇄 보고를 막는다', () => {
     const data = baseData()
@@ -255,7 +286,9 @@ describe('validateGameData 의 조기 반환', () => {
     // 코드의 STARTING_TOOL_IDS 상수(copper_pickaxe)는 갱신을 놓친 상황을 재현한다.
     // 고치지 않으면 시드가 빈 채로 도달 가능성 계산이 돌아 데이터의 모든 아이템이
     // "도달 불가"로 잡힌다. 나머지 시작 도구 셋(chisel·axe·sickle)은 정상이라
-    // 노이즈 없이 이 위반 하나만 나와야 한다.
+    // 노이즈 없이 이 위반 하나만 나와야 한다. copper_ingot 의 requiredSkill 이 0 인
+    // 것도 같은 이유다 — 1 이면 crafting 스킬에 부트스트랩 레시피가 없어져 그
+    // 위반까지 섞인다.
     const data: GameData = {
       items: {
         copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
@@ -286,7 +319,7 @@ describe('validateGameData 의 조기 반환', () => {
       },
       recipes: {
         copper_ingot: {
-          id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 1, baseChance: 0.6,
+          id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
           inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
           skillGainMin: 10, skillGainMax: 20,
         },

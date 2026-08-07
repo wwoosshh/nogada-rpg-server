@@ -8,9 +8,19 @@ import { STARTING_TOOL_IDS, toolAppliesTo } from '@nogada/shared'
  *   노드 등급(tier) 이상인 것이 하나라도 있으면, 그 노드의 산출물이 도달 가능해진다.
  * - 레시피: 재료(inputs)가 전부 도달 가능해지면 산출물이 도달 가능해진다.
  *
- * 숙련도는 일부러 보지 않는다 — 채집 노드는 도구 등급만이 접근 게이트이고,
- * 레시피의 요구 숙련도는 그라인딩으로 언젠가 항상 도달한다. 도구 등급만이
- * 아무리 그라인딩해도 못 넘는 하드 게이트다.
+ * 숙련도는 일부러 보지 않는다 — 다만 그 이유가 채집과 제작에서 다르다.
+ *
+ * 채집은 도구 등급만이 접근 게이트이고 숙련도는 게이트가 아니므로, 그라인딩으로
+ * 언젠가 항상 도달한다 (도구 등급만이 아무리 그라인딩해도 못 넘는 하드 게이트다).
+ *
+ * 제작은 다르다 — 조합 숙련도는 `craftService` 의 성공 경로에서만 오르고, 그
+ * 성공 경로 자체가 `canCraft` 의 requiredSkill 게이트 뒤에 있다. 즉 숙련도를
+ * 올리려면 이미 그 레시피를 열 숙련도가 있어야 하는 순환이라, "그라인딩하면
+ * 언젠가 도달한다"는 채집과 달리 제작에는 그냥 성립하지 않는다. 이 함수가 그래도
+ * requiredSkill 을 보지 않아도 되는 이유는, 스킬마다 requiredSkill 0 인 레시피가
+ * 최소 하나 있어야 한다는 것을 별도 규칙(아래 validateGameData)이 보장하기
+ * 때문이다 — 그 보장이 없으면 이 fixpoint 는 아이템 참조 사슬만 보고 "도달
+ * 가능"이라 오판한다.
  */
 function computeReachableItems(data: GameData): Set<string> {
   const reachable = new Set<string>(STARTING_TOOL_IDS)
@@ -81,6 +91,22 @@ export function validateGameData(data: GameData): string[] {
     }
     if (recipe.skillGainMin > recipe.skillGainMax) {
       violations.push(`recipes[${recipe.id}]: skillGainMin 이 skillGainMax 보다 크다`)
+    }
+  }
+
+  // 조합 숙련도는 craftService 의 성공 경로에서만 오르고, 그 성공 경로 자체가
+  // canCraft 의 requiredSkill 게이트 뒤에 있다 — 그라인딩으로 숙련도를 올리려면
+  // 이미 그 레시피를 열 숙련도가 있어야 하는 순환이다. 스킬마다 requiredSkill 0 인
+  // 레시피가 하나도 없으면 그 숙련도는 영원히 0에 머물러 어떤 레시피도 못 연다.
+  // 이 상태는 위 도달 가능성 계산으로는 잡히지 않는다 — 그 계산은 아이템 참조
+  // 사슬만 보고 requiredSkill 은 아예 보지 않기 때문이다.
+  const skillsUsedByRecipes = new Set(Object.values(data.recipes).map((recipe) => recipe.skill))
+  for (const skill of skillsUsedByRecipes) {
+    const hasBootstrapRecipe = Object.values(data.recipes).some(
+      (recipe) => recipe.skill === skill && recipe.requiredSkill === 0,
+    )
+    if (!hasBootstrapRecipe) {
+      violations.push(`skills[${skill}]: requiredSkill 0 인 레시피가 없어 영원히 부트스트랩할 수 없다`)
     }
   }
 
