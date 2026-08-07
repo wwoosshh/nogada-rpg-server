@@ -103,6 +103,15 @@ describe('performGather', () => {
     expect(p.nextActionAt).toBe(0)
   })
 
+  // 검사 순서 자체를 못 박는다: 간격도 안 지나고 접근 자격도 없는 상황에서
+  // cannot_gather 가 나와야 접근 자격이 간격보다 먼저 검사된다는 것이 증명된다.
+  // 이 시나리오 없이는 개별 거부 테스트만으로 순서를 구분할 수 없다.
+  it('간격도 남아 있고 접근 자격도 없으면 cannot_gather 를 우선한다', () => {
+    const p = player({ nextActionAt: 8000 })
+    const r = performGather({ player: p, data, nodeId: 'iron_vein', rng: alwaysSucceed, now: 5000 })
+    expect(r).toEqual({ ok: false, code: 'cannot_gather' })
+  })
+
   it('성공하면 산출물이 스택에 쌓이고 숙련도가 오른다', () => {
     const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
