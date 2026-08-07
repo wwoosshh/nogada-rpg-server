@@ -12,22 +12,21 @@ export interface NodeMarkerOptions {
   scene: Phaser.Scene
   x: number
   y: number
-  nodeId: string
+  instanceId: string
   label: string
   tier: number
-  onTap: (nodeId: string) => void
 }
 
-/** 맵 위 채집 노드 한 개. */
+/** 맵 위 채집 노드 한 개. 보여주기만 한다 — 상호작용은 앞칸 판정이 대신한다. */
 export class NodeMarker {
-  readonly nodeId: string
+  readonly instanceId: string
   private readonly body: Phaser.GameObjects.Rectangle
   private readonly caption: Phaser.GameObjects.Text
   private readonly container: Phaser.GameObjects.Container
 
   constructor(options: NodeMarkerOptions) {
-    const { scene, x, y, nodeId, label, tier, onTap } = options
-    this.nodeId = nodeId
+    const { scene, x, y, instanceId, label, tier } = options
+    this.instanceId = instanceId
 
     this.body = scene.add
       .rectangle(0, 0, 24, 24, TIER_COLORS[tier] ?? TIER_COLORS[1]!)
@@ -39,8 +38,5 @@ export class NodeMarker {
 
     this.container = scene.add.container(x, y, [this.body, this.caption])
     this.container.setDepth(DEPTH.node)
-
-    this.body.setInteractive({ useHandCursor: true })
-    this.body.on('pointerdown', () => onTap(nodeId))
   }
 }

@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import worldMap from '@nogada/data/maps/world.json' with { type: 'json' }
-import { gameTimeAt, type Direction, type TilePos } from '@nogada/shared'
+import { frontTile, gameTimeAt, type Direction, type TilePos } from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
 import { useGameStore } from '../../store/gameStore.js'
@@ -19,9 +19,18 @@ const TILE = 32
  */
 const WALK_ROW: Record<Direction, number> = { down: 0, left: 1, right: 2, up: 3 }
 
+/**
+ * 앞칸에 있을 수 있는 것.
+ *
+ * 원작에서 "앞칸을 향해 결정 버튼"은 세계와 상호작용하는 유일한 동사다.
+ * 얼음채집장 이벤트 29개 중 채집 노드는 6개뿐이고 나머지 23개(오크·노인·
+ * 퀴즈도우미·소환물)가 전부 같은 입력을 쓴다. 그래서 채집 전용으로 만들지
+ * 않는다 — NPC·이벤트·전투 진입점이 나중에 여기 종류를 더한다.
+ */
+type Interactable = { kind: 'node'; instanceId: string; nodeId: string }
+
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite
-  private facing: Direction = 'down'
   private dayNight!: DayNightOverlay
   private unsubscribeStore: (() => void) | null = null
   private hub!: InputHub
@@ -31,6 +40,7 @@ export class WorldScene extends Phaser.Scene {
   private mapWidth = 0
   private mapHeight = 0
   private readonly blocked = new Set<string>()
+  private readonly byTile = new Map<string, Interactable>()
 
   constructor() {
     super({ key: 'World' })
@@ -101,6 +111,11 @@ export class WorldScene extends Phaser.Scene {
     // 적을 필요가 없기 때문이다.
     for (const p of Object.values(useGameStore.getState().data.placements)) {
       this.blocked.add(`${p.x},${p.y}`)
+      this.byTile.set(`${p.x},${p.y}`, {
+        kind: 'node',
+        instanceId: p.instanceId,
+        nodeId: p.nodeId,
+      })
     }
 
     this.mover = new TileMover({
@@ -160,6 +175,10 @@ export class WorldScene extends Phaser.Scene {
     return tile === null || tile.index === -1
   }
 
+  private interactableAt(tile: TilePos): Interactable | null {
+    return this.byTile.get(`${tile.x},${tile.y}`) ?? null
+  }
+
   update(_time: number, delta: number): void {
     this.hub.beginFrame()
     this.keyboard.update()
@@ -170,7 +189,26 @@ export class WorldScene extends Phaser.Scene {
     this.player.setPosition(px.x * TILE + TILE / 2, px.y * TILE + TILE / 2)
     this.updateAnimation(this.mover.moving, this.mover.facing)
 
+    const target = this.interactableAt(frontTile(this.mover.tile, this.mover.facing))
+    if (target && this.hub.state.actionPressed) {
+      this.interact(target)
+    }
+
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
+  }
+
+  /**
+   * 앞칸의 대상에 작용한다.
+   *
+   * 지금은 노드뿐이지만 switch 로 열어 두는 이유는, 새 종류를 더할 때
+   * 입력 계층을 건드리지 않기 위해서다.
+   */
+  private interact(target: Interactable): void {
+    switch (target.kind) {
+      case 'node':
+        void useGameStore.getState().gather(target.instanceId)
+        break
+    }
   }
 
   /**
@@ -194,10 +232,9 @@ export class WorldScene extends Phaser.Scene {
         scene: this,
         x: placement.x * TILE + TILE / 2,
         y: placement.y * TILE + TILE / 2,
-        nodeId: placement.instanceId,
+        instanceId: placement.instanceId,
         label: def.name,
         tier: def.tier,
-        onTap: (id) => void useGameStore.getState().gather(id),
       })
     }
   }
@@ -224,7 +261,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private updateAnimation(moving: boolean, facing: Direction): void {
-    this.facing = facing
     if (!moving) {
       this.player.anims.stop()
       this.player.setFrame(this.idleFrame(facing))
