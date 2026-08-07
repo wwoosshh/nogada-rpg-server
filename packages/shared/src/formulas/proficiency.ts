@@ -1,0 +1,59 @@
+import { clamp } from './clamp.js'
+
+/**
+ * 숙련도가 정하는 것들.
+ *
+ * 숙련도의 실용 범위는 8자릿수다(초보 10⁵~10⁶, 오래 한 사람 10⁷~10⁸).
+ * 선형식은 두 자릿수 안에서 상한에 닿아버리므로 전부 로그로 잡는다.
+ */
+
+/** 행동 간격이 자릿수 몇 개에 걸쳐 줄어드는가 */
+export const SPEED_DECADES = 6
+/** 성공률이 자릿수 몇 개에 걸쳐 오르는가 */
+export const CHANCE_DECADES = 5
+/** 수량 보너스가 자릿수 몇 개에 걸쳐 오르는가 */
+export const YIELD_DECADES = 5
+
+/** 숙련도 0 일 때의 행동 간격 — 초당 2회 */
+export const ACTION_INTERVAL_MAX_MS = 500
+/** 최고속 — 초당 20회. 원작의 가장 짧은 채집 딜레이와 같다 */
+export const ACTION_INTERVAL_MIN_MS = 50
+
+export const MAX_YIELD_BONUS = 2
+export const MAX_SUCCESS_CHANCE = 0.98
+
+/**
+ * 숙련도를 0~1 진행도로 바꾼다.
+ *
+ * `decades` 자릿수만큼 올라가면 1 에 닿는다 — 예컨대 6 이면 숙련도 100만에서 1 이다.
+ * 자릿수마다 같은 폭으로 오르므로, 1 → 10 의 성장과 10만 → 100만 의 성장이
+ * 같은 크기로 느껴진다. 8자릿수를 다루면서 초반이 밋밋해지지 않게 하는 것이 목적이다.
+ */
+export function proficiencyProgress(proficiency: number, decades: number): number {
+  const safe = Math.max(0, proficiency)
+  return clamp(Math.log10(safe + 1) / decades, 0, 1)
+}
+
+/**
+ * 다음 행동까지 기다려야 하는 시간.
+ *
+ * 이것이 이 게임의 핵심 축이다. 원작에서 이 값을 정한 것은 과금 등급과 광고 버프였고
+ * 숙련도가 아니었지만, 이 프로젝트는 과금을 만들지 않으므로 축을 숙련도로 옮겼다.
+ * "오래 할수록 빨라진다" 는 체감은 유지되고 수단만 바뀐다.
+ *
+ * 이 가속이 복리로 작용해야 8자릿수가 현실적인 시간 안에 도달 가능해진다.
+ */
+export function actionIntervalMs(proficiency: number): number {
+  const t = proficiencyProgress(proficiency, SPEED_DECADES)
+  return Math.round(ACTION_INTERVAL_MAX_MS - (ACTION_INTERVAL_MAX_MS - ACTION_INTERVAL_MIN_MS) * t)
+}
+
+/**
+ * 채집 수량에 더해지는 보너스.
+ *
+ * 상한을 2 로 묶는다 — 속도가 이미 10배까지 복리로 작용하므로 수량까지 크게 굴리면
+ * 곱셈이 과해진다.
+ */
+export function yieldBonus(proficiency: number): number {
+  return Math.floor(proficiencyProgress(proficiency, YIELD_DECADES) * MAX_YIELD_BONUS)
+}
