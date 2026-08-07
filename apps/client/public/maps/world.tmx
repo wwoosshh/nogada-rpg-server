@@ -162,37 +162,37 @@
   </object>
   <object id="4" x="432" y="560">
    <properties>
-    <property name="nodeId" value="copper_vein"/>
+    <property name="nodeId" value="ice_vein"/>
    </properties>
    <point/>
   </object>
   <object id="5" x="560" y="560">
    <properties>
-    <property name="nodeId" value="copper_vein"/>
+    <property name="nodeId" value="ice_vein"/>
    </properties>
    <point/>
   </object>
   <object id="6" x="496" y="432">
    <properties>
-    <property name="nodeId" value="copper_vein"/>
+    <property name="nodeId" value="young_tree"/>
    </properties>
    <point/>
   </object>
   <object id="7" x="496" y="592">
    <properties>
-    <property name="nodeId" value="copper_vein"/>
+    <property name="nodeId" value="young_tree"/>
    </properties>
    <point/>
   </object>
   <object id="8" x="688" y="400">
    <properties>
-    <property name="nodeId" value="iron_vein"/>
+    <property name="nodeId" value="herb_patch"/>
    </properties>
    <point/>
   </object>
   <object id="9" x="784" y="688">
    <properties>
-    <property name="nodeId" value="iron_vein"/>
+    <property name="nodeId" value="herb_patch"/>
    </properties>
    <point/>
   </object>
@@ -210,13 +210,13 @@
   </object>
   <object id="12" x="80" y="880">
    <properties>
-    <property name="nodeId" value="mithril_vein"/>
+    <property name="nodeId" value="deep_ice_vein"/>
    </properties>
    <point/>
   </object>
   <object id="13" x="880" y="912">
    <properties>
-    <property name="nodeId" value="mithril_vein"/>
+    <property name="nodeId" value="old_tree"/>
    </properties>
    <point/>
   </object>

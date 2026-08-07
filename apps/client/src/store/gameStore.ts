@@ -128,6 +128,7 @@ export const useGameStore = create<GameStore>((set) => ({
         pushAction(set, '제작 실패', 'bad')
       }
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'too_fast') return
       if (isNetworkFailure(err)) {
         set({ connection: 'offline' })
         return
@@ -157,6 +158,8 @@ function describeError(err: unknown): string {
       return '숙련도 부족'
     case 'missing_materials':
       return '재료 부족'
+    case 'too_fast':
+      return '너무 빠릅니다'
     default:
       return `오류: ${err.code}`
   }

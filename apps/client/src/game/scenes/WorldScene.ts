@@ -143,7 +143,6 @@ export class WorldScene extends Phaser.Scene {
     this.applyMovement()
     const body = this.player.body as Phaser.Physics.Arcade.Body
     this.updateAnimation(body.velocity.x, body.velocity.y)
-    this.refreshCooldowns()
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
   }
 
@@ -178,23 +177,6 @@ export class WorldScene extends Phaser.Scene {
           onTap: (id) => void useGameStore.getState().gather(id),
         }),
       )
-    }
-  }
-
-  /**
-   * 쿨다운 표시를 스토어의 플레이어 상태에서 새로 읽어 갱신한다.
-   * 씬은 남은 시간을 자체적으로 세지 않는다 — 세는 순간 서버가 내려준 값과
-   * 갈라져서, 화면은 채집 가능한데 서버는 거부하는 상태가 생긴다.
-   */
-  private refreshCooldowns(): void {
-    const player = useGameStore.getState().player
-    if (!player) return
-    // player.nextActionAt 은 서버가 내려준 절대 시각이고, 노드가 아니라 플레이어
-    // 하나당 값이다. Date.now() 를 쓰면 기기 시계와 비교하게 되어, 이 기능 전체가
-    // 없애려는 드리프트가 그대로 되살아난다.
-    const remaining = player.nextActionAt - worldNow()
-    for (const marker of this.markers) {
-      marker.setCooldown(remaining)
     }
   }
 
