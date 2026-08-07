@@ -7,7 +7,7 @@ import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
-import { spawnFloatingText } from '../FloatingText.js'
+import { FloatingTextGroup } from '../FloatingText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { TileMover } from '../TileMover.js'
 
@@ -42,6 +42,7 @@ export class WorldScene extends Phaser.Scene {
   private mapHeight = 0
   private readonly blocked = new Set<string>()
   private readonly byTile = new Map<string, Interactable>()
+  private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
 
@@ -138,12 +139,11 @@ export class WorldScene extends Phaser.Scene {
     this.unsubscribeStore = useGameStore.subscribe((state, prev) => {
       const action = state.lastAction
       if (!action || action.seq === prev.lastAction?.seq) return
-      spawnFloatingText(
+      this.floaters.push(
         this,
         this.player.x,
         this.player.y - this.player.displayHeight / 2,
-        action.text,
-        action.tone,
+        action,
       )
     })
 
@@ -169,6 +169,7 @@ export class WorldScene extends Phaser.Scene {
       cleanedUp = true
       this.dayNight.destroy()
       this.keyboard.destroy()
+      this.floaters.destroy()
       this.unsubscribeStore?.()
       this.unsubscribeStore = null
       this.unsubscribeMilestone?.()

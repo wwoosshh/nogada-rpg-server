@@ -30,6 +30,12 @@ export interface ActionFeedback {
   seq: number
   text: string
   tone: 'good' | 'bad'
+  /**
+   * 같은 키의 결과가 연달아 오면 새 글자를 만들지 않고 기존 글자에 더한다.
+   * null 이면 누적하지 않고 매번 새로 띄운다.
+   */
+  groupKey: string | null
+  amount: number
 }
 
 /**
@@ -115,9 +121,15 @@ export const useGameStore = create<GameStore>((set) => ({
 
       if (outcome.success && outcome.gained) {
         const name = labelOf(useGameStore.getState().data, outcome.gained.item)
-        pushAction(set, `${name} +${outcome.gained.count}`, 'good')
+        pushAction(
+          set,
+          `${name} +${outcome.gained.count}`,
+          'good',
+          outcome.gained.item,
+          outcome.gained.count,
+        )
       } else {
-        pushAction(set, '실패', 'bad')
+        pushAction(set, '실패', 'bad', 'gather-fail', 1)
       }
     } catch (err) {
       // 행동 간격은 조용히 넘긴다. 아직 다음 행동 시각이 안 된 상태에서 누르는
@@ -143,9 +155,17 @@ export const useGameStore = create<GameStore>((set) => ({
       if (outcome.success && outcome.produced) {
         const name = labelOf(useGameStore.getState().data, outcome.produced.item)
         const suffix = outcome.autoEquipped ? ' · 자동 착용' : ''
-        pushAction(set, `${name} +${outcome.produced.count}${suffix}`, 'good')
+        // 자동 착용이 붙으면 누적하지 않는다. 도구를 새로 낀 것은 수치로 뭉갤 사건이 아니다.
+        const groupKey = outcome.autoEquipped ? null : outcome.produced.item
+        pushAction(
+          set,
+          `${name} +${outcome.produced.count}${suffix}`,
+          'good',
+          groupKey,
+          outcome.produced.count,
+        )
       } else {
-        pushAction(set, '제작 실패', 'bad')
+        pushAction(set, '제작 실패', 'bad', 'craft-fail', 1)
       }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'too_fast') return
@@ -161,8 +181,14 @@ export const useGameStore = create<GameStore>((set) => ({
 
 type SetFn = (partial: Partial<GameStore>) => void
 
-function pushAction(set: SetFn, text: string, tone: ActionFeedback['tone']): void {
-  set({ lastAction: { seq: ++actionSeq, text, tone } })
+function pushAction(
+  set: SetFn,
+  text: string,
+  tone: ActionFeedback['tone'],
+  groupKey: string | null = null,
+  amount = 1,
+): void {
+  set({ lastAction: { seq: ++actionSeq, text, tone, groupKey, amount } })
 }
 
 /**
