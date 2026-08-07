@@ -34,7 +34,7 @@ export const PlayerStateSchema = z.object({
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })
 export type StateResponse = z.infer<typeof StateResponseSchema>
 
-export const GatherRequestSchema = z.object({ nodeId: z.string().min(1) })
+export const GatherRequestSchema = z.object({ instanceId: z.string().min(1) })
 export type GatherRequest = z.infer<typeof GatherRequestSchema>
 
 export const CraftRequestSchema = z.object({ recipeId: z.string().min(1) })

@@ -82,10 +82,10 @@ export const GameClient = {
 
   getState: () => request<{ player: PlayerState }>('/api/state'),
 
-  gather: (nodeId: string) =>
+  gather: (instanceId: string) =>
     request<GatherOutcomeDto>('/api/gather', {
       method: 'POST',
-      body: JSON.stringify({ nodeId }),
+      body: JSON.stringify({ instanceId }),
     }),
 
   craft: (recipeId: string) =>

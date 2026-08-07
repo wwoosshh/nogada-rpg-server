@@ -44,7 +44,7 @@ interface GameStore {
   connection: Connection
   lastAction: ActionFeedback | null
   connect: () => Promise<void>
-  gather: (nodeId: string) => Promise<void>
+  gather: (instanceId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
 }
 
@@ -89,9 +89,9 @@ export const useGameStore = create<GameStore>((set) => ({
     }
   },
 
-  gather: async (nodeId) => {
+  gather: async (instanceId) => {
     try {
-      const outcome: GatherOutcomeDto = await GameClient.gather(nodeId)
+      const outcome: GatherOutcomeDto = await GameClient.gather(instanceId)
       set({ player: outcome.player })
 
       if (outcome.success && outcome.gained) {

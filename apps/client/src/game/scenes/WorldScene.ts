@@ -105,7 +105,7 @@ export class WorldScene extends Phaser.Scene {
       this.moveTarget = new Phaser.Math.Vector2(pointer.worldX, pointer.worldY)
     })
 
-    this.spawnNodes(map)
+    this.spawnNodes()
 
     // 스토어가 여전히 게임 상태의 단일 소유자다. 씬은 결과를 따로 보관하지
     // 않고 변화가 생길 때만 글자를 띄운다. update() 에서 폴링하면 같은
@@ -153,30 +153,27 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * Tiled 의 `nodes` 오브젝트 레이어를 읽어 채집 노드를 배치한다.
-   * 레이어가 없어도 오류가 아니다 — 채집 노드가 없는 맵도 정상이다.
+   * `data.placements` 를 돌며 채집 노드 마커를 놓는다. 같은 종류의 노드가 여러 칸에
+   * 있을 수 있으므로 종류가 아니라 배치(인스턴스) 단위로 순회한다.
+   *
+   * 저장된 좌표는 픽셀이 아니라 타일 좌표라 `x * TILE + TILE / 2` 로 그 타일의
+   * 중심 픽셀로 되돌린다. 배치가 없어도 오류가 아니다 — 채집 노드가 없는 맵도 정상이다.
    */
-  private spawnNodes(map: Phaser.Tilemaps.Tilemap): void {
+  private spawnNodes(): void {
     const { data } = useGameStore.getState()
-    const objects = map.getObjectLayer('nodes')?.objects ?? []
 
-    for (const obj of objects) {
-      const nodeId = obj.properties?.find(
-        (p: { name: string; value: unknown }) => p.name === 'nodeId',
-      )?.value as string | undefined
-      if (!nodeId) continue
-
-      const def = data.nodes[nodeId]
+    for (const placement of Object.values(data.placements)) {
+      const def = data.nodes[placement.nodeId]
       if (!def) {
-        console.warn(`맵에 정의되지 않은 노드가 있다: ${nodeId}`)
+        console.warn(`배치가 정의되지 않은 노드를 가리킨다: ${placement.instanceId} -> ${placement.nodeId}`)
         continue
       }
 
       new NodeMarker({
         scene: this,
-        x: obj.x ?? 0,
-        y: obj.y ?? 0,
-        nodeId,
+        x: placement.x * TILE + TILE / 2,
+        y: placement.y * TILE + TILE / 2,
+        nodeId: placement.instanceId,
         label: def.name,
         tier: def.tier,
         onTap: (id) => void useGameStore.getState().gather(id),

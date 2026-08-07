@@ -14,7 +14,7 @@ import {
 export interface PerformGatherArgs {
   player: PlayerState
   data: GameData
-  nodeId: string
+  instanceId: string
   /** 서버가 시드를 독점한다. 클라이언트는 이 인자를 만들 수 없다. */
   rng: () => number
   now: number
@@ -39,8 +39,11 @@ export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; c
  * 예상치와 실제 판정이 같은 함수라서 표시값과 결과가 어긋날 수 없다.
  */
 export function performGather(args: PerformGatherArgs): GatherResult {
-  const { data, nodeId, rng, now } = args
-  const node = data.nodes[nodeId]
+  const { data, instanceId, rng, now } = args
+  const placement = data.placements[instanceId]
+  if (!placement) return { ok: false, code: 'unknown_node' }
+  const node = data.nodes[placement.nodeId]
+  // 배치가 없는 노드를 가리키는 것은 데이터 검증이 막으므로 여기 오면 데이터가 깨진 것이다.
   if (!node) return { ok: false, code: 'unknown_node' }
 
   const player = structuredClone(args.player)

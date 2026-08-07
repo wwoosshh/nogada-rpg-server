@@ -21,7 +21,7 @@ export function registerGatherRoutes(
     const result = performGather({
       player,
       data,
-      nodeId: parsed.data.nodeId,
+      instanceId: parsed.data.instanceId,
       rng,
       now: Date.now(),
     })

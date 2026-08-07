@@ -92,7 +92,7 @@ describe('POST /api/gather', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { nodeId: 'copper_vein' },
+      payload: { instanceId: 'copper_vein-1' },
     })
 
     expect(res.statusCode).toBe(200)
@@ -109,7 +109,7 @@ describe('POST /api/gather', () => {
     const gather = await app.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { nodeId: 'copper_vein' },
+      payload: { instanceId: 'copper_vein-1' },
     })
     const outcome = gather.json() as { player: { nextActionAt: number } }
 
@@ -125,11 +125,11 @@ describe('POST /api/gather', () => {
   it('간격 안에 재요청하면 400 too_fast 를 반환한다', async () => {
     const app = buildTestApp()
 
-    await app.inject({ method: 'POST', url: '/api/gather', payload: { nodeId: 'copper_vein' } })
+    await app.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
     const res = await app.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { nodeId: 'copper_vein' },
+      payload: { instanceId: 'copper_vein-1' },
     })
 
     expect(res.statusCode).toBe(400)
@@ -144,7 +144,7 @@ describe('POST /api/gather', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { nodeId: 'iron_vein' },
+      payload: { instanceId: 'iron_vein-1' },
     })
 
     expect(res.statusCode).toBe(400)
@@ -153,13 +153,13 @@ describe('POST /api/gather', () => {
     await app.close()
   })
 
-  it('없는 노드는 400 을 반환한다', async () => {
+  it('없는 인스턴스는 400 을 반환한다', async () => {
     const app = buildTestApp()
 
     const res = await app.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { nodeId: 'ghost_vein' },
+      payload: { instanceId: 'ghost_vein-1' },
     })
 
     expect(res.statusCode).toBe(400)
@@ -168,7 +168,7 @@ describe('POST /api/gather', () => {
     await app.close()
   })
 
-  it('nodeId 가 없으면 400 을 반환한다', async () => {
+  it('instanceId 가 없으면 400 을 반환한다', async () => {
     const app = buildTestApp()
 
     const res = await app.inject({ method: 'POST', url: '/api/gather', payload: {} })
