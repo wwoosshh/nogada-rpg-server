@@ -85,11 +85,13 @@ describe('parseNodes', () => {
       {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
         baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+        skillGainMin: '1', skillGainMax: '2',
       },
     ])
     expect(nodes.copper_vein).toEqual({
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1,
       baseChance: 0.5, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+      skillGainMin: 1, skillGainMax: 2,
     })
   })
 
@@ -108,6 +110,7 @@ describe('parseNodes', () => {
     return {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
       baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+      skillGainMin: '1', skillGainMax: '2',
       ...overrides,
     }
   }
@@ -160,6 +163,7 @@ describe('parseRecipes', () => {
       {
         id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
         inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
+        skillGainMin: '10', skillGainMax: '20',
       },
     ])
     expect(recipes.copper_ingot!.inputs).toEqual([{ item: 'copper_ore', count: 2 }])
@@ -171,6 +175,7 @@ describe('parseRecipes', () => {
       {
         id: 'reinforced_plate', name: '강화 판금', skill: 'crafting', requiredSkill: '18', baseChance: '0.5',
         inputs: 'copper_ingot:1|iron_ingot:1', outputItem: 'reinforced_plate', outputCount: '1',
+        skillGainMin: '10', skillGainMax: '20',
       },
     ])
     expect(recipes.reinforced_plate!.inputs).toEqual([
@@ -194,6 +199,7 @@ describe('parseRecipes', () => {
     return {
       id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
       inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
+      skillGainMin: '10', skillGainMax: '20',
       ...overrides,
     }
   }
@@ -203,6 +209,7 @@ describe('parseRecipes', () => {
       {
         id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '0',
         baseChance: '0.6', inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
+        skillGainMin: '10', skillGainMax: '20',
       },
     ])
     expect(recipes.copper_ingot!.requiredSkill).toBe(0)

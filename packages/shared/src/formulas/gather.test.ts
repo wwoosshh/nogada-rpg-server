@@ -12,6 +12,8 @@ const copperVein: NodeDef = {
   yieldMin: 1,
   yieldMax: 3,
   respawnMs: 5000,
+  skillGainMin: 1,
+  skillGainMax: 2,
 }
 
 const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', tier: 2 }

@@ -10,6 +10,8 @@ const copperIngot: RecipeDef = {
   baseChance: 0.6,
   inputs: [{ item: 'copper_ore', count: 2 }],
   output: { item: 'copper_ingot', count: 1 },
+  skillGainMin: 10,
+  skillGainMax: 20,
 }
 
 // 실제 카탈로그에 없는 합성 픽스처 — 배포된 CSV의 어떤 아이템도 가리키지 않도록

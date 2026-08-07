@@ -128,6 +128,8 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
       yieldMin: toInt(requireCell(row, 'yieldMin', ctx), ctx, 'yieldMin'),
       yieldMax: toInt(requireCell(row, 'yieldMax', ctx), ctx, 'yieldMax'),
       respawnMs: toInt(requireCell(row, 'respawnMs', ctx), ctx, 'respawnMs'),
+      skillGainMin: toInt(requireCell(row, 'skillGainMin', ctx), ctx, 'skillGainMin'),
+      skillGainMax: toInt(requireCell(row, 'skillGainMax', ctx), ctx, 'skillGainMax'),
     }
     addUnique(out, id, def, 'nodes.csv')
   }
@@ -159,6 +161,8 @@ export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
         item: requireCell(row, 'outputItem', ctx),
         count: toInt(requireCell(row, 'outputCount', ctx), ctx, 'outputCount'),
       },
+      skillGainMin: toInt(requireCell(row, 'skillGainMin', ctx), ctx, 'skillGainMin'),
+      skillGainMax: toInt(requireCell(row, 'skillGainMax', ctx), ctx, 'skillGainMax'),
     }
     addUnique(out, id, def, 'recipes.csv')
   }

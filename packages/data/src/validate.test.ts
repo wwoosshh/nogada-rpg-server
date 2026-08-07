@@ -37,16 +37,19 @@ function baseData(): GameData {
       copper_vein: {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
         yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+        skillGainMin: 1, skillGainMax: 2,
       },
     },
     recipes: {
       copper_ingot: {
         id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 1, baseChance: 0.6,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
       },
       copper_pickaxe: {
         id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
       },
     },
   }
@@ -95,28 +98,34 @@ function deadlockedTierData(): GameData {
       copper_vein: {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
         yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+        skillGainMin: 1, skillGainMax: 2,
       },
       iron_vein: {
         id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
         yieldItem: 'iron_ore', yieldMin: 1, yieldMax: 3, respawnMs: 9000,
+        skillGainMin: 1, skillGainMax: 2,
       },
     },
     recipes: {
       copper_ingot: {
         id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 1, baseChance: 0.6,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
       },
       copper_pickaxe: {
         id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
       },
       iron_ingot: {
         id: 'iron_ingot', name: '철 주괴', skill: 'crafting', requiredSkill: 10, baseChance: 0.5,
         inputs: [{ item: 'iron_ore', count: 2 }], output: { item: 'iron_ingot', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
       },
       iron_pickaxe: {
         id: 'iron_pickaxe', name: '철 곡괭이', skill: 'crafting', requiredSkill: 12, baseChance: 0.5,
         inputs: [{ item: 'iron_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
       },
     },
   }
@@ -161,6 +170,12 @@ describe('validateGameData', () => {
     const data = baseData()
     data.nodes.copper_vein!.baseChance = 1.5
     expect(validateGameData(data)).toContain('nodes[copper_vein]: baseChance 가 0 초과 1 이하가 아니다')
+  })
+
+  it('skillGainMin 이 skillGainMax 보다 큰 노드를 잡아낸다', () => {
+    const data = baseData()
+    data.nodes.copper_vein!.skillGainMin = 5
+    expect(validateGameData(data)).toContain('nodes[copper_vein]: skillGainMin 이 skillGainMax 보다 크다')
   })
 
   it('자기 자신을 재료로 쓰는 레시피를 잡아낸다', () => {
@@ -266,16 +281,19 @@ describe('validateGameData 의 조기 반환', () => {
         copper_vein: {
           id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
           yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+          skillGainMin: 1, skillGainMax: 2,
         },
       },
       recipes: {
         copper_ingot: {
           id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 1, baseChance: 0.6,
           inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
+          skillGainMin: 10, skillGainMax: 20,
         },
         renamed_pickaxe: {
           id: 'renamed_pickaxe', name: '개명된 곡괭이', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
           inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'renamed_pickaxe', count: 1 },
+          skillGainMin: 10, skillGainMax: 20,
         },
       },
     }

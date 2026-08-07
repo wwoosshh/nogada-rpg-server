@@ -20,10 +20,12 @@ const data: GameData = {
     copper_ingot: {
       id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
       inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
+      skillGainMin: 10, skillGainMax: 20,
     },
     iron_pickaxe: {
       id: 'iron_pickaxe', name: '철 곡괭이', skill: 'crafting', requiredSkill: 500, baseChance: 0.5,
       inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
     },
   },
 }
@@ -171,5 +173,15 @@ describe('performCraft', () => {
     const p = player({ stacks: { copper_ore: 5 } })
     performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
     expect(p.stacks.copper_ore).toBe(5)
+  })
+
+  it('성공하면 레시피가 정한 만큼 조합 숙련도가 오른다', () => {
+    const p = player({ stacks: { copper_ore: 5 } })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.skillGained).toBeGreaterThanOrEqual(10)
+    expect(r.outcome.skillGained).toBeLessThanOrEqual(20)
+    expect(r.outcome.player.skills.crafting).toBe(r.outcome.skillGained)
   })
 })

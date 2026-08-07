@@ -73,6 +73,9 @@ export interface NodeDef {
   yieldMin: number
   yieldMax: number
   respawnMs: number
+  /** 채집 1회당 숙련도 증가량의 범위. 원작은 등급과 무관하게 1~2 다. */
+  skillGainMin: number
+  skillGainMax: number
 }
 
 export interface RecipeInput {
@@ -90,6 +93,9 @@ export interface RecipeDef {
   baseChance: number
   inputs: RecipeInput[]
   output: RecipeInput
+  /** 제작 1회당 숙련도 증가량의 범위. 대략 요구 숙련도의 0.5~1% 다. */
+  skillGainMin: number
+  skillGainMax: number
 }
 
 export interface GameData {

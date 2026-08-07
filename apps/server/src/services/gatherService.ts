@@ -3,10 +3,14 @@ import {
   canGather,
   equippedToolTier,
   rollInt,
+  yieldBonus,
   type GameData,
   type PlayerState,
   type RecipeInput,
 } from '@nogada/shared'
+
+/** 효율 배수. 이번 범위에서는 항상 1 이고, 올리는 수단은 아직 없다. */
+const EFFICIENCY_MULTIPLIER = 1
 
 export interface PerformGatherArgs {
   player: PlayerState
@@ -67,10 +71,12 @@ export function performGather(args: PerformGatherArgs): GatherResult {
     }
   }
 
-  const count = rollInt(rng, node.yieldMin, node.yieldMax)
+  const count = rollInt(rng, node.yieldMin, node.yieldMax) + yieldBonus(proficiency)
   player.stacks[node.yieldItem] = (player.stacks[node.yieldItem] ?? 0) + count
 
-  const skillGained = 1
+  // 효율 배수는 아직 항상 1 이다. 식에 자리를 두는 이유는, 나중에 배수를 도입할 때
+  // 저장된 숙련도의 의미나 증가 경로를 다시 손대지 않기 위해서다.
+  const skillGained = rollInt(rng, node.skillGainMin, node.skillGainMax) * EFFICIENCY_MULTIPLIER
   player.skills[node.skill] += skillGained
 
   return {

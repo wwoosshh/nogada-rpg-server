@@ -14,10 +14,12 @@ const data: GameData = {
     copper_vein: {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
       yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2, respawnMs: 5000,
+      skillGainMin: 1, skillGainMax: 2,
     },
     iron_vein: {
       id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
       yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1, respawnMs: 9000,
+      skillGainMin: 1, skillGainMax: 2,
     },
   },
   recipes: {},
@@ -124,5 +126,31 @@ describe('performGather', () => {
     const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.chance).toBeCloseTo(0.5)
+  })
+
+  it('성공하면 노드가 정한 만큼 숙련도가 오른다', () => {
+    const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.skillGained).toBeGreaterThanOrEqual(1)
+    expect(r.outcome.skillGained).toBeLessThanOrEqual(2)
+    expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
+  })
+
+  it('숙련도가 높으면 수량 보너스가 붙는다', () => {
+    const low = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
+    const high = performGather({
+      player: player({ skills: { ice: 0, wood: 0, mineral: 99_999, herb: 0, crafting: 0 } }),
+      data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0,
+    })
+    if (!low.ok || !high.ok) throw new Error('둘 다 성공해야 한다')
+    expect(high.outcome.gained!.count).toBeGreaterThan(low.outcome.gained!.count)
+  })
+
+  it('실패하면 숙련도가 오르지 않는다', () => {
+    const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysFail, now: 0 })
+    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
+    expect(r.outcome.skillGained).toBe(0)
+    expect(r.outcome.player.skills.mineral).toBe(0)
   })
 })
