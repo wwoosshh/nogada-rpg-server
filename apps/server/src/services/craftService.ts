@@ -1,4 +1,5 @@
 import {
+  actionIntervalMs,
   calcCraftSuccess,
   canCraft,
   equippedToolTier,
@@ -19,6 +20,7 @@ export interface PerformCraftArgs {
   rng: () => number
   /** 인스턴스 ID 생성기. 테스트에서 결정적으로 주입한다. */
   newId: () => string
+  now: number
 }
 
 export interface CraftOutcome {
@@ -31,7 +33,7 @@ export interface CraftOutcome {
   player: PlayerState
 }
 
-export type CraftErrorCode = 'unknown_recipe' | 'level_too_low' | 'missing_materials'
+export type CraftErrorCode = 'unknown_recipe' | 'level_too_low' | 'missing_materials' | 'too_fast'
 
 export type CraftResult = { ok: true; outcome: CraftOutcome } | { ok: false; code: CraftErrorCode }
 
@@ -66,8 +68,13 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
     }
   }
 
+  // 채집과 같은 순서다 — 자격·재료 확인이 먼저이고, 간격은 난수보다 앞이다.
+  if (args.now < player.nextActionAt) return { ok: false, code: 'too_fast' }
+
   const chance = calcCraftSuccess(ctx)
   const success = rng() < chance
+
+  player.nextActionAt = args.now + actionIntervalMs(proficiency)
 
   // 성공하면 전량, 실패하면 절반(올림)을 소모한다. 실패해도 대가가 있어야
   // 성공률을 올리는 행위(숙련도·망치)에 의미가 생긴다.

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { loadGameData } from '@nogada/data'
@@ -89,5 +89,25 @@ describe('PlayerStore', () => {
     store.save(p)
     p.stacks.copper_ore = 42
     expect(store.get('local').stacks.copper_ore).toBeUndefined()
+  })
+
+  it('형식이 맞지 않는 세이브는 버리고 새 플레이어를 만든다', () => {
+    // 이전 형식: 숙련도가 { level, xp } 객체였다
+    writeFileSync(
+      file,
+      JSON.stringify({ local: { id: 'local', skills: { mining: { level: 3, xp: 10 } } } }),
+      'utf8',
+    )
+
+    const store = new PlayerStore(file)
+    const p = store.get('local')
+
+    expect(typeof p.skills.mineral).toBe('number')
+    expect(p.skills.mineral).toBe(0)
+  })
+
+  it('깨진 JSON 도 버린다', () => {
+    writeFileSync(file, '{ 이건 JSON 이 아니다', 'utf8')
+    expect(new PlayerStore(file).get('local').skills.mineral).toBe(0)
   })
 })

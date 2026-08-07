@@ -37,7 +37,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     stacks: {},
     instances: [{ instanceId: 'pick1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
     equipped: { mineral: 'pick1' },
-    nodeCooldowns: {},
+    nextActionAt: 0,
     ...overrides,
   }
 }
@@ -59,36 +59,36 @@ const nextId = () => `id${++idCounter}`
 
 describe('performCraft', () => {
   it('없는 레시피는 unknown_recipe 로 거부한다', () => {
-    const r = performCraft({ player: player(), data, recipeId: 'ghost', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: player(), data, recipeId: 'ghost', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(r).toEqual({ ok: false, code: 'unknown_recipe' })
   })
 
   it('숙련도가 모자라면 level_too_low 로 거부한다', () => {
     const p = player({ stacks: { copper_ingot: 3 } })
-    const r = performCraft({ player: p, data, recipeId: 'iron_pickaxe', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: p, data, recipeId: 'iron_pickaxe', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(r).toEqual({ ok: false, code: 'level_too_low' })
   })
 
   it('재료가 모자라면 missing_materials 로 거부한다', () => {
     const p = player({ stacks: { copper_ore: 1 } })
-    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(r).toEqual({ ok: false, code: 'missing_materials' })
   })
 
   it('재료가 하나도 없으면 missing_materials 로 거부한다', () => {
-    const r = performCraft({ player: player(), data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: player(), data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(r).toEqual({ ok: false, code: 'missing_materials' })
   })
 
   it('거부당하면 재료를 소모하지 않는다', () => {
     const p = player({ stacks: { copper_ore: 1 } })
-    performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(p.stacks.copper_ore).toBe(1)
   })
 
   it('성공하면 재료를 전량 소모하고 산출물을 스택에 넣는다', () => {
     const p = player({ stacks: { copper_ore: 5 } })
-    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.success).toBe(true)
@@ -101,7 +101,7 @@ describe('performCraft', () => {
 
   it('실패하면 재료를 절반만 소모하고 산출물이 없다', () => {
     const p = player({ stacks: { copper_ore: 5 } })
-    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysFail, newId: nextId })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysFail, newId: nextId, now: 0 })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
     expect(r.outcome.success).toBe(false)
@@ -114,7 +114,7 @@ describe('performCraft', () => {
   it('도구를 만들면 스택이 아니라 인스턴스로 들어간다', () => {
     const r = performCraft({
       player: smithReadyForIronPickaxe(), data, recipeId: 'iron_pickaxe',
-      rng: alwaysSucceed, newId: () => 'newpick',
+      rng: alwaysSucceed, newId: () => 'newpick', now: 0,
     })
     if (!r.ok) throw new Error('성공해야 한다')
 
@@ -129,7 +129,7 @@ describe('performCraft', () => {
   it('더 좋은 도구를 만들면 자동으로 착용한다', () => {
     const r = performCraft({
       player: smithReadyForIronPickaxe(), data, recipeId: 'iron_pickaxe',
-      rng: alwaysSucceed, newId: () => 'newpick',
+      rng: alwaysSucceed, newId: () => 'newpick', now: 0,
     })
     if (!r.ok) throw new Error('성공해야 한다')
 
@@ -143,7 +143,7 @@ describe('performCraft', () => {
       instances: [{ instanceId: 'good', itemId: 'iron_pickaxe', enhanceLevel: 0 }],
       equipped: { mineral: 'good' },
     })
-    const r = performCraft({ player: p, data, recipeId: 'iron_pickaxe', rng: alwaysSucceed, newId: () => 'another' })
+    const r = performCraft({ player: p, data, recipeId: 'iron_pickaxe', rng: alwaysSucceed, newId: () => 'another', now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.autoEquipped).toBe(false)
@@ -153,7 +153,7 @@ describe('performCraft', () => {
   it('제작에 실패하면 도구를 만들지도 착용하지도 않는다', () => {
     const r = performCraft({
       player: smithReadyForIronPickaxe(), data, recipeId: 'iron_pickaxe',
-      rng: alwaysFail, newId: () => 'newpick',
+      rng: alwaysFail, newId: () => 'newpick', now: 0,
     })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
@@ -164,24 +164,36 @@ describe('performCraft', () => {
 
   it('소모해서 0 이 된 재료는 스택에서 제거한다', () => {
     const p = player({ stacks: { copper_ore: 2 } })
-    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.stacks.copper_ore).toBeUndefined()
   })
 
   it('입력 플레이어 객체를 변경하지 않는다', () => {
     const p = player({ stacks: { copper_ore: 5 } })
-    performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(p.stacks.copper_ore).toBe(5)
   })
 
   it('성공하면 레시피가 정한 만큼 조합 숙련도가 오른다', () => {
     const p = player({ stacks: { copper_ore: 5 } })
-    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.skillGained).toBeGreaterThanOrEqual(10)
     expect(r.outcome.skillGained).toBeLessThanOrEqual(20)
     expect(r.outcome.player.skills.crafting).toBe(r.outcome.skillGained)
+  })
+
+  it('간격이 지나지 않았으면 too_fast 로 거부한다', () => {
+    const p = player({ stacks: { copper_ore: 5 }, nextActionAt: 8000 })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 5000 })
+    expect(r).toEqual({ ok: false, code: 'too_fast' })
+  })
+
+  it('재료 부족은 간격을 소비하지 않는다', () => {
+    const p = player({ nextActionAt: 0 })
+    performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
+    expect(p.nextActionAt).toBe(0)
   })
 })

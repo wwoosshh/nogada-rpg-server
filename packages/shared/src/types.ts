@@ -48,8 +48,14 @@ export interface PlayerState {
   instances: ItemInstance[]
   /** 생활기술별 착용 도구의 instanceId */
   equipped: Partial<Record<SkillId, string>>
-  /** 채집 노드별 다음 채집 가능 시각 (epoch ms). Task 5 에서 행동 간격으로 대체된다. */
-  nodeCooldowns: Record<string, number>
+  /**
+   * 다음 행동이 가능한 시각 (epoch ms, 서버 시계 기준).
+   *
+   * 노드별 쿨다운이 아니라 플레이어당 하나다. 원작에 노드 리스폰 개념이 없고,
+   * 속도를 정하는 것은 노드가 아니라 행동 간격이다. 기술별로 나누면 여러 기술을
+   * 번갈아 눌러 실질 속도를 배로 올릴 수 있다.
+   */
+  nextActionAt: number
 }
 
 export interface ItemDef {
@@ -72,7 +78,6 @@ export interface NodeDef {
   yieldItem: string
   yieldMin: number
   yieldMax: number
-  respawnMs: number
   /** 채집 1회당 숙련도 증가량의 범위. 원작은 등급과 무관하게 1~2 다. */
   skillGainMin: number
   skillGainMax: number

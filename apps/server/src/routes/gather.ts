@@ -26,14 +26,7 @@ export function registerGatherRoutes(
       now: Date.now(),
     })
 
-    if (!result.ok) {
-      const status = result.code === 'on_cooldown' ? 409 : 400
-      return reply.code(status).send(
-        result.availableAt === undefined
-          ? { code: result.code }
-          : { code: result.code, availableAt: result.availableAt },
-      )
-    }
+    if (!result.ok) return reply.code(400).send({ code: result.code })
 
     store.save(result.outcome.player)
     return result.outcome

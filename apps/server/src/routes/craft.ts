@@ -24,6 +24,7 @@ export function registerCraftRoutes(
       recipeId: parsed.data.recipeId,
       rng,
       newId: () => randomUUID(),
+      now: Date.now(),
     })
 
     if (!result.ok) return reply.code(400).send({ code: result.code })

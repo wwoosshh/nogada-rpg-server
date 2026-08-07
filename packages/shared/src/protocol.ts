@@ -12,7 +12,7 @@ export const PlayerStateSchema = z.object({
   stacks: z.record(z.string(), z.number().int().min(0)),
   instances: z.array(ItemInstanceSchema),
   equipped: z.record(z.string(), z.string()),
-  nodeCooldowns: z.record(z.string(), z.number()),
+  nextActionAt: z.number(),
 })
 
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })

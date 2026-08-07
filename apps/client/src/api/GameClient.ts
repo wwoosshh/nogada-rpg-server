@@ -12,7 +12,6 @@ export interface GatherOutcomeDto {
   gained: RecipeInput | null
   skillGained: number
   player: PlayerState
-  cooldownUntil: number
 }
 
 export interface CraftOutcomeDto {
@@ -26,10 +25,7 @@ export interface CraftOutcomeDto {
 }
 
 export class ApiError extends Error {
-  constructor(
-    readonly code: string,
-    readonly availableAt?: number,
-  ) {
+  constructor(readonly code: string) {
     super(code)
     this.name = 'ApiError'
   }
@@ -73,8 +69,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (Number.isFinite(serverNow) && serverNow > 0) observeServerTime(serverNow)
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { code?: string; availableAt?: number }
-    throw new ApiError(body.code ?? `http_${res.status}`, body.availableAt)
+    const body = (await res.json().catch(() => ({}))) as { code?: string }
+    throw new ApiError(body.code ?? `http_${res.status}`)
   }
 
   return (await res.json()) as T

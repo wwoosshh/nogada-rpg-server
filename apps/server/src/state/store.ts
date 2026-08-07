@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { loadGameData } from '@nogada/data'
 import {
+  PlayerStateSchema,
   SKILL_IDS,
   STARTING_TOOL_IDS,
   type ItemInstance,
@@ -36,7 +37,39 @@ export function createInitialPlayer(id: string): PlayerState {
 
   const skills = Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>
 
-  return { id, skills, stacks: {}, instances, equipped, nodeCooldowns: {} }
+  return { id, skills, stacks: {}, instances, equipped, nextActionAt: 0 }
+}
+
+/**
+ * 저장 파일을 읽되 형식이 맞지 않는 항목은 버린다.
+ *
+ * 숙련도 자료형이 바뀌었으므로 이전 세이브를 그대로 신뢰하면 객체를 숫자로 더하는
+ * 식의 오류가 판정 한복판에서 터진다. 마이그레이션하지 않기로 한 이상, 조용히
+ * 버리고 새로 만드는 편이 낫다 — 개발용 세이브 하나뿐이다.
+ *
+ * 실제 유저 데이터가 생기기 전에 이 결정을 뒤집어야 한다.
+ */
+function readPlayers(filePath: string): Record<string, PlayerState> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(filePath, 'utf8'))
+  } catch {
+    console.warn('세이브 파일을 읽지 못해 버린다')
+    return {}
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return {}
+
+  const out: Record<string, PlayerState> = {}
+  for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+    const result = PlayerStateSchema.safeParse(value)
+    if (result.success) {
+      out[id] = value as PlayerState
+    } else {
+      console.warn(`세이브의 플레이어 "${id}" 가 현재 형식과 맞지 않아 버린다`)
+    }
+  }
+  return out
 }
 
 /**
@@ -47,9 +80,7 @@ export class PlayerStore {
   private players: Record<string, PlayerState>
 
   constructor(private readonly filePath: string) {
-    this.players = existsSync(filePath)
-      ? (JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, PlayerState>)
-      : {}
+    this.players = existsSync(filePath) ? readPlayers(filePath) : {}
   }
 
   /** 깊은 복사본을 돌려준다. 호출자가 마음대로 고쳐도 save 전까지 반영되지 않는다. */

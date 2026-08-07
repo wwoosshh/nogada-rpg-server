@@ -11,7 +11,6 @@ const copperVein: NodeDef = {
   yieldItem: 'copper_ore',
   yieldMin: 1,
   yieldMax: 3,
-  respawnMs: 5000,
   skillGainMin: 1,
   skillGainMax: 2,
 }

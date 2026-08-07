@@ -101,9 +101,10 @@ export const useGameStore = create<GameStore>((set) => ({
         pushAction(set, '실패', 'bad')
       }
     } catch (err) {
-      // 쿨다운은 조용히 넘긴다. 아직 회복되지 않은 노드를 누르는 것은 실수가
-      // 아니라 정상적인 조작이라, 매번 알리면 연타할수록 화면이 경고로 덮인다.
-      if (err instanceof ApiError && err.code === 'on_cooldown') return
+      // 행동 간격은 조용히 넘긴다. 아직 다음 행동 시각이 안 된 상태에서 누르는
+      // 것은 실수가 아니라 정상적인 조작이라, 매번 알리면 연타할수록 화면이
+      // 경고로 덮인다.
+      if (err instanceof ApiError && err.code === 'too_fast') return
       // 서버와 끊겼으면 머리 위 글자로 알릴 게 아니라 게이트로 내보낸다.
       if (isNetworkFailure(err)) {
         set({ connection: 'offline' })

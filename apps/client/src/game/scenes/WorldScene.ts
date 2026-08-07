@@ -189,11 +189,12 @@ export class WorldScene extends Phaser.Scene {
   private refreshCooldowns(): void {
     const player = useGameStore.getState().player
     if (!player) return
-    // player.nodeCooldowns 는 서버가 내려준 절대 시각이다. Date.now() 를 쓰면 기기
-    // 시계와 비교하게 되어, 이 기능 전체가 없애려는 드리프트가 그대로 되살아난다.
-    const now = worldNow()
+    // player.nextActionAt 은 서버가 내려준 절대 시각이고, 노드가 아니라 플레이어
+    // 하나당 값이다. Date.now() 를 쓰면 기기 시계와 비교하게 되어, 이 기능 전체가
+    // 없애려는 드리프트가 그대로 되살아난다.
+    const remaining = player.nextActionAt - worldNow()
     for (const marker of this.markers) {
-      marker.setCooldown((player.nodeCooldowns[marker.nodeId] ?? 0) - now)
+      marker.setCooldown(remaining)
     }
   }
 

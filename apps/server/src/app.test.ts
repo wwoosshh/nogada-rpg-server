@@ -111,18 +111,18 @@ describe('POST /api/gather', () => {
       url: '/api/gather',
       payload: { nodeId: 'copper_vein' },
     })
-    const outcome = gather.json() as { player: { nodeCooldowns: Record<string, number> } }
+    const outcome = gather.json() as { player: { nextActionAt: number } }
 
     const state = await app.inject({ method: 'GET', url: '/api/state' })
-    const saved = state.json() as { player: { nodeCooldowns: Record<string, number> } }
+    const saved = state.json() as { player: { nextActionAt: number } }
 
-    // 성패는 서버 난수라 단정할 수 없지만, 쿨다운은 성패와 무관하게 걸리고 저장된다.
-    expect(saved.player.nodeCooldowns.copper_vein).toBe(outcome.player.nodeCooldowns.copper_vein)
+    // 성패는 서버 난수라 단정할 수 없지만, 간격은 성패와 무관하게 걸리고 저장된다.
+    expect(saved.player.nextActionAt).toBe(outcome.player.nextActionAt)
 
     await app.close()
   })
 
-  it('쿨다운 중 재요청은 409 와 해제 시각을 반환한다', async () => {
+  it('간격 안에 재요청하면 400 too_fast 를 반환한다', async () => {
     const app = buildTestApp()
 
     await app.inject({ method: 'POST', url: '/api/gather', payload: { nodeId: 'copper_vein' } })
@@ -132,10 +132,8 @@ describe('POST /api/gather', () => {
       payload: { nodeId: 'copper_vein' },
     })
 
-    expect(res.statusCode).toBe(409)
-    const body = res.json() as { code: string; availableAt: number }
-    expect(body.code).toBe('on_cooldown')
-    expect(body.availableAt).toBeGreaterThan(Date.now())
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'too_fast' })
 
     await app.close()
   })

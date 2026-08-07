@@ -84,13 +84,13 @@ describe('parseNodes', () => {
     const nodes = parseNodes([
       {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
-        baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+        baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
         skillGainMin: '1', skillGainMax: '2',
       },
     ])
     expect(nodes.copper_vein).toEqual({
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1,
-      baseChance: 0.5, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+      baseChance: 0.5, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
       skillGainMin: 1, skillGainMax: 2,
     })
   })
@@ -100,7 +100,7 @@ describe('parseNodes', () => {
       parseNodes([
         {
           id: 'copper_vein', name: '구리 광맥', skill: 'minig', tier: '1',
-          baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+          baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
         },
       ]),
     ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
@@ -109,7 +109,7 @@ describe('parseNodes', () => {
   function validNodeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
-      baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+      baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
       skillGainMin: '1', skillGainMax: '2',
       ...overrides,
     }
@@ -126,7 +126,7 @@ describe('parseNodes', () => {
       parseNodes([
         {
           id: 'bad', name: '나쁜 노드', skill: 'mineral', tier: '1', baseChance: '1.5',
-          yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+          yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
         },
       ]),
     ).toThrow(/baseChance/)
@@ -141,12 +141,6 @@ describe('parseNodes', () => {
   it('yieldMax 가 0 이하이면 거부한다', () => {
     expect(() => parseNodes([validNodeRow({ yieldMax: '0' })])).toThrow(
       'nodes.csv[copper_vein]: yieldMax "0" 는 1 이상이어야 한다',
-    )
-  })
-
-  it('respawnMs 가 0 이하이면 거부한다', () => {
-    expect(() => parseNodes([validNodeRow({ respawnMs: '0' })])).toThrow(
-      'nodes.csv[copper_vein]: respawnMs "0" 는 1 이상이어야 한다',
     )
   })
 

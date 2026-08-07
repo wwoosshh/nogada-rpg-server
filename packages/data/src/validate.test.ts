@@ -36,7 +36,7 @@ function baseData(): GameData {
     nodes: {
       copper_vein: {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-        yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+        yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
         skillGainMin: 1, skillGainMax: 2,
       },
     },
@@ -97,12 +97,12 @@ function deadlockedTierData(): GameData {
     nodes: {
       copper_vein: {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-        yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+        yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
         skillGainMin: 1, skillGainMax: 2,
       },
       iron_vein: {
         id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
-        yieldItem: 'iron_ore', yieldMin: 1, yieldMax: 3, respawnMs: 9000,
+        yieldItem: 'iron_ore', yieldMin: 1, yieldMax: 3,
         skillGainMin: 1, skillGainMax: 2,
       },
     },
@@ -280,7 +280,7 @@ describe('validateGameData 의 조기 반환', () => {
       nodes: {
         copper_vein: {
           id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-          yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+          yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
           skillGainMin: 1, skillGainMax: 2,
         },
       },

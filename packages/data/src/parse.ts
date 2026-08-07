@@ -127,7 +127,6 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
       yieldItem: requireCell(row, 'yieldItem', ctx),
       yieldMin: toInt(requireCell(row, 'yieldMin', ctx), ctx, 'yieldMin'),
       yieldMax: toInt(requireCell(row, 'yieldMax', ctx), ctx, 'yieldMax'),
-      respawnMs: toInt(requireCell(row, 'respawnMs', ctx), ctx, 'respawnMs'),
       skillGainMin: toInt(requireCell(row, 'skillGainMin', ctx), ctx, 'skillGainMin'),
       skillGainMax: toInt(requireCell(row, 'skillGainMax', ctx), ctx, 'skillGainMax'),
     }

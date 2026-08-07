@@ -25,7 +25,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     stacks: {},
     instances: [],
     equipped: {},
-    nodeCooldowns: {},
+    nextActionAt: 0,
     ...overrides,
   }
 }

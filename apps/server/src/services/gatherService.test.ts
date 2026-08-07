@@ -13,19 +13,19 @@ const data: GameData = {
   nodes: {
     copper_vein: {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2, respawnMs: 5000,
+      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2,
       skillGainMin: 1, skillGainMax: 2,
     },
     iron_vein: {
       id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
-      yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1, respawnMs: 9000,
+      yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1,
       skillGainMin: 1, skillGainMax: 2,
     },
     // 숙련도 증가가 데이터에서 오는지 확인용. 증가량이 의도적으로 1이 아니므로
     // gatherService.ts 를 hardcoded +1 로 되돌린 경우를 감지한다.
     mithril_vein: {
       id: 'mithril_vein', name: '미스릴 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2, respawnMs: 5000,
+      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2,
       skillGainMin: 7, skillGainMax: 7,
     },
   },
@@ -39,7 +39,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     stacks: {},
     instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
     equipped: { mineral: 'i1' },
-    nodeCooldowns: {},
+    nextActionAt: 0,
     ...overrides,
   }
 }
@@ -66,16 +66,41 @@ describe('performGather', () => {
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
   })
 
-  it('쿨다운 중이면 on_cooldown 과 해제 시각을 반환한다', () => {
-    const p = player({ nodeCooldowns: { copper_vein: 8000 } })
+  it('간격이 지나지 않았으면 too_fast 로 거부한다', () => {
+    const p = player({ nextActionAt: 8000 })
     const r = performGather({ player: p, data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 5000 })
-    expect(r).toEqual({ ok: false, code: 'on_cooldown', availableAt: 8000 })
+    expect(r).toEqual({ ok: false, code: 'too_fast' })
   })
 
-  it('쿨다운이 지났으면 채집할 수 있다', () => {
-    const p = player({ nodeCooldowns: { copper_vein: 5000 } })
+  it('간격이 지났으면 채집할 수 있다', () => {
+    const p = player({ nextActionAt: 5000 })
     const r = performGather({ player: p, data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 5000 })
     expect(r.ok).toBe(true)
+  })
+
+  it('숙련도 0 이면 다음 행동까지 500ms 를 기다린다', () => {
+    const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
+  })
+
+  it('숙련도가 높으면 간격이 짧아진다', () => {
+    const p = player({ skills: { ice: 0, wood: 0, mineral: 999_999, herb: 0, crafting: 0 } })
+    const r = performGather({ player: p, data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 50)
+  })
+
+  it('실패해도 간격은 걸린다', () => {
+    const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysFail, now: 1000 })
+    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
+  })
+
+  it('자격 미달은 간격을 소비하지 않는다', () => {
+    const p = player({ nextActionAt: 0 })
+    performGather({ player: p, data, nodeId: 'iron_vein', rng: alwaysSucceed, now: 1000 })
+    expect(p.nextActionAt).toBe(0)
   })
 
   it('성공하면 산출물이 스택에 쌓이고 숙련도가 오른다', () => {
@@ -99,13 +124,6 @@ describe('performGather', () => {
     expect(r.outcome.player.stacks).toEqual({})
   })
 
-  it('실패해도 쿨다운은 걸린다', () => {
-    const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysFail, now: 1000 })
-    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
-    expect(r.outcome.cooldownUntil).toBe(6000)
-    expect(r.outcome.player.nodeCooldowns.copper_vein).toBe(6000)
-  })
-
   it('이미 가진 재료에 누적한다', () => {
     const p = player({ stacks: { copper_ore: 5 } })
     const r = performGather({ player: p, data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
@@ -126,7 +144,7 @@ describe('performGather', () => {
     const p = player()
     performGather({ player: p, data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
     expect(p.stacks).toEqual({})
-    expect(p.nodeCooldowns).toEqual({})
+    expect(p.nextActionAt).toBe(0)
   })
 
   it('반환한 확률이 표시용 계산과 일치한다', () => {
