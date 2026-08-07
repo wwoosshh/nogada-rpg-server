@@ -64,7 +64,11 @@ function readPlayers(filePath: string): Record<string, PlayerState> {
   for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
     const result = PlayerStateSchema.safeParse(value)
     if (result.success) {
-      out[id] = value as PlayerState
+      // result.data (원본 value 가 아니라 zod 가 만든 결과)를 그대로 쓸 수 있다.
+      // skills 가 SKILL_IDS 키를 그대로 갖는 z.object 라 PlayerState.skills
+      // (Record<SkillId, number>) 와 타입이 정확히 맞기 때문이다 — z.record 이던
+      // 시절엔 파싱 결과의 키가 string 으로 넓어져 이 대입이 안 됐다.
+      out[id] = result.data
     } else {
       console.warn(`세이브의 플레이어 "${id}" 가 현재 형식과 맞지 않아 버린다`)
     }
