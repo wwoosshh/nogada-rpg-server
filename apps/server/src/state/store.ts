@@ -8,7 +8,6 @@ import {
   type ItemInstance,
   type PlayerState,
   type SkillId,
-  type SkillState,
 } from '@nogada/shared'
 
 /**
@@ -35,9 +34,7 @@ export function createInitialPlayer(id: string): PlayerState {
     equipped[def.toolSkill] = instanceId
   }
 
-  const skills = Object.fromEntries(
-    SKILL_IDS.map((skill) => [skill, { level: 1, xp: 0 }]),
-  ) as Record<SkillId, SkillState>
+  const skills = Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>
 
   return { id, skills, stacks: {}, instances, equipped, nodeCooldowns: {} }
 }

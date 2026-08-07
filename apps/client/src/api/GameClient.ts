@@ -10,7 +10,7 @@ export interface GatherOutcomeDto {
   success: boolean
   chance: number
   gained: RecipeInput | null
-  xpGained: number
+  skillGained: number
   player: PlayerState
   cooldownUntil: number
 }
@@ -20,7 +20,7 @@ export interface CraftOutcomeDto {
   chance: number
   produced: RecipeInput | null
   consumed: RecipeInput[]
-  xpGained: number
+  skillGained: number
   autoEquipped: boolean
   player: PlayerState
 }

@@ -45,13 +45,13 @@ describe('parseItems', () => {
 
   it('도구는 숙련 종류와 등급을 갖는다', () => {
     const items = parseItems([
-      { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mining', toolTier: '2', icon: 'pickaxe_iron' },
+      { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: '2', icon: 'pickaxe_iron' },
     ])
     expect(items.iron_pickaxe).toEqual({
       id: 'iron_pickaxe',
       name: '철 곡괭이',
       kind: 'tool',
-      toolSkill: 'mining',
+      toolSkill: 'mineral',
       toolTier: 2,
       icon: 'pickaxe_iron',
     })
@@ -62,13 +62,13 @@ describe('parseItems', () => {
       parseItems([
         { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'minig', toolTier: '2', icon: 'pickaxe_iron' },
       ]),
-    ).toThrow('items.csv[iron_pickaxe]: skill "minig" 는 알 수 없다 (허용값: mining, smithing)')
+    ).toThrow('items.csv[iron_pickaxe]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
   })
 
   it('toolTier 가 0 이하이면 거부한다', () => {
     expect(() =>
       parseItems([
-        { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mining', toolTier: '0', icon: 'pickaxe_iron' },
+        { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: '0', icon: 'pickaxe_iron' },
       ]),
     ).toThrow('items.csv[iron_pickaxe]: toolTier "0" 는 1 이상이어야 한다')
   })
@@ -83,12 +83,12 @@ describe('parseNodes', () => {
   it('숫자 필드를 숫자로 변환한다', () => {
     const nodes = parseNodes([
       {
-        id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: '1',
+        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
         requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
       },
     ])
     expect(nodes.copper_vein).toEqual({
-      id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1,
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1,
       requiredLevel: 1, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
     })
   })
@@ -101,12 +101,12 @@ describe('parseNodes', () => {
           requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
         },
       ]),
-    ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: mining, smithing)')
+    ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
   })
 
   function validNodeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
-      id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: '1',
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
       requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
       ...overrides,
     }
@@ -153,7 +153,7 @@ describe('parseRecipes', () => {
   it('재료 하나를 파싱한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: '1',
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: '1',
         inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
       },
     ])
@@ -164,7 +164,7 @@ describe('parseRecipes', () => {
   it('파이프로 구분된 여러 재료를 파싱한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'reinforced_plate', name: '강화 판금', skill: 'smithing', requiredLevel: '18',
+        id: 'reinforced_plate', name: '강화 판금', skill: 'crafting', requiredLevel: '18',
         inputs: 'copper_ingot:1|iron_ingot:1', outputItem: 'reinforced_plate', outputCount: '1',
       },
     ])
@@ -182,12 +182,12 @@ describe('parseRecipes', () => {
           inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
         },
       ]),
-    ).toThrow('recipes.csv[copper_ingot]: skill "smithng" 는 알 수 없다 (허용값: mining, smithing)')
+    ).toThrow('recipes.csv[copper_ingot]: skill "smithng" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
   })
 
   function validRecipeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
-      id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: '1',
+      id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: '1',
       inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
       ...overrides,
     }

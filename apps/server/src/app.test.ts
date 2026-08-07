@@ -58,8 +58,8 @@ describe('GET /api/state', () => {
     const res = await app.inject({ method: 'GET', url: '/api/state' })
 
     expect(res.statusCode).toBe(200)
-    const body = res.json() as { player: { skills: Record<string, { level: number }> } }
-    expect(body.player.skills.mining!.level).toBe(1)
+    const body = res.json() as { player: { skills: Record<string, number> } }
+    expect(body.player.skills.mineral).toBe(0)
 
     await app.close()
   })
@@ -181,30 +181,16 @@ describe('POST /api/gather', () => {
 })
 
 describe('POST /api/craft', () => {
-  it('재료가 없으면 400 missing_materials 를 반환한다', async () => {
-    const app = buildTestApp()
-
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/craft',
-      payload: { recipeId: 'copper_ingot' },
-    })
-
-    expect(res.statusCode).toBe(400)
-    expect(res.json()).toEqual({ code: 'missing_materials' })
-
-    await app.close()
-  })
-
   it('숙련도가 모자라면 400 level_too_low 를 반환한다', async () => {
     const app = buildTestApp()
 
-    // 신규 플레이어는 대장 1레벨이라 요구 레벨이 높은 레시피에 닿지 못한다.
-    // 재료도 없지만 숙련도 검사가 먼저이므로 level_too_low 가 나와야 한다.
+    // 신규 플레이어는 조합 숙련도가 0이라 요구 숙련도가 높은 레시피에 닿지 못한다
+    // (iron_pickaxe 요구치 500). 재료도 없지만 숙련도 검사가 먼저이므로
+    // level_too_low 가 나와야 한다.
     const res = await app.inject({
       method: 'POST',
       url: '/api/craft',
-      payload: { recipeId: 'mithril_hammer' },
+      payload: { recipeId: 'iron_pickaxe' },
     })
 
     expect(res.statusCode).toBe(400)

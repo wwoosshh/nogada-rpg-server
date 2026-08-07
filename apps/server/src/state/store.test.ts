@@ -19,10 +19,9 @@ afterEach(() => {
 })
 
 describe('createInitialPlayer', () => {
-  it('두 생활기술을 1레벨로 시작한다', () => {
+  it('다섯 생활기술을 숙련도 0으로 시작한다', () => {
     const p = createInitialPlayer('local')
-    expect(p.skills.mining).toEqual({ level: 1, xp: 0 })
-    expect(p.skills.smithing).toEqual({ level: 1, xp: 0 })
+    expect(p.skills).toEqual({ ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 })
   })
 
   it('STARTING_TOOL_IDS 의 도구를 인스턴스로 지급한다', () => {
@@ -56,7 +55,7 @@ describe('createInitialPlayer', () => {
 describe('PlayerStore', () => {
   it('처음 조회하면 초기 상태를 만들어 준다', () => {
     const store = new PlayerStore(file)
-    expect(store.get('local').skills.mining.level).toBe(1)
+    expect(store.get('local').skills.mineral).toBe(0)
   })
 
   it('저장한 내용을 다시 읽을 수 있다', () => {

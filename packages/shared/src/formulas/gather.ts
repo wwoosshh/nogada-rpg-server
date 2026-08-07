@@ -2,7 +2,8 @@ import type { ItemDef, NodeDef, SkillId } from '../types.js'
 import { clamp } from './clamp.js'
 
 export interface GatherContext {
-  skillLevel: number
+  /** 그 기술의 누적 숙련도 */
+  proficiency: number
   toolTier: number
   node: NodeDef
 }
@@ -37,15 +38,14 @@ export function toolAppliesTo(tool: ItemDef, node: NodeDef): boolean {
   return toolMatchesSkill(tool, node.skill) && toolCoversNode(tool.toolTier ?? 0, node)
 }
 
-/** 도구 등급이나 숙련도가 모자라면 시도 자체가 불가능하다. */
+/** 도구 등급이 모자라면 시도 자체가 불가능하다. 숙련도는 노드를 막지 않는다. */
 export function canGather(ctx: GatherContext): boolean {
-  return toolCoversNode(ctx.toolTier, ctx.node) && ctx.skillLevel >= ctx.node.requiredLevel
+  return toolCoversNode(ctx.toolTier, ctx.node)
 }
 
-/** 채집 성공률. canGather 가 false 면 0. */
+/** 채집 성공률. canGather 가 false 면 0. Task 3 에서 로그 곡선으로 바뀐다. */
 export function calcGatherChance(ctx: GatherContext): number {
   if (!canGather(ctx)) return 0
-  const overLevel = ctx.skillLevel - ctx.node.requiredLevel
   const overTool = ctx.toolTier - ctx.node.tier
-  return clamp(0.5 + overLevel * 0.02 + overTool * 0.1, 0.05, 0.95)
+  return clamp(0.5 + overTool * 0.1, 0.05, 0.95)
 }

@@ -6,29 +6,46 @@ import type { GameData, ItemDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { validateGameData } from './validate.js'
 
+/**
+ * 시작 도구 4종(채집 기술별 1등급 도구) 전부를 포함해야 한다 — STARTING_TOOL_IDS 검사와
+ * 획득 가능성 검사가 이 넷 모두를 항상 확인하므로, 하나라도 빠지면 그 자체로 위반이
+ * 생겨 이 픽스처를 재사용하는 "정상 데이터" 전제가 깨진다.
+ */
 function baseData(): GameData {
   return {
     items: {
       copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
       copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
+      copper_chisel: {
+        id: 'copper_chisel', name: '구리 정', kind: 'tool',
+        toolSkill: 'ice', toolTier: 1, icon: 'pickaxe_copper',
+      },
+      copper_axe: {
+        id: 'copper_axe', name: '구리 도끼', kind: 'tool',
+        toolSkill: 'wood', toolTier: 1, icon: 'pickaxe_copper',
+      },
       copper_pickaxe: {
         id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-        toolSkill: 'mining', toolTier: 1, icon: 'pickaxe_copper',
+        toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
+      },
+      copper_sickle: {
+        id: 'copper_sickle', name: '구리 낫', kind: 'tool',
+        toolSkill: 'herb', toolTier: 1, icon: 'pickaxe_copper',
       },
     },
     nodes: {
       copper_vein: {
-        id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1, requiredLevel: 1,
+        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, requiredLevel: 1,
         yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
       },
     },
     recipes: {
       copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: 1,
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: 1,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
       },
       copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'smithing', requiredLevel: 3,
+        id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'crafting', requiredLevel: 3,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
       },
     },
@@ -39,7 +56,12 @@ function baseData(): GameData {
  * 광석(iron_ore)이 등급 2 채집 노드에서만 나오는데, 그 노드를 캘 유일한 방법인
  * 등급 2 도구(iron_pickaxe)가 하필 그 광석으로만 제작되는 순환 — 계획서 초안의
  * CSV 설계가 갖고 있던 결함을 그대로 축소 재현한 픽스처. 실제로 출하된 CSV는
- * reinforced_pickaxe(등급 2, 구리만으로 제작)를 넣어 이 데드락을 피해 간다.
+ * iron_pickaxe 를 구리만으로 제작해 이 데드락을 피해 간다.
+ *
+ * copper_chisel·copper_axe·copper_sickle 은 이 데드락과 무관하지만, STARTING_TOOL_IDS
+ * 검사가 넷 모두의 존재를 요구하므로 빠지면 그 자체로 위반이 생겨 참조 무결성
+ * 검사에서 조기 반환되고 만다 — 그러면 이 테스트가 실제로 보려는 도달 가능성
+ * 위반이 계산되지 않는다.
  */
 function deadlockedTierData(): GameData {
   return {
@@ -48,40 +70,52 @@ function deadlockedTierData(): GameData {
       copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
       iron_ore: { id: 'iron_ore', name: '철 원석', kind: 'material', icon: 'ore_iron' },
       iron_ingot: { id: 'iron_ingot', name: '철 주괴', kind: 'material', icon: 'ingot_iron' },
+      copper_chisel: {
+        id: 'copper_chisel', name: '구리 정', kind: 'tool',
+        toolSkill: 'ice', toolTier: 1, icon: 'pickaxe_copper',
+      },
+      copper_axe: {
+        id: 'copper_axe', name: '구리 도끼', kind: 'tool',
+        toolSkill: 'wood', toolTier: 1, icon: 'pickaxe_copper',
+      },
       copper_pickaxe: {
         id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-        toolSkill: 'mining', toolTier: 1, icon: 'pickaxe_copper',
+        toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
+      },
+      copper_sickle: {
+        id: 'copper_sickle', name: '구리 낫', kind: 'tool',
+        toolSkill: 'herb', toolTier: 1, icon: 'pickaxe_copper',
       },
       iron_pickaxe: {
         id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
-        toolSkill: 'mining', toolTier: 2, icon: 'pickaxe_iron',
+        toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
       },
     },
     nodes: {
       copper_vein: {
-        id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1, requiredLevel: 1,
+        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, requiredLevel: 1,
         yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
       },
       iron_vein: {
-        id: 'iron_vein', name: '철 광맥', skill: 'mining', tier: 2, requiredLevel: 10,
+        id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, requiredLevel: 10,
         yieldItem: 'iron_ore', yieldMin: 1, yieldMax: 3, respawnMs: 9000,
       },
     },
     recipes: {
       copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: 1,
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: 1,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
       },
       copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'smithing', requiredLevel: 3,
+        id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'crafting', requiredLevel: 3,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
       },
       iron_ingot: {
-        id: 'iron_ingot', name: '철 주괴', skill: 'smithing', requiredLevel: 10,
+        id: 'iron_ingot', name: '철 주괴', skill: 'crafting', requiredLevel: 10,
         inputs: [{ item: 'iron_ore', count: 2 }], output: { item: 'iron_ingot', count: 1 },
       },
       iron_pickaxe: {
-        id: 'iron_pickaxe', name: '철 곡괭이', skill: 'smithing', requiredLevel: 12,
+        id: 'iron_pickaxe', name: '철 곡괭이', skill: 'crafting', requiredLevel: 12,
         inputs: [{ item: 'iron_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
       },
     },
@@ -134,6 +168,15 @@ describe('validateGameData', () => {
     data.items.orphan = { id: 'orphan', name: '고아', kind: 'material', icon: 'x' }
     expect(validateGameData(data)).toContain(
       'items[orphan]: 채집으로도 제작으로도 획득할 수 없다',
+    )
+  })
+
+  it('시작 도구는 채집·제작 경로가 없어도 획득 가능한 것으로 본다', () => {
+    // copper_chisel 은 baseData() 안에서 어떤 노드의 산출물도, 어떤 레시피의 산출물도
+    // 아니다 — STARTING_TOOL_IDS 로 캐릭터 생성 시 바로 지급되는 것이 유일한 출처다.
+    // 이 시드가 없으면 매번 "채집으로도 제작으로도 획득할 수 없다"로 오탐된다.
+    expect(validateGameData(baseData())).not.toContain(
+      'items[copper_chisel]: 채집으로도 제작으로도 획득할 수 없다',
     )
   })
 })
@@ -190,29 +233,42 @@ describe('validateGameData 의 조기 반환', () => {
     // CSV에서 copper_pickaxe 를 renamed_pickaxe 로 참조까지 전부 일관되게 개명했지만
     // 코드의 STARTING_TOOL_IDS 상수(copper_pickaxe)는 갱신을 놓친 상황을 재현한다.
     // 고치지 않으면 시드가 빈 채로 도달 가능성 계산이 돌아 데이터의 모든 아이템이
-    // "도달 불가"로 잡힌다.
+    // "도달 불가"로 잡힌다. 나머지 시작 도구 셋(chisel·axe·sickle)은 정상이라
+    // 노이즈 없이 이 위반 하나만 나와야 한다.
     const data: GameData = {
       items: {
         copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
         copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
+        copper_chisel: {
+          id: 'copper_chisel', name: '구리 정', kind: 'tool',
+          toolSkill: 'ice', toolTier: 1, icon: 'pickaxe_copper',
+        },
+        copper_axe: {
+          id: 'copper_axe', name: '구리 도끼', kind: 'tool',
+          toolSkill: 'wood', toolTier: 1, icon: 'pickaxe_copper',
+        },
+        copper_sickle: {
+          id: 'copper_sickle', name: '구리 낫', kind: 'tool',
+          toolSkill: 'herb', toolTier: 1, icon: 'pickaxe_copper',
+        },
         renamed_pickaxe: {
           id: 'renamed_pickaxe', name: '개명된 곡괭이', kind: 'tool',
-          toolSkill: 'mining', toolTier: 1, icon: 'pickaxe_copper',
+          toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
         },
       },
       nodes: {
         copper_vein: {
-          id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1, requiredLevel: 1,
+          id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, requiredLevel: 1,
           yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
         },
       },
       recipes: {
         copper_ingot: {
-          id: 'copper_ingot', name: '구리 주괴', skill: 'smithing', requiredLevel: 1,
+          id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: 1,
           inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
         },
         renamed_pickaxe: {
-          id: 'renamed_pickaxe', name: '개명된 곡괭이', skill: 'smithing', requiredLevel: 3,
+          id: 'renamed_pickaxe', name: '개명된 곡괭이', skill: 'crafting', requiredLevel: 3,
           inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'renamed_pickaxe', count: 1 },
         },
       },

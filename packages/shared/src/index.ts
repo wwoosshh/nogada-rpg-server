@@ -1,7 +1,6 @@
 export * from './types.js'
 export * from './rng.js'
 export * from './formulas/clamp.js'
-export * from './formulas/skill.js'
 export * from './formulas/gather.js'
 export * from './formulas/craft.js'
 export * from './formulas/proficiency.js'

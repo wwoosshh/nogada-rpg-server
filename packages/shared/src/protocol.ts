@@ -1,10 +1,5 @@
 import { z } from 'zod'
 
-export const SkillStateSchema = z.object({
-  level: z.number().int().min(1),
-  xp: z.number().int().min(0),
-})
-
 export const ItemInstanceSchema = z.object({
   instanceId: z.string(),
   itemId: z.string(),
@@ -13,7 +8,7 @@ export const ItemInstanceSchema = z.object({
 
 export const PlayerStateSchema = z.object({
   id: z.string(),
-  skills: z.record(z.string(), SkillStateSchema),
+  skills: z.record(z.string(), z.number().int().min(0)),
   stacks: z.record(z.string(), z.number().int().min(0)),
   instances: z.array(ItemInstanceSchema),
   equipped: z.record(z.string(), z.string()),

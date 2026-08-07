@@ -1,11 +1,7 @@
 id,name,skill,requiredLevel,inputs,outputItem,outputCount
-copper_ingot,구리 주괴,smithing,1,copper_ore:2,copper_ingot,1
-iron_ingot,철 주괴,smithing,10,iron_ore:2,iron_ingot,1
-mithril_ingot,미스릴 주괴,smithing,25,mithril_ore:2,mithril_ingot,1
-copper_pickaxe,구리 곡괭이,smithing,3,copper_ingot:3,copper_pickaxe,1
-reinforced_pickaxe,강화 곡괭이,smithing,8,copper_ingot:6,reinforced_pickaxe,1
-iron_pickaxe,철 곡괭이,smithing,12,iron_ingot:3,iron_pickaxe,1
-copper_hammer,구리 망치,smithing,5,copper_ingot:2,copper_hammer,1
-iron_hammer,철 망치,smithing,15,iron_ingot:2,iron_hammer,1
-reinforced_plate,강화 판금,smithing,18,copper_ingot:1|iron_ingot:1,reinforced_plate,1
-mithril_hammer,미스릴 망치,smithing,30,reinforced_plate:2|mithril_ingot:1,mithril_hammer,1
+copper_ingot,구리 주괴,crafting,1,copper_ore:2,copper_ingot,1
+copper_hammer,구리 망치,crafting,200,copper_ingot:2,copper_hammer,1
+iron_chisel,철 정,crafting,500,copper_ingot:3|ice_shard:5,iron_chisel,1
+iron_axe,철 도끼,crafting,500,copper_ingot:3|soft_log:5,iron_axe,1
+iron_pickaxe,철 곡괭이,crafting,500,copper_ingot:3|copper_ore:5,iron_pickaxe,1
+iron_sickle,철 낫,crafting,500,copper_ingot:3|common_herb:5,iron_sickle,1

@@ -5,7 +5,7 @@ import { calcGatherChance, canGather, toolAppliesTo, toolCoversNode } from './ga
 const copperVein: NodeDef = {
   id: 'copper_vein',
   name: '구리 광맥',
-  skill: 'mining',
+  skill: 'mineral',
   tier: 1,
   requiredLevel: 1,
   yieldItem: 'copper_ore',
@@ -20,7 +20,7 @@ const copperPickaxe: ItemDef = {
   id: 'copper_pickaxe',
   name: '구리 곡괭이',
   kind: 'tool',
-  toolSkill: 'mining',
+  toolSkill: 'mineral',
   toolTier: 1,
   icon: 'pickaxe_copper',
 }
@@ -41,8 +41,8 @@ describe('toolCoversNode', () => {
 
 describe('toolAppliesTo', () => {
   it('숙련 종류가 다르면 false 다', () => {
-    const smithingHammer: ItemDef = { ...copperPickaxe, id: 'copper_hammer', toolSkill: 'smithing' }
-    expect(toolAppliesTo(smithingHammer, copperVein)).toBe(false)
+    const craftingHammer: ItemDef = { ...copperPickaxe, id: 'copper_hammer', toolSkill: 'crafting' }
+    expect(toolAppliesTo(craftingHammer, copperVein)).toBe(false)
   })
 
   it('도구가 아닌 아이템이면 false 다', () => {
@@ -61,40 +61,40 @@ describe('toolAppliesTo', () => {
 
 describe('canGather', () => {
   it('도구 등급과 숙련도를 모두 충족하면 채집할 수 있다', () => {
-    expect(canGather({ skillLevel: 1, toolTier: 1, node: copperVein })).toBe(true)
+    expect(canGather({ proficiency: 1, toolTier: 1, node: copperVein })).toBe(true)
   })
 
   it('도구 등급이 모자라면 채집할 수 없다', () => {
-    expect(canGather({ skillLevel: 99, toolTier: 1, node: ironVein })).toBe(false)
+    expect(canGather({ proficiency: 99, toolTier: 1, node: ironVein })).toBe(false)
   })
 
-  it('숙련도가 모자라면 채집할 수 없다', () => {
-    expect(canGather({ skillLevel: 1, toolTier: 9, node: ironVein })).toBe(false)
+  it('숙련도가 0 이어도 도구 등급만 맞으면 채집할 수 있다', () => {
+    expect(canGather({ proficiency: 0, toolTier: 1, node: copperVein })).toBe(true)
   })
 })
 
 describe('calcGatherChance', () => {
   it('채집 불가 조건에서는 0 을 반환한다', () => {
-    expect(calcGatherChance({ skillLevel: 1, toolTier: 1, node: ironVein })).toBe(0)
+    expect(calcGatherChance({ proficiency: 1, toolTier: 1, node: ironVein })).toBe(0)
   })
 
   it('요구 조건을 정확히 만족하면 기본 확률이다', () => {
-    expect(calcGatherChance({ skillLevel: 1, toolTier: 1, node: copperVein })).toBeCloseTo(0.5)
+    expect(calcGatherChance({ proficiency: 1, toolTier: 1, node: copperVein })).toBeCloseTo(0.5)
   })
 
-  it('숙련도가 높을수록 확률이 오른다', () => {
-    const low = calcGatherChance({ skillLevel: 1, toolTier: 1, node: copperVein })
-    const high = calcGatherChance({ skillLevel: 10, toolTier: 1, node: copperVein })
-    expect(high).toBeGreaterThan(low)
+  it('숙련도는 채집 성공률에 영향을 주지 않는다', () => {
+    const low = calcGatherChance({ proficiency: 0, toolTier: 1, node: copperVein })
+    const high = calcGatherChance({ proficiency: 999_999, toolTier: 1, node: copperVein })
+    expect(high).toBe(low)
   })
 
   it('도구 등급이 높을수록 확률이 오른다', () => {
-    const low = calcGatherChance({ skillLevel: 1, toolTier: 1, node: copperVein })
-    const high = calcGatherChance({ skillLevel: 1, toolTier: 3, node: copperVein })
+    const low = calcGatherChance({ proficiency: 1, toolTier: 1, node: copperVein })
+    const high = calcGatherChance({ proficiency: 1, toolTier: 3, node: copperVein })
     expect(high).toBeGreaterThan(low)
   })
 
   it('0.95 를 넘지 않는다', () => {
-    expect(calcGatherChance({ skillLevel: 999, toolTier: 99, node: copperVein })).toBe(0.95)
+    expect(calcGatherChance({ proficiency: 999, toolTier: 99, node: copperVein })).toBe(0.95)
   })
 })

@@ -174,7 +174,7 @@ export function selectGatherChance(nodeId: string): number {
   const node = data.nodes[nodeId]
   if (!player || !node) return 0
   return calcGatherChance({
-    skillLevel: player.skills[node.skill].level,
+    proficiency: player.skills[node.skill],
     toolTier: equippedToolTier(player, data, node.skill),
     node,
   })
@@ -185,7 +185,7 @@ export function selectCraftChance(recipeId: string): number {
   const recipe = data.recipes[recipeId]
   if (!player || !recipe) return 0
   return calcCraftSuccess({
-    skillLevel: player.skills[recipe.skill].level,
+    proficiency: player.skills[recipe.skill],
     toolTier: equippedToolTier(player, data, recipe.skill),
     recipe,
   })

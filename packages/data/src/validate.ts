@@ -75,7 +75,11 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
-  const obtainable = new Set<string>()
+  // 시작 도구는 채집·제작을 거치지 않고 캐릭터 생성 시 바로 지급되므로 그 자체로
+  // "획득 가능"하다 — computeReachableItems 가 이미 이 상수로 reachable 을 시드하는
+  // 것과 같은 이유다. 시드하지 않으면 레시피가 없는 시작 도구(예: 되사서 못 만드는
+  // 최초 장비)가 매번 "채집으로도 제작으로도 획득할 수 없다"로 오탐된다.
+  const obtainable = new Set<string>(STARTING_TOOL_IDS)
   for (const node of Object.values(data.nodes)) obtainable.add(node.yieldItem)
   for (const recipe of Object.values(data.recipes)) obtainable.add(recipe.output.item)
   for (const item of Object.values(data.items)) {

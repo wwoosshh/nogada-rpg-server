@@ -7,16 +7,16 @@ const data: GameData = {
     copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
     copper_pickaxe: {
       id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-      toolSkill: 'mining', toolTier: 1, icon: 'pickaxe_copper',
+      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
     },
   },
   nodes: {
     copper_vein: {
-      id: 'copper_vein', name: '구리 광맥', skill: 'mining', tier: 1, requiredLevel: 1,
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, requiredLevel: 1,
       yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2, respawnMs: 5000,
     },
     iron_vein: {
-      id: 'iron_vein', name: '철 광맥', skill: 'mining', tier: 2, requiredLevel: 10,
+      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, requiredLevel: 10,
       yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1, respawnMs: 9000,
     },
   },
@@ -26,10 +26,10 @@ const data: GameData = {
 function player(overrides: Partial<PlayerState> = {}): PlayerState {
   return {
     id: 'local',
-    skills: { mining: { level: 1, xp: 0 }, smithing: { level: 1, xp: 0 } },
+    skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
     instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
-    equipped: { mining: 'i1' },
+    equipped: { mineral: 'i1' },
     nodeCooldowns: {},
     ...overrides,
   }
@@ -69,24 +69,24 @@ describe('performGather', () => {
     expect(r.ok).toBe(true)
   })
 
-  it('성공하면 산출물이 스택에 쌓이고 경험치가 오른다', () => {
+  it('성공하면 산출물이 스택에 쌓이고 숙련도가 오른다', () => {
     const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.success).toBe(true)
     expect(r.outcome.gained).toEqual({ item: 'copper_ore', count: 2 })
     expect(r.outcome.player.stacks.copper_ore).toBe(2)
-    expect(r.outcome.xpGained).toBeGreaterThan(0)
-    expect(r.outcome.player.skills.mining.xp).toBe(r.outcome.xpGained)
+    expect(r.outcome.skillGained).toBeGreaterThan(0)
+    expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
   })
 
-  it('실패하면 산출물이 없고 경험치도 없다', () => {
+  it('실패하면 산출물이 없고 숙련도도 오르지 않는다', () => {
     const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysFail, now: 0 })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
     expect(r.outcome.success).toBe(false)
     expect(r.outcome.gained).toBeNull()
-    expect(r.outcome.xpGained).toBe(0)
+    expect(r.outcome.skillGained).toBe(0)
     expect(r.outcome.player.stacks).toEqual({})
   })
 
@@ -104,18 +104,13 @@ describe('performGather', () => {
     expect(r.outcome.player.stacks.copper_ore).toBe(7)
   })
 
-  it('경험치가 차면 레벨이 오른다', () => {
-    // xpToNext(1) = 60, 채집 1회 경험치는 그보다 작으므로 직전까지 채워 두고 한 번 캔다.
-    const p = player({ skills: { mining: { level: 1, xp: 59 }, smithing: { level: 1, xp: 0 } } })
-    const r = performGather({ player: p, data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
-    if (!r.ok) throw new Error('성공해야 한다')
-    expect(r.outcome.player.skills.mining.level).toBe(2)
-  })
-
-  it('다른 생활기술의 경험치는 건드리지 않는다', () => {
+  it('다른 생활기술의 숙련도는 건드리지 않는다', () => {
     const r = performGather({ player: player(), data, nodeId: 'copper_vein', rng: alwaysSucceed, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
-    expect(r.outcome.player.skills.smithing).toEqual({ level: 1, xp: 0 })
+    expect(r.outcome.player.skills.ice).toBe(0)
+    expect(r.outcome.player.skills.wood).toBe(0)
+    expect(r.outcome.player.skills.herb).toBe(0)
+    expect(r.outcome.player.skills.crafting).toBe(0)
   })
 
   it('입력 플레이어 객체를 변경하지 않는다', () => {

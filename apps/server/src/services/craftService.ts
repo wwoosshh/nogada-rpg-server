@@ -1,9 +1,7 @@
 import {
-  applyXp,
   calcCraftSuccess,
   canCraft,
   equippedToolTier,
-  xpGainForCraft,
   type GameData,
   type PlayerState,
   type RecipeInput,
@@ -24,7 +22,7 @@ export interface CraftOutcome {
   chance: number
   produced: RecipeInput | null
   consumed: RecipeInput[]
-  xpGained: number
+  skillGained: number
   autoEquipped: boolean
   player: PlayerState
 }
@@ -52,9 +50,9 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   if (!recipe) return { ok: false, code: 'unknown_recipe' }
 
   const player = structuredClone(args.player)
-  const skillLevel = player.skills[recipe.skill].level
+  const proficiency = player.skills[recipe.skill]
   const toolTier = equippedToolTier(player, data, recipe.skill)
-  const ctx = { skillLevel, toolTier, recipe }
+  const ctx = { proficiency, toolTier, recipe }
 
   if (!canCraft(ctx)) return { ok: false, code: 'level_too_low' }
 
@@ -83,7 +81,7 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
         chance,
         produced: null,
         consumed,
-        xpGained: 0,
+        skillGained: 0,
         autoEquipped: false,
         player,
       },
@@ -112,8 +110,8 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
       (player.stacks[recipe.output.item] ?? 0) + recipe.output.count
   }
 
-  const xpGained = xpGainForCraft(recipe.requiredLevel, skillLevel)
-  player.skills[recipe.skill] = applyXp(player.skills[recipe.skill], xpGained)
+  const skillGained = 1
+  player.skills[recipe.skill] += skillGained
 
   return {
     ok: true,
@@ -122,7 +120,7 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
       chance,
       produced: recipe.output,
       consumed,
-      xpGained,
+      skillGained,
       autoEquipped,
       player,
     },

@@ -1,10 +1,8 @@
 import {
-  applyXp,
   calcGatherChance,
   canGather,
   equippedToolTier,
   rollInt,
-  xpGainForGather,
   type GameData,
   type PlayerState,
   type RecipeInput,
@@ -23,7 +21,7 @@ export interface GatherOutcome {
   success: boolean
   chance: number
   gained: RecipeInput | null
-  xpGained: number
+  skillGained: number
   player: PlayerState
   cooldownUntil: number
 }
@@ -46,9 +44,9 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   if (!node) return { ok: false, code: 'unknown_node' }
 
   const player = structuredClone(args.player)
-  const skillLevel = player.skills[node.skill].level
+  const proficiency = player.skills[node.skill]
   const toolTier = equippedToolTier(player, data, node.skill)
-  const ctx = { skillLevel, toolTier, node }
+  const ctx = { proficiency, toolTier, node }
 
   if (!canGather(ctx)) return { ok: false, code: 'cannot_gather' }
 
@@ -65,15 +63,15 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   if (!success) {
     return {
       ok: true,
-      outcome: { success: false, chance, gained: null, xpGained: 0, player, cooldownUntil },
+      outcome: { success: false, chance, gained: null, skillGained: 0, player, cooldownUntil },
     }
   }
 
   const count = rollInt(rng, node.yieldMin, node.yieldMax)
   player.stacks[node.yieldItem] = (player.stacks[node.yieldItem] ?? 0) + count
 
-  const xpGained = xpGainForGather(node.tier, skillLevel)
-  player.skills[node.skill] = applyXp(player.skills[node.skill], xpGained)
+  const skillGained = 1
+  player.skills[node.skill] += skillGained
 
   return {
     ok: true,
@@ -81,7 +79,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
       success: true,
       chance,
       gained: { item: node.yieldItem, count },
-      xpGained,
+      skillGained,
       player,
       cooldownUntil,
     },
