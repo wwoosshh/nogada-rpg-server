@@ -2,7 +2,10 @@ import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
   calcGatherChance,
+  canRepeat,
   equippedToolTier,
+  SKILL_IDS,
+  SKILL_LABELS,
   type GameData,
   type PlayerState,
   type SkillId,
@@ -30,6 +33,18 @@ export interface ActionFeedback {
 }
 
 /**
+ * 노가다 사이사이의 사건.
+ *
+ * 원작이 8,000시간을 버틴 이유는 반복 자체가 아니라 반복이 무언가를 향하고
+ * 있었기 때문이다. 자동 반복 해금은 그 첫 번째 사건이 될 수 있다 — 조용히
+ * 켜지면 아무도 알아채지 못하고, 그러면 문턱을 둔 의미가 사라진다.
+ */
+export interface Milestone {
+  seq: number
+  text: string
+}
+
+/**
  * 서버 연결 상태.
  *
  * 이 게임은 모든 판정을 서버가 한다. 서버에 닿지 못하면 채집도 제작도 불가능하므로
@@ -43,12 +58,14 @@ interface GameStore {
   player: PlayerState | null
   connection: Connection
   lastAction: ActionFeedback | null
+  milestone: Milestone | null
   connect: () => Promise<void>
   gather: (instanceId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
 }
 
 let actionSeq = 0
+let milestoneSeq = 0
 
 /** 서버와 말 자체를 못 한 경우에만 true. HTTP 4xx 는 서버가 살아있는 것이다. */
 function isNetworkFailure(err: unknown): boolean {
@@ -65,6 +82,7 @@ export const useGameStore = create<GameStore>((set) => ({
   player: null,
   connection: 'connecting',
   lastAction: null,
+  milestone: null,
 
   /**
    * 게임 진입 조건. 서버 시계를 맞추고 플레이어 상태를 받아온다.
@@ -91,8 +109,9 @@ export const useGameStore = create<GameStore>((set) => ({
 
   gather: async (instanceId) => {
     try {
+      const prev = useGameStore.getState().player
       const outcome: GatherOutcomeDto = await GameClient.gather(instanceId)
-      set({ player: outcome.player })
+      applyPlayer(set, prev, outcome.player)
 
       if (outcome.success && outcome.gained) {
         const name = labelOf(useGameStore.getState().data, outcome.gained.item)
@@ -117,8 +136,9 @@ export const useGameStore = create<GameStore>((set) => ({
 
   craft: async (recipeId) => {
     try {
+      const prev = useGameStore.getState().player
       const outcome: CraftOutcomeDto = await GameClient.craft(recipeId)
-      set({ player: outcome.player })
+      applyPlayer(set, prev, outcome.player)
 
       if (outcome.success && outcome.produced) {
         const name = labelOf(useGameStore.getState().data, outcome.produced.item)
@@ -143,6 +163,33 @@ type SetFn = (partial: Partial<GameStore>) => void
 
 function pushAction(set: SetFn, text: string, tone: ActionFeedback['tone']): void {
   set({ lastAction: { seq: ++actionSeq, text, tone } })
+}
+
+/**
+ * 이번 행동으로 자동 반복이 열린 기술을 찾는다.
+ *
+ * 넘기 전과 넘은 뒤를 비교하므로 딱 한 번만 잡힌다. 이미 열린 기술은
+ * canRepeat 이 전에도 참이라 걸리지 않는다.
+ */
+function detectUnlock(prev: PlayerState | null, next: PlayerState): SkillId | null {
+  if (!prev) return null
+  for (const id of SKILL_IDS) {
+    if (!canRepeat(prev.skills[id]) && canRepeat(next.skills[id])) return id
+  }
+  return null
+}
+
+function applyPlayer(set: SetFn, prev: PlayerState | null, next: PlayerState): void {
+  set({ player: next })
+  const unlocked = detectUnlock(prev, next)
+  if (unlocked) {
+    set({
+      milestone: {
+        seq: ++milestoneSeq,
+        text: `${SKILL_LABELS[unlocked]}이(가) 손에 익었다 — 누르고 있으면 계속된다`,
+      },
+    })
+  }
 }
 
 function labelOf(data: GameData, itemId: string): string {

@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import worldMap from '@nogada/data/maps/world.json' with { type: 'json' }
-import { frontTile, gameTimeAt, type Direction, type TilePos } from '@nogada/shared'
+import { canRepeat, frontTile, gameTimeAt, type Direction, type TilePos } from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
 import { useGameStore } from '../../store/gameStore.js'
@@ -33,6 +33,7 @@ export class WorldScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite
   private dayNight!: DayNightOverlay
   private unsubscribeStore: (() => void) | null = null
+  private unsubscribeMilestone: (() => void) | null = null
   private hub!: InputHub
   private keyboard!: KeyboardSource
   private mover!: TileMover
@@ -41,6 +42,8 @@ export class WorldScene extends Phaser.Scene {
   private mapHeight = 0
   private readonly blocked = new Set<string>()
   private readonly byTile = new Map<string, Interactable>()
+  /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
+  private gatherPending = false
 
   constructor() {
     super({ key: 'World' })
@@ -144,6 +147,12 @@ export class WorldScene extends Phaser.Scene {
       )
     })
 
+    this.unsubscribeMilestone = useGameStore.subscribe((state, prev) => {
+      const m = state.milestone
+      if (!m || m.seq === prev.milestone?.seq) return
+      this.showMilestone(m.text)
+    })
+
     this.dayNight = new DayNightOverlay(this)
 
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
@@ -162,6 +171,8 @@ export class WorldScene extends Phaser.Scene {
       this.keyboard.destroy()
       this.unsubscribeStore?.()
       this.unsubscribeStore = null
+      this.unsubscribeMilestone?.()
+      this.unsubscribeMilestone = null
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)
@@ -179,6 +190,36 @@ export class WorldScene extends Phaser.Scene {
     return this.byTile.get(`${tile.x},${tile.y}`) ?? null
   }
 
+  /**
+   * 채집 요청을 보낸다.
+   *
+   * 서버의 행동 간격 이전에는 보내지 않는다. 보내 봐야 too_fast 로 거부되고
+   * 그 거부는 스토어가 조용히 삼키므로, 플레이어에게는 "가끔 안 캐진다" 로
+   * 보인다. 아예 보내지 않으면 그런 상태가 생기지 않는다.
+   */
+  private sendGather(instanceId: string): void {
+    if (this.gatherPending) return
+    const { player } = useGameStore.getState()
+    if (!player || worldNow() < player.nextActionAt) return
+
+    this.gatherPending = true
+    void useGameStore
+      .getState()
+      .gather(instanceId)
+      .finally(() => {
+        this.gatherPending = false
+      })
+  }
+
+  /** 그 대상에서 누르고 있는 것만으로 반복되는가. */
+  private repeatsOn(target: Interactable): boolean {
+    if (target.kind !== 'node') return false
+    const { player, data } = useGameStore.getState()
+    const node = data.nodes[target.nodeId]
+    if (!player || !node) return false
+    return canRepeat(player.skills[node.skill])
+  }
+
   update(_time: number, delta: number): void {
     this.hub.beginFrame()
     this.keyboard.update()
@@ -190,8 +231,13 @@ export class WorldScene extends Phaser.Scene {
     this.updateAnimation(this.mover.moving, this.mover.facing)
 
     const target = this.interactableAt(frontTile(this.mover.tile, this.mover.facing))
-    if (target && this.hub.state.actionPressed) {
-      this.interact(target)
+    if (target) {
+      const held = this.hub.state.action
+      if (this.hub.state.actionPressed) {
+        this.interact(target)
+      } else if (held && this.repeatsOn(target)) {
+        this.interact(target)
+      }
     }
 
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
@@ -206,9 +252,37 @@ export class WorldScene extends Phaser.Scene {
   private interact(target: Interactable): void {
     switch (target.kind) {
       case 'node':
-        void useGameStore.getState().gather(target.instanceId)
+        this.sendGather(target.instanceId)
         break
     }
+  }
+
+  /**
+   * 화면 가운데에 크게, 오래 띄운다.
+   *
+   * 머리 위 플로팅 텍스트와 다르게 만드는 이유는 이것이 채집 결과가 아니라
+   * 사건이기 때문이다. 같은 모양으로 띄우면 수천 번 본 글자에 묻힌다.
+   */
+  private showMilestone(text: string): void {
+    const cam = this.cameras.main
+    const label = this.add
+      .text(cam.width / 2, cam.height / 3, text, {
+        fontSize: '18px',
+        color: '#ffe9a8',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(DEPTH.overhead + 10)
+
+    this.tweens.add({
+      targets: label,
+      alpha: { from: 0, to: 1 },
+      duration: 300,
+      hold: 2600,
+      yoyo: true,
+      onComplete: () => label.destroy(),
+    })
   }
 
   /**
