@@ -16,7 +16,14 @@ export const YIELD_DECADES = 5
 
 /** 숙련도 0 일 때의 행동 간격 — 초당 2회 */
 export const ACTION_INTERVAL_MAX_MS = 500
-/** 최고속 — 초당 20회. 원작의 가장 짧은 채집 딜레이와 같다 */
+/**
+ * 최고속 — 초당 20회.
+ *
+ * 원작보다 두 배 빠르다. 원작의 최속은 `Wait(2)` = 4프레임 = 40fps 기준 100ms 였다
+ * (`Wait` 는 파라미터의 두 배를 프레임 수로 쓴다). 원작은 그 속도를 과금으로 팔았고
+ * 우리는 숙련도로 주기 때문에, 도달에 수백 시간이 드는 값을 원작의 상한에 묶어 둘
+ * 이유가 없다고 판단해 한 단계 더 열어 두었다.
+ */
 export const ACTION_INTERVAL_MIN_MS = 50
 
 export const MAX_YIELD_BONUS = 2
