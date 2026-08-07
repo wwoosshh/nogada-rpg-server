@@ -1,5 +1,3 @@
-import { actionIntervalMs } from './formulas/proficiency.js'
-
 /**
  * 이동과 바라봄의 방향. 네 개뿐이다.
  *
@@ -71,7 +69,3 @@ export function isAdjacentFacing(from: TilePos, facing: Direction, target: TileP
 export function canRepeat(proficiency: number): boolean {
   return proficiency >= REPEAT_UNLOCK_PROFICIENCY
 }
-
-// 문턱이 실제로 200ms 지점인지는 movement.test.ts 가 actionIntervalMs 로 확인한다.
-// 여기서 import 를 유지하는 이유는 그 관계가 코드에 드러나 있어야 하기 때문이다.
-void actionIntervalMs
