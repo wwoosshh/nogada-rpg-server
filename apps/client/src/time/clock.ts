@@ -9,14 +9,15 @@ interface Anchor {
 }
 
 let anchor: Anchor | null = null
-let syncing = false
+/** 진행 중인 동기화. 동시 호출자는 새 요청을 내지 않고 이것을 함께 기다린다. */
+let inFlight: Promise<boolean> | null = null
 
 /**
  * 세계 시각.
  *
- * 앵커가 없으면(오프라인·동기화 전) 로컬 시계로 물러난다. 오프라인에는 공유할
- * 세계가 없으므로 로컬 시계로 충분하고, 온라인으로 붙는 순간 서버 시각으로
- * 스냅된다.
+ * 앵커가 없으면 로컬 시계로 물러난다. 이건 **최초 동기화 전** 상태이지 오프라인
+ * 모드가 아니다 — 서버에 닿지 못하면 접속 게이트가 게임 진입 자체를 막으므로,
+ * 이 폴백값이 실제 플레이 중에 쓰이는 일은 없다.
  *
  * 경과를 Date.now() 가 아니라 performance.now() 로 재는 이유는 세션 도중
  * 사용자가 기기 시계를 바꿔도 세계 시각이 튀지 않게 하기 위해서다.
@@ -40,10 +41,23 @@ export function worldNow(): number {
  */
 const SYNC_TIMEOUT_MS = 10_000
 
-/** 서버에 한 번 물어 앵커를 다시 잡는다. */
-export async function syncClock(): Promise<void> {
-  if (syncing) return
-  syncing = true
+/**
+ * 서버에 한 번 물어 앵커를 다시 잡는다. 성공 여부를 돌려준다.
+ *
+ * 이미 진행 중이면 **그 요청을 함께 기다린다.** 그냥 false 로 빠지면 안 되는데,
+ * 접속 게이트가 이 반환값으로 서버 연결 여부를 판단하기 때문이다 — 다른 곳에서
+ * 먼저 시작한 동기화와 겹쳤을 뿐인데 "서버에 못 닿았다" 로 읽히면 멀쩡한 상태에서
+ * 게임 진입이 막힌다.
+ */
+export function syncClock(): Promise<boolean> {
+  if (inFlight) return inFlight
+  inFlight = runSync().finally(() => {
+    inFlight = null
+  })
+  return inFlight
+}
+
+async function runSync(): Promise<boolean> {
   try {
     const sentAt = performance.now()
     const { serverNowMs } = await GameClient.getTime(AbortSignal.timeout(SYNC_TIMEOUT_MS))
@@ -52,12 +66,11 @@ export async function syncClock(): Promise<void> {
       serverMs: estimateServerNow(sentAt, serverNowMs, receivedAt),
       perfMs: receivedAt,
     }
+    return true
   } catch {
-    // 서버에 닿지 못하거나(타임아웃 포함) 응답이 늦어 요청이 중단됐으면 앵커를
-    // 건드리지 않는다. 기존 앵커가 있으면 그대로 쓰고, 없으면 worldNow() 가
-    // 로컬 시계로 물러난다.
-  } finally {
-    syncing = false
+    // 서버에 닿지 못하거나(타임아웃 포함) 요청이 중단됐으면 앵커를 건드리지 않는다.
+    // 기존 앵커가 있으면 그대로 쓴다.
+    return false
   }
 }
 
@@ -103,12 +116,11 @@ export function startClockSync(): () => void {
 }
 
 /**
- * 테스트·개발용. 앵커를 버려 로컬 시계로 되돌린다.
+ * 테스트·개발용. 앵커를 버려 최초 동기화 전 상태로 되돌린다.
  *
- * syncing 도 같이 지운다 — 안 지우면 리셋 시점에 진행 중이던 동기화가 나중에
- * 끝나면서 이후의 재동기 시도를 계속 막고 있을 수 있다.
+ * 진행 중인 동기화는 취소하지 않으므로, 리셋 직후 그 요청이 끝나면 앵커가 다시
+ * 채워질 수 있다.
  */
 export function resetClock(): void {
   anchor = null
-  syncing = false
 }

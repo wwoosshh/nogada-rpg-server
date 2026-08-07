@@ -2,18 +2,6 @@ import Phaser from 'phaser'
 import { WorldScene } from './scenes/WorldScene.js'
 
 /**
- * zoom 은 반드시 정수여야 한다.
- * 소수 배율은 픽셀을 뭉개뜨려 픽셀아트를 망친다.
- */
-function pickIntegerZoom(): number {
-  const dpr = window.devicePixelRatio || 1
-  const shortSide = Math.min(window.innerWidth, window.innerHeight)
-  if (shortSide * dpr < 600) return 2
-  if (shortSide * dpr < 1100) return 3
-  return 4
-}
-
-/**
  * Phaser 의 설정 객체는 CSS 커스텀 프로퍼티를 직접 읽지 못한다. 그렇다고 배경색을
  * '#241c1c' 로 여기 다시 적으면 tokens.css 의 --c-ink 와 값이 두 곳에 따로 존재하게
  * 되어, tokens.css 자신의 주석이 금지하는 "팔레트 단일 출처 밖에서 색상 리터럴을
@@ -34,10 +22,18 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
     pixelArt: true,
     roundPixels: true,
     backgroundColor: readInkColor(),
+    // RESIZE 는 캔버스를 부모 크기에 그대로 맞춘다. 폰 화면비가 제각각이라
+    // 레터박스(검은 띠)가 생기는 FIT 보다 낫고, 확대 배율이 1 이라 정수 배율
+    // 제약도 자연히 지켜진다.
+    //
+    // 여기에 zoom 을 주지 않는 이유: Phaser 의 ScaleManager 는 RESIZE 모드에서
+    // zoom 을 아예 읽지 않는다(NONE 모드 전용이다). 예전에 있던 정수 zoom 계산은
+    // 그래서 한 번도 적용된 적이 없고, 값도 틀렸다 — 적용됐다면 세로로 4 타일도
+    // 안 보였을 것이다. 큰 화면에서 스프라이트를 키우려면 카메라 zoom 을 써야 하며,
+    // 그때는 DayNightOverlay 가 cam.width / cam.zoom 으로 크기를 잡아야 한다.
     scale: {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
-      zoom: pickIntegerZoom(),
     },
     physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
     scene: [WorldScene],

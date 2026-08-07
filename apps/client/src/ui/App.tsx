@@ -2,14 +2,20 @@ import { useEffect, useRef } from 'react'
 import { createPhaserGame } from '../game/PhaserGame.js'
 import { useGameStore } from '../store/gameStore.js'
 import { startClockSync } from '../time/clock.js'
+import { ConnectionGate } from './ConnectionGate.js'
 import { TopBar } from './TopBar.js'
 import './ui.css'
 
 export function App(): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
+  const connection = useGameStore((s) => s.connection)
 
+  // 연결된 뒤에야 게임을 만든다. 서버 없이 월드를 띄워두면 아무 행동도 되지 않는
+  // 화면을 보여주게 되고, 끊긴 동안에는 정리해서 세계 시각이 로컬 시계로
+  // 흘러가는 것도 막는다.
   useEffect(() => {
+    if (connection !== 'online') return
     if (!hostRef.current || gameRef.current) return
     gameRef.current = createPhaserGame(hostRef.current)
     return () => {
@@ -28,23 +34,27 @@ export function App(): JSX.Element {
       // Phaser 의 렌더러/씬/리스너 정리는 여전히 다음 프레임의 runDestroy() 에서 이루어진다.
       hostRef.current?.replaceChildren()
     }
-  }, [])
+  }, [connection])
 
-  // 서버에서 플레이어 상태를 한 번 불러온다. 이후 갱신은 채집·제작 응답이 담당한다.
+  // 서버 시계를 맞추고 플레이어 상태를 받아온다. 성공해야 게임에 들어간다.
   useEffect(() => {
-    void useGameStore.getState().refresh()
+    void useGameStore.getState().connect()
   }, [])
 
-  // 서버 시계와 맞춘다. 복귀·주기 재동기까지 여기서 관리한다.
+  // 이후의 주기·복귀 재동기. 최초 동기화는 connect() 가 이미 했다.
   useEffect(() => startClockSync(), [])
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
-      <div className="overlay">
-        <TopBar />
-        {/* 인벤토리·제작 패널은 온스크린 컨트롤러 버튼으로 여닫는다 (별도 작업) */}
-      </div>
+      {connection === 'online' ? (
+        <div className="overlay">
+          <TopBar />
+          {/* 인벤토리·제작 패널은 온스크린 컨트롤러 버튼으로 여닫는다 (별도 작업) */}
+        </div>
+      ) : (
+        <ConnectionGate />
+      )}
     </div>
   )
 }
