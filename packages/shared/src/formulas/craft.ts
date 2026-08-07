@@ -1,5 +1,6 @@
 import type { RecipeDef } from '../types.js'
 import { clamp } from './clamp.js'
+import { CHANCE_DECADES, MAX_SUCCESS_CHANCE, proficiencyProgress } from './proficiency.js'
 
 export interface CraftContext {
   /** 조합 숙련도 */
@@ -11,11 +12,20 @@ export interface CraftContext {
 
 /** 제작은 도구 게이트가 없다. 조합 숙련도가 레시피를 연다. */
 export function canCraft(ctx: CraftContext): boolean {
-  return ctx.proficiency >= ctx.recipe.requiredLevel
+  return ctx.proficiency >= ctx.recipe.requiredSkill
 }
 
-/** 제작 성공률. canCraft 가 false 면 0. Task 3 에서 로그 곡선으로 바뀐다. */
+/**
+ * 제작 성공률. canCraft 가 false 면 0.
+ *
+ * 요구 숙련도를 넘어선 만큼으로 계산한다 — 갓 열린 레시피는 기본값이고,
+ * 숙련도가 자릿수만큼 더 쌓이면 상한에 닿는다. 망치는 접근 게이트가 아니라
+ * 성공률 보조다.
+ */
 export function calcCraftSuccess(ctx: CraftContext): number {
   if (!canCraft(ctx)) return 0
-  return clamp(0.6 + ctx.toolTier * 0.05, 0.1, 1)
+  const over = ctx.proficiency - ctx.recipe.requiredSkill
+  const t = proficiencyProgress(over, CHANCE_DECADES)
+  const base = ctx.recipe.baseChance
+  return clamp(base + (MAX_SUCCESS_CHANCE - base) * t + ctx.toolTier * 0.02, 0.1, MAX_SUCCESS_CHANCE)
 }

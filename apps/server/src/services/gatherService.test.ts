@@ -12,11 +12,11 @@ const data: GameData = {
   },
   nodes: {
     copper_vein: {
-      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, requiredLevel: 1,
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
       yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2, respawnMs: 5000,
     },
     iron_vein: {
-      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, requiredLevel: 10,
+      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
       yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1, respawnMs: 9000,
     },
   },
@@ -37,7 +37,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
 
 /** 항상 성공시키는 난수 — 0 은 어떤 확률보다도 작다 */
 const alwaysSucceed = () => 0
-/** 항상 실패시키는 난수 — 0.999 는 상한 0.95 보다 크다 */
+/** 항상 실패시키는 난수 — 0.999 는 상한 0.98 보다 크다 */
 const alwaysFail = () => 0.999
 
 describe('performGather', () => {

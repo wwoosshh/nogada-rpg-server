@@ -65,9 +65,10 @@ export interface NodeDef {
   id: string
   name: string
   skill: SkillId
-  /** 채집에 필요한 최소 도구 등급 */
+  /** 채집에 필요한 최소 도구 등급. 이 노드의 유일한 접근 게이트다. */
   tier: number
-  requiredLevel: number
+  /** 숙련도 0 일 때의 성공률 */
+  baseChance: number
   yieldItem: string
   yieldMin: number
   yieldMax: number
@@ -83,7 +84,10 @@ export interface RecipeDef {
   id: string
   name: string
   skill: SkillId
-  requiredLevel: number
+  /** 이 레시피를 여는 데 필요한 조합 숙련도 */
+  requiredSkill: number
+  /** 숙련도가 요구치와 같을 때의 성공률 */
+  baseChance: number
   inputs: RecipeInput[]
   output: RecipeInput
 }

@@ -1,5 +1,6 @@
 import type { ItemDef, NodeDef, SkillId } from '../types.js'
 import { clamp } from './clamp.js'
+import { CHANCE_DECADES, MAX_SUCCESS_CHANCE, proficiencyProgress } from './proficiency.js'
 
 export interface GatherContext {
   /** 그 기술의 누적 숙련도 */
@@ -43,9 +44,16 @@ export function canGather(ctx: GatherContext): boolean {
   return toolCoversNode(ctx.toolTier, ctx.node)
 }
 
-/** 채집 성공률. canGather 가 false 면 0. Task 3 에서 로그 곡선으로 바뀐다. */
+/**
+ * 채집 성공률. canGather 가 false 면 0.
+ *
+ * 숙련도 10만에서 상한에 닿는다. 상한을 1 이 아니라 0.98 로 두어 판정이 살아 있게
+ * 하되, 영구 실패율을 크게 두지는 않는다 — 초당 20회를 누르는 게임에서 잦은 실패는
+ * 난이도가 아니라 소음이다.
+ */
 export function calcGatherChance(ctx: GatherContext): number {
   if (!canGather(ctx)) return 0
-  const overTool = ctx.toolTier - ctx.node.tier
-  return clamp(0.5 + overTool * 0.1, 0.05, 0.95)
+  const t = proficiencyProgress(ctx.proficiency, CHANCE_DECADES)
+  const base = ctx.node.baseChance
+  return clamp(base + (MAX_SUCCESS_CHANCE - base) * t, 0.05, MAX_SUCCESS_CHANCE)
 }

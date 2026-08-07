@@ -53,6 +53,22 @@ function toInt(value: string, context: string, field: string, min = 1): number {
   return n
 }
 
+/**
+ * 소수로 변환하고 범위를 검사한다.
+ *
+ * baseChance 처럼 0~1 사이여야 하는 확률값용이다. 정수 검사(toInt)를 그대로
+ * 쓰면 0.5 가 통과하지 못하고, 검사를 아예 빼면 1.5 같은 값이 실려 성공률이
+ * 상한에 눌러붙는 형태로 나중에야 드러난다.
+ */
+function toFloat(value: string, context: string, field: string, min: number, max: number): number {
+  const n = Number(value)
+  if (!Number.isFinite(n)) throw new Error(`${context}: ${field} "${value}" 는 숫자가 아니다`)
+  if (n < min || n > max) {
+    throw new Error(`${context}: ${field} "${value}" 는 ${min} 이상 ${max} 이하여야 한다`)
+  }
+  return n
+}
+
 function isSkillId(value: string): value is SkillId {
   return (SKILL_IDS as readonly string[]).includes(value)
 }
@@ -107,7 +123,7 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
       name: requireCell(row, 'name', ctx),
       skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
       tier: toInt(requireCell(row, 'tier', ctx), ctx, 'tier'),
-      requiredLevel: toInt(requireCell(row, 'requiredLevel', ctx), ctx, 'requiredLevel'),
+      baseChance: toFloat(requireCell(row, 'baseChance', ctx), ctx, 'baseChance', 0.01, 1),
       yieldItem: requireCell(row, 'yieldItem', ctx),
       yieldMin: toInt(requireCell(row, 'yieldMin', ctx), ctx, 'yieldMin'),
       yieldMax: toInt(requireCell(row, 'yieldMax', ctx), ctx, 'yieldMax'),
@@ -136,7 +152,8 @@ export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
       id,
       name: requireCell(row, 'name', ctx),
       skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
-      requiredLevel: toInt(requireCell(row, 'requiredLevel', ctx), ctx, 'requiredLevel'),
+      requiredSkill: toInt(requireCell(row, 'requiredSkill', ctx), ctx, 'requiredSkill', 0),
+      baseChance: toFloat(requireCell(row, 'baseChance', ctx), ctx, 'baseChance', 0.01, 1),
       inputs: parseInputs(requireCell(row, 'inputs', ctx), ctx),
       output: {
         item: requireCell(row, 'outputItem', ctx),

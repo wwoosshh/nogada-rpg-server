@@ -8,9 +8,9 @@ import { STARTING_TOOL_IDS, toolAppliesTo } from '@nogada/shared'
  *   노드 등급(tier) 이상인 것이 하나라도 있으면, 그 노드의 산출물이 도달 가능해진다.
  * - 레시피: 재료(inputs)가 전부 도달 가능해지면 산출물이 도달 가능해진다.
  *
- * 숙련도(requiredLevel)는 일부러 보지 않는다 — 숙련도는 속도(pace)를 규정할 뿐이고
- * 그라인딩으로 언젠가는 항상 도달하지만, 도구 등급은 하드 게이트라 아무리 그라인딩해도
- * 못 넘는다. 이 둘을 섞으면 진짜 데드락을 통과시켜 버린다.
+ * 숙련도는 일부러 보지 않는다 — 채집 노드는 도구 등급만이 접근 게이트이고,
+ * 레시피의 요구 숙련도는 그라인딩으로 언젠가 항상 도달한다. 도구 등급만이
+ * 아무리 그라인딩해도 못 넘는 하드 게이트다.
  */
 function computeReachableItems(data: GameData): Set<string> {
   const reachable = new Set<string>(STARTING_TOOL_IDS)
@@ -58,6 +58,9 @@ export function validateGameData(data: GameData): string[] {
     }
     if (node.yieldMin > node.yieldMax) {
       violations.push(`nodes[${node.id}]: yieldMin 이 yieldMax 보다 크다`)
+    }
+    if (node.baseChance <= 0 || node.baseChance > 1) {
+      violations.push(`nodes[${node.id}]: baseChance 가 0 초과 1 이하가 아니다`)
     }
   }
 

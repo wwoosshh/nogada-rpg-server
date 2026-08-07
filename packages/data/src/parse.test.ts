@@ -84,12 +84,12 @@ describe('parseNodes', () => {
     const nodes = parseNodes([
       {
         id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
-        requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+        baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
       },
     ])
     expect(nodes.copper_vein).toEqual({
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1,
-      requiredLevel: 1, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
+      baseChance: 0.5, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, respawnMs: 5000,
     })
   })
 
@@ -98,7 +98,7 @@ describe('parseNodes', () => {
       parseNodes([
         {
           id: 'copper_vein', name: '구리 광맥', skill: 'minig', tier: '1',
-          requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+          baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
         },
       ]),
     ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
@@ -107,7 +107,7 @@ describe('parseNodes', () => {
   function validNodeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
-      requiredLevel: '1', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+      baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
       ...overrides,
     }
   }
@@ -118,10 +118,15 @@ describe('parseNodes', () => {
     )
   })
 
-  it('requiredLevel 이 0 이하이면 거부한다', () => {
-    expect(() => parseNodes([validNodeRow({ requiredLevel: '0' })])).toThrow(
-      'nodes.csv[copper_vein]: requiredLevel "0" 는 1 이상이어야 한다',
-    )
+  it('baseChance 가 범위를 벗어나면 던진다', () => {
+    expect(() =>
+      parseNodes([
+        {
+          id: 'bad', name: '나쁜 노드', skill: 'mineral', tier: '1', baseChance: '1.5',
+          yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3', respawnMs: '5000',
+        },
+      ]),
+    ).toThrow(/baseChance/)
   })
 
   it('yieldMin 이 음수이면 거부한다', () => {
@@ -153,7 +158,7 @@ describe('parseRecipes', () => {
   it('재료 하나를 파싱한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: '1',
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
         inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
       },
     ])
@@ -164,7 +169,7 @@ describe('parseRecipes', () => {
   it('파이프로 구분된 여러 재료를 파싱한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'reinforced_plate', name: '강화 판금', skill: 'crafting', requiredLevel: '18',
+        id: 'reinforced_plate', name: '강화 판금', skill: 'crafting', requiredSkill: '18', baseChance: '0.5',
         inputs: 'copper_ingot:1|iron_ingot:1', outputItem: 'reinforced_plate', outputCount: '1',
       },
     ])
@@ -178,7 +183,7 @@ describe('parseRecipes', () => {
     expect(() =>
       parseRecipes([
         {
-          id: 'copper_ingot', name: '구리 주괴', skill: 'smithng', requiredLevel: '1',
+          id: 'copper_ingot', name: '구리 주괴', skill: 'smithng', requiredSkill: '1', baseChance: '0.6',
           inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
         },
       ]),
@@ -187,16 +192,20 @@ describe('parseRecipes', () => {
 
   function validRecipeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
-      id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredLevel: '1',
+      id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
       inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
       ...overrides,
     }
   }
 
-  it('requiredLevel 이 0 이하이면 거부한다', () => {
-    expect(() => parseRecipes([validRecipeRow({ requiredLevel: '0' })])).toThrow(
-      'recipes.csv[copper_ingot]: requiredLevel "0" 는 1 이상이어야 한다',
-    )
+  it('requiredSkill 은 0 을 허용한다', () => {
+    const recipes = parseRecipes([
+      {
+        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '0',
+        baseChance: '0.6', inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
+      },
+    ])
+    expect(recipes.copper_ingot!.requiredSkill).toBe(0)
   })
 
   it('outputCount 가 0 이하이면 거부한다', () => {

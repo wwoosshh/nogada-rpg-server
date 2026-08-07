@@ -6,14 +6,15 @@ const copperIngot: RecipeDef = {
   id: 'copper_ingot',
   name: '구리 주괴',
   skill: 'crafting',
-  requiredLevel: 1,
+  requiredSkill: 1,
+  baseChance: 0.6,
   inputs: [{ item: 'copper_ore', count: 2 }],
   output: { item: 'copper_ingot', count: 1 },
 }
 
 // 실제 카탈로그에 없는 합성 픽스처 — 배포된 CSV의 어떤 아이템도 가리키지 않도록
 // 이름을 일부러 가짜스럽게 짓는다 (요구 숙련도가 높은 레시피를 흉내 낼 뿐).
-const fixtureHighLevelRecipe: RecipeDef = { ...copperIngot, id: 'fixture_high_level_recipe', requiredLevel: 500 }
+const fixtureHighLevelRecipe: RecipeDef = { ...copperIngot, id: 'fixture_high_level_recipe', requiredSkill: 500 }
 
 describe('canCraft', () => {
   it('숙련도를 충족하면 제작할 수 있다', () => {
@@ -34,10 +35,10 @@ describe('calcCraftSuccess', () => {
     expect(calcCraftSuccess({ proficiency: 1, toolTier: 0, recipe: copperIngot })).toBeCloseTo(0.6)
   })
 
-  it('숙련도는 제작 성공률에 영향을 주지 않는다', () => {
+  it('요구 숙련도를 넘어서면 성공률이 오른다', () => {
     const low = calcCraftSuccess({ proficiency: 1, toolTier: 0, recipe: copperIngot })
-    const high = calcCraftSuccess({ proficiency: 999_999, toolTier: 0, recipe: copperIngot })
-    expect(high).toBe(low)
+    const high = calcCraftSuccess({ proficiency: 10_001, toolTier: 0, recipe: copperIngot })
+    expect(high).toBeGreaterThan(low)
   })
 
   it('망치 등급이 높을수록 확률이 오른다', () => {
@@ -46,7 +47,11 @@ describe('calcCraftSuccess', () => {
     expect(armed).toBeGreaterThan(bare)
   })
 
-  it('1.0 을 넘지 않는다', () => {
-    expect(calcCraftSuccess({ proficiency: 999_999, toolTier: 99, recipe: copperIngot })).toBe(1)
+  it('요구 숙련도보다 10만 쌓이면 상한에 닿는다', () => {
+    expect(calcCraftSuccess({ proficiency: 100_000, toolTier: 0, recipe: copperIngot })).toBeCloseTo(0.98)
+  })
+
+  it('상한을 넘지 않는다', () => {
+    expect(calcCraftSuccess({ proficiency: 100_000_000, toolTier: 99, recipe: copperIngot })).toBeCloseTo(0.98)
   })
 })

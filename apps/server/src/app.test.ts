@@ -181,6 +181,24 @@ describe('POST /api/gather', () => {
 })
 
 describe('POST /api/craft', () => {
+  it('재료가 없으면 400 missing_materials 를 반환한다', async () => {
+    const app = buildTestApp()
+
+    // copper_ingot 의 요구 숙련도가 0 이 되어 신규 플레이어(조합 숙련도 0)도 숙련도
+    // 검사를 통과한다. 요구 숙련도가 1이던 Task 2 시점에는 숙련도 검사에 먼저 걸려
+    // 이 재료 부족 분기에 닿을 수 없었다.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/craft',
+      payload: { recipeId: 'copper_ingot' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'missing_materials' })
+
+    await app.close()
+  })
+
   it('숙련도가 모자라면 400 level_too_low 를 반환한다', async () => {
     const app = buildTestApp()
 

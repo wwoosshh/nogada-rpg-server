@@ -7,14 +7,14 @@ const copperVein: NodeDef = {
   name: '구리 광맥',
   skill: 'mineral',
   tier: 1,
-  requiredLevel: 1,
+  baseChance: 0.5,
   yieldItem: 'copper_ore',
   yieldMin: 1,
   yieldMax: 3,
   respawnMs: 5000,
 }
 
-const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', tier: 2, requiredLevel: 10 }
+const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', tier: 2 }
 
 const copperPickaxe: ItemDef = {
   id: 'copper_pickaxe',
@@ -74,27 +74,25 @@ describe('canGather', () => {
 })
 
 describe('calcGatherChance', () => {
-  it('채집 불가 조건에서는 0 을 반환한다', () => {
-    expect(calcGatherChance({ proficiency: 1, toolTier: 1, node: ironVein })).toBe(0)
+  it('도구 등급이 모자라면 0 이다', () => {
+    expect(calcGatherChance({ proficiency: 999_999, toolTier: 1, node: ironVein })).toBe(0)
   })
 
-  it('요구 조건을 정확히 만족하면 기본 확률이다', () => {
-    expect(calcGatherChance({ proficiency: 1, toolTier: 1, node: copperVein })).toBeCloseTo(0.5)
+  it('숙련도 0 이면 노드의 기본 성공률이다', () => {
+    expect(calcGatherChance({ proficiency: 0, toolTier: 1, node: copperVein })).toBeCloseTo(0.5)
   })
 
-  it('숙련도는 채집 성공률에 영향을 주지 않는다', () => {
+  it('숙련도가 오르면 성공률이 오른다', () => {
     const low = calcGatherChance({ proficiency: 0, toolTier: 1, node: copperVein })
-    const high = calcGatherChance({ proficiency: 999_999, toolTier: 1, node: copperVein })
-    expect(high).toBe(low)
-  })
-
-  it('도구 등급이 높을수록 확률이 오른다', () => {
-    const low = calcGatherChance({ proficiency: 1, toolTier: 1, node: copperVein })
-    const high = calcGatherChance({ proficiency: 1, toolTier: 3, node: copperVein })
+    const high = calcGatherChance({ proficiency: 10_000, toolTier: 1, node: copperVein })
     expect(high).toBeGreaterThan(low)
   })
 
-  it('0.95 를 넘지 않는다', () => {
-    expect(calcGatherChance({ proficiency: 999, toolTier: 99, node: copperVein })).toBe(0.95)
+  it('숙련도 10만에서 상한에 닿는다', () => {
+    expect(calcGatherChance({ proficiency: 99_999, toolTier: 1, node: copperVein })).toBeCloseTo(0.98)
+  })
+
+  it('상한을 넘지 않는다', () => {
+    expect(calcGatherChance({ proficiency: 100_000_000, toolTier: 9, node: copperVein })).toBeCloseTo(0.98)
   })
 })
