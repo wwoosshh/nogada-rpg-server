@@ -28,6 +28,7 @@ const data: GameData = {
       skillGainMin: 20, skillGainMax: 35,
     },
   },
+  placements: {},
 }
 
 function player(overrides: Partial<PlayerState> = {}): PlayerState {

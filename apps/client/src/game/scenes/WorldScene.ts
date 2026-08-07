@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import worldMap from '@nogada/data/maps/world.json' with { type: 'json' }
 import { gameTimeAt } from '@nogada/shared'
 import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
@@ -32,7 +33,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.tilemapTiledJSON('world', 'maps/world.json')
     this.load.image('pipoya-basechip', 'tilesets/pipoya-basechip.png')
     // Pipoya 캐릭터 시트는 96x128 = 3열 x 4행, 프레임 32x32
     this.load.spritesheet('player', 'sprites/player.png', {
@@ -42,6 +42,13 @@ export class WorldScene extends Phaser.Scene {
   }
 
   create(): void {
+    // 맵은 packages/data 가 소유한다. 서버가 노드 배치를 알아야 하기 때문이다.
+    // HTTP 로 받지 않고 번들에 들어오므로 Capacitor 에서 파일 경로 문제도 없다.
+    this.cache.tilemap.add('world', {
+      format: Phaser.Tilemaps.Formats.TILED_JSON,
+      data: worldMap,
+    })
+
     const map = this.make.tilemap({ key: 'world' })
     // 첫 인자는 Tiled 안의 타일셋 이름, 둘째는 preload 에서 쓴 키다.
     const tileset = map.addTilesetImage('pipoya-basechip', 'pipoya-basechip')

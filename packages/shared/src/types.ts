@@ -106,8 +106,24 @@ export interface RecipeDef {
   skillGainMax: number
 }
 
+/**
+ * 맵 위에 놓인 노드 하나. `nodeId` 는 종류이고 `instanceId` 가 그 칸이다.
+ *
+ * 같은 종류가 여러 칸에 있으므로 종류만으로는 어느 것인지 알 수 없다.
+ * 서버가 앞칸 판정을 검증하려면, 그리고 나중에 고갈을 넣으려면 칸을 지목해야 한다.
+ *
+ * `x`·`y` 는 픽셀이 아니라 **타일 좌표**다.
+ */
+export interface NodePlacement {
+  instanceId: string
+  nodeId: string
+  x: number
+  y: number
+}
+
 export interface GameData {
   items: Record<string, ItemDef>
   nodes: Record<string, NodeDef>
   recipes: Record<string, RecipeDef>
+  placements: Record<string, NodePlacement>
 }

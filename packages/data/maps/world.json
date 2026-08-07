@@ -206,6 +206,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"copper_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"copper_vein-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -225,6 +230,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"copper_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"copper_vein-2"
                         }],
                  "rotation":0,
                  "type":"",
@@ -244,6 +254,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"ice_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"ice_vein-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -263,6 +278,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"ice_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"ice_vein-2"
                         }],
                  "rotation":0,
                  "type":"",
@@ -282,6 +302,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"young_tree"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"young_tree-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -301,6 +326,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"young_tree"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"young_tree-2"
                         }],
                  "rotation":0,
                  "type":"",
@@ -320,6 +350,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"herb_patch"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"herb_patch-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -339,6 +374,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"herb_patch"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"herb_patch-2"
                         }],
                  "rotation":0,
                  "type":"",
@@ -358,6 +398,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"iron_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"iron_vein-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -377,6 +422,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"iron_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"iron_vein-2"
                         }],
                  "rotation":0,
                  "type":"",
@@ -396,6 +446,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"deep_ice_vein"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"deep_ice_vein-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -415,6 +470,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"old_tree"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"old_tree-1"
                         }],
                  "rotation":0,
                  "type":"",
@@ -434,6 +494,11 @@
                          "name":"nodeId",
                          "type":"string",
                          "value":"rare_herb_patch"
+                        },
+                        {
+                         "name":"instanceId",
+                         "type":"string",
+                         "value":"rare_herb_patch-1"
                         }],
                  "rotation":0,
                  "type":"",

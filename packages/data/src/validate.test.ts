@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { GameData, ItemDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parsePlacements } from './placements.js'
 import { validateGameData } from './validate.js'
 
 /**
@@ -51,6 +52,9 @@ function baseData(): GameData {
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
+    },
+    placements: {
+      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
     },
   }
 }
@@ -128,6 +132,10 @@ function deadlockedTierData(): GameData {
         inputs: [{ item: 'iron_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
+    },
+    placements: {
+      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
+      'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', x: 1, y: 0 },
     },
   }
 }
@@ -249,14 +257,46 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     const here = dirname(fileURLToPath(import.meta.url))
     const csvDir = join(here, '..', 'csv')
     const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+    const nodes = parseNodes(readRealCsv('nodes.csv'))
+    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
 
     const data: GameData = {
       items: parseItems(readRealCsv('items.csv')),
-      nodes: parseNodes(readRealCsv('nodes.csv')),
+      nodes,
       recipes: parseRecipes(readRealCsv('recipes.csv')),
+      placements: parsePlacements(mapJson, nodes),
     }
 
     expect(validateGameData(data)).toEqual([])
+  })
+})
+
+describe('validateGameData 의 배치 검사', () => {
+  it('노드 종류가 맵 어디에도 놓이지 않으면 잡아낸다', () => {
+    const data = baseData()
+    // baseData() 의 유일한 노드(copper_vein)를 어느 칸에도 놓지 않은 상태로 만든다.
+    // CSV 에는 있지만 맵에는 없는 노드라, 플레이어가 닿을 방법이 없다.
+    data.placements = {}
+
+    expect(validateGameData(data)).toContain('nodes[copper_vein]: 맵 어디에도 놓이지 않았다')
+  })
+
+  it('실제로 출하되는 CSV 데이터는 노드마다 맵에 최소 한 번 놓여 있다', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const csvDir = join(here, '..', 'csv')
+    const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+    const nodes = parseNodes(readRealCsv('nodes.csv'))
+    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
+
+    const data: GameData = {
+      items: parseItems(readRealCsv('items.csv')),
+      nodes,
+      recipes: parseRecipes(readRealCsv('recipes.csv')),
+      placements: parsePlacements(mapJson, nodes),
+    }
+
+    const violations = validateGameData(data).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
+    expect(violations).toEqual([])
   })
 })
 
@@ -278,11 +318,14 @@ describe('validateGameData 의 조합 부트스트랩 검사', () => {
     const here = dirname(fileURLToPath(import.meta.url))
     const csvDir = join(here, '..', 'csv')
     const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+    const nodes = parseNodes(readRealCsv('nodes.csv'))
+    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
 
     const data: GameData = {
       items: parseItems(readRealCsv('items.csv')),
-      nodes: parseNodes(readRealCsv('nodes.csv')),
+      nodes,
       recipes: parseRecipes(readRealCsv('recipes.csv')),
+      placements: parsePlacements(mapJson, nodes),
     }
 
     const violations = validateGameData(data).filter((v) => v.startsWith('skills['))
@@ -349,6 +392,9 @@ describe('validateGameData 의 조기 반환', () => {
           inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'renamed_pickaxe', count: 1 },
           skillGainMin: 10, skillGainMax: 20,
         },
+      },
+      placements: {
+        'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
       },
     }
 

@@ -62,6 +62,10 @@ export function validateGameData(data: GameData): string[] {
   const violations: string[] = []
   const hasItem = (id: string): boolean => Object.hasOwn(data.items, id)
 
+  // 놓이지 않은 노드는 데이터에만 있고 게임에는 없다 — 플레이어가 닿을 방법이
+  // 아예 없으므로, CSV에 행을 추가하고 맵에 놓는 것을 잊은 경우를 빌드 타임에 잡는다.
+  const placedNodeIds = new Set(Object.values(data.placements).map((p) => p.nodeId))
+
   for (const node of Object.values(data.nodes)) {
     if (!hasItem(node.yieldItem)) {
       violations.push(`nodes[${node.id}]: 존재하지 않는 아이템 "${node.yieldItem}" 를 산출한다`)
@@ -74,6 +78,9 @@ export function validateGameData(data: GameData): string[] {
     }
     if (node.skillGainMin > node.skillGainMax) {
       violations.push(`nodes[${node.id}]: skillGainMin 이 skillGainMax 보다 크다`)
+    }
+    if (!placedNodeIds.has(node.id)) {
+      violations.push(`nodes[${node.id}]: 맵 어디에도 놓이지 않았다`)
     }
   }
 
