@@ -21,6 +21,17 @@ export const ACTION_INTERVAL_MIN_MS = 50
 
 export const MAX_YIELD_BONUS = 2
 export const MAX_SUCCESS_CHANCE = 0.98
+/** 성공률 하한. 판정이 살아 있다는 느낌을 유지하려고 0 이 아니라 여기까지만 떨어진다 */
+export const MIN_SUCCESS_CHANCE = 0.05
+/** 제작 성공률에 망치 등급 1 당 더해지는 보너스. 채집은 도구 등급이 접근 게이트라 이런 보너스가 없다 */
+export const CRAFT_TOOL_TIER_CHANCE_BONUS = 0.02
+
+/**
+ * 효율 배수. 이번 범위에서는 항상 1 이고, 올리는 수단은 아직 없다. 자리를 미리
+ * 만들어 두는 이유는, 나중에 배수를 도입할 때 저장된 숙련도의 의미나 증가 경로를
+ * 다시 손대지 않기 위해서다.
+ */
+export const EFFICIENCY_MULTIPLIER = 1
 
 /**
  * 숙련도를 0~1 진행도로 바꾼다.

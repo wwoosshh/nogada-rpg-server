@@ -1,6 +1,6 @@
 import type { ItemDef, NodeDef, SkillId } from '../types.js'
 import { clamp } from './clamp.js'
-import { CHANCE_DECADES, MAX_SUCCESS_CHANCE, proficiencyProgress } from './proficiency.js'
+import { CHANCE_DECADES, MAX_SUCCESS_CHANCE, MIN_SUCCESS_CHANCE, proficiencyProgress } from './proficiency.js'
 
 export interface GatherContext {
   /** 그 기술의 누적 숙련도 */
@@ -55,5 +55,5 @@ export function calcGatherChance(ctx: GatherContext): number {
   if (!canGather(ctx)) return 0
   const t = proficiencyProgress(ctx.proficiency, CHANCE_DECADES)
   const base = ctx.node.baseChance
-  return clamp(base + (MAX_SUCCESS_CHANCE - base) * t, 0.05, MAX_SUCCESS_CHANCE)
+  return clamp(base + (MAX_SUCCESS_CHANCE - base) * t, MIN_SUCCESS_CHANCE, MAX_SUCCESS_CHANCE)
 }

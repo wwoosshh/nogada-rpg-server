@@ -41,9 +41,9 @@ function requireCell(row: Row, key: string, context: string): string {
 /**
  * 정수로 변환하고 최솟값을 만족하는지 검사한다.
  *
- * 기본 최솟값은 1 이다 — 이 CSV들의 정수 필드(등급, 레벨, 개수, 리스폰 시간)는
- * 전부 "몇 개/몇 등급/몇 레벨"을 세는 값이라 0 이하가 의미 있는 경우가 없다.
- * 0을 그대로 통과시키면 예컨대 yieldMin=-1 이 실려서 rollInt 가 음수 개수를
+ * 기본 최솟값은 1 이다 — 이 CSV들의 정수 필드(등급, 개수, 숙련도 증가량)는
+ * 전부 "몇 등급/몇 개/얼마나 늘어나는지"를 세는 값이라 0 이하가 의미 있는 경우가
+ * 없다. 0을 그대로 통과시키면 예컨대 yieldMin=-1 이 실려서 rollInt 가 음수 개수를
  * 반환하는 식으로 나중에야 터진다.
  */
 function toInt(value: string, context: string, field: string, min = 1): number {

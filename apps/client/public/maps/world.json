@@ -422,6 +422,25 @@
                  "width":0,
                  "x":880,
                  "y":912
+                },
+                {
+                 "height":0,
+                 "id":14,
+                 "name":"",
+                 "opacity":1,
+                 "point":true,
+                 "properties":[
+                        {
+                         "name":"nodeId",
+                         "type":"string",
+                         "value":"rare_herb_patch"
+                        }],
+                 "rotation":0,
+                 "type":"",
+                 "visible":true,
+                 "width":0,
+                 "x":688,
+                 "y":880
                 }],
          "opacity":1,
          "type":"objectgroup",
@@ -430,7 +449,7 @@
          "y":0
         }],
  "nextlayerid":8,
- "nextobjectid":14,
+ "nextobjectid":15,
  "orientation":"orthogonal",
  "renderorder":"right-down",
  "tiledversion":"1.12.2",

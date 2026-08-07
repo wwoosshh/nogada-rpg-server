@@ -1,6 +1,12 @@
 import type { RecipeDef } from '../types.js'
 import { clamp } from './clamp.js'
-import { CHANCE_DECADES, MAX_SUCCESS_CHANCE, proficiencyProgress } from './proficiency.js'
+import {
+  CHANCE_DECADES,
+  CRAFT_TOOL_TIER_CHANCE_BONUS,
+  MAX_SUCCESS_CHANCE,
+  MIN_SUCCESS_CHANCE,
+  proficiencyProgress,
+} from './proficiency.js'
 
 export interface CraftContext {
   /** 조합 숙련도 */
@@ -27,5 +33,6 @@ export function calcCraftSuccess(ctx: CraftContext): number {
   const over = ctx.proficiency - ctx.recipe.requiredSkill
   const t = proficiencyProgress(over, CHANCE_DECADES)
   const base = ctx.recipe.baseChance
-  return clamp(base + (MAX_SUCCESS_CHANCE - base) * t + ctx.toolTier * 0.02, 0.1, MAX_SUCCESS_CHANCE)
+  const withToolBonus = base + (MAX_SUCCESS_CHANCE - base) * t + ctx.toolTier * CRAFT_TOOL_TIER_CHANCE_BONUS
+  return clamp(withToolBonus, MIN_SUCCESS_CHANCE, MAX_SUCCESS_CHANCE)
 }

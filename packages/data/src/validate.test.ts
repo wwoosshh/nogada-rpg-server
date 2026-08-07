@@ -170,13 +170,34 @@ describe('validateGameData', () => {
   it('baseChance 가 1 을 넘는 노드를 잡아낸다', () => {
     const data = baseData()
     data.nodes.copper_vein!.baseChance = 1.5
-    expect(validateGameData(data)).toContain('nodes[copper_vein]: baseChance 가 0 초과 1 이하가 아니다')
+    expect(validateGameData(data)).toContain('nodes[copper_vein]: baseChance 가 0 초과 1 미만이 아니다')
+  })
+
+  // 설계 문서 §6.4: baseChance 는 0 초과 "1 미만" 이다. 1 이면 숙련도와 무관하게 항상
+  // 성공하는 판정이 되어, 판정이 살아 있게 한다는 성공률 하한(MIN_SUCCESS_CHANCE)의
+  // 취지와 어긋난다.
+  it('baseChance 가 정확히 1 인 노드를 잡아낸다', () => {
+    const data = baseData()
+    data.nodes.copper_vein!.baseChance = 1
+    expect(validateGameData(data)).toContain('nodes[copper_vein]: baseChance 가 0 초과 1 미만이 아니다')
   })
 
   it('skillGainMin 이 skillGainMax 보다 큰 노드를 잡아낸다', () => {
     const data = baseData()
     data.nodes.copper_vein!.skillGainMin = 5
     expect(validateGameData(data)).toContain('nodes[copper_vein]: skillGainMin 이 skillGainMax 보다 크다')
+  })
+
+  it('baseChance 가 0 초과 1 미만이 아닌 레시피를 잡아낸다', () => {
+    const data = baseData()
+    data.recipes.copper_ingot!.baseChance = 1
+    expect(validateGameData(data)).toContain('recipes[copper_ingot]: baseChance 가 0 초과 1 미만이 아니다')
+  })
+
+  it('skillGainMin 이 skillGainMax 보다 큰 레시피를 잡아낸다', () => {
+    const data = baseData()
+    data.recipes.copper_ingot!.skillGainMin = 25
+    expect(validateGameData(data)).toContain('recipes[copper_ingot]: skillGainMin 이 skillGainMax 보다 크다')
   })
 
   it('자기 자신을 재료로 쓰는 레시피를 잡아낸다', () => {

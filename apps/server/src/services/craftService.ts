@@ -2,15 +2,13 @@ import {
   actionIntervalMs,
   calcCraftSuccess,
   canCraft,
+  EFFICIENCY_MULTIPLIER,
   equippedToolTier,
   rollInt,
   type GameData,
   type PlayerState,
   type RecipeInput,
 } from '@nogada/shared'
-
-/** 효율 배수. 이번 범위에서는 항상 1 이고, 올리는 수단은 아직 없다. */
-const EFFICIENCY_MULTIPLIER = 1
 
 export interface PerformCraftArgs {
   player: PlayerState

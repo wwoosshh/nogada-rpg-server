@@ -69,8 +69,8 @@ export function validateGameData(data: GameData): string[] {
     if (node.yieldMin > node.yieldMax) {
       violations.push(`nodes[${node.id}]: yieldMin 이 yieldMax 보다 크다`)
     }
-    if (node.baseChance <= 0 || node.baseChance > 1) {
-      violations.push(`nodes[${node.id}]: baseChance 가 0 초과 1 이하가 아니다`)
+    if (node.baseChance <= 0 || node.baseChance >= 1) {
+      violations.push(`nodes[${node.id}]: baseChance 가 0 초과 1 미만이 아니다`)
     }
     if (node.skillGainMin > node.skillGainMax) {
       violations.push(`nodes[${node.id}]: skillGainMin 이 skillGainMax 보다 크다`)
@@ -88,6 +88,9 @@ export function validateGameData(data: GameData): string[] {
     }
     if (!hasItem(recipe.output.item)) {
       violations.push(`recipes[${recipe.id}]: 존재하지 않는 아이템 "${recipe.output.item}" 를 산출한다`)
+    }
+    if (recipe.baseChance <= 0 || recipe.baseChance >= 1) {
+      violations.push(`recipes[${recipe.id}]: baseChance 가 0 초과 1 미만이 아니다`)
     }
     if (recipe.skillGainMin > recipe.skillGainMax) {
       violations.push(`recipes[${recipe.id}]: skillGainMin 이 skillGainMax 보다 크다`)

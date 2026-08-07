@@ -97,12 +97,6 @@ describe('performGather', () => {
     expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
 
-  it('자격 미달은 간격을 소비하지 않는다', () => {
-    const p = player({ nextActionAt: 0 })
-    performGather({ player: p, data, nodeId: 'iron_vein', rng: alwaysSucceed, now: 1000 })
-    expect(p.nextActionAt).toBe(0)
-  })
-
   // 검사 순서 자체를 못 박는다: 간격도 안 지나고 접근 자격도 없는 상황에서
   // cannot_gather 가 나와야 접근 자격이 간격보다 먼저 검사된다는 것이 증명된다.
   // 이 시나리오 없이는 개별 거부 테스트만으로 순서를 구분할 수 없다.

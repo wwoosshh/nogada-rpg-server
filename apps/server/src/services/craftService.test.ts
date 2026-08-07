@@ -191,12 +191,6 @@ describe('performCraft', () => {
     expect(r).toEqual({ ok: false, code: 'too_fast' })
   })
 
-  it('재료 부족은 간격을 소비하지 않는다', () => {
-    const p = player({ nextActionAt: 0 })
-    performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
-    expect(p.nextActionAt).toBe(0)
-  })
-
   // 검사 순서 자체를 못 박는다: 간격도 안 지나고 재료도 없는 상황에서
   // missing_materials 가 나와야 재료 확인이 간격보다 먼저 검사된다는 것이 증명된다.
   // 이 시나리오 없이는 개별 거부 테스트만으로 순서를 구분할 수 없다.

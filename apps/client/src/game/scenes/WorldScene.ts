@@ -24,7 +24,6 @@ export class WorldScene extends Phaser.Scene {
   private facing: Facing = 'down'
   /** 터치 조작용 목표 지점. null 이면 키보드 입력만 처리한다. */
   private moveTarget: Phaser.Math.Vector2 | null = null
-  private markers: NodeMarker[] = []
   private dayNight!: DayNightOverlay
   private unsubscribeStore: (() => void) | null = null
 
@@ -166,17 +165,15 @@ export class WorldScene extends Phaser.Scene {
         continue
       }
 
-      this.markers.push(
-        new NodeMarker({
-          scene: this,
-          x: obj.x ?? 0,
-          y: obj.y ?? 0,
-          nodeId,
-          label: def.name,
-          tier: def.tier,
-          onTap: (id) => void useGameStore.getState().gather(id),
-        }),
-      )
+      new NodeMarker({
+        scene: this,
+        x: obj.x ?? 0,
+        y: obj.y ?? 0,
+        nodeId,
+        label: def.name,
+        tier: def.tier,
+        onTap: (id) => void useGameStore.getState().gather(id),
+      })
     }
   }
 
