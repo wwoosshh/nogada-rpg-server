@@ -21,6 +21,13 @@ const data: GameData = {
       yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1, respawnMs: 9000,
       skillGainMin: 1, skillGainMax: 2,
     },
+    // 숙련도 증가가 데이터에서 오는지 확인용. 증가량이 의도적으로 1이 아니므로
+    // gatherService.ts 를 hardcoded +1 로 되돌린 경우를 감지한다.
+    mithril_vein: {
+      id: 'mithril_vein', name: '미스릴 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
+      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2, respawnMs: 5000,
+      skillGainMin: 7, skillGainMax: 7,
+    },
   },
   recipes: {},
 }
@@ -135,6 +142,14 @@ describe('performGather', () => {
     expect(r.outcome.skillGained).toBeGreaterThanOrEqual(1)
     expect(r.outcome.skillGained).toBeLessThanOrEqual(2)
     expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
+  })
+
+  it('데이터 정의 숙련도 증가를 적용한다', () => {
+    const r = performGather({ player: player(), data, nodeId: 'mithril_vein', rng: alwaysSucceed, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.skillGained).toBe(7)
+    expect(r.outcome.player.skills.mineral).toBe(7)
   })
 
   it('숙련도가 높으면 수량 보너스가 붙는다', () => {

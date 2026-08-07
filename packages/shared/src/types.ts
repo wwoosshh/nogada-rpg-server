@@ -93,7 +93,10 @@ export interface RecipeDef {
   baseChance: number
   inputs: RecipeInput[]
   output: RecipeInput
-  /** 제작 1회당 숙련도 증가량의 범위. 대략 요구 숙련도의 0.5~1% 다. */
+  /**
+   * 제작 1회당 숙련도 증가량의 범위. 요구 숙련도와 함께 증가하지만 비례하지는 않으므로
+   * 필요도가 높을수록 요구치 대비 증가 비율이 낮아진다. 설계 문서의 기준점 표를 참조한다.
+   */
   skillGainMin: number
   skillGainMax: number
 }
