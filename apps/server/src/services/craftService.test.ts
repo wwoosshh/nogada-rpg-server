@@ -205,4 +205,35 @@ describe('performCraft', () => {
     const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'missing_materials' })
   })
+
+  it('숙련도 0 이면 다음 행동까지 500ms 를 기다린다', () => {
+    const p = player({ stacks: { copper_ore: 5 } })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    // 성공하면 숙련도가 10~20 올라가지만, 다음 행동까지의 시간은 증가 전 숙련도(0)로
+    // 계산된다. 증가 후 읽으면 약 422ms 정도가 나온다. 이것이 500 이 아니어야 이 테스트의 의미가 있다.
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
+  })
+
+  it('숙련도가 높으면 간격이 짧아진다', () => {
+    const p = player({ skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 999_999 }, stacks: { copper_ore: 5 } })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 50)
+  })
+
+  it('간격 위반으로 거부당하면 아무것도 변하지 않는다', () => {
+    const p = player({ stacks: { copper_ore: 5 }, nextActionAt: 8000 })
+    const initialStacks = { ...p.stacks }
+    const initialSkills = { ...p.skills }
+    const initialNextActionAt = p.nextActionAt
+
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 5000 })
+    expect(r).toEqual({ ok: false, code: 'too_fast' })
+
+    // 거부되면 입력 객체가 변경되지 않는다
+    expect(p.nextActionAt).toBe(initialNextActionAt)
+    expect(p.stacks).toEqual(initialStacks)
+    expect(p.skills).toEqual(initialSkills)
+  })
 })
