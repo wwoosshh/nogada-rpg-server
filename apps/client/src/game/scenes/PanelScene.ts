@@ -4,7 +4,9 @@ import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { buildCraftLines, canAffordCraft, craftRepeatUnlocked } from '../craftPanelContent.js'
 import { DIM_COLOR, LABEL_COLOR, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
+import { addText } from '../gameText.js'
 import { ScrollList } from '../ScrollList.js'
+import { renderScale, viewSize } from '../viewport.js'
 import type { ControlScene } from './ControlScene.js'
 
 /*
@@ -200,38 +202,35 @@ export class PanelScene extends Phaser.Scene {
       .setStrokeStyle(2, PANEL_EDGE_COLOR, 1)
       .setVisible(false)
 
-    this.title = this.add
-      .text(0, 0, '', {
-        fontSize: '18px',
-        color: ACCENT_TEXT_COLOR,
-        stroke: INK_COLOR,
-        strokeThickness: 3,
-        fontStyle: 'bold',
-        align: 'center',
-      })
+    this.title = addText(this, 0, 0, '', {
+      fontSize: '18px',
+      color: ACCENT_TEXT_COLOR,
+      stroke: INK_COLOR,
+      strokeThickness: 3,
+      fontStyle: 'bold',
+      align: 'center',
+    })
       .setOrigin(0.5)
       .setVisible(false)
 
-    this.body = this.add
-      .text(0, 0, '', {
-        fontSize: '13px',
-        color: LABEL_COLOR,
-        stroke: INK_COLOR,
-        strokeThickness: 2,
-        align: 'center',
-      })
+    this.body = addText(this, 0, 0, '', {
+      fontSize: '13px',
+      color: LABEL_COLOR,
+      stroke: INK_COLOR,
+      strokeThickness: 2,
+      align: 'center',
+    })
       .setOrigin(0.5)
       .setVisible(false)
 
     this.tabButtons = TABS.map((tab) => {
-      const label = this.add
-        .text(0, 0, tab.label, {
-          fontSize: `${TAB_LABEL_FONT_SIZE}px`,
-          color: DIM_COLOR,
-          stroke: INK_COLOR,
-          strokeThickness: 2,
-          fontStyle: 'bold',
-        })
+      const label = addText(this, 0, 0, tab.label, {
+        fontSize: `${TAB_LABEL_FONT_SIZE}px`,
+        color: DIM_COLOR,
+        stroke: INK_COLOR,
+        strokeThickness: 2,
+        fontStyle: 'bold',
+      })
         .setOrigin(0.5)
         .setVisible(false)
 
@@ -279,18 +278,21 @@ export class PanelScene extends Phaser.Scene {
     // 부작용이 없기 때문이다).
     this.closeButtonShape.on('pointerdown', () => this.setOpen(null))
 
-    this.closeButtonLabel = this.add
-      .text(0, 0, '✕', {
-        fontSize: '20px',
-        color: ACCENT_TEXT_COLOR,
-        stroke: INK_COLOR,
-        strokeThickness: 3,
-        fontStyle: 'bold',
-      })
+    this.closeButtonLabel = addText(this, 0, 0, '✕', {
+      fontSize: '20px',
+      color: ACCENT_TEXT_COLOR,
+      stroke: INK_COLOR,
+      strokeThickness: 3,
+      fontStyle: 'bold',
+    })
       .setOrigin(0.5)
       .setVisible(false)
 
-    this.layout(this.scale.width, this.scale.height)
+    // ControlScene 과 같은 이유로 카메라 원점을 좌상단에 둔다 — 이 파일의 좌표를
+    // 하나도 고치지 않고 기기 픽셀 배율만 얹기 위해서다. viewport.ts 참고.
+    this.cameras.main.setOrigin(0, 0).setZoom(renderScale())
+
+    this.relayout()
     this.scale.on('resize', this.handleResize, this)
 
     // 톱니(React)가 gameStore.openMenu() 로 세운 요청을 여기서 받는다 —
@@ -469,7 +471,7 @@ export class PanelScene extends Phaser.Scene {
 
   /** 메뉴를 열거나 탭을 바꿀 때: 위치(탭 밑줄 포함)까지 다시 잡고 내용도 다시 짠다. */
   private refreshMenu(): void {
-    this.layout(this.scale.width, this.scale.height)
+    this.relayout()
     this.rebuildMenuContent()
   }
 
@@ -500,7 +502,7 @@ export class PanelScene extends Phaser.Scene {
    * 27개가 이미 이 상자 안에서 스크롤로 다 들어간다는 증거다.
    */
   private refreshCraft(): void {
-    this.layout(this.scale.width, this.scale.height)
+    this.relayout()
     this.rebuildCraftContent()
   }
 
@@ -577,11 +579,23 @@ export class PanelScene extends Phaser.Scene {
       })
   }
 
-  private handleResize(gameSize: Phaser.Structs.Size): void {
-    this.layout(gameSize.width, gameSize.height)
+  private handleResize(): void {
+    this.relayout()
     // 메뉴·제작이 열린 채로 리사이즈되면 줄바꿈 폭이 달라지므로 내용을 다시 짠다.
     if (this.open === 'menu') this.rebuildMenuContent()
     if (this.open === 'craft') this.rebuildCraftContent()
+  }
+
+  /**
+   * 지금 화면 크기로 다시 배치한다.
+   *
+   * `scale.width` 를 직접 쓰지 않는 이유는 그것이 기기 픽셀이기 때문이다. 이
+   * 파일의 좌표와 크기 상수는 전부 CSS 픽셀이고, 그 차이는 카메라 zoom 이
+   * 메운다 — viewport.ts 참고.
+   */
+  private relayout(): void {
+    const view = viewSize(this)
+    this.layout(view.width, view.height)
   }
 
   /**

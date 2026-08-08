@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { DEPTH } from './depth.js'
+import { addText } from './gameText.js'
 
 /** tokens.css 의 --c-tier-* 와 같은 색. 픽셀 맵과 UI 의 팔레트를 맞춘다. */
 const TIER_COLORS: Record<number, number> = {
@@ -32,9 +33,10 @@ export class NodeMarker {
       .rectangle(0, 0, 24, 24, TIER_COLORS[tier] ?? TIER_COLORS[1]!)
       .setStrokeStyle(2, 0x241c1c)
 
-    this.caption = scene.add
-      .text(0, 18, label, { fontSize: '10px', color: '#e8dcc0' })
-      .setOrigin(0.5, 0)
+    this.caption = addText(scene, 0, 18, label, {
+      fontSize: '10px',
+      color: '#e8dcc0',
+    }).setOrigin(0.5, 0)
 
     this.container = scene.add.container(x, y, [this.body, this.caption])
     this.container.setDepth(DEPTH.node)

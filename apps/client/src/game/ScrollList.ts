@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { addText } from './gameText.js'
 
 export interface ScrollListLine {
   text: string
@@ -136,13 +137,11 @@ export class ScrollList {
     let openGroup: PressGroup | null = null
     const wrapWidth = Math.max(0, this.viewW - 8)
     for (const line of lines) {
-      const text = this.scene.add
-        .text(4, y, line.text, {
-          fontSize: `${line.fontSize}px`,
-          color: line.color,
-          wordWrap: { width: wrapWidth },
-        })
-        .setOrigin(0, 0)
+      const text = addText(this.scene, 4, y, line.text, {
+        fontSize: `${line.fontSize}px`,
+        color: line.color,
+        wordWrap: { width: wrapWidth },
+      }).setOrigin(0, 0)
       this.container.add(text)
       this.rows.push(text)
 

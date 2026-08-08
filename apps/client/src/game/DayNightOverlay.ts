@@ -15,9 +15,8 @@ const MAX_NIGHT_ALPHA = 0.55
  * 자체 시간을 세지 않고 매 프레임 받은 값을 그리기만 한다.
  *
  * setScrollFactor(0) 은 카메라 스크롤에서만 벗어나고 줌에서는 벗어나지 않는다.
- * 지금은 카메라 줌을 쓰지 않아 무해하지만, 나중에 camera.setZoom(n) 을 쓰게 되면
- * 이 사각형 크기를 cam.width / cam.zoom, cam.height / cam.zoom 으로 다시 맞춰야
- * 화면 전체를 덮는다.
+ * 월드 카메라는 기기 픽셀 배율만큼 확대돼 있으므로(viewport.ts), 이 사각형은
+ * 그만큼 작게 그린 뒤 확대되어 화면을 정확히 덮는다.
  */
 export class DayNightOverlay {
   private readonly rect: Phaser.GameObjects.Rectangle
@@ -25,13 +24,13 @@ export class DayNightOverlay {
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene
-    const cam = scene.cameras.main
     this.rect = scene.add
-      .rectangle(0, 0, cam.width, cam.height, 0x000000, 0)
+      .rectangle(0, 0, 10, 10, 0x000000, 0)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(DEPTH.dayNight)
 
+    this.fitToCamera()
     scene.scale.on('resize', this.handleResize, this)
   }
 
@@ -46,7 +45,22 @@ export class DayNightOverlay {
     this.rect.destroy()
   }
 
-  private handleResize(gameSize: Phaser.Structs.Size): void {
-    this.rect.setSize(gameSize.width, gameSize.height)
+  private handleResize(): void {
+    this.fitToCamera()
+  }
+
+  /**
+   * 확대된 카메라 안에서 화면을 정확히 덮도록 크기와 위치를 잡는다.
+   *
+   * 크기를 zoom 으로 나누는 것은 확대되어 원래 크기로 돌아오게 하려는 것이고,
+   * 좌상단을 중앙 쪽으로 당기는 것은 이 카메라가 화면 중앙을 기준으로 확대하기
+   * 때문이다. 둘 중 하나만 하면 사각형이 화면 밖으로 밀리거나 일부만 덮는다.
+   */
+  private fitToCamera(): void {
+    const cam = this.scene.cameras.main
+    const w = cam.width / cam.zoom
+    const h = cam.height / cam.zoom
+    this.rect.setSize(w, h)
+    this.rect.setPosition(cam.width * cam.originX - w / 2, cam.height * cam.originY - h / 2)
   }
 }

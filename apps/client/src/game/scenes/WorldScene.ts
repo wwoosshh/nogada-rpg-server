@@ -8,8 +8,10 @@ import { worldNow } from '../../time/clock.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
+import { addText } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { TileMover } from '../TileMover.js'
+import { fixedToCamera, renderScale } from '../viewport.js'
 import { ControlScene } from './ControlScene.js'
 import { PanelScene } from './PanelScene.js'
 
@@ -117,6 +119,13 @@ export class WorldScene extends Phaser.Scene {
     this.player = this.add.sprite(startX, startY, 'player', this.idleFrame('down'))
     this.player.setDepth(DEPTH.player)
 
+    // 게임 좌표는 기기 픽셀이고 월드는 여전히 32px 타일이다. zoom 으로 그 차이를
+    // 메우면 화면에 보이는 월드 범위는 전과 똑같으면서 그리는 해상도만 올라간다 —
+    // 배율이 정수라 원본 한 픽셀이 화면의 정수 개 픽셀로 떨어져 오히려 더 또렷해진다.
+    //
+    // UI 씬과 달리 카메라 원점은 중앙(기본값)으로 둔다. startFollow 가 원점을 써서
+    // 추적 대상을 화면 가운데에 놓기 때문에, 좌상단으로 옮기면 플레이어가 구석에 붙는다.
+    this.cameras.main.setZoom(renderScale())
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels)
     this.cameras.main.startFollow(this.player, true)
 
@@ -362,12 +371,15 @@ export class WorldScene extends Phaser.Scene {
    */
   private showMilestone(text: string): void {
     const cam = this.cameras.main
-    const label = this.add
-      .text(cam.width / 2, cam.height / 3, text, {
-        fontSize: '18px',
-        color: '#ffe9a8',
-        align: 'center',
-      })
+    // setScrollFactor(0) 은 스크롤에서만 벗어나고 zoom 에서는 벗어나지 않는다.
+    // 이 카메라는 중앙 기준으로 확대되므로, 화면의 (w/2, h/3) 에 보이게 하려면
+    // 좌표를 중앙 쪽으로 당겨 놓아야 한다 — fixedToCamera 가 그 계산이다.
+    const at = fixedToCamera(cam, cam.width / 2, cam.height / 3)
+    const label = addText(this, at.x, at.y, text, {
+      fontSize: '18px',
+      color: '#ffe9a8',
+      align: 'center',
+    })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(DEPTH.milestone)

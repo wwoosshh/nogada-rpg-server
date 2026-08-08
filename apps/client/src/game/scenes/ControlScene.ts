@@ -2,6 +2,8 @@ import Phaser from 'phaser'
 import type { Direction } from '@nogada/shared'
 import type { InputHub } from '../../input/InputState.js'
 import { TouchSource } from '../../input/TouchSource.js'
+import { addText } from '../gameText.js'
+import { renderScale, viewSize } from '../viewport.js'
 
 /*
  * tokens.css 의 --c-panel / --c-panel-edge / --c-accent / --c-parchment / --c-ink 와
@@ -102,16 +104,14 @@ function createButtonVisual(
     .circle(0, 0, radius, fillColor, BASE_ALPHA)
     .setStrokeStyle(2, PANEL_EDGE_COLOR, 0.9)
 
-  const label = scene.add
-    .text(0, 0, labelText, {
-      fontSize: `${fontSize}px`,
-      color: LABEL_COLOR,
-      stroke: INK_COLOR,
-      strokeThickness: 3,
-      fontStyle: 'bold',
-      align: 'center',
-    })
-    .setOrigin(0.5)
+  const label = addText(scene, 0, 0, labelText, {
+    fontSize: `${fontSize}px`,
+    color: LABEL_COLOR,
+    stroke: INK_COLOR,
+    strokeThickness: 3,
+    fontStyle: 'bold',
+    align: 'center',
+  }).setOrigin(0.5)
 
   return {
     shape,
@@ -201,7 +201,15 @@ export class ControlScene extends Phaser.Scene {
     setCircularHitArea(this.btnBag.shape, TOGGLE_RADIUS)
     setCircularHitArea(this.btnCraft.shape, TOGGLE_RADIUS)
 
-    this.layout(this.scale.width, this.scale.height)
+    // 게임 좌표는 기기 픽셀이고 이 씬의 상수들은 CSS 픽셀이다. 카메라 원점을
+    // (0, 0) 으로 두면 zoom 이 화면 중앙이 아니라 좌상단 기준으로 걸려서, 이
+    // 파일의 좌표를 하나도 고치지 않고 배율만 얹을 수 있다. 월드 씬은 플레이어를
+    // 화면 중앙에 두어야 해서 원점을 옮기지 못하지만, UI 씬은 스크롤이 없으므로
+    // 이렇게 두는 편이 훨씬 단순하다.
+    this.cameras.main.setOrigin(0, 0).setZoom(renderScale())
+
+    const view = viewSize(this)
+    this.layout(view.width, view.height)
     this.scale.on('resize', this.handleResize, this)
 
     // 씬이 끝나는 경로가 두 갈래다: WorldScene 의 cleanup 이 명시적으로
@@ -319,8 +327,10 @@ export class ControlScene extends Phaser.Scene {
     this.dirRight.setPressed(dir === 'right')
   }
 
-  private handleResize(gameSize: Phaser.Structs.Size): void {
-    this.layout(gameSize.width, gameSize.height)
+  private handleResize(): void {
+    // 이벤트가 넘겨주는 gameSize 는 기기 픽셀이라 그대로 쓰면 배율만큼 어긋난다.
+    const view = viewSize(this)
+    this.layout(view.width, view.height)
   }
 
   /**

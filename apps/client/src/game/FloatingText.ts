@@ -1,5 +1,6 @@
 import type Phaser from 'phaser'
 import { DEPTH } from './depth.js'
+import { addText } from './gameText.js'
 
 /** tokens.css 의 --c-success / --c-danger 와 같은 값이다. 바꿀 때 함께 고친다. */
 const TONE_COLORS = {
@@ -22,13 +23,12 @@ function createFloatingLabel(
   text: string,
   tone: keyof typeof TONE_COLORS,
 ): Phaser.GameObjects.Text {
-  return scene.add
-    .text(x, y, text, {
-      fontSize: '12px',
-      color: TONE_COLORS[tone],
-      stroke: '#241c1c',
-      strokeThickness: 3,
-    })
+  return addText(scene, x, y, text, {
+    fontSize: '12px',
+    color: TONE_COLORS[tone],
+    stroke: '#241c1c',
+    strokeThickness: 3,
+  })
     .setOrigin(0.5, 1)
     .setDepth(DEPTH.floatingText)
 }
