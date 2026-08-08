@@ -37,7 +37,7 @@ export function createInitialPlayer(id: string): PlayerState {
 
   const skills = Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>
 
-  return { id, skills, stacks: {}, instances, equipped, nextActionAt: 0 }
+  return { id, skills, stacks: {}, instances, equipped, nextActionAt: 0, celebrated: [] }
 }
 
 /**

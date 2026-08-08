@@ -39,6 +39,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     instances: [{ instanceId: 'pick1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
     equipped: { mineral: 'pick1' },
     nextActionAt: 0,
+    celebrated: [],
     ...overrides,
   }
 }

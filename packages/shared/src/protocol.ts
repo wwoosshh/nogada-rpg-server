@@ -29,6 +29,7 @@ export const PlayerStateSchema = z.object({
   instances: z.array(ItemInstanceSchema),
   equipped: z.record(z.string(), z.string()),
   nextActionAt: z.number(),
+  celebrated: z.array(z.string()),
 })
 
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })

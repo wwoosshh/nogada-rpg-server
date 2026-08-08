@@ -56,6 +56,14 @@ export interface PlayerState {
    * 번갈아 눌러 실질 속도를 배로 올릴 수 있다.
    */
   nextActionAt: number
+  /**
+   * 이미 축하한 이정표 id.
+   *
+   * 달성 여부 자체는 저장하지 않는다 — 지표가 전부 단조 증가라 PlayerState 로부터
+   * 계산되고, 저장하면 계산값과 어긋날 수 있다. 여기 남기는 것은 "두 번 축하하지
+   * 않기" 뿐이고 그건 틀려도 피해가 없다.
+   */
+  celebrated: string[]
 }
 
 export interface ItemDef {

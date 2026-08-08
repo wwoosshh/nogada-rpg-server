@@ -13,6 +13,7 @@ function validSave(): Record<string, unknown> {
     instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
     equipped: { mineral: 'i1' },
     nextActionAt: 0,
+    celebrated: [],
   }
 }
 
