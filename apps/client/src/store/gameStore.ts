@@ -2,11 +2,9 @@ import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
   calcGatherChance,
-  canRepeat,
   equippedToolTier,
-  SKILL_IDS,
-  SKILL_LABELS,
   type GameData,
+  type MilestoneDef,
   type PlayerState,
   type SkillId,
 } from '@nogada/shared'
@@ -115,9 +113,9 @@ export const useGameStore = create<GameStore>((set) => ({
 
   gather: async (instanceId) => {
     try {
-      const prev = useGameStore.getState().player
       const outcome: GatherOutcomeDto = await GameClient.gather(instanceId)
-      applyPlayer(set, prev, outcome.player)
+      applyPlayer(set, outcome.player)
+      pushMilestones(set, outcome.achieved)
 
       if (outcome.success && outcome.gained) {
         const name = labelOf(useGameStore.getState().data, outcome.gained.item)
@@ -148,9 +146,9 @@ export const useGameStore = create<GameStore>((set) => ({
 
   craft: async (recipeId) => {
     try {
-      const prev = useGameStore.getState().player
       const outcome: CraftOutcomeDto = await GameClient.craft(recipeId)
-      applyPlayer(set, prev, outcome.player)
+      applyPlayer(set, outcome.player)
+      pushMilestones(set, outcome.achieved)
 
       if (outcome.success && outcome.produced) {
         const name = labelOf(useGameStore.getState().data, outcome.produced.item)
@@ -191,30 +189,25 @@ function pushAction(
   set({ lastAction: { seq: ++actionSeq, text, tone, groupKey, amount } })
 }
 
-/**
- * 이번 행동으로 자동 반복이 열린 기술을 찾는다.
- *
- * 넘기 전과 넘은 뒤를 비교하므로 딱 한 번만 잡힌다. 이미 열린 기술은
- * canRepeat 이 전에도 참이라 걸리지 않는다.
- */
-function detectUnlock(prev: PlayerState | null, next: PlayerState): SkillId | null {
-  if (!prev) return null
-  for (const id of SKILL_IDS) {
-    if (!canRepeat(prev.skills[id]) && canRepeat(next.skills[id])) return id
-  }
-  return null
+function applyPlayer(set: SetFn, next: PlayerState): void {
+  set({ player: next })
 }
 
-function applyPlayer(set: SetFn, prev: PlayerState | null, next: PlayerState): void {
-  set({ player: next })
-  const unlocked = detectUnlock(prev, next)
-  if (unlocked) {
-    set({
-      milestone: {
-        seq: ++milestoneSeq,
-        text: `${SKILL_LABELS[unlocked]}이(가) 손에 익었다 — 누르고 있으면 계속된다`,
-      },
-    })
+/**
+ * 서버가 이번 행동에서 새로 달성됐다고 알린 이정표 중, 화면에 알릴 것만 채널에 싣는다.
+ *
+ * `announce` 가 빈 문자열인 이정표는 달성으로는 세지만(서버가 이미 celebrated 에
+ * 넣었다) 화면에는 띄우지 않는다 — 같은 문턱을 여러 기술이 동시에 넘을 때 전부
+ * 띄우면 화면이 묻힌다.
+ *
+ * 여러 개가 한 번에 오면 각각 다른 seq 로 순서대로 싣는다. 겹쳐 보이지 않게
+ * 줄 세워 하나씩 보여주는 일은 구독자(WorldScene)가 큐를 들고 한다 — 여기서는
+ * "무엇을, 몇 번째로" 만 정한다.
+ */
+function pushMilestones(set: SetFn, achieved: readonly MilestoneDef[]): void {
+  for (const m of achieved) {
+    if (m.announce === '') continue
+    set({ milestone: { seq: ++milestoneSeq, text: m.announce } })
   }
 }
 

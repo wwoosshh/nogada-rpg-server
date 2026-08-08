@@ -1,4 +1,4 @@
-import type { GameData, PlayerState } from '@nogada/shared'
+import type { GameData, MilestoneDef, PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { performGather } from './gatherService.js'
 
@@ -216,5 +216,99 @@ describe('performGather', () => {
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
     expect(r.outcome.skillGained).toBe(0)
     expect(r.outcome.player.skills.mineral).toBe(0)
+  })
+})
+
+describe('performGather — 이정표 달성', () => {
+  const mineralMilestone: MilestoneDef = {
+    id: 'mineral-5',
+    metric: { kind: 'skill', skill: 'mineral' },
+    threshold: 5,
+    name: '광물에 익숙해지다',
+    announce: '광물을 다루는 손이 익숙해졌다',
+    effect: { kind: 'title' },
+  }
+  const dataWithMilestone: GameData = { ...data, milestones: [mineralMilestone] }
+
+  /** alwaysSucceed(rng() = 0)일 때 copper_vein 의 skillGained 은 항상 최솟값 1 이다. */
+  function playerBelowThreshold(overrides: Partial<PlayerState> = {}): PlayerState {
+    return player({ skills: { ice: 0, wood: 0, mineral: 4, herb: 0, crafting: 0 }, ...overrides })
+  }
+
+  it('성공한 채집이 문턱을 넘기면 outcome.achieved 에 그 이정표가 담긴다', () => {
+    const r = performGather({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.player.skills.mineral).toBe(5) // 문턱에 정확히 닿았는지 전제부터 확인한다
+    expect(r.outcome.achieved.map((m) => m.id)).toEqual(['mineral-5'])
+  })
+
+  it('그 이정표 id 가 outcome.player.celebrated 에 들어간다', () => {
+    const r = performGather({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.player.celebrated).toEqual(['mineral-5'])
+  })
+
+  it('다음 채집에서는 다시 담기지 않는다', () => {
+    const first = performGather({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
+    })
+    if (!first.ok) throw new Error('성공해야 한다')
+
+    const second = performGather({
+      player: first.outcome.player, data: dataWithMilestone,
+      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: first.outcome.player.nextActionAt,
+    })
+    if (!second.ok) throw new Error('성공해야 한다')
+
+    expect(second.outcome.achieved).toEqual([])
+    // celebrated 는 계속 그대로다 — 같은 id 를 두 번 넣지 않는다.
+    expect(second.outcome.player.celebrated).toEqual(['mineral-5'])
+  })
+
+  it('실패한 채집은 숙련도를 올리지 않으므로 아무것도 담기지 않는다', () => {
+    const r = performGather({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      instanceId: 'copper_vein-1', rng: alwaysFail, now: 0,
+    })
+    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
+
+    expect(r.outcome.achieved).toEqual([])
+    expect(r.outcome.player.celebrated).toEqual([])
+  })
+
+  it('이미 문턱을 넘었어도 실패한 채집은 축하하지 않는다', () => {
+    // 방어적 테스트: 실패 경로는 달성 판정 자체를 하지 않는다. 정상적인 플레이에서는
+    // 숙련도가 오를 때마다 즉시 축하하므로 이 상태(문턱 이상인데 미축하)가 나타날 수
+    // 없지만, 서비스 함수 하나만 놓고 보면 "실패하면 판정을 아예 안 한다"를 직접
+    // 증명해야 한다.
+    const p = player({ skills: { ice: 0, wood: 0, mineral: 5, herb: 0, crafting: 0 } })
+    const r = performGather({
+      player: p, data: dataWithMilestone, instanceId: 'copper_vein-1', rng: alwaysFail, now: 0,
+    })
+    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
+
+    expect(r.outcome.achieved).toEqual([])
+    expect(r.outcome.player.celebrated).toEqual([])
+  })
+
+  it('거부당한 요청은 celebrated 를 건드리지 않는다', () => {
+    const p = player({
+      skills: { ice: 0, wood: 0, mineral: 5, herb: 0, crafting: 0 },
+      nextActionAt: 8000,
+    })
+    const r = performGather({
+      player: p, data: dataWithMilestone, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 5000,
+    })
+    // too_fast 거부는 outcome 자체가 없다 — celebrated 를 실을 자리가 없다.
+    expect(r).toEqual({ ok: false, code: 'too_fast' })
   })
 })

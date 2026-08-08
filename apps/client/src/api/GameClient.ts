@@ -1,4 +1,4 @@
-import type { PlayerState, RecipeInput } from '@nogada/shared'
+import type { MilestoneDef, PlayerState, RecipeInput } from '@nogada/shared'
 
 /**
  * 서버 주소는 이 변수 하나로만 결정된다.
@@ -11,6 +11,8 @@ export interface GatherOutcomeDto {
   chance: number
   gained: RecipeInput | null
   skillGained: number
+  /** 이번 행동으로 새로 달성된 이정표. 실패·거부 경로에서는 항상 빈 배열이다. */
+  achieved: MilestoneDef[]
   player: PlayerState
 }
 
@@ -21,6 +23,8 @@ export interface CraftOutcomeDto {
   consumed: RecipeInput[]
   skillGained: number
   autoEquipped: boolean
+  /** 이번 행동으로 새로 달성된 이정표. 실패·거부 경로에서는 항상 빈 배열이다. */
+  achieved: MilestoneDef[]
   player: PlayerState
 }
 

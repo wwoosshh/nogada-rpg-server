@@ -4,8 +4,10 @@ import {
   canCraft,
   EFFICIENCY_MULTIPLIER,
   equippedToolTier,
+  newlyAchieved,
   rollInt,
   type GameData,
+  type MilestoneDef,
   type PlayerState,
   type RecipeInput,
 } from '@nogada/shared'
@@ -28,6 +30,8 @@ export interface CraftOutcome {
   consumed: RecipeInput[]
   skillGained: number
   autoEquipped: boolean
+  /** 이번 행동으로 새로 달성된 이정표. 실패·거부 경로에서는 항상 빈 배열이다. */
+  achieved: MilestoneDef[]
   player: PlayerState
 }
 
@@ -92,6 +96,7 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
         consumed,
         skillGained: 0,
         autoEquipped: false,
+        achieved: [],
         player,
       },
     }
@@ -122,6 +127,11 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   const skillGained = rollInt(rng, recipe.skillGainMin, recipe.skillGainMax) * EFFICIENCY_MULTIPLIER
   player.skills[recipe.skill] += skillGained
 
+  // 달성 판정은 숙련도가 오른 뒤에 한다. 이번 행동으로 넘긴 것을 이번 응답에 실어야
+  // 플레이어가 "그 행동 때문에 열렸다" 를 느낀다.
+  const achieved = newlyAchieved(data.milestones, player, player.celebrated)
+  for (const m of achieved) player.celebrated.push(m.id)
+
   return {
     ok: true,
     outcome: {
@@ -131,6 +141,7 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
       consumed,
       skillGained,
       autoEquipped,
+      achieved,
       player,
     },
   }

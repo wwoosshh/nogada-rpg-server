@@ -1,4 +1,4 @@
-import type { GameData, PlayerState } from '@nogada/shared'
+import type { GameData, MilestoneDef, PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { performCraft } from './craftService.js'
 
@@ -232,5 +232,127 @@ describe('performCraft', () => {
     expect(p.nextActionAt).toBe(initialNextActionAt)
     expect(p.stacks).toEqual(initialStacks)
     expect(p.skills).toEqual(initialSkills)
+  })
+})
+
+describe('performCraft — 이정표 달성', () => {
+  const craftingMilestone: MilestoneDef = {
+    id: 'crafting-100',
+    metric: { kind: 'skill', skill: 'crafting' },
+    threshold: 100,
+    name: '조합에 익숙해지다',
+    announce: '조합하는 손이 익숙해졌다',
+    effect: { kind: 'title' },
+  }
+  const dataWithMilestone: GameData = { ...data, milestones: [craftingMilestone] }
+
+  /**
+   * alwaysSucceed(rng() = 0)일 때 copper_ingot 의 skillGained 은 항상 최솟값 10 이다.
+   * requiredSkill 이 0 이라 조합 숙련도와 무관하게 시도할 수 있다.
+   */
+  function playerBelowThreshold(overrides: Partial<PlayerState> = {}): PlayerState {
+    return player({
+      skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 90 },
+      stacks: { copper_ore: 10 },
+      ...overrides,
+    })
+  }
+
+  it('성공한 조합이 문턱을 넘기면 outcome.achieved 에 그 이정표가 담긴다', () => {
+    const r = performCraft({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.player.skills.crafting).toBe(100) // 문턱에 정확히 닿았는지 전제부터 확인한다
+    expect(r.outcome.achieved.map((m) => m.id)).toEqual(['crafting-100'])
+  })
+
+  it('그 이정표 id 가 outcome.player.celebrated 에 들어간다', () => {
+    const r = performCraft({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.player.celebrated).toEqual(['crafting-100'])
+  })
+
+  it('다음 조합에서는 다시 담기지 않는다', () => {
+    const first = performCraft({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0,
+    })
+    if (!first.ok) throw new Error('성공해야 한다')
+
+    const second = performCraft({
+      player: first.outcome.player, data: dataWithMilestone,
+      recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: first.outcome.player.nextActionAt,
+    })
+    if (!second.ok) throw new Error('성공해야 한다')
+
+    expect(second.outcome.achieved).toEqual([])
+    expect(second.outcome.player.celebrated).toEqual(['crafting-100'])
+  })
+
+  it('실패한 조합은 숙련도를 올리지 않으므로 아무것도 담기지 않는다', () => {
+    const r = performCraft({
+      player: playerBelowThreshold(), data: dataWithMilestone,
+      recipeId: 'copper_ingot', rng: alwaysFail, newId: nextId, now: 0,
+    })
+    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
+
+    expect(r.outcome.achieved).toEqual([])
+    expect(r.outcome.player.celebrated).toEqual([])
+  })
+
+  it('이미 문턱을 넘었어도 실패한 조합은 축하하지 않는다', () => {
+    // 방어적 테스트: 실패 경로는 달성 판정 자체를 하지 않는다. gatherService.test.ts 의
+    // 같은 이름 테스트와 같은 이유다.
+    const p = playerBelowThreshold({ skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 100 } })
+    const r = performCraft({
+      player: p, data: dataWithMilestone, recipeId: 'copper_ingot', rng: alwaysFail, newId: nextId, now: 0,
+    })
+    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
+
+    expect(r.outcome.achieved).toEqual([])
+    expect(r.outcome.player.celebrated).toEqual([])
+  })
+
+  it('거부당한 요청은 celebrated 를 건드리지 않는다', () => {
+    const p = playerBelowThreshold({
+      skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 100 },
+      nextActionAt: 8000,
+    })
+    const r = performCraft({
+      player: p, data: dataWithMilestone, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 5000,
+    })
+    // too_fast 거부는 outcome 자체가 없다 — celebrated 를 실을 자리가 없다.
+    expect(r).toEqual({ ok: false, code: 'too_fast' })
+  })
+
+  it('한 번의 조합으로 여러 문턱을 넘으면 전부 achieved 에 담긴다', () => {
+    // 조합은 한 번에 숙련도가 수십씩 오르므로, 촘촘한 문턱 두 개를 한 번에 넘을 수 있다.
+    const m95: MilestoneDef = {
+      id: 'crafting-95', metric: { kind: 'skill', skill: 'crafting' }, threshold: 95,
+      name: '조합에 눈뜨다', announce: '조합이 눈에 익기 시작했다', effect: { kind: 'title' },
+    }
+    const m100: MilestoneDef = {
+      id: 'crafting-100', metric: { kind: 'skill', skill: 'crafting' }, threshold: 100,
+      name: '조합에 익숙해지다', announce: '조합하는 손이 익숙해졌다', effect: { kind: 'title' },
+    }
+    const d: GameData = { ...data, milestones: [m95, m100] }
+
+    const r = performCraft({
+      player: playerBelowThreshold(), data: d,
+      recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.player.skills.crafting).toBe(100)
+    // 정의 순서(m95 먼저)대로 담긴다 — 클라이언트가 이 순서로 큐에 넣고 보여준다.
+    expect(r.outcome.achieved.map((m) => m.id)).toEqual(['crafting-95', 'crafting-100'])
+    expect(r.outcome.player.celebrated.sort()).toEqual(['crafting-100', 'crafting-95'].sort())
   })
 })

@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import worldMap from '@nogada/data/maps/world.json' with { type: 'json' }
-import { canRepeat, frontTile, gameTimeAt, type Direction, type TilePos } from '@nogada/shared'
+import { frontTile, gameTimeAt, isAchieved, type Direction, type TilePos } from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
 import { useGameStore } from '../../store/gameStore.js'
@@ -48,6 +48,17 @@ export class WorldScene extends Phaser.Scene {
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
+  /**
+   * 아직 화면에 못 띄운 이정표 문구들.
+   *
+   * 조합은 한 번에 숙련도가 수십씩 올라 이정표 여러 개를 동시에 넘길 수 있다.
+   * 스토어는 achieved 각각을 별도 seq 로 순서대로 싣지만, 그 여러 번의 set() 은
+   * 같은 틱 안에서 동기로 연달아 일어나 구독 콜백도 연달아 불린다 — 매번 바로
+   * showMilestone() 을 부르면 화면 가운데 같은 자리에 글자가 겹쳐 읽을 수 없게
+   * 된다. 그래서 일단 큐에 쌓아 두고, 하나가 다 보인 뒤에야 다음 것을 꺼낸다.
+   */
+  private readonly milestoneQueue: string[] = []
+  private milestoneShowing = false
 
   constructor() {
     super({ key: 'World' })
@@ -153,7 +164,7 @@ export class WorldScene extends Phaser.Scene {
     this.unsubscribeMilestone = useGameStore.subscribe((state, prev) => {
       const m = state.milestone
       if (!m || m.seq === prev.milestone?.seq) return
-      this.showMilestone(m.text)
+      this.enqueueMilestone(m.text)
     })
 
     this.dayNight = new DayNightOverlay(this)
@@ -242,13 +253,22 @@ export class WorldScene extends Phaser.Scene {
       })
   }
 
-  /** 그 대상에서 누르고 있는 것만으로 반복되는가. */
+  /**
+   * 그 대상에서 누르고 있는 것만으로 반복되는가.
+   *
+   * 숙련도 상수를 직접 비교하지 않는다 — 그 기술의 `repeat` 이정표를 실제로
+   * 달성했는지를 `isAchieved` 로 묻는다. 문턱은 이정표 데이터 한 곳에만 있다.
+   */
   private repeatsOn(target: Interactable): boolean {
     if (target.kind !== 'node') return false
     const { player, data } = useGameStore.getState()
     const node = data.nodes[target.nodeId]
     if (!player || !node) return false
-    return canRepeat(player.skills[node.skill])
+
+    const repeatMilestone = data.milestones.find(
+      (m) => m.effect.kind === 'repeat' && m.effect.skill === node.skill,
+    )
+    return repeatMilestone ? isAchieved(repeatMilestone, player, data.milestones) : false
   }
 
   update(_time: number, delta: number): void {
@@ -315,6 +335,24 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** 큐 끝에 문구를 더하고, 지금 아무것도 안 보이는 중이면 바로 꺼내 보여준다. */
+  private enqueueMilestone(text: string): void {
+    this.milestoneQueue.push(text)
+    this.pumpMilestoneQueue()
+  }
+
+  /**
+   * 큐에서 다음 문구를 꺼내 보여준다. 이미 하나가 보이는 중이면 아무것도 하지
+   * 않는다 — showMilestone() 의 트윈이 끝나며 다시 이 함수를 부른다.
+   */
+  private pumpMilestoneQueue(): void {
+    if (this.milestoneShowing) return
+    const text = this.milestoneQueue.shift()
+    if (text === undefined) return
+    this.milestoneShowing = true
+    this.showMilestone(text)
+  }
+
   /**
    * 화면 가운데에 크게, 오래 띄운다.
    *
@@ -339,7 +377,12 @@ export class WorldScene extends Phaser.Scene {
       duration: 300,
       hold: 2600,
       yoyo: true,
-      onComplete: () => label.destroy(),
+      onComplete: () => {
+        label.destroy()
+        this.milestoneShowing = false
+        // 큐에 쌓인 다음 것을 이어서 보여준다. 없으면 pumpMilestoneQueue 가 조용히 넘어간다.
+        this.pumpMilestoneQueue()
+      },
     })
   }
 

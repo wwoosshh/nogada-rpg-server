@@ -4,9 +4,11 @@ import {
   canGather,
   EFFICIENCY_MULTIPLIER,
   equippedToolTier,
+  newlyAchieved,
   rollInt,
   yieldBonus,
   type GameData,
+  type MilestoneDef,
   type PlayerState,
   type RecipeInput,
 } from '@nogada/shared'
@@ -25,6 +27,8 @@ export interface GatherOutcome {
   chance: number
   gained: RecipeInput | null
   skillGained: number
+  /** 이번 행동으로 새로 달성된 이정표. 실패·거부 경로에서는 항상 빈 배열이다. */
+  achieved: MilestoneDef[]
   player: PlayerState
 }
 
@@ -76,7 +80,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   if (!success) {
     return {
       ok: true,
-      outcome: { success: false, chance, gained: null, skillGained: 0, player },
+      outcome: { success: false, chance, gained: null, skillGained: 0, achieved: [], player },
     }
   }
 
@@ -88,6 +92,11 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   const skillGained = rollInt(rng, node.skillGainMin, node.skillGainMax) * EFFICIENCY_MULTIPLIER
   player.skills[node.skill] += skillGained
 
+  // 달성 판정은 숙련도가 오른 뒤에 한다. 이번 행동으로 넘긴 것을 이번 응답에 실어야
+  // 플레이어가 "그 행동 때문에 열렸다" 를 느낀다.
+  const achieved = newlyAchieved(data.milestones, player, player.celebrated)
+  for (const m of achieved) player.celebrated.push(m.id)
+
   return {
     ok: true,
     outcome: {
@@ -95,6 +104,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
       chance,
       gained: { item: node.yieldItem, count },
       skillGained,
+      achieved,
       player,
     },
   }
