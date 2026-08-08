@@ -1,3 +1,4 @@
+import type { DialogueHistory } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
 
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
@@ -66,6 +67,14 @@ export interface PlayerState {
    * 않기" 뿐이고 그건 틀려도 피해가 없다.
    */
   celebrated: string[]
+  /**
+   * 대화 이력.
+   *
+   * 이정표의 celebrated 와 달리 이것은 유도할 수 없는 진짜 상태다 — 대화는
+   * 단조 증가하는 지표가 아니라서 PlayerState 로부터 계산할 수 없다.
+   * recent 는 상대마다 최근 몇 개로 묶어 무한히 자라지 않게 한다.
+   */
+  dialogueHistory: DialogueHistory
 }
 
 export interface ItemDef {

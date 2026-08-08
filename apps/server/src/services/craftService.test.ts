@@ -1,4 +1,4 @@
-import type { GameData, MilestoneDef, PlayerState } from '@nogada/shared'
+import { emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { performCraft } from './craftService.js'
 
@@ -41,6 +41,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: { mineral: 'pick1' },
     nextActionAt: 0,
     celebrated: [],
+    dialogueHistory: emptyDialogueHistory(),
     ...overrides,
   }
 }

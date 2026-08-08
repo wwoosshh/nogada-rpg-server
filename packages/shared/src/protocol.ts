@@ -22,6 +22,18 @@ const skillsShape = Object.fromEntries(
   SKILL_IDS.map((id) => [id, z.number().int().min(0)]),
 ) as Record<SkillId, z.ZodNumber>
 
+/**
+ * DialogueHistory 의 저장 형태. said·recent 의 내용(onceKey 인코딩, 규칙 id)까지는
+ * 검증하지 않는다 — 여기서는 "문자열 배열"과 "문자열 키를 가진 문자열 배열
+ * 레코드"라는 모양만 본다. 내용이 가리키는 규칙이 사라졌더라도(콘텐츠 개정)
+ * newlyAchieved 의 celebrated 처리와 같은 이유로 조용히 무시되어야 하지, 세이브
+ * 전체를 거부할 이유가 아니다.
+ */
+const DialogueHistorySchema = z.object({
+  said: z.array(z.string()),
+  recent: z.record(z.string(), z.array(z.string())),
+})
+
 export const PlayerStateSchema = z.object({
   id: z.string(),
   skills: z.object(skillsShape).strict(),
@@ -30,6 +42,7 @@ export const PlayerStateSchema = z.object({
   equipped: z.record(z.string(), z.string()),
   nextActionAt: z.number(),
   celebrated: z.array(z.string()),
+  dialogueHistory: DialogueHistorySchema,
 })
 
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })

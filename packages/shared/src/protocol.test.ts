@@ -14,6 +14,7 @@ function validSave(): Record<string, unknown> {
     equipped: { mineral: 'i1' },
     nextActionAt: 0,
     celebrated: [],
+    dialogueHistory: { said: [], recent: {} },
   }
 }
 

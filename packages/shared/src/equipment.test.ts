@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { emptyDialogueHistory } from './dialogue.js'
 import { equippedToolTier } from './equipment.js'
 import type { GameData, PlayerState } from './types.js'
 
@@ -29,6 +30,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    dialogueHistory: emptyDialogueHistory(),
     ...overrides,
   }
 }

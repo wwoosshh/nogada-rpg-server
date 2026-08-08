@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { emptyDialogueHistory } from './dialogue.js'
 import type { PlayerState } from './types.js'
 import {
   achievedIds,
@@ -19,6 +20,7 @@ function player(skills: Partial<PlayerState['skills']> = {}): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    dialogueHistory: emptyDialogueHistory(),
   }
 }
 
