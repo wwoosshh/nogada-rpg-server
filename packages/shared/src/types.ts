@@ -1,3 +1,5 @@
+import type { MilestoneDef } from './milestones.js'
+
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
 
 export const SKILL_IDS: readonly SkillId[] = ['ice', 'wood', 'mineral', 'herb', 'crafting'] as const
@@ -134,4 +136,6 @@ export interface GameData {
   nodes: Record<string, NodeDef>
   recipes: Record<string, RecipeDef>
   placements: Record<string, NodePlacement>
+  /** 정의 순서를 유지한다 — nextMilestone 의 동점 처리가 이 순서를 쓴다 */
+  milestones: MilestoneDef[]
 }

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseMilestones } from './milestones.js'
 import { parsePlacements } from './placements.js'
 import { validateGameData } from './validate.js'
 
@@ -16,13 +17,15 @@ function readCsv(name: string) {
 }
 
 const nodes = parseNodes(readCsv('nodes.csv'))
+const recipes = parseRecipes(readCsv('recipes.csv'))
 const mapJson: unknown = JSON.parse(readFileSync(join(mapsDir, 'world.json'), 'utf8'))
 
 const data: GameData = {
   items: parseItems(readCsv('items.csv')),
   nodes,
-  recipes: parseRecipes(readCsv('recipes.csv')),
+  recipes,
   placements: parsePlacements(mapJson, nodes),
+  milestones: parseMilestones(readCsv('milestones.csv'), nodes, recipes),
 }
 
 const violations = validateGameData(data)
@@ -38,5 +41,5 @@ writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf
 console.log(
   `데이터 빌드 완료 — 아이템 ${Object.keys(data.items).length}, ` +
     `노드 ${Object.keys(data.nodes).length}, 레시피 ${Object.keys(data.recipes).length}, ` +
-    `배치 ${Object.keys(data.placements).length}`,
+    `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}`,
 )

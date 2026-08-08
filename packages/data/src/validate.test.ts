@@ -2,10 +2,23 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { GameData, ItemDef } from '@nogada/shared'
+import type { GameData, ItemDef, MilestoneDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseMilestones } from './milestones.js'
 import { parsePlacements } from './placements.js'
 import { validateGameData } from './validate.js'
+
+/**
+ * baseData()의 유일한 채집 기술(mineral)에 필요한 최소 이정표 하나.
+ *
+ * validateGameData 가 "채집 기술마다 repeat 이정표가 정확히 하나" 를 요구하므로,
+ * 이게 없으면 이정표와 무관한 기존 검사를 위한 픽스처들까지 전부 위반이 하나씩
+ * 더 생겨 정확한 개수를 기대하는 단언(.toEqual([...]))이 깨진다.
+ */
+const mineralRepeatMilestone: MilestoneDef = {
+  id: 'mineral_repeat', metric: { kind: 'skill', skill: 'mineral' }, threshold: 100,
+  name: '광물이 손에 익다', announce: '', effect: { kind: 'repeat', skill: 'mineral' },
+}
 
 /**
  * 시작 도구 4종(채집 기술별 1등급 도구) 전부를 포함해야 한다 — STARTING_TOOL_IDS 검사와
@@ -56,6 +69,7 @@ function baseData(): GameData {
     placements: {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
     },
+    milestones: [mineralRepeatMilestone],
   }
 }
 
@@ -137,6 +151,29 @@ function deadlockedTierData(): GameData {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
       'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', x: 1, y: 0 },
     },
+    // 빈 배열이면 안 된다 — "채집 기술마다 repeat 이정표가 정확히 하나" 검사가
+    // milestones: [] 에 대해 mineral 위반을 만들고, 그 위반이 early return(아래
+    // validateGameData 참고)을 당겨서 이 픽스처가 실제로 테스트하려는 도달 가능성
+    // 검사 자체가 안 돌게 된다. mineral 하나만 채워서 그 조기 반환을 피한다.
+    milestones: [mineralRepeatMilestone],
+  }
+}
+
+/** 실제로 출하되는 CSV·맵을 그대로 파싱한 GameData. 여러 describe 가 공유한다. */
+function loadRealGameData(): GameData {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const csvDir = join(here, '..', 'csv')
+  const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+  const nodes = parseNodes(readRealCsv('nodes.csv'))
+  const recipes = parseRecipes(readRealCsv('recipes.csv'))
+  const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
+
+  return {
+    items: parseItems(readRealCsv('items.csv')),
+    nodes,
+    recipes,
+    placements: parsePlacements(mapJson, nodes),
+    milestones: parseMilestones(readRealCsv('milestones.csv'), nodes, recipes),
   }
 }
 
@@ -254,20 +291,7 @@ describe('validateGameData 의 도달 가능성 검사', () => {
   // baseData 는 시작 도구만으로 전부 도달 가능하므로 그 테스트가 이미 이 사실을 검증한다.
 
   it('실제로 출하되는 CSV 데이터는 도달 가능성 검사를 통과한다', () => {
-    const here = dirname(fileURLToPath(import.meta.url))
-    const csvDir = join(here, '..', 'csv')
-    const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
-    const nodes = parseNodes(readRealCsv('nodes.csv'))
-    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
-
-    const data: GameData = {
-      items: parseItems(readRealCsv('items.csv')),
-      nodes,
-      recipes: parseRecipes(readRealCsv('recipes.csv')),
-      placements: parsePlacements(mapJson, nodes),
-    }
-
-    expect(validateGameData(data)).toEqual([])
+    expect(validateGameData(loadRealGameData())).toEqual([])
   })
 })
 
@@ -282,20 +306,7 @@ describe('validateGameData 의 배치 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 노드마다 맵에 최소 한 번 놓여 있다', () => {
-    const here = dirname(fileURLToPath(import.meta.url))
-    const csvDir = join(here, '..', 'csv')
-    const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
-    const nodes = parseNodes(readRealCsv('nodes.csv'))
-    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
-
-    const data: GameData = {
-      items: parseItems(readRealCsv('items.csv')),
-      nodes,
-      recipes: parseRecipes(readRealCsv('recipes.csv')),
-      placements: parsePlacements(mapJson, nodes),
-    }
-
-    const violations = validateGameData(data).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
     expect(violations).toEqual([])
   })
 })
@@ -315,20 +326,11 @@ describe('validateGameData 의 조합 부트스트랩 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 스킬마다 requiredSkill 0 인 레시피를 갖고 있다', () => {
-    const here = dirname(fileURLToPath(import.meta.url))
-    const csvDir = join(here, '..', 'csv')
-    const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
-    const nodes = parseNodes(readRealCsv('nodes.csv'))
-    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
-
-    const data: GameData = {
-      items: parseItems(readRealCsv('items.csv')),
-      nodes,
-      recipes: parseRecipes(readRealCsv('recipes.csv')),
-      placements: parsePlacements(mapJson, nodes),
-    }
-
-    const violations = validateGameData(data).filter((v) => v.startsWith('skills['))
+    // skills[...] 접두사는 이 검사와 "채집 기술마다 repeat 이정표가 정확히 하나"
+    // 검사가 공유한다 — 부트스트랩만 걸러 보려면 메시지 내용까지 좁혀야 한다.
+    const violations = validateGameData(loadRealGameData()).filter(
+      (v) => v.startsWith('skills[') && v.includes('부트스트랩'),
+    )
     expect(violations).toEqual([])
   })
 })
@@ -352,7 +354,8 @@ describe('validateGameData 의 조기 반환', () => {
     // "도달 불가"로 잡힌다. 나머지 시작 도구 셋(chisel·axe·sickle)은 정상이라
     // 노이즈 없이 이 위반 하나만 나와야 한다. copper_ingot 의 requiredSkill 이 0 인
     // 것도 같은 이유다 — 1 이면 crafting 스킬에 부트스트랩 레시피가 없어져 그
-    // 위반까지 섞인다.
+    // 위반까지 섞인다. milestones 에 mineral 의 repeat 이정표를 둔 것도 같은 이유다 —
+    // 없으면 이 데이터의 유일한 채집 기술(mineral)이 repeat 이정표 없음 위반을 더한다.
     const data: GameData = {
       items: {
         copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
@@ -396,6 +399,7 @@ describe('validateGameData 의 조기 반환', () => {
       placements: {
         'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
       },
+      milestones: [mineralRepeatMilestone],
     }
 
     expect(validateGameData(data)).toEqual([
@@ -412,5 +416,146 @@ describe('validateGameData 의 조기 반환', () => {
     data.items.copper_pickaxe = notATool
 
     expect(validateGameData(data)).toEqual(['STARTING_TOOL_IDS: "copper_pickaxe" 는 도구가 아니다'])
+  })
+})
+
+describe('validateGameData 의 이정표 검사', () => {
+  it('every 이정표가 없는 id 를 가리키면 잡아낸다', () => {
+    // 이정표는 게이트를 선언할 뿐이므로 합산 대상도 실재해야 한다 — 안 그러면
+    // metricValue(packages/shared)가 그 참조를 조용히 무시하고 영원히 못 세는
+    // 합산 이정표가 목록에 남는다.
+    const data = baseData()
+    data.milestones = [
+      {
+        id: 'every_ghost', metric: { kind: 'every', of: ['nope'] }, threshold: 1,
+        name: '고스트', announce: '', effect: { kind: 'title' },
+      },
+    ]
+    expect(validateGameData(data)).toContain(
+      'milestones[every_ghost]: 존재하지 않는 이정표 "nope" 를 가리킨다',
+    )
+  })
+
+  it('every 이정표 둘이 서로를 가리키면(순환, 깊이 2) 잡아낸다', () => {
+    // isAchieved 가 metricValue 를 부르고 metricValue 가 every 의 각 원소에 대해
+    // 다시 isAchieved 를 부른다(packages/shared/src/milestones.ts) — 방문 집합이
+    // 없으므로 A→B→A 순환은 그 재귀를 무한히 되풀이해 스택을 터뜨린다. 이 테스트가
+    // 타임아웃이나 크래시 없이 끝난다는 사실 자체가 검사가 순환을 따라가다 멈춘다는
+    // 증거다.
+    const data = baseData()
+    data.milestones = [
+      { id: 'a', metric: { kind: 'every', of: ['b'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
+      { id: 'b', metric: { kind: 'every', of: ['a'] }, threshold: 1, name: 'B', announce: '', effect: { kind: 'title' } },
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('순환'))).toBe(true)
+  })
+
+  it('every 이정표 셋이 순환하면(A→B→C→A, 깊이 3) 잡아낸다', () => {
+    // 한 단계만 보는 검사(예: "내 of 안에 내 id 가 있는가")는 깊이 2 테스트도
+    // 통과시키지 못하지만, "내 of 가 가리키는 것의 of 안에 내가 있는가" 처럼 딱
+    // 두 단계만 보는 검사라면 깊이 2는 통과해도 이 깊이 3 은 그냥 지나친다.
+    // findEveryCycle 은 고정 깊이가 아니라 방문 집합을 쓴 DFS라 깊이와 무관하게 잡는다.
+    const data = baseData()
+    data.milestones = [
+      { id: 'a', metric: { kind: 'every', of: ['b'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
+      { id: 'b', metric: { kind: 'every', of: ['c'] }, threshold: 1, name: 'B', announce: '', effect: { kind: 'title' } },
+      { id: 'c', metric: { kind: 'every', of: ['a'] }, threshold: 1, name: 'C', announce: '', effect: { kind: 'title' } },
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('순환'))).toBe(true)
+  })
+
+  it('every 이정표가 자기 자신을 가리키면(길이 1인 순환) 잡아낸다', () => {
+    const data = baseData()
+    data.milestones = [
+      { id: 'a', metric: { kind: 'every', of: ['a'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('순환'))).toBe(true)
+  })
+
+  it('every 이정표 여럿이 같은 대상을 가리켜도(다이아몬드) 순환으로 오판하지 않는다', () => {
+    // a와 b 둘 다 c를 가리키는 것은 순환이 아니다 — "같은 것을 두 번 방문"과
+    // "자신에게 되돌아옴"을 구분 못 하면 이 정상 데이터가 오탐된다.
+    const data = baseData()
+    data.milestones = [
+      ...data.milestones,
+      { id: 'c', metric: { kind: 'skill' as const, skill: 'wood' as const }, threshold: 10, name: 'C', announce: '', effect: { kind: 'title' } },
+      { id: 'a', metric: { kind: 'every', of: ['c'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
+      { id: 'b', metric: { kind: 'every', of: ['c'] }, threshold: 1, name: 'B', announce: '', effect: { kind: 'title' } },
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('순환'))).toBe(false)
+  })
+
+  it('every 의 threshold 가 of 길이보다 크면 잡아낸다', () => {
+    // of 가 하나뿐인데 threshold 가 2 면, 그 이정표는 무엇을 달성해도 절대
+    // threshold 에 닿지 못한다 — 영원히 달성 불가능한 줄이 목록에 남는다.
+    const data = baseData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'impossible', metric: { kind: 'every', of: ['mineral_repeat'] }, threshold: 2,
+        name: '불가능', announce: '', effect: { kind: 'title' },
+      },
+    ]
+    expect(validateGameData(data)).toContain(
+      'milestones[impossible]: threshold(2) 가 of 길이(1) 보다 크다 — 영원히 달성할 수 없다',
+    )
+  })
+
+  it('recipes 효과의 threshold 가 실제 레시피 requiredSkill 과 다르면 잡아낸다', () => {
+    // baseData() 의 copper_pickaxe 레시피는 requiredSkill 3 인데, 이 이정표는 999 를
+    // 넘어야 열린다고 선언한다 — 목록이 플레이어에게 거짓 문턱을 보여주는 상황이다.
+    const data = baseData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'wrong_threshold', metric: { kind: 'skill', skill: 'crafting' }, threshold: 999,
+        name: '틀린 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+      },
+    ]
+    expect(validateGameData(data)).toContain(
+      'milestones[wrong_threshold]: 레시피 "copper_pickaxe" 의 requiredSkill(3) 이 이정표 threshold(999) 와 다르다',
+    )
+  })
+
+  it('recipes 효과의 threshold 가 레시피 requiredSkill 과 같으면 위반이 없다', () => {
+    const data = baseData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'right_threshold', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
+        name: '맞는 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+      },
+    ]
+    expect(validateGameData(data)).toEqual([])
+  })
+
+  it('채집 기술에 repeat 이정표가 없으면 잡아낸다', () => {
+    const data = baseData()
+    data.milestones = [] // mineral 채집 기술(baseData 의 유일한 노드가 쓰는 기술)의 repeat 이정표가 없다
+    expect(validateGameData(data)).toContain(
+      'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 0개다',
+    )
+  })
+
+  it('채집 기술에 repeat 이정표가 여러 개면 잡아낸다', () => {
+    const data = baseData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'mineral_repeat_2', metric: { kind: 'skill', skill: 'mineral' }, threshold: 200,
+        name: '광물이 손에 또 익다', announce: '', effect: { kind: 'repeat', skill: 'mineral' },
+      },
+    ]
+    expect(validateGameData(data)).toContain(
+      'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 2개다',
+    )
+  })
+
+  it('실제로 출하되는 CSV 데이터는 이정표 검사를 통과한다', () => {
+    expect(validateGameData(loadRealGameData())).toEqual([])
   })
 })

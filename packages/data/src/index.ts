@@ -1,4 +1,5 @@
 export * from './parse.js'
 export * from './placements.js'
+export * from './milestones.js'
 export * from './validate.js'
 export * from './load.js'
