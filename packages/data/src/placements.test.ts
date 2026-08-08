@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { NodeDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
-import { parsePlacements } from './placements.js'
+import { parsePlacements, parseTerrain } from './placements.js'
 
 const nodes: Record<string, NodeDef> = {
   copper_vein: {
@@ -68,5 +71,45 @@ describe('parsePlacements', () => {
       obj('b', 'copper_vein', 4, 4),
     ])
     expect(() => parsePlacements(m, nodes)).toThrow(/같은 칸/)
+  })
+})
+
+describe('parseTerrain', () => {
+  // 화자 배치(speakers.csv)가 벽 속이나 맵 밖을 가리키는지 검증하려면 맵이
+  // "어디까지가 맵이고 어디가 벽인가"를 알려줘야 한다. 그 기준은 클라이언트의
+  // 걷기 판정과 같아야 한다 — walls 레이어의 비어 있지 않은 타일이 벽이다.
+
+  /** walls 레이어 하나짜리 맵. data 는 행 우선(row-major) 타일 id 배열이다. */
+  function mapWithWalls(width: number, height: number, data: number[]): unknown {
+    return {
+      width, height, tilewidth: 32, tileheight: 32,
+      layers: [{ name: 'walls', type: 'tilelayer', width, height, data }],
+    }
+  }
+
+  it('맵 크기를 읽는다', () => {
+    const t = parseTerrain(mapWithWalls(2, 2, [0, 0, 0, 0]))
+    expect(t.width).toBe(2)
+    expect(t.height).toBe(2)
+  })
+
+  it('walls 레이어의 비어 있지 않은 타일만 벽으로 센다', () => {
+    // 0 은 "타일 없음"이다. 0 까지 벽으로 세면 맵 전체가 벽이 되어 모든 화자가 오탐된다.
+    const t = parseTerrain(mapWithWalls(2, 2, [0, 7, 0, 0]))
+    expect([...t.walls]).toEqual(['1,0'])
+  })
+
+  it('walls 레이어가 없으면 벽이 하나도 없다', () => {
+    const t = parseTerrain({ width: 3, height: 3, layers: [] })
+    expect(t.walls.size).toBe(0)
+  })
+
+  it('실제 맵을 읽는다', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
+    const t = parseTerrain(mapJson)
+    expect(t.width).toBe(30)
+    expect(t.height).toBe(30)
+    expect(t.walls.size).toBeGreaterThan(0)
   })
 })

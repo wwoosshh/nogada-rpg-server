@@ -1,5 +1,72 @@
-import type { GameData, MilestoneDef } from '@nogada/shared'
-import { ONCE_EVENTS, SKILL_IDS, STARTING_TOOL_IDS, actionIntervalMs, findFactSpec, toolAppliesTo } from '@nogada/shared'
+import type { Condition, DialogueRule, GameData, MilestoneDef } from '@nogada/shared'
+import {
+  EVENT_ORDER,
+  ONCE_EVENTS,
+  SKILL_IDS,
+  STARTING_TOOL_IDS,
+  actionIntervalMs,
+  findFactSpec,
+  matchesCondition,
+  toolAppliesTo,
+} from '@nogada/shared'
+import { dialogueLocation } from './dialogueParse.js'
+import type { MapTerrain } from './placements.js'
+
+/** 조건 하나를 작가가 파일에 쓴 모양 그대로 되살린다 — 메시지에서 눈으로 찾을 수 있게. */
+function conditionText(condition: Condition): string {
+  return `${condition.fact}${condition.op}${condition.value}`
+}
+
+const LOWER_OPS: ReadonlySet<string> = new Set(['>', '>='])
+const UPPER_OPS: ReadonlySet<string> = new Set(['<', '<='])
+
+/**
+ * 정확한 값 하나를 못박은 조건이, 같은 사실의 다른 조건을 만족시키지 못하는가.
+ *
+ * 판정은 matchesCondition(게임이 실제로 쓰는 함수)에 그 값을 그대로 넣어 본다 —
+ * 여기서 비교 규칙을 다시 구현하면 엔진과 검증이 갈라질 수 있다.
+ *
+ * 양쪽이 다 숫자일 때만 본다. 문자열에 크기 비교를 건 조건(`season>3`)은
+ * 그것 하나만으로 이미 절대 참이 아니지만, 그건 "두 조건이 어긋난다"가 아니라
+ * "조건 하나의 값 형태가 틀렸다"는 다른 부류다 — 사실마다 허용 값 목록이
+ * 있어야 제대로 말할 수 있어서(설계 문서 7장) 여기서는 다루지 않는다.
+ */
+function pinnedValueFails(pinned: Condition, other: Condition): boolean {
+  if (typeof pinned.value !== 'number' || typeof other.value !== 'number') return false
+  return !matchesCondition(other, { [other.fact]: pinned.value })
+}
+
+/**
+ * 두 조건이 같은 사실에 걸려 있으면서, 어떤 값도 둘을 동시에 만족시킬 수 없는가.
+ *
+ * 여기서 다루는 것은 **한 규칙 안의 두 조건**뿐이다. 세 개를 엮어야 비는
+ * 경우(`>=5` `<=5` `!=5`)나 서로 다른 사실 사이의 함의는 보지 않는다 —
+ * 좁은 범위에서 확실히 맞는 검사가, 넓은 범위를 추측하는 검사보다 낫다.
+ * 작가에게 오탐 하나는 그것이 막아 준 진짜 오류보다 비싸다.
+ */
+function contradicts(a: Condition, b: Condition): boolean {
+  if (a.fact !== b.fact) return false
+
+  // 정확한 값끼리 어긋난다: season=spring season=summer
+  if (a.op === '=' && b.op === '=') return a.value !== b.value
+
+  // 같은 값을 요구하면서 동시에 아니라고 한다: quest.촌장=3 quest.촌장!=3
+  if (a.op === '=' && b.op === '!=') return a.value === b.value
+  if (a.op === '!=' && b.op === '=') return a.value === b.value
+
+  // 한쪽이 값을 못박았으면 그 값을 다른 조건에 그대로 넣어 본다: skill.ice=100 skill.ice>=200
+  if (a.op === '=') return pinnedValueFails(a, b)
+  if (b.op === '=') return pinnedValueFails(b, a)
+
+  // 아래 방향(>,>=)과 위 방향(<,<=)이 만드는 구간이 비었는가: skill.ice>=100 skill.ice<50
+  const lower = LOWER_OPS.has(a.op) ? a : LOWER_OPS.has(b.op) ? b : null
+  const upper = UPPER_OPS.has(a.op) ? a : UPPER_OPS.has(b.op) ? b : null
+  if (!lower || !upper) return false
+  if (typeof lower.value !== 'number' || typeof upper.value !== 'number') return false
+  if (lower.value > upper.value) return true
+  // 양 끝이 같은 값이면, 양쪽 다 그 값을 포함할 때만(>= 와 <=) 살아남는다.
+  return lower.value === upper.value && !(lower.op === '>=' && upper.op === '<=')
+}
 
 /**
  * 시작 도구에서 출발해 고정점(fixpoint)까지 확장한 "도달 가능한 아이템" 집합을 구한다.
@@ -194,10 +261,153 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
-  // 여기까지의 참조 무결성 검사가 이미 위반을 찾았다면 도달 가능성 검사(고정점 계산)는
+  // 참조 무결성 검사는 여기까지다. 아래 도달 가능성 검사를 돌릴지 말지는
+  // **이 시점의** 위반 수가 정한다 — 그 사이에 끼어 있는 대사 검사가 몇 건을
+  // 더하든 도달 가능성 계산에는 영향이 없기 때문이다.
+  const referenceViolations = violations.length
+
+  // ---- 대화 검사 ----
+  //
+  // 아래의 이른 반환보다 **먼저** 온다. 그 반환은 "오타 하나가 도달 가능성
+  // 계산 전체를 오염시키는 것"을 막으려고 있는 것인데, 대사 데이터는 아이템·
+  // 레시피와 서로 다른 것을 참조하므로 그런 오염 관계가 없다. 뒤에 두면
+  // nodes.csv 오타 하나가 대사 위반을 통째로 덮어, 작가는 한 가지를 고치고
+  // 다시 빌드해서야 두 번째 파도를 만난다. 반대로 대사 위반이 도달 가능성
+  // 검사를 막아서도 안 된다 — 그래서 위에서 개수를 따로 세어 둔다.
+  //
+  // 이 검사들이 참조하는 것은 SKILL_IDS(코드 상수)와 이정표 id 목록뿐이다 —
+  // 둘 다 위쪽 계산에 기대지 않으므로 여기로 올려도 쓰는 값이 달라지지 않는다.
+  const milestoneIds = new Set(data.milestones.map((m) => m.id))
+  const speakersList = Object.values(data.speakers)
+  const speakerIds = new Set(speakersList.map((s) => s.id))
+  const dialogueSpeakerIds = new Set(data.dialogue.map((r) => r.speaker))
+  const isKnownSkill = (id: string): boolean => (SKILL_IDS as readonly string[]).includes(id)
+  /** 위반 메시지의 앞머리. 작가가 어느 파일 몇 행을 열면 되는지가 먼저 온다. */
+  const at = (rule: DialogueRule): string =>
+    `dialogue[${rule.speaker}] ${dialogueLocation(rule.source.file, rule.source.line)}`
+
+  // 선언되지 않은 사실 이름을 쓰는 조건 — 오타(affinty)가 조용히 "절대 안
+  // 맞는 조건"이 되면 작가가 원인을 못 찾는다(설계 문서 6.3).
+  for (const rule of data.dialogue) {
+    for (const condition of rule.conditions) {
+      if (!findFactSpec(condition.fact)) {
+        violations.push(`${at(rule)}: 선언되지 않은 사실 "${condition.fact}" 를 쓴다`)
+      }
+    }
+  }
+
+  // 사건 이름 오타 — @greeet 는 파싱도 되고 다른 검사도 전부 통과하지만,
+  // selectDialogue 는 EVENT_ORDER 에 있는 사건만 훑으므로 절대 선택되지
+  // 않는다(packages/shared/src/dialogue.ts 가 이 검사를 데이터 파이프라인의
+  // 몫으로 명시해 뒀다). 사실 이름 오타와 완전히 같은 부류이고, @ 는 모든
+  // 규칙 머리에 있다.
+  for (const rule of data.dialogue) {
+    if (!(EVENT_ORDER as readonly string[]).includes(rule.event)) {
+      violations.push(`${at(rule)}: 알 수 없는 사건 "${rule.event}" — 쓸 수 있는 사건은 ${EVENT_ORDER.join(', ')} 이다`)
+    }
+  }
+
+  // @greet 무조건 규칙이 없는 화자 — 어떤 상황에서도 할 말이 없으면 말을
+  // 걸어도 아무 일도 안 일어난다. 대사 파일 자체가 없는 화자(ownRules 가
+  // 비어 있다)는 여기서 또 알리지 않는다 — 아래 "대사 파일이 없다" 검사가
+  // 이미 같은 원인을 알려주므로, 둘 다 보고하면 노이즈만 커진다.
+  for (const speaker of speakersList) {
+    const ownRules = data.dialogue.filter((r) => r.speaker === speaker.id)
+    if (ownRules.length === 0) continue
+    const hasUnconditionalGreet = ownRules.some((r) => r.event === 'greet' && r.conditions.length === 0)
+    if (!hasUnconditionalGreet) {
+      violations.push(`dialogue[${speaker.id}]: @greet 무조건 규칙이 없다 — 말을 걸어도 아무 일도 안 일어날 수 있다`)
+    }
+  }
+
+  // 자기 조건끼리 어긋나는 규칙 — 어떤 세계 상태에서도 나오지 않는다.
+  //
+  // "다른 규칙에 가려진다"는 이유로 죽었다고 말하지 않는 것에 유의한다.
+  // selectDialogue 는 **맞은 규칙들 안에서만** 조건 개수를 비교하므로, 조건이
+  // 적은 규칙은 조건이 많은 형제가 함께 맞는 순간에만 지고 나머지 시간에는
+  // 그대로 나온다 — 그게 폴백이고, 설계 문서 §5 가 작가에게 보여주는 대표
+  // 패턴이다. 부분집합이라는 이유로 죽었다고 말하려면 "더 많은 그 조건들이
+  // 항상 참"임을 알아야 하는데, 그건 논리적 함의를 따져야 하는 다른 일이다.
+  for (const rule of data.dialogue) {
+    for (let i = 0; i < rule.conditions.length; i++) {
+      for (let j = i + 1; j < rule.conditions.length; j++) {
+        const a = rule.conditions[i]!
+        const b = rule.conditions[j]!
+        if (!contradicts(a, b)) continue
+        violations.push(
+          `${at(rule)}: 조건 "${conditionText(a)}" 과 "${conditionText(b)}" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다`,
+        )
+      }
+    }
+  }
+
+  // 대사 파일이 없는 화자, 화자가 없는 대사 파일 — 배치(speakers.csv)와
+  // 대사(dialogue/*.dlg)는 서로 다른 파일이라 하나만 고치고 잊기 쉽다.
+  for (const speaker of speakersList) {
+    if (!dialogueSpeakerIds.has(speaker.id)) {
+      violations.push(`speakers[${speaker.id}]: 대사 파일이 없다`)
+    }
+  }
+  for (const id of dialogueSpeakerIds) {
+    if (!speakerIds.has(id)) {
+      violations.push(`dialogue[${id}]: 화자 정의(speakers.csv)가 없다`)
+    }
+  }
+
+  // 없는 이정표·기술을 가리키는 조건 — 이정표 검사에서 배운 것과 같다:
+  // 데이터가 서로를 가리키면 빌드가 그 참조를 확인한다.
+  //
+  // justAchieved 는 이름이 아니라 **값**으로 이정표를 부른다(justAchieved=
+  // ice_10000). 그래서 값을 안 보면 오타가 조건 이름 검사도 사실 이름 검사도
+  // 전부 통과해, "왜 이 대사가 안 나오지"만 남는다.
+  for (const rule of data.dialogue) {
+    for (const condition of rule.conditions) {
+      if (condition.fact === 'justAchieved') {
+        const id = String(condition.value)
+        if (!milestoneIds.has(id)) {
+          violations.push(`${at(rule)}: justAchieved 가 존재하지 않는 이정표 "${id}" 를 가리킨다`)
+        }
+      } else if (condition.fact.startsWith('milestone.')) {
+        const id = condition.fact.slice('milestone.'.length)
+        if (!milestoneIds.has(id)) {
+          violations.push(`${at(rule)}: 존재하지 않는 이정표 "${id}" 를 가리킨다`)
+        }
+      } else if (condition.fact.startsWith('skill.')) {
+        const id = condition.fact.slice('skill.'.length)
+        if (!isKnownSkill(id)) {
+          violations.push(`${at(rule)}: 존재하지 않는 기술 "${id}" 를 가리킨다`)
+        }
+      }
+    }
+  }
+
+  // once 사건(story·quest·milestone)의 조건이 상한 없는 사실(skill.* 등,
+  // FactSpec.unbounded)의 값을 고정하지 못하면 문제가 생긴다.
+  //
+  // onceKey(packages/shared/src/dialogue.ts)는 **연산자를 보지 않고** 규칙의
+  // 모든 조건마다 그 사실의 "지금 값"을 스냅샷해 키에 엮는다. 그래서 안전한
+  // 연산자는 값을 하나로 못박는 `=` 뿐이다 — `=` 로 걸면 규칙이 맞는 순간의
+  // 값이 언제나 그 리터럴과 같아서 키가 고정된다. 나머지 전부(`!=` 포함)는
+  // 규칙이 맞는 동안에도 값이 계속 달라질 수 있어, 채집할 때마다 오르는
+  // skill.ice 같은 사실에서는 말할 때마다 새 키가 생긴다 — "한 번만 말한다"가
+  // 조용히 "매번 새로 말한다"로 깨지고 "이미 말했다" 기록이 끝없이 늘어난다.
+  // 연산자를 열거하지 않고 "= 인가"만 묻는 이유가 이것이다.
+  for (const rule of data.dialogue) {
+    if (!ONCE_EVENTS.has(rule.event)) continue
+    for (const condition of rule.conditions) {
+      if (condition.op === '=') continue
+      if (findFactSpec(condition.fact)?.unbounded) {
+        violations.push(
+          `${at(rule)}: once 사건(${rule.event})의 조건 "${conditionText(condition)}" 이 상한 없는 사실을 = 아닌 연산자로 건다 — 그 값이 바뀔 때마다 "이미 말했다" 기록이 새로 쌓여 끝없이 늘어난다. 값을 정확히 짚는 = 를 쓰거나 이 규칙을 @greet 으로 옮긴다`,
+        )
+      }
+    }
+  }
+
+  // 참조 무결성 검사가 이미 위반을 찾았다면 도달 가능성 검사(고정점 계산)는
   // 건너뛴다. 안 그러면 오타 하나가 그 아이템에 의존하는 나머지 전부를 "도달 불가"로
   // 도매금 처리해 진짜 원인이 N+1 줄의 소음에 파묻힌다.
-  if (violations.length > 0) return violations
+  if (referenceViolations > 0) return violations
 
   const reachable = computeReachableItems(data)
   for (const item of Object.values(data.items)) {
@@ -208,9 +418,8 @@ export function validateGameData(data: GameData): string[] {
 
   // 이정표는 새 게이트를 만들지 않고 이미 존재하는 게이트를 선언할 뿐이다(설계 §2.3,
   // §3.1). 그래서 아래 검사들은 "선언"이 논리적으로 말이 되는지, 그리고 "선언"과
-  // "실제 게이트"가 어긋나지 않는지를 본다.
-  const milestoneIds = new Set(data.milestones.map((m) => m.id))
-
+  // "실제 게이트"가 어긋나지 않는지를 본다. milestoneIds 는 대화 검사가 이미
+  // 위에서 만들었다 — 여기서 다시 만들지 않고 그대로 쓴다.
   for (const milestone of data.milestones) {
     const metric = milestone.metric
     if (metric.kind !== 'every') continue
@@ -292,124 +501,53 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
-  // ---- 대화 검사 ----
-  //
-  // 여기부터는 화자(speakers)·대사(dialogue)를 본다. 위쪽의 이른 반환(참조
-  // 무결성 위반 시 도달 가능성 계산을 건너뛰는 것)에는 걸리지 않는다 —
-  // 아이템·레시피·이정표 오타와 대사 데이터는 서로 다른 것을 참조해서,
-  // 한쪽의 오타가 다른 쪽의 진짜 문제를 가릴 이유가 없다. 대사 검사가
-  // 참조하는 것(SKILL_IDS, data.milestones)은 이미 그 자체로 안전하거나
-  // (SKILL_IDS 는 코드 상수) 독립적으로 검사된다(위 이정표 검사).
-  const speakersList = Object.values(data.speakers)
-  const speakerIds = new Set(speakersList.map((s) => s.id))
-  const dialogueSpeakerIds = new Set(data.dialogue.map((r) => r.speaker))
-  // milestoneIds 는 위 이정표 검사가 이미 선언했다 — 여기서 다시 만들지 않고 그대로 쓴다.
-  const isKnownSkill = (id: string): boolean => (SKILL_IDS as readonly string[]).includes(id)
+  return violations
+}
 
-  // 선언되지 않은 사실 이름을 쓰는 조건 — 오타(affinty)가 조용히 "절대 안
-  // 맞는 조건"이 되면 작가가 원인을 못 찾는다(설계 문서 6.3).
-  for (const rule of data.dialogue) {
-    for (const condition of rule.conditions) {
-      if (!findFactSpec(condition.fact)) {
-        violations.push(
-          `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 선언되지 않은 사실 "${condition.fact}" 를 쓴다`,
-        )
-      }
-    }
+/**
+ * 화자가 놓인 칸이 실제로 설 수 있는 칸인지 검사한다.
+ *
+ * validateGameData 와 나눠 둔 것은 정보가 하나 더 필요해서다 — 화자의 좌표는
+ * speakers.csv 에 있지만 "그 칸이 벽인가·맵 안인가"는 맵 파일에만 있다.
+ * GameData 에 맵 전체를 실어 나르는 대신, 맵에서 뽑은 최소한의 지형
+ * (MapTerrain)을 인자로 받는다.
+ *
+ * 지금 맵이 하나뿐이라 speaker.mapId 를 보지 않는다 — 맵이 늘면 호출부가
+ * mapId 별로 지형을 골라 넘기게 된다(설계 문서 9장).
+ */
+export function validateSpeakerPlacements(data: GameData, terrain: MapTerrain): string[] {
+  const violations: string[] = []
+
+  // 노드가 놓인 칸. 노드도 화자도 "그 칸을 향하면 반응하는 것"이라, 한 칸에
+  // 둘이 있으면 무엇이 반응할지 정해지지 않는다 — parsePlacements 가 노드끼리
+  // 겹치는 것을 막는 것과 같은 이유다.
+  const nodeAt = new Map<string, string>()
+  for (const placement of Object.values(data.placements)) {
+    nodeAt.set(`${placement.x},${placement.y}`, placement.instanceId)
   }
 
-  // @greet 무조건 규칙이 없는 화자 — 어떤 상황에서도 할 말이 없으면 말을
-  // 걸어도 아무 일도 안 일어난다. 대사 파일 자체가 없는 화자(ownRules 가
-  // 비어 있다)는 여기서 또 알리지 않는다 — 아래 "대사 파일이 없다" 검사가
-  // 이미 같은 원인을 알려주므로, 둘 다 보고하면 노이즈만 커진다.
-  for (const speaker of speakersList) {
-    const ownRules = data.dialogue.filter((r) => r.speaker === speaker.id)
-    if (ownRules.length === 0) continue
-    const hasUnconditionalGreet = ownRules.some((r) => r.event === 'greet' && r.conditions.length === 0)
-    if (!hasUnconditionalGreet) {
-      violations.push(`dialogue[${speaker.id}]: @greet 무조건 규칙이 없다 — 말을 걸어도 아무 일도 안 일어날 수 있다`)
-    }
-  }
+  for (const speaker of Object.values(data.speakers)) {
+    const { x, y } = speaker
+    const key = `${x},${y}`
 
-  // 같은 사건 안에서 다른 규칙에 완전히 가려지는 규칙 — 조건이 다른 규칙의
-  // 부분집합이면서 개수가 적으면, 그 다른 규칙이 맞을 때는 항상 조건 개수가
-  // 더 많은 그 규칙에 밀린다(selectDialogue 는 사건 안에서 조건 최댓값만
-  // 남긴다). 조건 0개(무조건 규칙)는 이 검사에서 뺀다 — 그건 "무조건 규칙
-  // 필수" 검사가 요구하는 정상 상태이고, 더 구체적인 형제 규칙과 나란히
-  // 있는 것 자체가 이 시스템의 핵심 패턴이다(설계 4.4절 "새 상황을 추가할
-  // 때 기존 줄을 건드리지 않는다").
-  for (const rule of data.dialogue) {
-    if (rule.conditions.length === 0) continue
-    const shadowedBy = data.dialogue.find(
-      (other) =>
-        other !== rule &&
-        other.speaker === rule.speaker &&
-        other.event === rule.event &&
-        other.conditions.length > rule.conditions.length &&
-        rule.conditions.every((c) =>
-          other.conditions.some((oc) => oc.fact === c.fact && oc.op === c.op && oc.value === c.value),
-        ),
-    )
-    if (shadowedBy) {
+    if (x < 0 || y < 0 || x >= terrain.width || y >= terrain.height) {
       violations.push(
-        `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 규칙이 같은 사건(${rule.event})의 다른 규칙(${shadowedBy.source.file}:${shadowedBy.source.line}행)에 완전히 가려진다 (조건이 그 규칙의 부분집합이고 개수가 적다)`,
+        `speakers[${speaker.id}]: 맵 밖 칸 (${x}, ${y}) 에 놓였다 — 맵은 가로 ${terrain.width}, 세로 ${terrain.height} 칸이라 x 는 0~${terrain.width - 1}, y 는 0~${terrain.height - 1} 이다`,
+      )
+      continue // 맵 밖이면 벽인지 노드인지 따질 칸 자체가 없다
+    }
+
+    if (terrain.walls.has(key)) {
+      violations.push(
+        `speakers[${speaker.id}]: 벽 칸 (${x}, ${y}) 에 놓였다 — 벽 속에 서 있는 셈이다. speakers.csv 의 x·y 를 빈 칸으로 옮긴다`,
       )
     }
-  }
 
-  // 대사 파일이 없는 화자, 화자가 없는 대사 파일 — 배치(speakers.csv)와
-  // 대사(dialogue/*.dlg)는 서로 다른 파일이라 하나만 고치고 잊기 쉽다.
-  for (const speaker of speakersList) {
-    if (!dialogueSpeakerIds.has(speaker.id)) {
-      violations.push(`speakers[${speaker.id}]: 대사 파일이 없다`)
-    }
-  }
-  for (const id of dialogueSpeakerIds) {
-    if (!speakerIds.has(id)) {
-      violations.push(`dialogue[${id}]: 화자 정의(speakers.csv)가 없다`)
-    }
-  }
-
-  // 없는 이정표·기술을 가리키는 조건 — 이정표 검사에서 배운 것과 같다:
-  // 데이터가 서로를 가리키면 빌드가 그 참조를 확인한다.
-  for (const rule of data.dialogue) {
-    for (const condition of rule.conditions) {
-      if (condition.fact.startsWith('milestone.')) {
-        const id = condition.fact.slice('milestone.'.length)
-        if (!milestoneIds.has(id)) {
-          violations.push(
-            `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 존재하지 않는 이정표 "${id}" 를 가리킨다`,
-          )
-        }
-      } else if (condition.fact.startsWith('skill.')) {
-        const id = condition.fact.slice('skill.'.length)
-        if (!isKnownSkill(id)) {
-          violations.push(
-            `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 존재하지 않는 기술 "${id}" 를 가리킨다`,
-          )
-        }
-      }
-    }
-  }
-
-  // once 사건(story·quest·milestone)의 조건이 상한 없는 사실(skill.* 등,
-  // FactSpec.unbounded)에 크기 비교(>,>=,<,<=)를 걸면 문제가 생긴다 —
-  // onceKey(packages/shared/src/dialogue.ts)는 조건의 "지금 값"을 그대로
-  // 엮으므로, 채집할 때마다 오르는 skill.ice 같은 값에 걸면 값이 바뀔
-  // 때마다 새 키가 생겨 "한 번만 말한다"가 조용히 "말할 때마다 새로
-  // 말한다"로 깨지고 dialogueHistory.said 가 무한히 자란다(Task 1 리뷰
-  // 지적). 등호(`quest.촌장=3` 같은)는 다른 문제다 — 이산 값이 바뀌는 일
-  // 자체가 드물고, 그때 다시 말하는 것은 의도된 동작이다(설계 4.2절).
-  const MAGNITUDE_OPS: ReadonlySet<string> = new Set(['>', '>=', '<', '<='])
-  for (const rule of data.dialogue) {
-    if (!ONCE_EVENTS.has(rule.event)) continue
-    for (const condition of rule.conditions) {
-      if (!MAGNITUDE_OPS.has(condition.op)) continue
-      if (findFactSpec(condition.fact)?.unbounded) {
-        violations.push(
-          `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: once 사건(${rule.event})의 조건 "${condition.fact}${condition.op}${condition.value}" 이 상한 없는 사실에 크기 비교를 건다 — dialogueHistory.said 가 무한히 자란다`,
-        )
-      }
+    const node = nodeAt.get(key)
+    if (node) {
+      violations.push(
+        `speakers[${speaker.id}]: 노드 ${node} 와 같은 칸에 있다: (${x}, ${y}) — 그 칸을 향했을 때 어느 쪽이 반응할지 정해지지 않는다`,
+      )
     }
   }
 

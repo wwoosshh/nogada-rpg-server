@@ -1,6 +1,25 @@
 import type { Condition, DialogueRule, FactValue } from '@nogada/shared'
 
 /**
+ * 오류가 가리키는 위치를 적는 한 가지 꼴.
+ *
+ * 파서와 검증이 서로 다른 꼴(`x.dlg 5행` vs `x.dlg:5행`)을 쓰면, 같은 빌드
+ * 출력 안에서 두 가지 문법이 나와 작가가 "이건 다른 종류의 문제인가"를 먼저
+ * 고민하게 된다. 편집기·터미널이 링크로 잡아 주는 `파일:줄` 관례에 맞춘다.
+ */
+export function dialogueLocation(file: string, line: number): string {
+  return `${file}:${line}행`
+}
+
+/**
+ * 조건에 쓸 수 있는 연산자 전부.
+ *
+ * 배열로 내보내는 것은 순서가 필요해서다 — 오류 메시지와 작가용 문서
+ * (dialogue/README.md)가 같은 목록을 같은 순서로 보여줘야 한다.
+ */
+export const DIALOGUE_OPS = ['=', '!=', '>', '>=', '<', '<='] as const
+
+/**
  * `.dlg` 파일 하나를 파싱한다. 파일 하나 = 화자 하나다(설계 문서 5장).
  *
  * 형식:
@@ -34,14 +53,14 @@ export function parseDialogue(text: string, file: string): DialogueRule[] {
     if (!current) return
     if (current.lines.length === 0) {
       throw new Error(
-        `${file} ${current.headLine}행: 발화 없이 규칙 머리만 있다 (@${current.event}) — 이 규칙이 할 말을 최소 한 줄 적는다`,
+        `${dialogueLocation(file, current.headLine)}: 발화 없이 규칙 머리만 있다 (@${current.event}) — 이 규칙이 할 말을 최소 한 줄 적는다`,
       )
     }
 
     const id = buildRuleId(speaker, current.event, current.conditions, current.lines)
     if (seenIds.has(id)) {
       throw new Error(
-        `${file} ${current.headLine}행: 조건과 발화가 완전히 같은 규칙이 이미 있다 — 복사하고 고치는 것을 잊은 것으로 보인다`,
+        `${dialogueLocation(file, current.headLine)}: 조건과 발화가 완전히 같은 규칙이 이미 있다 — 복사하고 고치는 것을 잊은 것으로 보인다`,
       )
     }
     seenIds.add(id)
@@ -71,7 +90,7 @@ export function parseDialogue(text: string, file: string): DialogueRule[] {
         .filter((t) => t.length > 0)
       const event = tokens[0]
       if (event === undefined) {
-        throw new Error(`${file} ${lineNo}행: 규칙 머리에 사건 이름이 없다 (예: @greet)`)
+        throw new Error(`${dialogueLocation(file, lineNo)}: 규칙 머리에 사건 이름이 없다 (예: @greet)`)
       }
       const conditions = tokens.slice(1).map((token) => parseConditionToken(token, file, lineNo))
       current = { event, conditions, lines: [], headLine: lineNo }
@@ -79,7 +98,7 @@ export function parseDialogue(text: string, file: string): DialogueRule[] {
     }
 
     if (!current) {
-      throw new Error(`${file} ${lineNo}행: 규칙 머리(@사건) 없이 발화 줄이 먼저 나왔다`)
+      throw new Error(`${dialogueLocation(file, lineNo)}: 규칙 머리(@사건) 없이 발화 줄이 먼저 나왔다`)
     }
     current.lines.push(trimmed)
   })
@@ -108,7 +127,7 @@ function speakerIdFromFile(file: string): string {
 }
 
 const OP_CHARS = new Set(['=', '!', '<', '>'])
-const VALID_OPS: ReadonlySet<string> = new Set(['=', '!=', '>', '>=', '<', '<='])
+const VALID_OPS: ReadonlySet<string> = new Set(DIALOGUE_OPS)
 
 /**
  * 조건 토큰(`weather=rain`, `skill.ice>=50000`) 을 fact·연산자·값으로 나눈다.
@@ -131,10 +150,12 @@ function parseConditionToken(token: string, file: string, line: number): Conditi
   const valueRaw = token.slice(j)
 
   if (fact === '' || opRaw === '' || valueRaw === '') {
-    throw new Error(`${file} ${line}행: 조건 "${token}" 의 형식을 알 수 없다 (예: weather=rain)`)
+    throw new Error(`${dialogueLocation(file, line)}: 조건 "${token}" 의 형식을 알 수 없다 (예: weather=rain)`)
   }
   if (!VALID_OPS.has(opRaw)) {
-    throw new Error(`${file} ${line}행: 조건 "${token}" 의 연산자 "${opRaw}" 를 알 수 없다 (허용: =, !=, >, >=, <, <=)`)
+    throw new Error(
+      `${dialogueLocation(file, line)}: 조건 "${token}" 의 연산자 "${opRaw}" 를 알 수 없다 (허용: ${DIALOGUE_OPS.join(', ')})`,
+    )
   }
 
   return { fact, op: opRaw as Condition['op'], value: parseFactValue(valueRaw) }

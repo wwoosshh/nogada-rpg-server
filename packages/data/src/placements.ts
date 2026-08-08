@@ -15,12 +15,57 @@ interface TiledLayer {
   name?: string
   type?: string
   objects?: TiledObject[]
+  /** 타일 레이어의 타일 id 를 행 우선으로 늘어놓은 배열. 0 은 "타일 없음"이다. */
+  data?: number[]
 }
 
 interface TiledMap {
+  width?: number
+  height?: number
   tilewidth?: number
   tileheight?: number
   layers?: TiledLayer[]
+}
+
+/**
+ * 맵에서 "칸이 있는가·그 칸이 벽인가"만 뽑아낸 것.
+ *
+ * 배치 데이터(speakers.csv)는 맵 파일과 따로 있어서, 좌표가 벽 속이나 맵 밖을
+ * 가리켜도 두 파일 중 어느 쪽도 혼자서는 그것을 알 수 없다 — 검증이 둘을
+ * 맞대 보려면 이 최소한의 지형 정보가 필요하다.
+ */
+export interface MapTerrain {
+  width: number
+  height: number
+  /** 벽이 있는 칸의 `"x,y"` 키. */
+  walls: ReadonlySet<string>
+}
+
+/**
+ * Tiled 맵에서 크기와 벽 칸을 뽑는다.
+ *
+ * 벽의 기준은 클라이언트의 걷기 판정과 같아야 한다 — `walls` 레이어의 비어
+ * 있지 않은 타일이 벽이다(apps/client 의 WorldScene 참고). 여기서 다른 기준을
+ * 쓰면 빌드는 통과하는데 실제로는 못 가는 자리가 생긴다.
+ */
+export function parseTerrain(mapJson: unknown): MapTerrain {
+  const map = mapJson as TiledMap
+  const width = map.width ?? 0
+  const height = map.height ?? 0
+  if (width <= 0 || height <= 0) {
+    throw new Error('맵에 칸 수(width·height)가 없다')
+  }
+
+  const layer = map.layers?.find((l) => l.name === 'walls' && l.type === 'tilelayer')
+  const tiles = layer?.data ?? []
+
+  const walls = new Set<string>()
+  tiles.forEach((tile, index) => {
+    if (!tile) return // 0 은 "타일 없음" — 여기까지 벽으로 세면 맵 전체가 벽이 된다
+    walls.add(`${index % width},${Math.floor(index / width)}`)
+  })
+
+  return { width, height, walls }
 }
 
 function propOf(obj: TiledObject, name: string): string | undefined {

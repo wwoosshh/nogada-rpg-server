@@ -5,10 +5,11 @@ import { describe, expect, it } from 'vitest'
 import type { DialogueRule, GameData, ItemDef, MilestoneDef, SpeakerDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMilestones } from './milestones.js'
-import { parsePlacements } from './placements.js'
+import type { MapTerrain } from './placements.js'
+import { parsePlacements, parseTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
 import { parseDialogue } from './dialogueParse.js'
-import { collectDialogueNotices, validateGameData } from './validate.js'
+import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
 /**
  * baseData()의 유일한 채집 기술(mineral)에 필요한 최소 이정표 하나.
@@ -658,15 +659,113 @@ describe('validateGameData 의 대화 검사 — 무조건 인사', () => {
   })
 })
 
-describe('validateGameData 의 대화 검사 — 가려지는 규칙', () => {
-  it('조건이 다른 규칙의 부분집합이면서 개수가 적은 규칙을 잡아낸다', () => {
+describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건', () => {
+  // 규칙 하나가 자기 조건끼리 어긋나면 그 규칙은 어떤 세계 상태에서도 나오지
+  // 않는다. 형제 규칙과의 관계(더 구체적인 규칙이 있다)와 달리 이건 규칙
+  // 하나만 보고 확실히 알 수 있어서, 오탐 없이 "죽은 규칙"이라고 말할 수 있다.
+
+  it('같은 사실에 서로 다른 값을 요구하는 두 등호 조건을 잡아낸다', () => {
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [
       unconditionalGreet(),
-      dRule({ id: 'spring', event: 'greet', conditions: [{ fact: 'season', op: '=', value: 'spring' }] }),
       dRule({
-        id: 'springMorning',
+        id: 'twoSeasons',
+        event: 'greet',
+        conditions: [
+          { fact: 'season', op: '=', value: 'spring' },
+          { fact: 'season', op: '=', value: 'summer' },
+        ],
+      }),
+    ]
+    expect(validateGameData(data)).toContain(
+      'dialogue[노인] 노인.dlg:1행: 조건 "season=spring" 과 "season=summer" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다',
+    )
+  })
+
+  it('겹치는 구석이 없는 크기 범위를 잡아낸다', () => {
+    // 100 이상이면서 동시에 50 미만인 값은 없다. 작가가 두 규칙의 조건을
+    // 한 규칙에 잘못 합쳤을 때 나오는 모양이다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'emptyRange',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '>=', value: 100 },
+          { fact: 'skill.ice', op: '<', value: 50 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('"skill.ice>=100" 과 "skill.ice<50" 가 동시에 참일 수 없다'))).toBe(true)
+  })
+
+  it('같은 값을 요구하면서 동시에 아니라고 하는 조건을 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'bothWays',
+        event: 'greet',
+        conditions: [
+          { fact: 'quest.촌장', op: '=', value: 3 },
+          { fact: 'quest.촌장', op: '!=', value: 3 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('"quest.촌장=3" 과 "quest.촌장!=3" 가 동시에 참일 수 없다'))).toBe(true)
+  })
+
+  it('등호가 짚은 값이 크기 비교를 만족하지 못하면 잡아낸다', () => {
+    // skill.ice 가 정확히 100 인데 200 이상이기도 할 수는 없다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'pinnedOutOfRange',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '=', value: 100 },
+          { fact: 'skill.ice', op: '>=', value: 200 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(true)
+  })
+
+  it('겹치는 범위는 잡지 않는다 — 100 이상 200 미만은 정상적인 구간 표현이다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'range',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '>=', value: 100 },
+          { fact: 'skill.ice', op: '<', value: 200 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(false)
+  })
+
+  it('사실이 다르면 값이 어긋나 보여도 잡지 않는다', () => {
+    // season 과 hour 는 서로 다른 값이라 함께 걸리는 것이 정상이다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'twoFacts',
         event: 'greet',
         conditions: [
           { fact: 'season', op: '=', value: 'spring' },
@@ -675,28 +774,88 @@ describe('validateGameData 의 대화 검사 — 가려지는 규칙', () => {
       }),
     ]
     const violations = validateGameData(data)
-    expect(
-      violations.some((v) => v.startsWith('dialogue[노인] 노인.dlg:1행') && v.includes('완전히 가려진다')),
-    ).toBe(true)
+    expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(false)
   })
 
-  it('무조건 규칙(조건 0개)은 더 구체적인 규칙과 나란히 있어도 가려진 것으로 보지 않는다', () => {
-    // "@greet 무조건 규칙 필수" 검사와 정면으로 충돌하지 않으려면, 무조건
-    // 규칙이 더 구체적인 형제 규칙 옆에 있는 것 자체는 정상이어야 한다 —
-    // 이게 바로 이 시스템이 광고하는 "새 상황을 조건으로 얹기"(설계 4.4절)다.
+  it('조건이 다른 규칙의 부분집합인 폴백 규칙은 위반이 아니다', () => {
+    // 설계 문서 §5 가 작가에게 보여주는 대표 패턴이다: 조건이 더 많은 규칙은
+    // 그 조건이 전부 맞는 순간에만 이기고, 나머지 시간에는 조건이 적은 쪽이
+    // 나온다. 부분집합이라는 이유만으로 죽었다고 말하면, 이 시스템이 광고하는
+    // "새 상황을 조건으로 얹기"(설계 4.4절) 자체가 막힌다.
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [
       unconditionalGreet(),
-      dRule({ id: 'spring', event: 'greet', conditions: [{ fact: 'season', op: '=', value: 'spring' }] }),
+      dRule({ id: 'rain', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] }),
+      dRule({
+        id: 'rainClose',
+        event: 'greet',
+        conditions: [
+          { fact: 'weather', op: '=', value: 'rain' },
+          { fact: 'affinity', op: '>=', value: 30 },
+        ],
+      }),
     ]
     const violations = validateGameData(data)
-    expect(violations.some((v) => v.includes('완전히 가려진다'))).toBe(false)
+    expect(violations.filter((v) => v.startsWith('dialogue['))).toEqual([])
   })
 
-  it('실제로 출하되는 대사 데이터에는 가려지는 규칙이 없다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('완전히 가려진다'))
+  it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('동시에 참일 수 없다'))
     expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — 사건 이름', () => {
+  it('EVENT_ORDER 에 없는 사건 이름을 잡아낸다', () => {
+    // @greeet 는 파싱도 통과하고 다른 검사도 통과하지만, selectDialogue 는
+    // EVENT_ORDER 에 있는 사건만 훑으므로 영원히 선택되지 않는다 — 사실
+    // 이름 오타와 완전히 같은 실패이고, @ 는 모든 규칙 머리에 있다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [unconditionalGreet(), dRule({ id: 'typo', event: 'greeet', conditions: [] })]
+    expect(validateGameData(data)).toContain(
+      'dialogue[노인] 노인.dlg:1행: 알 수 없는 사건 "greeet" — 쓸 수 있는 사건은 story, quest, milestone, greet 이다',
+    )
+  })
+
+  it('실제로 출하되는 대사 데이터의 사건 이름은 전부 알려진 것이다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('알 수 없는 사건'))
+    expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — 다른 데이터의 오타에 가려지지 않는다', () => {
+  it('참조 무결성 위반이 있어도 대사 위반을 함께 보고한다', () => {
+    // 대사 검사가 이른 반환(참조 무결성 위반 시 멈춤) 뒤에 있으면, nodes.csv
+    // 오타 하나가 대사 위반 전부를 조용히 덮는다 — 작가는 한 가지를 고치고
+    // 다시 빌드해서야 두 번째 파도를 만난다.
+    const data = baseData()
+    data.nodes.copper_vein!.yieldItem = 'ghost_ore'
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'typo', event: 'greet', conditions: [{ fact: 'affinty', op: '=', value: 30 }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations).toContain('nodes[copper_vein]: 존재하지 않는 아이템 "ghost_ore" 를 산출한다')
+    expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
+  })
+
+  it('대사 위반이 있어도 도달 가능성 검사는 계속 돈다', () => {
+    // 반대 방향도 같다. 이른 반환은 "참조 무결성이 깨지면 도달 가능성 계산이
+    // 오염된다"를 막으려고 있는 것인데, 대사 위반에는 그 오염 관계가 없다 —
+    // 그것 때문에 건너뛰면 대사 오타 하나가 아이템 데드락을 덮어 똑같이
+    // 두 번 빌드하게 만든다.
+    const data = deadlockedTierData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'typo', event: 'greet', conditions: [{ fact: 'affinty', op: '=', value: 30 }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
+    expect(violations).toContain('items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)')
   })
 })
 
@@ -746,6 +905,40 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
     expect(validateGameData(data)).toContain('dialogue[노인] 노인.dlg:1행: 존재하지 않는 기술 "mining" 를 가리킨다')
   })
 
+  it('justAchieved 가 존재하지 않는 이정표를 가리키면 잡아낸다', () => {
+    // milestone.<id> 는 이름에 id 가 들어 있어 이미 검사되지만, justAchieved 는
+    // id 를 값으로 부른다 — 오타가 나면 조건 이름은 멀쩡하고 값만 틀려서
+    // "이 대사가 왜 안 나오지" 가 된다. 브리프가 노인에게 요구한 형태가 바로 이것이다.
+    const data = baseData() // baseData 의 이정표는 mineral_repeat 하나뿐이다
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'ghost',
+        event: 'milestone',
+        conditions: [{ fact: 'justAchieved', op: '=', value: 'ice_99999' }],
+      }),
+    ]
+    expect(validateGameData(data)).toContain(
+      'dialogue[노인] 노인.dlg:1행: justAchieved 가 존재하지 않는 이정표 "ice_99999" 를 가리킨다',
+    )
+  })
+
+  it('justAchieved 가 존재하는 이정표를 가리키면 통과한다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'real',
+        event: 'milestone',
+        conditions: [{ fact: 'justAchieved', op: '=', value: 'mineral_repeat' }],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('justAchieved'))).toBe(false)
+  })
+
   it('실제로 출하되는 대사 데이터는 전부 존재하는 이정표·기술만 가리킨다', () => {
     const violations = validateGameData(loadRealGameData()).filter(
       (v) => v.includes('존재하지 않는 이정표') || v.includes('존재하지 않는 기술'),
@@ -756,10 +949,10 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
 
 describe('validateGameData 의 대화 검사 — once 사건의 상한 없는 사실', () => {
   // 이 그룹은 Task 1 리뷰가 남긴 지적을 닫는다: onceKey 는 규칙의 조건들이
-  // "지금 갖는 값"을 그대로 엮으므로, once 사건(story·quest·milestone)의
-  // 조건이 상한 없이 계속 바뀌는 사실에 크기 비교(>,>=,<,<=)를 걸면 매번
-  // 새 키가 생겨 "한 번만 말한다"가 깨지고 dialogueHistory.said 가 무한히
-  // 자란다.
+  // "지금 갖는 값"을 연산자와 무관하게 그대로 엮으므로, once 사건(story·
+  // quest·milestone)의 조건이 상한 없이 계속 바뀌는 사실을 값이 고정되지
+  // 않는 방식으로 걸면 매번 새 키가 생겨 "한 번만 말한다"가 깨지고 "이미
+  // 말했다" 기록이 끝없이 늘어난다. 값을 고정하는 연산자는 = 하나뿐이다.
 
   it('once 사건 + 상한 없는 사실 + 크기 비교를 잡아낸다', () => {
     const data = baseData()
@@ -769,8 +962,22 @@ describe('validateGameData 의 대화 검사 — once 사건의 상한 없는 �
       dRule({ id: 'grind', event: 'quest', conditions: [{ fact: 'skill.ice', op: '>=', value: 1000 }] }),
     ]
     expect(validateGameData(data)).toContain(
-      'dialogue[노인] 노인.dlg:1행: once 사건(quest)의 조건 "skill.ice>=1000" 이 상한 없는 사실에 크기 비교를 건다 — dialogueHistory.said 가 무한히 자란다',
+      'dialogue[노인] 노인.dlg:1행: once 사건(quest)의 조건 "skill.ice>=1000" 이 상한 없는 사실을 = 아닌 연산자로 건다 — 그 값이 바뀔 때마다 "이미 말했다" 기록이 새로 쌓여 끝없이 늘어난다. 값을 정확히 짚는 = 를 쓰거나 이 규칙을 @greet 으로 옮긴다',
     )
+  })
+
+  it('once 사건 + 상한 없는 사실 + != 를 잡아낸다', () => {
+    // 크기 비교만 세면 이게 빠진다. onceKey 는 연산자를 보지 않고 조건마다
+    // 그 사실의 "지금 값"을 스냅샷하므로, skill.ice!=0 은 숙련도가 1 오를
+    // 때마다 새 키를 만든다 — 크기 비교와 똑같은 무한 증식이다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'notZero', event: 'quest', conditions: [{ fact: 'skill.ice', op: '!=', value: 0 }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('"skill.ice!=0" 이 상한 없는 사실을 = 아닌 연산자로 건다'))).toBe(true)
   })
 
   it('once 사건이라도 등호는 괜찮다 — quest.촌장=3 패턴은 계속 동작해야 한다', () => {
@@ -811,6 +1018,57 @@ describe('validateGameData 의 대화 검사 — once 사건의 상한 없는 �
   it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
     const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('상한 없는 사실'))
     expect(violations).toEqual([])
+  })
+})
+
+describe('validateSpeakerPlacements', () => {
+  // speakers.csv 는 화자를 타일 좌표로 놓는데, 그 좌표가 맞는지는 맵을 봐야
+  // 안다 — 그래서 GameData 만 보는 validateGameData 와 달리 지형을 함께 받는다.
+  // 벽 속이나 맵 밖에 놓인 화자는 화면에 나오긴 해도 옆에 설 수 없어 말을
+  // 걸 방법이 없다. 노드와 겹치면 그 칸에서 무엇이 반응할지 정해지지 않는다.
+
+  const terrain: MapTerrain = { width: 30, height: 30, walls: new Set(['5,5']) }
+
+  function speakerAt(x: number, y: number): Record<string, SpeakerDef> {
+    return { 노인: { ...testSpeaker, x, y } }
+  }
+
+  it('맵 밖에 놓인 화자를 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = speakerAt(30, 3)
+    data.placements = {}
+    expect(validateSpeakerPlacements(data, terrain)).toContain(
+      'speakers[노인]: 맵 밖 칸 (30, 3) 에 놓였다 — 맵은 가로 30, 세로 30 칸이라 x 는 0~29, y 는 0~29 이다',
+    )
+  })
+
+  it('벽 칸에 놓인 화자를 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = speakerAt(5, 5)
+    data.placements = {}
+    expect(validateSpeakerPlacements(data, terrain)).toContain(
+      'speakers[노인]: 벽 칸 (5, 5) 에 놓였다 — 벽 속에 서 있는 셈이다. speakers.csv 의 x·y 를 빈 칸으로 옮긴다',
+    )
+  })
+
+  it('노드와 같은 칸에 놓인 화자를 잡아낸다', () => {
+    const data = baseData() // baseData 의 copper_vein-1 은 (0,0) 에 있다
+    data.speakers = speakerAt(0, 0)
+    expect(validateSpeakerPlacements(data, terrain)).toContain(
+      'speakers[노인]: 노드 copper_vein-1 와 같은 칸에 있다: (0, 0) — 그 칸을 향했을 때 어느 쪽이 반응할지 정해지지 않는다',
+    )
+  })
+
+  it('빈 칸에 놓인 화자는 통과한다', () => {
+    const data = baseData()
+    data.speakers = speakerAt(10, 10)
+    expect(validateSpeakerPlacements(data, terrain)).toEqual([])
+  })
+
+  it('실제로 출하되는 화자 배치는 통과한다', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
+    expect(validateSpeakerPlacements(loadRealGameData(), parseTerrain(mapJson))).toEqual([])
   })
 })
 

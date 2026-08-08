@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import type { DialogueRule, GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMilestones } from './milestones.js'
-import { parsePlacements } from './placements.js'
+import { parsePlacements, parseTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
 import { parseDialogue } from './dialogueParse.js'
-import { collectDialogueNotices, validateGameData } from './validate.js'
+import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const csvDir = join(here, '..', 'csv')
@@ -39,7 +39,9 @@ const data: GameData = {
   dialogue: readAllDialogue(),
 }
 
-const violations = validateGameData(data)
+// 화자 배치 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 — 그래서
+// validateGameData 와 나뉘어 있고, 여기서 둘을 합쳐 한 번에 보고한다.
+const violations = [...validateGameData(data), ...validateSpeakerPlacements(data, parseTerrain(mapJson))]
 if (violations.length > 0) {
   console.error(`데이터 검증 실패 — ${violations.length}건`)
   for (const v of violations) console.error(`  - ${v}`)
