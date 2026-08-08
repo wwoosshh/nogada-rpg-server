@@ -87,6 +87,32 @@ describe('milestoneRatio', () => {
   })
 })
 
+/**
+ * every 분기는 지금까지 nextMilestone 비교를 통해서만 간접적으로 돌았다 —
+ * 직접 값을 확인하는 테스트가 없었다. 이 분기는 목록 정렬(buildMilestoneRows,
+ * apps/client/src/game/detailMenuTabs.ts)이 화면 순서를 정하는 데도 그대로
+ * 쓰이고, 병목(최솟값) 규칙은 이 모듈에서 가장 미묘한 설계 결정이다 — 그래서
+ * 따로 판을 짠다.
+ */
+describe('milestoneRatio — every', () => {
+  it('둘이 다르게 진행 중이면 더 처진 쪽(최솟값)을 쓴다 — 평균이나 최댓값이 아니다', () => {
+    // ice 500/1000=0.5, mineral 200/1000=0.2 → 병목은 mineral 이다.
+    expect(milestoneRatio(bothNovice, player({ ice: 500, mineral: 200 }), all)).toBe(0.2)
+  })
+  it('하나가 0이면 나머지가 얼마든 전체는 0이다', () => {
+    // mineral 은 이미 문턱을 넘겼어도(비율 1) ice 가 0 이면 병목은 ice 다.
+    // metricValue(달성 개수)/threshold 였다면 여기서 0.5(둘 중 하나 달성)를
+    // 보고했을 자리다 — milestoneRatio 문서가 경고하는 바로 그 오판이다.
+    expect(milestoneRatio(bothNovice, player({ ice: 0, mineral: 1000 }), all)).toBe(0)
+  })
+  it('하나가 이미 완료여도 나머지가 병목이면 나머지의 비율을 그대로 쓴다', () => {
+    // ice 는 완료(비율 1), mineral 은 300/1000=0.3 진행 중 → 0.3 이어야 한다.
+    // "하나는 끝났으니 절반은 왔다"는 개수 비율의 착시를 피하는 것이 이
+    // 규칙의 존재 이유다.
+    expect(milestoneRatio(bothNovice, player({ ice: 1000, mineral: 300 }), all)).toBe(0.3)
+  })
+})
+
 describe('achievedIds', () => {
   it('달성한 것만 담는다', () => {
     const ids = achievedIds(all, player({ ice: 1000 }))

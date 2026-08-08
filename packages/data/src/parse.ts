@@ -30,7 +30,7 @@ export function parseCsv(text: string): Row[] {
   })
 }
 
-function requireCell(row: Row, key: string, context: string): string {
+export function requireCell(row: Row, key: string, context: string): string {
   const value = row[key]
   if (value === undefined || value === '') {
     throw new Error(`${context}: 필수 항목 "${key}" 가 비어 있다`)
@@ -46,7 +46,7 @@ function requireCell(row: Row, key: string, context: string): string {
  * 없다. 0을 그대로 통과시키면 예컨대 yieldMin=-1 이 실려서 rollInt 가 음수 개수를
  * 반환하는 식으로 나중에야 터진다.
  */
-function toInt(value: string, context: string, field: string, min = 1): number {
+export function toInt(value: string, context: string, field: string, min = 1): number {
   const n = Number(value)
   if (!Number.isInteger(n)) throw new Error(`${context}: ${field} "${value}" 는 정수가 아니다`)
   if (n < min) throw new Error(`${context}: ${field} "${value}" 는 ${min} 이상이어야 한다`)
@@ -74,7 +74,7 @@ function isSkillId(value: string): value is SkillId {
 }
 
 /** CSV 의 skill/toolSkill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. 오타가 조용히 통과하는 것을 막는다. */
-function toSkillId(value: string, context: string): SkillId {
+export function toSkillId(value: string, context: string): SkillId {
   if (!isSkillId(value)) {
     throw new Error(`${context}: skill "${value}" 는 알 수 없다 (허용값: ${SKILL_IDS.join(', ')})`)
   }
@@ -82,7 +82,7 @@ function toSkillId(value: string, context: string): SkillId {
 }
 
 /** 같은 id 를 가진 행이 이미 있으면 던진다. 조용한 덮어쓰기는 진단 없이 행 하나를 통째로 지운다. */
-function addUnique<T>(out: Record<string, T>, id: string, def: T, csvFile: string): void {
+export function addUnique<T>(out: Record<string, T>, id: string, def: T, csvFile: string): void {
   if (Object.hasOwn(out, id)) {
     throw new Error(`${csvFile}: 중복된 id "${id}"`)
   }

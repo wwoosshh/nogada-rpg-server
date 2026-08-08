@@ -4,51 +4,20 @@ import type {
   MilestoneMetric,
   NodeDef,
   RecipeDef,
-  SkillId,
 } from '@nogada/shared'
-import { SKILL_IDS } from '@nogada/shared'
+import { addUnique, requireCell, toInt, toSkillId } from './parse.js'
 
 type Row = Record<string, string>
 
-function requireCell(row: Row, key: string, context: string): string {
-  const value = row[key]
-  if (value === undefined || value === '') {
-    throw new Error(`${context}: 필수 항목 "${key}" 가 비어 있다`)
-  }
-  return value
-}
-
-/**
- * 정수로 변환하고 최솟값을 만족하는지 검사한다. packages/data/src/parse.ts 의 toInt 와
- * 같은 규칙이다 — 기본 최솟값 1은 이 CSV의 threshold 가 "얼마 이상이어야 달성인지"를
- * 세는 값이라 0 이하가 의미 있는 경우가 없기 때문이다.
+/*
+ * requireCell·toInt·toSkillId·addUnique 는 packages/data/src/parse.ts 것을 그대로
+ * 쓴다. 예전에는 이 파일이 넷을 손으로 옮겨 적고 있었는데, addUnique 만 시그니처가
+ * 달랐다(여긴 "본 적 있는 id 집합"만 표시하는 3-인자, parse.ts 는 실제 값을 저장하는
+ * 제네릭 4-인자) — 이름과 오류 메시지("중복된 id")는 같은데 인자 개수가 다른 것을
+ * 나란히 두면 둘 중 뭐가 진짜인지 매번 다시 확인해야 한다. parse.ts 쪽이 더 일반적
+ * 이라(값을 저장 안 하고 싶으면 그냥 `true` 를 넣으면 된다) 이쪽 것을 지우고
+ * parse.ts 쪽으로 합쳤다 — 아래 seenIds 호출부가 그 방식이다.
  */
-function toInt(value: string, context: string, field: string, min = 1): number {
-  const n = Number(value)
-  if (!Number.isInteger(n)) throw new Error(`${context}: ${field} "${value}" 는 정수가 아니다`)
-  if (n < min) throw new Error(`${context}: ${field} "${value}" 는 ${min} 이상이어야 한다`)
-  return n
-}
-
-function isSkillId(value: string): value is SkillId {
-  return (SKILL_IDS as readonly string[]).includes(value)
-}
-
-/** skill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. parse.ts 의 toSkillId 와 같은 오류 형식이다. */
-function toSkillId(value: string, context: string): SkillId {
-  if (!isSkillId(value)) {
-    throw new Error(`${context}: skill "${value}" 는 알 수 없다 (허용값: ${SKILL_IDS.join(', ')})`)
-  }
-  return value
-}
-
-/** 같은 id 를 가진 행이 이미 있으면 던진다. parse.ts 의 addUnique 와 같은 오류 형식이다. */
-function addUnique(seen: Record<string, true>, id: string, csvFile: string): void {
-  if (Object.hasOwn(seen, id)) {
-    throw new Error(`${csvFile}: 중복된 id "${id}"`)
-  }
-  seen[id] = true
-}
 
 /** "a|b|c" 를 파싱한다. 빈 항목("a||b", "a|", "|a")은 허용하지 않는다 — 빈 id 를 가리키는 참조가 된다. */
 function parsePipeList(value: string, context: string, field: string): string[] {
@@ -136,7 +105,9 @@ export function parseMilestones(
   for (const row of rows) {
     const id = requireCell(row, 'id', 'milestones.csv')
     const ctx = `milestones.csv[${id}]`
-    addUnique(seenIds, id, 'milestones.csv')
+    // parse.ts 의 addUnique 는 값을 저장하는 4-인자 제네릭이다 — 여기서는 저장할
+    // 값이 필요 없고 "본 적 있다"만 표시하면 되므로 true 를 넣는다.
+    addUnique(seenIds, id, true, 'milestones.csv')
 
     out.push({
       id,
