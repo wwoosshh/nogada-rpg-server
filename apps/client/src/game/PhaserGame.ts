@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { ControlScene } from './scenes/ControlScene.js'
+import { PanelScene } from './scenes/PanelScene.js'
 import { WorldScene } from './scenes/WorldScene.js'
 
 /**
@@ -36,9 +37,15 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    // ControlScene 은 배열의 두 번째라 자동 시작하지 않는다 — WorldScene.create() 가
-    // this.scene.launch('Control') 로 명시적으로 띄운다. 그래야 hub 가 만들어진
-    // 뒤에 컨트롤러를 연결할 수 있다.
-    scene: [WorldScene, ControlScene],
+    // ControlScene·PanelScene 은 배열의 두 번째부터라 자동 시작하지 않는다 —
+    // WorldScene.create() 가 this.scene.launch() 로 각각 명시적으로 띄운다.
+    // 그래야 hub 가 만들어진 뒤에 연결할 수 있다.
+    //
+    // 배열 순서가 곧 그리는 순서다(뒤에 올수록 위) — PanelScene 을 WorldScene 과
+    // ControlScene 사이에 둔 것은 패널이 세계 위에 그려지되(낮밤 명암의 영향을
+    // 안 받되) 컨트롤러의 B·가방·제작 버튼(패널을 열고 닫는 통로)은 패널이
+    // 열려 있어도 항상 그 위에서 눌리게 하기 위해서다. PanelScene.ts 클래스
+    // 문서 참고.
+    scene: [WorldScene, PanelScene, ControlScene],
   })
 }

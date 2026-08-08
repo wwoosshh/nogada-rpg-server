@@ -11,6 +11,7 @@ import { FloatingTextGroup } from '../FloatingText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { TileMover } from '../TileMover.js'
 import { ControlScene } from './ControlScene.js'
+import { PanelScene } from './PanelScene.js'
 
 const TILE = 32
 
@@ -38,6 +39,7 @@ export class WorldScene extends Phaser.Scene {
   private hub!: InputHub
   private keyboard!: KeyboardSource
   private mover!: TileMover
+  private panel!: PanelScene
   private wallLayer!: Phaser.Tilemaps.TilemapLayer
   private mapWidth = 0
   private mapHeight = 0
@@ -170,6 +172,17 @@ export class WorldScene extends Phaser.Scene {
     }
     control.events.once(Phaser.Scenes.Events.CREATE, () => control.bind(this.hub))
 
+    // 패널도 Control 과 같은 자세로 띄운다 — 별도 씬, launch, CREATE 이벤트를
+    // 기다린 뒤 bind(). 이유는 PanelScene 클래스 문서와 ControlScene.bind() 의
+    // 주석 참고.
+    this.scene.launch('Panel')
+    const panel = this.scene.get('Panel')
+    if (!(panel instanceof PanelScene)) {
+      throw new Error('Panel 씬을 찾을 수 없다: PhaserGame.ts 의 씬 배열을 확인하라')
+    }
+    panel.events.once(Phaser.Scenes.Events.CREATE, () => panel.bind(this.hub))
+    this.panel = panel
+
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
     // Systems.destroy() 만 부르고 Systems.shutdown() 은 부르지 않으므로 DESTROY 만
     // 발생하고 SHUTDOWN 은 절대 발생하지 않는다. shutdown 에만 걸면 정리가 전혀 돌지
@@ -183,6 +196,7 @@ export class WorldScene extends Phaser.Scene {
       if (cleanedUp) return
       cleanedUp = true
       this.scene.stop('Control')
+      this.scene.stop('Panel')
       this.dayNight.destroy()
       this.keyboard.destroy()
       this.floaters.destroy()
@@ -239,6 +253,13 @@ export class WorldScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.keyboard.update()
+
+    // 이동·행동보다 먼저 처리한다 — 이번 프레임에 패널이 막 열리거나 닫혔다면
+    // 같은 프레임의 이동조차 그 변화를 따라야 한다(설계 문서 §7). 이 씬의
+    // update() 안에서 직접 부르는 이유는 PanelScene.applyInput() 의 문서에
+    // 적었다: 자신의 update() 에서 읽으면 이미 이번 프레임의 beginFrame() 이
+    // 지나간 뒤다.
+    this.panel.applyInput()
 
     this.mover.update(delta, this.hub.state.dir)
 
