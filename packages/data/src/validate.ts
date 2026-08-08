@@ -194,6 +194,18 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
+  // 여기까지의 참조 무결성 검사가 이미 위반을 찾았다면 도달 가능성 검사(고정점 계산)는
+  // 건너뛴다. 안 그러면 오타 하나가 그 아이템에 의존하는 나머지 전부를 "도달 불가"로
+  // 도매금 처리해 진짜 원인이 N+1 줄의 소음에 파묻힌다.
+  if (violations.length > 0) return violations
+
+  const reachable = computeReachableItems(data)
+  for (const item of Object.values(data.items)) {
+    if (!reachable.has(item.id)) {
+      violations.push(`items[${item.id}]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)`)
+    }
+  }
+
   // 이정표는 새 게이트를 만들지 않고 이미 존재하는 게이트를 선언할 뿐이다(설계 §2.3,
   // §3.1). 그래서 아래 검사들은 "선언"이 논리적으로 말이 되는지, 그리고 "선언"과
   // "실제 게이트"가 어긋나지 않는지를 본다.
@@ -250,24 +262,15 @@ export function validateGameData(data: GameData): string[] {
   // 채집 노드 자체가 없으니 "채집 기술" 이 아니다.
   const gatheringSkills = new Set(Object.values(data.nodes).map((node) => node.skill))
   for (const skill of gatheringSkills) {
-    const repeatCount = data.milestones.filter((m) => {
+    const repeatMilestones = data.milestones.filter((m) => {
       const effect = m.effect
       return effect.kind === 'repeat' && effect.skill === skill
-    }).length
-    if (repeatCount !== 1) {
-      violations.push(`skills[${skill}]: repeat 이정표가 정확히 1개여야 하는데 ${repeatCount}개다`)
-    }
-  }
-
-  // 여기까지의 참조 무결성 검사가 이미 위반을 찾았다면 도달 가능성 검사(고정점 계산)는
-  // 건너뛴다. 안 그러면 오타 하나가 그 아이템에 의존하는 나머지 전부를 "도달 불가"로
-  // 도매금 처리해 진짜 원인이 N+1 줄의 소음에 파묻힌다.
-  if (violations.length > 0) return violations
-
-  const reachable = computeReachableItems(data)
-  for (const item of Object.values(data.items)) {
-    if (!reachable.has(item.id)) {
-      violations.push(`items[${item.id}]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)`)
+    })
+    if (repeatMilestones.length !== 1) {
+      const milestoneIdList = repeatMilestones.map((m) => m.id).join(',')
+      violations.push(
+        `skills[${skill}]: repeat 이정표가 정확히 1개여야 하는데 [${milestoneIdList}](${repeatMilestones.length}개)다`,
+      )
     }
   }
 

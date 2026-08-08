@@ -151,11 +151,7 @@ function deadlockedTierData(): GameData {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
       'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', x: 1, y: 0 },
     },
-    // 빈 배열이면 안 된다 — "채집 기술마다 repeat 이정표가 정확히 하나" 검사가
-    // milestones: [] 에 대해 mineral 위반을 만들고, 그 위반이 early return(아래
-    // validateGameData 참고)을 당겨서 이 픽스처가 실제로 테스트하려는 도달 가능성
-    // 검사 자체가 안 돌게 된다. mineral 하나만 채워서 그 조기 반환을 피한다.
-    milestones: [mineralRepeatMilestone],
+    milestones: [],
   }
 }
 
@@ -537,7 +533,7 @@ describe('validateGameData 의 이정표 검사', () => {
     const data = baseData()
     data.milestones = [] // mineral 채집 기술(baseData 의 유일한 노드가 쓰는 기술)의 repeat 이정표가 없다
     expect(validateGameData(data)).toContain(
-      'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 0개다',
+      'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 [](0개)다',
     )
   })
 
@@ -551,7 +547,7 @@ describe('validateGameData 의 이정표 검사', () => {
       },
     ]
     expect(validateGameData(data)).toContain(
-      'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 2개다',
+      'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 [mineral_repeat,mineral_repeat_2](2개)다',
     )
   })
 
