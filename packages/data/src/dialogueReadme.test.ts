@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { DECLARED_FACTS, EVENT_ORDER } from '@nogada/shared'
+import { DECLARED_FACTS, EVENT_ORDER, SKILL_IDS } from '@nogada/shared'
 import { DIALOGUE_OPS } from './dialogueParse.js'
 
 /**
@@ -58,6 +58,20 @@ describe('dialogue/README.md — 코드와 어긋나지 않는다', () => {
       (spec) => `${spec.prefix ? `${spec.name}*` : spec.name} ${spec.supplied ? '예' : '아직'}`,
     ).sort()
     expect(documented).toEqual(declared)
+  })
+
+  it('skill.* 행의 설명이 SKILL_IDS 를 그대로 나열한다', () => {
+    // 위 테스트는 "사실 표에 skill.* 라는 이름과 공급 여부가 있는가"만 본다 —
+    // 그 옆 설명 칸에 적힌 구체적인 기술 id 나열(skill.ice, skill.wood, ...)은
+    // 대조 대상이 아니어서, 기술이 추가되거나 이름이 바뀌어도 이 칸만 조용히
+    // 낡을 수 있다. 작가가 "skill.* 뒤에 뭘 쓸 수 있나"를 알아보는 곳이 바로 이
+    // 칸이라 값어치가 크다. 순서는 보지 않는다 — README 는 읽기 좋은 순서로
+    // 적혀 있고(SKILL_IDS 의 선언 순서와 다르다), 여기서 지켜야 하는 것은 "빠짐도
+    // 더함도 없이 그 다섯 개"라는 집합 일치뿐이다.
+    const row = tableRows('사실').find((r) => code(r[0]) === 'skill.*')
+    if (!row) throw new Error('README 사실 표에 skill.* 행이 없다')
+    const listedSkillIds = [...(row[2] ?? '').matchAll(/`skill\.([^`]+)`/g)].map((m) => m[1]!)
+    expect(listedSkillIds.sort()).toEqual([...SKILL_IDS].sort())
   })
 
   it('사건 표가 EVENT_ORDER 와 같다', () => {

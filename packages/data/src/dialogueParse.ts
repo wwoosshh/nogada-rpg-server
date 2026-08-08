@@ -17,7 +17,7 @@ export function dialogueLocation(file: string, line: number): string {
  * 배열로 내보내는 것은 순서가 필요해서다 — 오류 메시지와 작가용 문서
  * (dialogue/README.md)가 같은 목록을 같은 순서로 보여줘야 한다.
  */
-export const DIALOGUE_OPS = ['=', '!=', '>', '>=', '<', '<='] as const
+export const DIALOGUE_OPS: readonly Condition['op'][] = ['=', '!=', '>', '>=', '<', '<='] as const
 
 /**
  * `.dlg` 파일 하나를 파싱한다. 파일 하나 = 화자 하나다(설계 문서 5장).

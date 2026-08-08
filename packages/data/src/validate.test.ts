@@ -806,6 +806,91 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
   })
 })
 
+describe('validateGameData 의 대화 검사 — 크기 범위 경계값(양 끝이 같은 값)', () => {
+  // contradicts 에서 가장 미묘한 분기다: 위의 100/50, 100/200 테스트는 둘 다 경계에서
+  // 멀리 떨어진 값이라 "양 끝이 같은 값" 분기(validate.ts 의 lower.value === upper.value)를
+  // 아예 타지 않는다. 등호 포함 여부(>= vs >, <= vs <) 네 조합을 전부 값 100 에서 박아
+  // 둬야, 이 분기가 조용히 반대로 뒤집혀도(">=100" 을 빈 구간으로 잘못 판정하거나
+  // ">100" 을 살아있다고 잘못 판정해도) 통과하던 스위트가 그대로 통과해 버리는
+  // 사고를 막는다.
+
+  it('>=100 과 <=100 은 100 이라는 값 하나가 둘 다 만족시켜 잡지 않는다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'closedClosed',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '>=', value: 100 },
+          { fact: 'skill.ice', op: '<=', value: 100 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(false)
+  })
+
+  it('>100 과 <=100 은 100 을 아래쪽이 배제해 구간이 비어 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'openClosed',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '>', value: 100 },
+          { fact: 'skill.ice', op: '<=', value: 100 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('"skill.ice>100" 과 "skill.ice<=100" 가 동시에 참일 수 없다'))).toBe(
+      true,
+    )
+  })
+
+  it('>=100 과 <100 은 100 을 위쪽이 배제해 구간이 비어 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'closedOpen',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '>=', value: 100 },
+          { fact: 'skill.ice', op: '<', value: 100 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('"skill.ice>=100" 과 "skill.ice<100" 가 동시에 참일 수 없다'))).toBe(
+      true,
+    )
+  })
+
+  it('>100 과 <100 은 양쪽 다 열려 있어 100 도 배제해 구간이 비어 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'openOpen',
+        event: 'greet',
+        conditions: [
+          { fact: 'skill.ice', op: '>', value: 100 },
+          { fact: 'skill.ice', op: '<', value: 100 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('"skill.ice>100" 과 "skill.ice<100" 가 동시에 참일 수 없다'))).toBe(true)
+  })
+})
+
 describe('validateGameData 의 대화 검사 — 사건 이름', () => {
   it('EVENT_ORDER 에 없는 사건 이름을 잡아낸다', () => {
     // @greeet 는 파싱도 통과하고 다른 검사도 통과하지만, selectDialogue 는
