@@ -14,22 +14,24 @@
  * 함수로 export 하고, 실제 실행은 파일 맨 아래 main-guard 뒤에 둔다.
  */
 import { pathToFileURL } from 'node:url'
-import type { DialogueHistory, DialogueRule, Facts, FactValue, GameData } from '@nogada/shared'
+import type { Condition, DialogueHistory, DialogueRule, Facts, FactValue, GameData } from '@nogada/shared'
 import {
   DECLARED_FACTS,
   EVENT_ORDER,
   ONCE_EVENTS,
   SKILL_IDS,
   createRng,
+  describeFactValueShape,
   emptyDialogueHistory,
   findFactSpec,
   gameTimeAt,
+  matchesCondition,
   onceKey,
   ruleMatches,
   selectDialogue,
 } from '@nogada/shared'
-import { dialogueLocation, parseFactValue } from './dialogueParse.js'
-import { collectDialogueNotices, conditionText, findDeadDialogueRules } from './validate.js'
+import { coerceFactValue, dialogueLocation } from './dialogueParse.js'
+import { collectDialogueNotices, conditionText, factReferenceError, findDeadDialogueRules } from './validate.js'
 import { loadGameData } from './load.js'
 
 // ---------------------------------------------------------------------------
@@ -58,16 +60,25 @@ const USAGE =
 /**
  * `--사실=값` 인자들을 Facts 로 바꾼다.
  *
- * 값 해석은 dialogueParse.ts 의 parseFactValue 를 그대로 쓴다 — `.dlg` 파일의
- * 조건 값과 명령줄의 값이 같은 문법(참거짓은 불리언, 숫자는 숫자)이어야
- * 작가가 파일에서 본 값을 그대로 명령줄에 옮겨 쓸 수 있다.
+ * **이 도구는 빌드보다 무르면 안 된다.** 그래서 세 가지를 빌드와 같은 코드로
+ * 검사한다:
  *
- * 선언되지 않은 사실은 findFactSpec 으로 거른다 — 빌드가 조건의 오타를 잡는
- * 것과 정확히 같은 검사이자 같은 이유다(설계 문서 6.3). `speaker` 는 이
- * 목록에 없으므로(selectDialogue 가 별도 매개변수로 받는다) 여기로 주면
- * 오타와 똑같이 막힌다 — 이것도 의도한 동작이다.
+ * 1. 이름 — findFactSpec. 빌드가 조건의 오타를 잡는 것과 같은 검사이자 같은
+ *    이유다(설계 문서 6.3). `speaker` 는 이 목록에 없으므로(selectDialogue 가
+ *    별도 매개변수로 받는다) 여기로 주면 오타와 똑같이 막힌다 — 의도한 동작이다.
+ * 2. 값의 모양 — 사실이 선언한 모양(FactSpec.value)대로 해석한다. 모양을
+ *    글자에서 추측하면 `--season=3` 이 숫자 season 을, `--hour=아침` 이 문자열
+ *    hour 를 만들어 낸다. 그런 사실은 어떤 조건과도 안 맞는데(matchesCondition
+ *    은 타입이 다르면 거짓이다) 도구는 "규칙 없음" 이라고 자신 있게 답한다 —
+ *    작가에게는 자기 입력이 원인이었다는 신호가 없다.
+ * 3. 가리키는 것 — factReferenceError(validate.ts). 빌드가 `.dlg` 조건에서
+ *    막는 `skill.zzz`·`milestone.없는것` 을 여기서 받아 주면, 작가는 빌드가
+ *    절대 허락하지 않을 세계 상태로 대사를 확인하게 된다.
+ *
+ * 거절할 때는 빌드와 같은 친절로 거절한다 — 무엇을 줬는지, 무엇이면 되는지,
+ * 어디를 보면 되는지.
  */
-export function parseFactOverrides(args: readonly string[]): Facts {
+export function parseFactOverrides(args: readonly string[], data: GameData): Facts {
   const facts: Record<string, FactValue> = {}
   for (const arg of args) {
     if (!arg.startsWith('--')) {
@@ -75,23 +86,47 @@ export function parseFactOverrides(args: readonly string[]): Facts {
     }
     const body = arg.slice(2)
     const eq = body.indexOf('=')
-    if (eq < 0) {
+    // `--weather` 처럼 = 가 없는 것과 `--weather=` 처럼 = 뒤가 빈 것을 같이 막는다.
+    // 빈 값을 빈 문자열로 받아 두면 그 사실은 어떤 조건과도 안 맞으면서 표에는
+    // "준 사실: weather=" 로 찍혀, 준 것처럼 보이는데 안 맞는 상태가 된다.
+    if (eq < 0 || eq === body.length - 1) {
       throw new Error(`"${arg}" 에 값이 없다 — --사실=값 형식으로 쓴다 (예: --weather=rain)`)
     }
     const fact = body.slice(0, eq)
     const raw = body.slice(eq + 1)
-    if (!findFactSpec(fact)) {
+
+    const spec = findFactSpec(fact)
+    if (!spec) {
       throw new Error(
         `선언되지 않은 사실 "${fact}" 다 — 쓸 수 있는 사실은 packages/data/dialogue/README.md 의 표를 본다`,
       )
     }
-    facts[fact] = parseFactValue(raw)
+
+    const value = coerceFactValue(spec.value, raw)
+    if (value === undefined) {
+      throw new Error(
+        `"${arg}" 인자를 쓸 수 없다 — ${fact} 사실은 ${describeFactValueShape(spec.value)}. ` +
+          '사실마다 쓸 수 있는 값은 packages/data/dialogue/README.md 의 사실 표에 있다',
+      )
+    }
+
+    const reference = factReferenceError(fact, value, data)
+    if (reference) {
+      throw new Error(`"${arg}" 인자를 쓸 수 없다 — ${reference.reason}. ${reference.allowed}`)
+    }
+
+    facts[fact] = value
   }
   return facts
 }
 
-/** process.argv.slice(2) 를 받아 네 명령 중 하나로 해석한다. */
-export function parseArgs(argv: readonly string[]): ContentCommand {
+/**
+ * process.argv.slice(2) 를 받아 네 명령 중 하나로 해석한다.
+ *
+ * `data` 가 필요한 것은 `--사실=값` 이 가리키는 이정표·기술이 실재하는지까지
+ * 보기 때문이다 — 그 목록은 코드가 아니라 데이터에 있다.
+ */
+export function parseArgs(argv: readonly string[], data: GameData): ContentCommand {
   const [command, ...rest] = argv
 
   if (command === 'facts' || command === 'dead' || command === 'waiting') {
@@ -106,7 +141,7 @@ export function parseArgs(argv: readonly string[]): ContentCommand {
     if (!speaker) {
       throw new Error(`화자 id 가 없다.\n${USAGE}`)
     }
-    return { kind: 'dialogue', speaker, overrides: parseFactOverrides(factArgs) }
+    return { kind: 'dialogue', speaker, overrides: parseFactOverrides(factArgs, data) }
   }
 
   throw new Error(`알 수 없는 명령 "${command ?? ''}" — 쓸 수 있는 명령: dialogue, facts, dead, waiting`)
@@ -209,6 +244,110 @@ function classifyMatchedRules(
   return result
 }
 
+/**
+ * 사건 서열 표의 한 줄이 말하는 것.
+ *
+ * 문장을 만들 때가 아니라 여기서 경우를 나누는 것이 중요하다. 예전에는 표의
+ * 각 줄을 그 자리에서 문자열로 지었는데, "채택된 사건이 없다"(selection 이
+ * null)는 경우가 어느 갈래에도 없어서 `undefined 사건이 상위라` 라는 말이
+ * 그대로 찍혔다 — 아무것도 채택되지 않았다는 사실과 앞뒤가 맞지 않는 문장이
+ * 작가 앞에 나갔다. 상태를 타입으로 못박아 두면 그런 문장을 만들 자리가 없다.
+ */
+type EventScan =
+  /** 이 사건이 채택됐다. */
+  | { kind: 'adopted'; matched: number }
+  /** 화자가 이 사건에 규칙을 하나도 쓰지 않았다. */
+  | { kind: 'noRules' }
+  /** 규칙은 있는데 조건이 하나도 안 맞았다 — "규칙 없음"과 정반대의 진단이다. */
+  | { kind: 'noneMatched'; ruleCount: number }
+  /** once 사건이라 맞은 규칙이 전부 "이미 말한 것"이었다. */
+  | { kind: 'allSaid'; matched: number }
+  /** 상위 사건이 먼저 채택돼 selectDialogue 가 아예 훑지 않았다. */
+  | { kind: 'notWalked'; wouldMatch: number; adopted: string }
+
+/**
+ * 사건마다 표의 한 줄이 무엇을 말할지 정한다.
+ *
+ * trace 는 selectDialogue 가 실제로 훑은 사건만 담고, **채택이 없으면(null)
+ * 아예 없다.** 그 두 경우에 이 도구가 직접 ruleMatches 를 불러 채워 넣는다 —
+ * 새 판정을 만드는 것이 아니라 엔진이 쓰는 그 함수를 그대로 다시 부를 뿐이다.
+ */
+function scanEvents(
+  speakerRules: readonly DialogueRule[],
+  facts: Facts,
+  walked: ReadonlyMap<string, number>,
+  adoptedEvent: string | undefined,
+): Map<string, EventScan> {
+  const scans = new Map<string, EventScan>()
+  for (const event of EVENT_ORDER) {
+    const rules = speakerRules.filter((r) => r.event === event)
+
+    if (event === adoptedEvent) {
+      scans.set(event, { kind: 'adopted', matched: walked.get(event) ?? 0 })
+      continue
+    }
+
+    // 채택된 사건이 있고 이 사건이 trace 에 없다면, 순서가 뒤라 평가 자체를
+    // 안 한 것이다(원인 b). 채택된 사건이 아예 없으면 selectDialogue 는 네
+    // 사건을 전부 훑었으므로 이 갈래로 오지 않는다.
+    if (adoptedEvent !== undefined && !walked.has(event)) {
+      const wouldMatch = rules.filter((r) => ruleMatches(r, facts)).length
+      scans.set(event, { kind: 'notWalked', wouldMatch, adopted: adoptedEvent })
+      continue
+    }
+
+    const matched = walked.get(event) ?? rules.filter((r) => ruleMatches(r, facts)).length
+    if (matched > 0) scans.set(event, { kind: 'allSaid', matched })
+    else if (rules.length === 0) scans.set(event, { kind: 'noRules' })
+    else scans.set(event, { kind: 'noneMatched', ruleCount: rules.length })
+  }
+  return scans
+}
+
+function renderEventScan(event: string, scan: EventScan): string {
+  switch (scan.kind) {
+    case 'adopted':
+      return `← 채택 (조건 맞는 규칙 ${scan.matched}개)`
+    case 'noRules':
+      return `규칙 없음 — 이 화자는 ${event} 규칙을 쓰지 않았다`
+    case 'noneMatched':
+      // "규칙 없음"과 이 줄을 한 문장으로 뭉뚱그리면 안 된다: 앞은 "이 화자에게
+      // 이런 대사를 써 준 적이 없다", 뒤는 "써 둔 대사의 조건이 지금 안 맞는다"
+      // 이고, 작가가 가야 할 곳이 서로 다르다. 어느 조건이 어긋났는지는 표
+      // 안에 우겨넣지 않고 아래 전용 절에서 규칙별로 짚는다 — 표는 사건 네
+      // 줄로 한눈에 읽히는 것이 값어치라, 여기서 규칙마다 몇 줄씩 불어나면
+      // 그 성질을 잃는다.
+      return `규칙 ${scan.ruleCount}개가 있지만 조건이 하나도 안 맞음 — 아래 "조건이 안 맞은 규칙" 참고`
+    case 'allSaid':
+      return `조건은 맞지만 전부 이미 말해 다음 사건으로 넘어감 (규칙 ${scan.matched}개)`
+    case 'notWalked':
+      // "${adopted} 가/이"처럼 영문 식별자에 조사를 직접 붙이면 받침 유무에
+      // 따라 문법이 어긋난다(story·quest 뒤엔 "가", milestone 뒤엔 "이") — 고정된
+      // 한국어 명사 "사건"을 사이에 끼워 조사를 그 명사에 붙이면 event 값과
+      // 무관하게 항상 맞는다.
+      return scan.wouldMatch === 0
+        ? `평가 안 함 — ${scan.adopted} 사건이 상위라 순서상 확인하지 않음`
+        : `평가 안 함 — 조건 맞는 규칙 ${scan.wouldMatch}개가 있었지만 ${scan.adopted} 사건이 상위라 순서상 못 나옴`
+  }
+}
+
+/**
+ * 조건 하나가 왜 안 맞았는지를 지금 세계 상태에 비춰 말한다.
+ *
+ * "값이 없다"를 두 가지로 나누는 것이 이 함수의 값어치다. 공급자가 없는
+ * 사실(weather 등)은 실제 게임에서도 안 맞으므로 작가가 할 일이 없고(빌드의
+ * "안내"와 같은 원인), 공급자가 있는데 이번에 안 준 사실은 인자 하나만 더
+ * 주면 바로 확인된다 — 같은 "없다"가 정반대의 할 일을 뜻한다.
+ */
+function conditionFailure(condition: Condition, facts: Facts): string {
+  const actual = facts[condition.fact]
+  if (actual !== undefined) return `지금 ${condition.fact}=${actual} 이다`
+  if (findFactSpec(condition.fact)?.supplied === false) {
+    return `${condition.fact} 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다 — 그 스펙이 생기기 전까지 이 조건은 어떤 값으로도 맞지 않는다`
+  }
+  return `${condition.fact} 에 값이 없다. 이번에 주지 않았다 — --${condition.fact}=값 으로 준다`
+}
+
 function renderStatusSuffix(rule: DialogueRule, status: RuleStatus): string {
   const n = rule.conditions.length
   switch (status.kind) {
@@ -237,12 +376,17 @@ export interface DialogueRunOptions {
  * 설계 문서 8.1 의 출력 형태(훑은 사건 → 채택한 사건 → 그 안의 후보와 조건
  * 개수 → 선택 → 최종 발화)를 따른다. 그 위에 사건 표의 각 줄마다 "왜
  * 안 됐는지"를 덧붙인다:
- *   - 채택된 사건보다 앞선 사건: 조건이 안 맞았다(원인 a) — "규칙 없음"
+ *   - 채택된 사건보다 앞선 사건: 규칙이 아예 없거나(noRules), 규칙은 있는데
+ *     조건이 안 맞았다(noneMatched, 원인 a). 이 둘을 "규칙 없음" 하나로
+ *     뭉뚱그리지 않는 것이 중요하다 — 작가가 갈 곳이 서로 다르다.
  *   - 채택된 사건보다 뒤(더 낮은 우선순위): 맞았어도 상위 사건이 먼저
  *     채택돼 애초에 평가되지 않았다(원인 b) — 이건 selectDialogue 의 trace
  *     에 없는 정보라 ruleMatches 를 직접 한 번 더 불러서 확인한다
  *   - 채택된 사건 안: 승자가 아니면 조건 개수 부족·동점 탈락·이미 말함 중
  *     하나다(원인 c) — classifyMatchedRules 가 가른다
+ *
+ * 마지막에 "조건이 안 맞은 규칙" 절이 붙어 원인 a 를 규칙·조건 단위까지
+ * 내려서 짚는다(무엇이 어긋났고 그 사실이 지금 무엇인가).
  */
 export function runDialogueCommand(
   data: GameData,
@@ -278,70 +422,63 @@ export function runDialogueCommand(
 
   const trace = selection?.trace ?? []
   const adoptedEvent = selection ? trace[trace.length - 1]?.event : undefined
-  const walked = new Map(trace.map((entry) => [entry.event, entry] as const))
+  const walked = new Map(trace.map((entry) => [entry.event, entry.matched.length] as const))
+  const scans = scanEvents(speakerRules, facts, walked, adoptedEvent)
 
   out.push('사건 서열을 훑는다:')
   const maxEventLen = Math.max(...EVENT_ORDER.map((e) => e.length))
   for (const event of EVENT_ORDER) {
-    const label = `  ${event.padEnd(maxEventLen + 2)}`
-    if (event === adoptedEvent) {
-      const count = walked.get(event)?.matched.length ?? 0
-      out.push(`${label}← 채택 (조건 맞는 규칙 ${count}개)`)
-      continue
-    }
-    const entry = walked.get(event)
-    if (entry) {
-      // selectDialogue 가 실제로 이 사건까지 훑었지만 채택하지 않고 다음으로
-      // 넘어갔다는 뜻이다 — ONCE_EVENTS 라서 맞은 규칙이 전부 이미 말한
-      // 것이었을 때만 이런 일이 생긴다(matched>0인데 다음으로 넘어감).
-      out.push(
-        entry.matched.length === 0
-          ? `${label}규칙 없음`
-          : `${label}조건은 맞지만 전부 이미 말해 다음 사건으로 넘어감 (규칙 ${entry.matched.length}개)`,
-      )
-    } else {
-      // 채택된 사건보다 순서가 뒤라 selectDialogue 는 이 사건을 아예 보지
-      // 않았다. "맞았을 후보가 있었는가"는 이 도구가 별도로 확인해 알려준다
-      // (원인 b) — ruleMatches 를 부를 뿐 새로운 판정 기준을 만들지 않는다.
-      const wouldMatch = speakerRules.filter((r) => r.event === event && ruleMatches(r, facts))
-      // "${adoptedEvent} 가/이"처럼 영문 식별자에 조사를 직접 붙이면 받침 유무에
-      // 따라 문법이 어긋난다(story·quest 뒤엔 "가", milestone 뒤엔 "이") — 고정된
-      // 한국어 명사 "사건"을 사이에 끼워 조사를 그 명사에 붙이면 event 값과
-      // 무관하게 항상 맞는다.
-      out.push(
-        wouldMatch.length === 0
-          ? `${label}평가 안 함 — ${adoptedEvent} 사건이 상위라 순서상 확인하지 않음`
-          : `${label}평가 안 함 — 조건 맞는 규칙 ${wouldMatch.length}개가 있었지만 ${adoptedEvent} 사건이 상위라 순서상 못 나옴`,
-      )
-    }
+    const scan = scans.get(event)
+    if (!scan) continue // EVENT_ORDER 로 만든 map 이라 항상 있다 — 방어적 스킵일 뿐.
+    out.push(`  ${event.padEnd(maxEventLen + 2)}${renderEventScan(event, scan)}`)
   }
   out.push('')
 
   if (!selection) {
     out.push('말을 걸어도 지금은 할 말이 없다 — 어떤 사건에도 조건이 맞는 규칙이 없다.')
-    return out.join('\n')
-  }
-
-  const lastEntry = trace[trace.length - 1]!
-  const matched = lastEntry.matched
-  const winner = selection.rule
-  const statuses = classifyMatchedRules(lastEntry.event, matched, facts, history, speakerId, winner)
-
-  out.push(`${lastEntry.event} 안에서 맞은 규칙 ${matched.length}개:`)
-  const sorted = [...matched].sort((a, b) => b.conditions.length - a.conditions.length)
-  for (const rule of sorted) {
-    const status = statuses.get(rule.id)
-    if (!status) continue // matched 에서 만든 map 이라 항상 있다 — 방어적 스킵일 뿐.
-    const mark = status.kind === 'winner' ? '✓' : ' '
-    out.push(`  ${mark} ${conditionLabel(rule)}    ${renderStatusSuffix(rule, status)}`)
-  }
-  out.push('')
-
-  if (winner.lines.length === 1) {
-    out.push(`출력: "${winner.lines[0]}"`)
   } else {
-    out.push(`출력 (${winner.lines.length}칸, 대사창이 순서대로 넘김):`)
-    winner.lines.forEach((line, i) => out.push(`  ${i + 1}. "${line}"`))
+    const lastEntry = trace[trace.length - 1]!
+    const matched = lastEntry.matched
+    const winner = selection.rule
+    const statuses = classifyMatchedRules(lastEntry.event, matched, facts, history, speakerId, winner)
+
+    out.push(`${lastEntry.event} 안에서 맞은 규칙 ${matched.length}개:`)
+    const sorted = [...matched].sort((a, b) => b.conditions.length - a.conditions.length)
+    for (const rule of sorted) {
+      const status = statuses.get(rule.id)
+      if (!status) continue // matched 에서 만든 map 이라 항상 있다 — 방어적 스킵일 뿐.
+      const mark = status.kind === 'winner' ? '✓' : ' '
+      out.push(`  ${mark} ${conditionLabel(rule)}    ${renderStatusSuffix(rule, status)}`)
+    }
+    out.push('')
+
+    if (winner.lines.length === 1) {
+      out.push(`출력: "${winner.lines[0]}"`)
+    } else {
+      out.push(`출력 (${winner.lines.length}칸, 대사창이 순서대로 넘김):`)
+      winner.lines.forEach((line, i) => out.push(`  ${i + 1}. "${line}"`))
+    }
+  }
+
+  // "조건이 안 맞았다"는 표에서 사건 한 줄로만 보인다. 작가가 바로 이어서 묻는
+  // 것은 언제나 "그래서 어느 조건이 어긋났나"다 — 답을 표 안에 우겨넣으면 네
+  // 줄짜리 서열표가 규칙 수만큼 불어나 한눈에 안 읽히므로, 답(출력) 바로
+  // 아래에 따로 붙인다. 훑지 않은 사건(원인 b)의 규칙은 여기 넣지 않는다:
+  // 그것들이 안 나온 이유는 조건이 아니라 서열이고, 표가 이미 그렇게 말했다.
+  const unmatched = EVENT_ORDER.flatMap((event) => {
+    if (scans.get(event)?.kind === 'notWalked') return []
+    return speakerRules.filter((r) => r.event === event && !ruleMatches(r, facts))
+  })
+  if (unmatched.length > 0) {
+    out.push('')
+    out.push('조건이 안 맞은 규칙 — 무엇이 어긋났나:')
+    for (const rule of unmatched) {
+      out.push(`  ${rule.event}  ${dialogueLocation(rule.source.file, rule.source.line)}`)
+      for (const condition of rule.conditions) {
+        if (matchesCondition(condition, facts)) continue // 맞은 조건까지 나열하면 어긋난 것이 묻힌다
+        out.push(`    ${conditionText(condition)} — ${conditionFailure(condition, facts)}`)
+      }
+    }
   }
 
   return out.join('\n')
@@ -421,16 +558,19 @@ export function runWaitingCommand(data: GameData): string {
 // ---------------------------------------------------------------------------
 
 function main(): void {
+  // 인자 해석보다 데이터 로드가 먼저다 — `--사실=값` 이 가리키는 이정표·기술이
+  // 실재하는지까지 보려면 그 목록이 필요하다. loadGameData 는 import 된 JSON 을
+  // 그대로 돌려주므로 이 순서 때문에 치르는 비용이 없다.
+  const data = loadGameData()
+
   let command: ContentCommand
   try {
-    command = parseArgs(process.argv.slice(2))
+    command = parseArgs(process.argv.slice(2), data)
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err))
     process.exitCode = 1
     return
   }
-
-  const data = loadGameData()
 
   try {
     if (command.kind === 'facts') {

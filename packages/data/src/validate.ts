@@ -1,10 +1,12 @@
-import type { Condition, DialogueRule, GameData, MilestoneDef } from '@nogada/shared'
+import type { Condition, DialogueRule, FactValue, GameData, MilestoneDef } from '@nogada/shared'
 import {
   EVENT_ORDER,
   ONCE_EVENTS,
   SKILL_IDS,
   STARTING_TOOL_IDS,
   actionIntervalMs,
+  describeFactValueShape,
+  factValueFitsShape,
   findFactSpec,
   matchesCondition,
   toolAppliesTo,
@@ -23,6 +25,56 @@ export function conditionText(condition: Condition): string {
   return `${condition.fact}${condition.op}${condition.value}`
 }
 
+/**
+ * 조건이나 시뮬레이터 인자가 **없는 이정표·기술**을 가리킬 때의 설명.
+ *
+ * 이유와 허용 목록을 나눠 담는 것은 두 부르는 쪽이 쓸 곳이 달라서다 — 빌드
+ * 위반 메시지는 이미 파일과 행을 앞에 달고 있어 `reason` 한 문장이면 되고,
+ * 명령줄에서 거절할 때는 "그럼 뭘 쓰면 되나"까지 그 자리에서 말해야 한다.
+ */
+export interface FactReferenceError {
+  reason: string
+  /** 무엇이면 되는가 — 목록이 짧으면 나열하고, 길면 어느 파일을 보면 되는지. */
+  allowed: string
+}
+
+/**
+ * 사실 이름·값이 실재하는 이정표·기술을 가리키는지 본다. 맞으면 null.
+ *
+ * 빌드(validateGameData)와 시뮬레이터(content-cli.ts)가 이 함수 하나를 함께
+ * 쓴다. 나눠 구현하면 한쪽이 무르게 되는데, 무른 쪽이 하필 디버깅 도구면
+ * 작가는 빌드가 절대 허락하지 않을 세계 상태로 대사를 확인하면서 그 사실을
+ * 모른다 — 도구가 자신 있게 틀린 답을 내는 가장 나쁜 모양이다.
+ *
+ * `justAchieved` 는 이름이 아니라 **값**으로 이정표를 부른다(justAchieved=
+ * ice_10000). 그래서 값을 안 보면 오타가 조건 이름 검사도 사실 이름 검사도
+ * 전부 통과해, "왜 이 대사가 안 나오지"만 남는다.
+ */
+export function factReferenceError(fact: string, value: FactValue, data: GameData): FactReferenceError | null {
+  const milestoneExists = (id: string): boolean => data.milestones.some((m) => m.id === id)
+  const milestoneHint = '이정표 id 는 csv/milestones.csv 에 있는 것이어야 한다'
+
+  if (fact === 'justAchieved') {
+    const id = String(value)
+    if (milestoneExists(id)) return null
+    return { reason: `justAchieved 가 존재하지 않는 이정표 "${id}" 를 가리킨다`, allowed: milestoneHint }
+  }
+
+  if (fact.startsWith('milestone.')) {
+    const id = fact.slice('milestone.'.length)
+    if (milestoneExists(id)) return null
+    return { reason: `존재하지 않는 이정표 "${id}" 를 가리킨다`, allowed: milestoneHint }
+  }
+
+  if (fact.startsWith('skill.')) {
+    const id = fact.slice('skill.'.length)
+    if ((SKILL_IDS as readonly string[]).includes(id)) return null
+    return { reason: `존재하지 않는 기술 "${id}" 를 가리킨다`, allowed: `쓸 수 있는 기술: ${SKILL_IDS.join(', ')}` }
+  }
+
+  return null
+}
+
 const LOWER_OPS: ReadonlySet<string> = new Set(['>', '>='])
 const UPPER_OPS: ReadonlySet<string> = new Set(['<', '<='])
 
@@ -34,8 +86,8 @@ const UPPER_OPS: ReadonlySet<string> = new Set(['<', '<='])
  *
  * 양쪽이 다 숫자일 때만 본다. 문자열에 크기 비교를 건 조건(`season>3`)은
  * 그것 하나만으로 이미 절대 참이 아니지만, 그건 "두 조건이 어긋난다"가 아니라
- * "조건 하나의 값 형태가 틀렸다"는 다른 부류다 — 사실마다 허용 값 목록이
- * 있어야 제대로 말할 수 있어서(설계 문서 7장) 여기서는 다루지 않는다.
+ * "조건 하나의 값 형태가 틀렸다"는 다른 부류다 — 이제 값 모양 검사가 따로
+ * 잡는다(아래 대화 검사의 factValueFitsShape, 설계 문서 7장).
  */
 function pinnedValueFails(pinned: Condition, other: Condition): boolean {
   if (typeof pinned.value !== 'number' || typeof other.value !== 'number') return false
@@ -327,7 +379,6 @@ export function validateGameData(data: GameData): string[] {
   const speakersList = Object.values(data.speakers)
   const speakerIds = new Set(speakersList.map((s) => s.id))
   const dialogueSpeakerIds = new Set(data.dialogue.map((r) => r.speaker))
-  const isKnownSkill = (id: string): boolean => (SKILL_IDS as readonly string[]).includes(id)
   /** 위반 메시지의 앞머리. 작가가 어느 파일 몇 행을 열면 되는지가 먼저 온다. */
   const at = (rule: DialogueRule): string =>
     `dialogue[${rule.speaker}] ${dialogueLocation(rule.source.file, rule.source.line)}`
@@ -389,30 +440,31 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
-  // 없는 이정표·기술을 가리키는 조건 — 이정표 검사에서 배운 것과 같다:
-  // 데이터가 서로를 가리키면 빌드가 그 참조를 확인한다.
+  // 조건의 **값** 을 본다 — 모양(설계 문서 7장의 "값의 형태가 맞지 않는 조건")과
+  // 그 값이 가리키는 것이 실재하는가(참조).
   //
-  // justAchieved 는 이름이 아니라 **값**으로 이정표를 부른다(justAchieved=
-  // ice_10000). 그래서 값을 안 보면 오타가 조건 이름 검사도 사실 이름 검사도
-  // 전부 통과해, "왜 이 대사가 안 나오지"만 남는다.
+  // 값 모양 검사는 오래 미뤄져 있었다. 미룬 이유가 "사실마다 값이 무엇일 수
+  // 있는지가 코드에 없다" 였는데, FactSpec.value 가 생기면서 그 정보가 생겼다.
+  // 이 검사가 없으면 `season=화요일` 은 파싱도 되고 이름 검사도 통과한 뒤
+  // 조용히 "절대 안 맞는 조건"이 된다 — 작가가 가장 못 찾는 종류의 오류다.
+  //
+  // 참조 검사는 이정표 검사에서 배운 것과 같다: 데이터가 서로를 가리키면
+  // 빌드가 그 참조를 확인한다. 계산은 factReferenceError 하나뿐이고
+  // content-cli.ts 의 `--사실=값` 검사도 같은 함수를 부른다.
   for (const rule of data.dialogue) {
     for (const condition of rule.conditions) {
-      if (condition.fact === 'justAchieved') {
-        const id = String(condition.value)
-        if (!milestoneIds.has(id)) {
-          violations.push(`${at(rule)}: justAchieved 가 존재하지 않는 이정표 "${id}" 를 가리킨다`)
-        }
-      } else if (condition.fact.startsWith('milestone.')) {
-        const id = condition.fact.slice('milestone.'.length)
-        if (!milestoneIds.has(id)) {
-          violations.push(`${at(rule)}: 존재하지 않는 이정표 "${id}" 를 가리킨다`)
-        }
-      } else if (condition.fact.startsWith('skill.')) {
-        const id = condition.fact.slice('skill.'.length)
-        if (!isKnownSkill(id)) {
-          violations.push(`${at(rule)}: 존재하지 않는 기술 "${id}" 를 가리킨다`)
-        }
+      const shape = findFactSpec(condition.fact)?.value
+      if (shape && !factValueFitsShape(shape, condition.value)) {
+        // 영문 식별자에 조사를 직접 붙이면 받침 유무로 문법이 어긋난다
+        // (season 은 "은", hour 는 "는") — 고정된 한국어 명사 "사실"을 사이에
+        // 끼워 조사를 그 명사에 붙이면 이름과 무관하게 항상 맞는다.
+        violations.push(
+          `${at(rule)}: 조건 "${conditionText(condition)}" 의 값 모양이 다르다 — ${condition.fact} 사실은 ${describeFactValueShape(shape)}`,
+        )
       }
+
+      const reference = factReferenceError(condition.fact, condition.value, data)
+      if (reference) violations.push(`${at(rule)}: ${reference.reason}`)
     }
   }
 

@@ -632,6 +632,61 @@ describe('validateGameData 의 대화 검사 — 선언되지 않은 사실', ()
   })
 })
 
+describe('validateGameData 의 대화 검사 — 값의 모양', () => {
+  // 설계 문서 7장이 처음부터 요구한 검사다("값의 형태가 맞지 않는 조건 —
+  // season=화요일"). 사실마다 "값이 무엇일 수 있는가" 가 코드에 없어서 미뤄
+  // 뒀는데, FactSpec.value 가 생기면서 그 정보가 생겼다.
+
+  it('정해진 목록 밖의 값을 쓴 조건을 잡아낸다 — season=화요일', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'tue', event: 'greet', conditions: [{ fact: 'season', op: '=', value: '화요일' }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('season=화요일') && v.includes('spring, summer, autumn, winter'))).toBe(
+      true,
+    )
+  })
+
+  it('참거짓 사실에 숫자를 건 조건을 잡아낸다 — 조용히 "절대 안 맞는 조건"이 된다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'one', event: 'greet', conditions: [{ fact: 'milestone.mineral_repeat', op: '=', value: 1 }] }),
+    ]
+    expect(validateGameData(data).some((v) => v.includes('true 또는 false'))).toBe(true)
+  })
+
+  it('숫자 사실에 문자열을 건 조건을 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'dawn', event: 'greet', conditions: [{ fact: 'hour', op: '<', value: '아침' }] }),
+    ]
+    expect(validateGameData(data).some((v) => v.includes('hour') && v.includes('숫자여야 한다'))).toBe(true)
+  })
+
+  it('공급자가 없어 값 모양이 아직 정해지지 않은 사실은 따지지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'w', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] }),
+      dRule({ id: 'q', event: 'greet', conditions: [{ fact: 'quest.촌장', op: '=', value: 3 }] }),
+    ]
+    expect(validateGameData(data).some((v) => v.includes('모양'))).toBe(false)
+  })
+
+  it('실제로 출하되는 대사 데이터는 값의 모양이 전부 맞는다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('모양'))
+    expect(violations).toEqual([])
+  })
+})
+
 describe('validateGameData 의 대화 검사 — 무조건 인사', () => {
   it('@greet 무조건 규칙이 없는 화자를 잡아낸다', () => {
     const data = baseData()

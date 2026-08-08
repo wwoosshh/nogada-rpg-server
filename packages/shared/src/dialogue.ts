@@ -13,6 +13,8 @@
  * 안에서만 비교한다.
  */
 
+import { SEASONS } from './time.js'
+
 /** 사실 하나의 값. 비교 연산의 의미를 좁게 유지하려고 원시값만 허용한다. */
 export type FactValue = string | number | boolean
 
@@ -27,6 +29,66 @@ export interface Condition {
   fact: string
   op: '=' | '!=' | '>' | '>=' | '<' | '<='
   value: FactValue
+}
+
+/**
+ * 사실 하나의 값이 무엇일 수 있는가.
+ *
+ * 이 정보가 없으면 값을 **모양으로 추측**하는 수밖에 없다 — `"3"` 은 숫자,
+ * `"아침"` 은 문자열. 추측은 그 자체로 틀리지 않지만, 틀린 타입의 사실이
+ * 조용히 만들어지고 그 뒤로는 어떤 조건과도 맞지 않는다(matchesCondition 은
+ * 타입이 다르면 그냥 거짓이다). 그러면 도구는 "규칙 없음" 이라고 자신 있게
+ * 답하고, 작가는 자기 입력이 문제였다는 것을 알 방법이 없다.
+ *
+ * `unspecified` 는 모르는 것을 모른다고 적는 자리다 — 공급자가 아직 없는
+ * 사실(`weather`·`affinity`·`quest.*` 등)의 값 모양은 그 사실을 만들 스펙이
+ * 정하는 것이지 여기서 미리 정할 것이 아니다. 지금 추측해서 못박으면, 나중에
+ * 스펙이 다른 모양을 고를 때 이미 쓰여 있던 대사들이 빌드에서 막힌다.
+ */
+export type FactValueShape =
+  | { kind: 'number' }
+  | { kind: 'boolean' }
+  | { kind: 'string' }
+  /** 값이 정해진 목록 안에 있어야 한다 — `season=화요일` 을 잡는 것이 이 변형의 존재 이유다(설계 문서 7장). */
+  | { kind: 'enum'; values: readonly string[] }
+  | { kind: 'unspecified' }
+
+/** 값이 그 모양에 맞는가. `unspecified` 는 아직 따질 근거가 없으므로 전부 통과시킨다. */
+export function factValueFitsShape(shape: FactValueShape, value: FactValue): boolean {
+  switch (shape.kind) {
+    case 'number':
+      return typeof value === 'number'
+    case 'boolean':
+      return typeof value === 'boolean'
+    case 'string':
+      return typeof value === 'string'
+    case 'enum':
+      return typeof value === 'string' && shape.values.includes(value)
+    case 'unspecified':
+      return true
+  }
+}
+
+/**
+ * 그 모양을 작가에게 한 줄로 설명한다.
+ *
+ * 검증 메시지(`.dlg` 조건)와 시뮬레이터의 인자 거부 메시지가 같은 문장을 써야
+ * 한다 — 같은 잘못을 두 도구가 다른 말로 설명하면 작가는 둘이 같은 것을
+ * 가리키는지부터 의심하게 된다.
+ */
+export function describeFactValueShape(shape: FactValueShape): string {
+  switch (shape.kind) {
+    case 'number':
+      return '숫자여야 한다'
+    case 'boolean':
+      return 'true 또는 false 여야 한다'
+    case 'string':
+      return '문자열이어야 한다'
+    case 'enum':
+      return `${shape.values.join(', ')} 중 하나여야 한다`
+    case 'unspecified':
+      return '값의 모양이 아직 정해지지 않았다 — 이 사실을 공급할 스펙이 생길 때 정해진다'
+  }
 }
 
 /**
@@ -66,6 +128,14 @@ export interface FactSpec {
    * 자체에 상한이 없는가"를 뜻한다.
    */
   unbounded: boolean
+  /**
+   * 이 사실의 값이 무엇일 수 있는가.
+   *
+   * 검증은 이걸로 `.dlg` 조건의 값 모양을 보고(설계 문서 7장), 시뮬레이터는
+   * 이걸로 `--사실=값` 의 값을 해석한다 — 둘 다 "값의 모양을 문자열에서
+   * 추측하지 않는다"는 같은 이유다.
+   */
+  value: FactValueShape
 }
 
 /**
@@ -83,20 +153,27 @@ export interface FactSpec {
  * 막아야 한다.
  */
 export const DECLARED_FACTS: readonly FactSpec[] = [
-  { name: 'season', prefix: false, supplied: true, unbounded: false },
-  { name: 'hour', prefix: false, supplied: true, unbounded: false },
-  { name: 'dayOfSeason', prefix: false, supplied: true, unbounded: false },
-  { name: 'skill.', prefix: true, supplied: true, unbounded: true },
-  { name: 'milestone.', prefix: true, supplied: true, unbounded: false },
-  { name: 'justAchieved', prefix: false, supplied: true, unbounded: false },
-  { name: 'talkedBefore', prefix: false, supplied: true, unbounded: false },
-  { name: 'daysSinceLastTalk', prefix: false, supplied: true, unbounded: true },
-  { name: 'weather', prefix: false, supplied: false, unbounded: false },
-  { name: 'affinity', prefix: false, supplied: false, unbounded: false },
-  { name: 'quest.', prefix: true, supplied: false, unbounded: false },
-  { name: 'story', prefix: false, supplied: false, unbounded: false },
-  { name: 'activity', prefix: false, supplied: false, unbounded: false },
-  { name: 'location', prefix: false, supplied: false, unbounded: false },
+  // 계절 이름은 SEASONS(time.ts)를 그대로 쓴다 — 여기에 네 개를 손으로 다시
+  // 적으면 계절이 늘거나 이름이 바뀔 때 이 목록만 조용히 낡는다.
+  { name: 'season', prefix: false, supplied: true, unbounded: false, value: { kind: 'enum', values: SEASONS } },
+  { name: 'hour', prefix: false, supplied: true, unbounded: false, value: { kind: 'number' } },
+  { name: 'dayOfSeason', prefix: false, supplied: true, unbounded: false, value: { kind: 'number' } },
+  { name: 'skill.', prefix: true, supplied: true, unbounded: true, value: { kind: 'number' } },
+  // 이정표는 달성했거나 아니거나다 — `milestone.x=1` 처럼 숫자로 쓰면 어떤
+  // 상황에서도 맞지 않는다(공급자가 넣는 값은 언제나 true/false 다).
+  { name: 'milestone.', prefix: true, supplied: true, unbounded: false, value: { kind: 'boolean' } },
+  // 이정표 id 하나. 그 id 가 실재하는지는 이름 목록이 아니라 데이터를 봐야
+  // 알 수 있어서 packages/data 의 검증이 따로 확인한다.
+  { name: 'justAchieved', prefix: false, supplied: true, unbounded: false, value: { kind: 'string' } },
+  { name: 'talkedBefore', prefix: false, supplied: true, unbounded: false, value: { kind: 'boolean' } },
+  { name: 'daysSinceLastTalk', prefix: false, supplied: true, unbounded: true, value: { kind: 'number' } },
+  // 아래 여섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
+  { name: 'weather', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
+  { name: 'affinity', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
+  { name: 'quest.', prefix: true, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
+  { name: 'story', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
+  { name: 'activity', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
+  { name: 'location', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
 ] as const
 
 /**
@@ -248,6 +325,11 @@ export interface DialogueSelection {
  * 3) 그중 화자가 방금 말한 것(recent)을 뺀다. 전부 빠지면 침묵보다는 반복이
  *    나으므로 빼지 않는다.
  * 4) 남은 후보에서 rng() 로 하나를 고른다.
+ *
+ * **2~4 단계의 순서를 바꾸려면 packages/data/src/content-cli.ts 도 함께 본다** —
+ * 시뮬레이터가 "이 규칙이 왜 졌는지"를 설명하려고 같은 순서로 후보를 다시 나눠
+ * 본다. 승자는 언제나 이 함수가 정하므로 어긋나도 답이 틀리지는 않지만, 맞는
+ * 답 옆에 틀린 이유가 붙는다.
  *
  * `speaker` 와 `facts` 는 서로 다른 것을 정한다 — 섞지 않는다. 대사창을
  * 채우는 facts 뭉치에는 (설계 문서의 "사실 뭉치"처럼) 참고용 `speaker`

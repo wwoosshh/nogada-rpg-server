@@ -4,6 +4,7 @@ import {
   EVENT_ORDER,
   ONCE_EVENTS,
   emptyDialogueHistory,
+  factValueFitsShape,
   findFactSpec,
   matchesCondition,
   onceKey,
@@ -12,6 +13,7 @@ import {
   type DialogueRule,
   type Facts,
 } from './dialogue.js'
+import { SEASONS } from './time.js'
 
 /** 조건 하나짜리 규칙을 짧게 만든다. */
 function rule(
@@ -226,7 +228,13 @@ describe('selectDialogue — 시뮬레이터용 흔적', () => {
 
 describe('findFactSpec', () => {
   it('고정 이름 사실을 찾는다', () => {
-    expect(findFactSpec('season')).toEqual({ name: 'season', prefix: false, supplied: true, unbounded: false })
+    expect(findFactSpec('season')).toEqual({
+      name: 'season',
+      prefix: false,
+      supplied: true,
+      unbounded: false,
+      value: { kind: 'enum', values: SEASONS },
+    })
   })
 
   it('접두사 사실을 찾는다 — 접두사 뒤는 임의의 이름이다', () => {
@@ -263,5 +271,37 @@ describe('findFactSpec', () => {
     // 상태값(milestone.*, quest.*)이라 크기 비교로 값이 끝없이 갈아치워지지 않는다.
     const unbounded = DECLARED_FACTS.filter((f) => f.unbounded).map((f) => f.name)
     expect(unbounded).toEqual(['skill.', 'daysSinceLastTalk'])
+  })
+
+  it('공급자가 없는 사실은 값의 모양도 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
+    // 지금 추측해서 못박으면(예: story 는 숫자다) 나중에 그 스펙이 다른 모양을
+    // 고르는 순간, 이미 쓰여 있던 대사들이 빌드에서 막힌다. 반대로 공급자가
+    // 있는 사실은 그 공급자가 넣는 값이 곧 모양이라 비워 둘 이유가 없다.
+    for (const spec of DECLARED_FACTS) {
+      expect([spec.name, spec.value.kind === 'unspecified']).toEqual([spec.name, !spec.supplied])
+    }
+  })
+})
+
+describe('factValueFitsShape', () => {
+  it('선언한 모양과 다른 타입의 값을 걸러낸다', () => {
+    expect(factValueFitsShape({ kind: 'number' }, 3)).toBe(true)
+    expect(factValueFitsShape({ kind: 'number' }, '3')).toBe(false)
+    // 1 을 true 로 봐 주면 milestone.x=1 이 조용히 통과한 뒤 어떤 상황에서도
+    // 안 맞는 조건이 된다 — matchesCondition 은 타입이 다르면 그냥 거짓이다.
+    expect(factValueFitsShape({ kind: 'boolean' }, 1)).toBe(false)
+    expect(factValueFitsShape({ kind: 'boolean' }, false)).toBe(true)
+  })
+
+  it('목록이 있는 사실은 목록 안의 값만 통과시킨다 — season=화요일 을 잡는 자리다', () => {
+    const season = { kind: 'enum', values: SEASONS } as const
+    expect(factValueFitsShape(season, 'spring')).toBe(true)
+    expect(factValueFitsShape(season, '화요일')).toBe(false)
+    expect(factValueFitsShape(season, 3)).toBe(false)
+  })
+
+  it('모양이 정해지지 않은 사실은 무엇이든 통과시킨다 — 없는 근거로 막지 않는다', () => {
+    expect(factValueFitsShape({ kind: 'unspecified' }, 'rain')).toBe(true)
+    expect(factValueFitsShape({ kind: 'unspecified' }, 40)).toBe(true)
   })
 })

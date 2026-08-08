@@ -1,4 +1,4 @@
-import type { Condition, DialogueRule, FactValue } from '@nogada/shared'
+import type { Condition, DialogueRule, FactValue, FactValueShape } from '@nogada/shared'
 
 /**
  * 오류가 가리키는 위치를 적는 한 가지 꼴.
@@ -179,6 +179,39 @@ export function parseFactValue(raw: string): FactValue {
   if (raw === 'false') return false
   if (raw !== '' && Number.isFinite(Number(raw))) return Number(raw)
   return raw
+}
+
+/**
+ * 값의 원문을, 그 사실이 **선언한 모양**에 맞춰 FactValue 로 바꾼다.
+ * 그 모양이 될 수 없는 원문이면 undefined 를 돌려준다(부르는 쪽이 거절한다).
+ *
+ * parseFactValue 와의 차이가 이 함수의 존재 이유다. parseFactValue 는 원문의
+ * 생김새만 보고 타입을 정한다 — `.dlg` 를 파싱할 때는 그것 말고 기댈 것이
+ * 없으니 맞는 방법이다. 하지만 사실의 모양을 이미 아는 자리(FactSpec.value)에서
+ * 그 추측을 계속 쓰면, `--season=3` 이 숫자 3 인 season 을, `--hour=아침` 이
+ * 문자열인 hour 를 만들어 낸다. 그 사실들은 이후 어떤 조건과도 맞지 않고
+ * (matchesCondition 은 타입이 다르면 거짓이다) 도구는 "규칙 없음" 이라고
+ * 답한다 — 작가 입장에서는 자기 입력이 문제였다는 신호가 어디에도 없다.
+ *
+ * `unspecified`(공급자가 아직 없어 모양이 정해지지 않은 사실)만 parseFactValue
+ * 로 돌아간다 — 맞출 모양이 없으면 `.dlg` 와 같은 문법으로 읽는 것이 작가에게
+ * 가장 덜 놀랍다.
+ */
+export function coerceFactValue(shape: FactValueShape, raw: string): FactValue | undefined {
+  switch (shape.kind) {
+    case 'number': {
+      const n = Number(raw)
+      return raw.trim() !== '' && Number.isFinite(n) ? n : undefined
+    }
+    case 'boolean':
+      return raw === 'true' ? true : raw === 'false' ? false : undefined
+    case 'enum':
+      return shape.values.includes(raw) ? raw : undefined
+    case 'string':
+      return raw
+    case 'unspecified':
+      return parseFactValue(raw)
+  }
 }
 
 /**

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   createRng,
@@ -39,6 +42,10 @@ function dRule(overrides: Partial<DialogueRule> & Pick<DialogueRule, 'id' | 'eve
 
 const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'x' }
 
+// 명령줄 인자 검사는 이정표·기술 id 가 실재하는지까지 본다(빌드와 같은 검사) —
+// 그래서 그 목록을 가진 실제 데이터가 필요하다.
+const realData = loadGameData()
+
 // ---- 사건 서열이 있는 화자 하나로 다섯 종류의 상황(story 없음, quest, milestone,
 // greet 구체적, greet 동점)을 전부 만들어 두고 아래 describe 들이 나눠 쓴다.
 const questRule = dRule({ id: 'q', event: 'quest', conditions: [{ fact: 'quest.q', op: '=', value: 1 }] })
@@ -69,13 +76,13 @@ function fixtureData(): GameData {
 
 describe('parseArgs', () => {
   it('facts·dead·waiting 은 인자 없이 그 명령으로 해석된다', () => {
-    expect(parseArgs(['facts'])).toEqual({ kind: 'facts' })
-    expect(parseArgs(['dead'])).toEqual({ kind: 'dead' })
-    expect(parseArgs(['waiting'])).toEqual({ kind: 'waiting' })
+    expect(parseArgs(['facts'], realData)).toEqual({ kind: 'facts' })
+    expect(parseArgs(['dead'], realData)).toEqual({ kind: 'dead' })
+    expect(parseArgs(['waiting'], realData)).toEqual({ kind: 'waiting' })
   })
 
   it('dialogue 는 화자 id 와 --사실=값 여러 개를 함께 받는다', () => {
-    const cmd = parseArgs(['dialogue', '채집장노인', '--skill.ice=15000', '--justAchieved=ice_10000'])
+    const cmd = parseArgs(['dialogue', '채집장노인', '--skill.ice=15000', '--justAchieved=ice_10000'], realData)
     expect(cmd).toEqual({
       kind: 'dialogue',
       speaker: '채집장노인',
@@ -84,51 +91,108 @@ describe('parseArgs', () => {
   })
 
   it('알 수 없는 명령을 거부하고 쓸 수 있는 네 명령을 안내한다', () => {
-    expect(() => parseArgs(['nope'])).toThrow(/dialogue, facts, dead, waiting/)
+    expect(() => parseArgs(['nope'], realData)).toThrow(/dialogue, facts, dead, waiting/)
   })
 
   it('명령이 아예 없으면 거부한다', () => {
-    expect(() => parseArgs([])).toThrow()
+    expect(() => parseArgs([], realData)).toThrow()
   })
 
   it('dialogue 인데 화자 id 가 없으면 거부한다', () => {
-    expect(() => parseArgs(['dialogue'])).toThrow(/화자/)
+    expect(() => parseArgs(['dialogue'], realData)).toThrow(/화자/)
   })
 
   it('facts·dead·waiting 뒤에 남는 인자가 있으면 거부한다 — 조용히 무시하면 오타를 못 알아챈다', () => {
-    expect(() => parseArgs(['facts', '뭔가'])).toThrow()
+    expect(() => parseArgs(['facts', '뭔가'], realData)).toThrow()
   })
 })
 
 describe('parseFactOverrides', () => {
   it('선언되지 않은 사실 이름을 거부한다', () => {
-    expect(() => parseFactOverrides(['--affinty=30'])).toThrow(/선언되지 않은 사실/)
+    expect(() => parseFactOverrides(['--affinty=30'], realData)).toThrow(/선언되지 않은 사실/)
   })
 
   it('speaker 를 사실처럼 주면 거부한다 — selectDialogue 는 speaker 를 별도 매개변수로 받는다', () => {
-    expect(() => parseFactOverrides(['--speaker=채집장노인'])).toThrow(/선언되지 않은 사실/)
+    expect(() => parseFactOverrides(['--speaker=채집장노인'], realData)).toThrow(/선언되지 않은 사실/)
   })
 
   it('-- 로 시작하지 않는 인자를 거부한다', () => {
-    expect(() => parseFactOverrides(['skill.ice=100'])).toThrow()
+    expect(() => parseFactOverrides(['skill.ice=100'], realData)).toThrow()
   })
 
   it('= 가 없는 인자를 거부한다', () => {
-    expect(() => parseFactOverrides(['--weather'])).toThrow()
+    expect(() => parseFactOverrides(['--weather'], realData)).toThrow()
   })
 
-  it('숫자·불리언·문자열 값을 dialogueParse 의 parseFactValue 와 같은 규칙으로 해석한다', () => {
-    const facts = parseFactOverrides(['--skill.ice=15000', '--talkedBefore=true', '--weather=rain'])
-    expect(facts).toEqual({ 'skill.ice': 15000, talkedBefore: true, weather: 'rain' })
+  it('제대로 준 값은 선언된 모양 그대로 통과한다', () => {
+    const facts = parseFactOverrides(
+      ['--skill.ice=15000', '--talkedBefore=true', '--season=spring', '--justAchieved=ice_10000'],
+      realData,
+    )
+    expect(facts).toEqual({ 'skill.ice': 15000, talkedBefore: true, season: 'spring', justAchieved: 'ice_10000' })
+  })
+
+  it('공급자가 없어 값 모양이 아직 정해지지 않은 사실은 .dlg 와 같은 문법으로 읽는다', () => {
+    expect(parseFactOverrides(['--weather=rain', '--affinity=40'], realData)).toEqual({
+      weather: 'rain',
+      affinity: 40,
+    })
+  })
+
+  it('숫자를 받는 사실에 숫자가 아닌 값을 주면 거부한다 — 문자열로 만들어 주면 아무것도 안 맞는데 이유가 안 보인다', () => {
+    expect(() => parseFactOverrides(['--hour=아침'], realData)).toThrow(/hour.*숫자여야 한다/)
+  })
+
+  it('정해진 목록이 있는 사실에는 목록 밖 값을 거부하고 그 목록을 보여준다', () => {
+    expect(() => parseFactOverrides(['--season=3'], realData)).toThrow(/spring, summer, autumn, winter 중 하나/)
+  })
+
+  it('참거짓 사실에 1 을 주면 거부한다 — 숫자 1 은 true 와 절대 같지 않다', () => {
+    expect(() => parseFactOverrides(['--milestone.ice_10000=1'], realData)).toThrow(/true 또는 false/)
+  })
+
+  it('값이 비어 있는 인자를 거부한다', () => {
+    expect(() => parseFactOverrides(['--weather='], realData)).toThrow(/값이 없다/)
+  })
+
+  it('빌드가 조건에서 막는 기술·이정표 이름을 시뮬레이터도 똑같이 막는다 — 같은 코드를 나눠 쓴다', () => {
+    // 도구가 빌드보다 무르면, 작가는 빌드가 절대 허락하지 않을 세계 상태로
+    // 디버깅하면서 그 사실을 모른다.
+    const data: GameData = {
+      ...emptyGameData(),
+      speakers: { 노인: testSpeaker },
+      dialogue: [
+        bare1,
+        dRule({ id: 'ghostSkill', event: 'greet', conditions: [{ fact: 'skill.zzz', op: '>=', value: 10 }] }),
+        dRule({
+          id: 'ghostMilestone',
+          event: 'greet',
+          conditions: [{ fact: 'milestone.없는것', op: '=', value: true }],
+        }),
+      ],
+    }
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('존재하지 않는 기술 "zzz"'))).toBe(true)
+    expect(violations.some((v) => v.includes('존재하지 않는 이정표 "없는것"'))).toBe(true)
+
+    expect(() => parseFactOverrides(['--skill.zzz=3'], data)).toThrow(/존재하지 않는 기술 "zzz"/)
+    expect(() => parseFactOverrides(['--milestone.없는것=true'], data)).toThrow(/존재하지 않는 이정표 "없는것"/)
+  })
+
+  it('거부할 때 무엇이 허용되는지와 어디를 보면 되는지를 함께 말한다', () => {
+    expect(() => parseFactOverrides(['--skill.zzz=3'], realData)).toThrow(/ice, wood, mineral, herb, crafting/)
+    expect(() => parseFactOverrides(['--milestone.없는것=true'], realData)).toThrow(/milestones\.csv/)
   })
 })
 
 describe('runDialogueCommand — 사건 서열', () => {
-  it('아무 사실도 안 주면 story·quest·milestone 은 규칙 없음이고 greet 무조건 규칙끼리 동점 처리된다', () => {
+  it('아무 사실도 안 주면 상위 세 사건은 저마다의 이유로 비고 greet 무조건 규칙끼리 동점 처리된다', () => {
     const out = runDialogueCommand(fixtureData(), '노인', {}, { now: FIXED_NOW, seed: 1 })
-    expect(out).toMatch(/story\s+규칙 없음/)
-    expect(out).toMatch(/quest\s+규칙 없음/)
-    expect(out).toMatch(/milestone\s+규칙 없음/)
+    // 노인에게 story 규칙은 아예 없고, quest·milestone 은 규칙이 있는데 조건만
+    // 안 맞았다 — 셋을 다 "규칙 없음"으로 적으면 정반대의 두 진단이 뭉개진다.
+    expect(out).toMatch(/story\s+규칙 없음 — 이 화자는 story 규칙을 쓰지 않았다/)
+    expect(out).toMatch(/quest\s+규칙 1개가 있지만 조건이 하나도 안 맞음/)
+    expect(out).toMatch(/milestone\s+규칙 1개가 있지만 조건이 하나도 안 맞음/)
     expect(out).toMatch(/greet\s+← 채택 \(조건 맞는 규칙 2개\)/) // rain·rainClose 는 weather 없이 안 맞는다
     expect(out).toContain('동점 후보 2개 중 무작위')
     expect(out).toContain('무작위 추첨에서 안 뽑힘')
@@ -190,6 +254,10 @@ describe('runDialogueCommand — 사건 서열', () => {
     }
     const out = runDialogueCommand(lonely, '외톨이', {}, { now: FIXED_NOW, seed: 0 })
     expect(out).toContain('말을 걸어도 지금은 할 말이 없다')
+    // 마지막 줄만 보면 그 위의 사건 표가 깨져 있어도 이 테스트는 통과한다 —
+    // 실제로 이 경로에서 표가 "undefined 사건이 상위라" 를 찍고 있었다.
+    expect(out).not.toContain('undefined')
+    expect(out).toMatch(/greet\s+규칙 없음 — 이 화자는 greet 규칙을 쓰지 않았다/)
   })
 
   it('발화가 여러 줄이면 번호를 매겨 순서대로 보여준다', () => {
@@ -218,6 +286,68 @@ describe('runDialogueCommand — 사건 서열', () => {
     const out = runDialogueCommand(data, '노인', facts, { now: FIXED_NOW, seed: 3 })
     expect(direct?.rule.id).toBe('rainClose')
     expect(out).toContain(`출력: "(${direct?.rule.id})"`)
+  })
+})
+
+// ---- 왜 안 나왔는가 — "규칙이 없다" 와 "규칙은 있는데 조건이 안 맞았다" 는
+// 작가를 서로 다른 곳으로 보내는 정반대의 진단이다.
+const storyTalked = dRule({
+  id: 'storyTalked',
+  event: 'story',
+  conditions: [{ fact: 'talkedBefore', op: '=', value: true }],
+  source: { file: '노인.dlg', line: 3 },
+})
+const rainOnly = dRule({
+  id: 'rainOnly',
+  event: 'greet',
+  conditions: [{ fact: 'weather', op: '=', value: 'rain' }],
+  source: { file: '노인.dlg', line: 9 },
+})
+
+function whyData(dialogue: DialogueRule[]): GameData {
+  return { ...emptyGameData(), speakers: { 노인: testSpeaker }, dialogue }
+}
+
+describe('runDialogueCommand — 왜 안 나왔는가', () => {
+  it('규칙이 아예 없는 사건과, 규칙은 있는데 조건이 안 맞은 사건을 다르게 말한다', () => {
+    // 둘 다 "규칙 없음" 이라고 말하면 작가는 "story 대사를 쓴 적이 없다" 와
+    // "써 둔 story 대사의 조건이 지금 안 맞는다" 를 구분할 수 없다 — 두 번째가
+    // 이 도구가 존재하는 이유인 흔한 쪽이다.
+    const out = runDialogueCommand(whyData([storyTalked, bare1]), '노인', {}, { now: FIXED_NOW, seed: 0 })
+    expect(out).toMatch(/story\s+규칙 1개가 있지만 조건이 하나도 안 맞음/)
+    expect(out).toMatch(/quest\s+규칙 없음 — 이 화자는 quest 규칙을 쓰지 않았다/)
+  })
+
+  it('조건이 안 맞은 규칙마다 어느 조건이 어긋났고 그 사실이 지금 무엇인지 짚어 준다', () => {
+    const out = runDialogueCommand(whyData([storyTalked, bare1]), '노인', {}, { now: FIXED_NOW, seed: 0 })
+    expect(out).toContain('노인.dlg:3행')
+    expect(out).toContain('talkedBefore=true — 지금 talkedBefore=false 이다')
+  })
+
+  it('공급자가 없어 영원히 안 맞는 조건과, 이번에 값을 안 준 조건을 다르게 말한다', () => {
+    // weather 는 공급자가 없어 실제 게임에서도 안 맞는다(빌드의 "안내" 와 같은 원인).
+    // justAchieved 는 공급자가 있고 이번 시뮬레이션에서 안 줬을 뿐이라, 작가가
+    // 인자 하나만 더 주면 바로 확인할 수 있다 — 서로 할 일이 다르다.
+    const justAchieved = dRule({
+      id: 'ms',
+      event: 'milestone',
+      conditions: [{ fact: 'justAchieved', op: '=', value: 'ice_10000' }],
+    })
+    const out = runDialogueCommand(whyData([rainOnly, justAchieved, bare1]), '노인', {}, { now: FIXED_NOW, seed: 0 })
+    expect(out).toContain('weather=rain — weather 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다')
+    expect(out).toContain('justAchieved=ice_10000 — justAchieved 에 값이 없다. 이번에 주지 않았다')
+  })
+
+  it('채택된 사건이 하나도 없어도 네 줄이 저마다 이유를 말한다 — undefined 가 새어 나오지 않는다', () => {
+    // selection 이 null 이면 채택된 사건 자체가 없다. "X 사건이 상위라" 를 그대로
+    // 찍으면 X 자리에 undefined 가 나오고, 아무것도 채택되지 않았다는 사실과도
+    // 앞뒤가 맞지 않는다.
+    const out = runDialogueCommand(whyData([rainOnly]), '노인', {}, { now: FIXED_NOW, seed: 0 })
+    expect(out).not.toContain('undefined')
+    expect(out).toMatch(/story\s+규칙 없음/)
+    expect(out).toMatch(/greet\s+규칙 1개가 있지만 조건이 하나도 안 맞음/)
+    expect(out).toContain('말을 걸어도 지금은 할 말이 없다')
+    expect(out).toContain('weather=rain — weather 에 값이 없다')
   })
 })
 
@@ -330,5 +460,16 @@ describe('runWaitingCommand', () => {
 
   it('기다리는 대사가 없으면 그렇다고 말한다', () => {
     expect(runWaitingCommand(emptyGameData())).toContain('없음')
+  })
+})
+
+describe('content 스크립트', () => {
+  it('패키지 단위로 실행해도 데이터 빌드를 먼저 돌린다 — 스테일한 생성 JSON 을 읽으면 없는 대사를 보고한다', () => {
+    // 루트의 `pnpm content` 만 data:build 를 엮어 두면, 한 겹 안쪽인
+    // `pnpm --filter @nogada/data content` 로 부를 때 방금 고친 .dlg 가 아니라
+    // 지난 빌드의 JSON 을 읽는다 — 도구가 자신 있게 틀린 답을 내는 유일한 경로다.
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json')
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { scripts?: Record<string, string> }
+    expect(pkg.scripts?.content).toMatch(/build/)
   })
 })

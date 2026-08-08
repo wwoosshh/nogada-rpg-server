@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsx src/build.ts",
-    "content": "tsx src/content-cli.ts"
+    "content": "pnpm run build && tsx src/content-cli.ts"
   },
   "dependencies": {
     "@nogada/shared": "workspace:*"
