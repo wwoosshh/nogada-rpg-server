@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { ControlScene } from './scenes/ControlScene.js'
 import { WorldScene } from './scenes/WorldScene.js'
 
 /**
@@ -35,6 +36,9 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
       mode: Phaser.Scale.RESIZE,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    scene: [WorldScene],
+    // ControlScene 은 배열의 두 번째라 자동 시작하지 않는다 — WorldScene.create() 가
+    // this.scene.launch('Control') 로 명시적으로 띄운다. 그래야 hub 가 만들어진
+    // 뒤에 컨트롤러를 연결할 수 있다.
+    scene: [WorldScene, ControlScene],
   })
 }

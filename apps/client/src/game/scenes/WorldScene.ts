@@ -10,6 +10,7 @@ import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { TileMover } from '../TileMover.js'
+import type { ControlScene } from './ControlScene.js'
 
 const TILE = 32
 
@@ -45,6 +46,8 @@ export class WorldScene extends Phaser.Scene {
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
+  /** 지난 프레임에 action 이 눌려 있었는가. "막 눌림" 을 직접 판정하는 데 쓴다 — 이유는 update() 참고. */
+  private wasActionHeld = false
 
   constructor() {
     super({ key: 'World' })
@@ -155,6 +158,13 @@ export class WorldScene extends Phaser.Scene {
 
     this.dayNight = new DayNightOverlay(this)
 
+    // 컨트롤러는 별도 씬이라 카메라 스크롤과 낮밤 명암의 영향을 받지 않는다.
+    // hub 가 여기서 막 만들어졌으므로 Control 씬 자신의 create() 가 끝난 뒤에야
+    // bind() 로 넘길 수 있다 — CREATE 이벤트를 기다리는 이유다.
+    this.scene.launch('Control')
+    const control = this.scene.get('Control') as ControlScene
+    control.events.once(Phaser.Scenes.Events.CREATE, () => control.bind(this.hub))
+
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
     // Systems.destroy() 만 부르고 Systems.shutdown() 은 부르지 않으므로 DESTROY 만
     // 발생하고 SHUTDOWN 은 절대 발생하지 않는다. shutdown 에만 걸면 정리가 전혀 돌지
@@ -167,6 +177,7 @@ export class WorldScene extends Phaser.Scene {
     const cleanup = (): void => {
       if (cleanedUp) return
       cleanedUp = true
+      this.scene.stop('Control')
       this.dayNight.destroy()
       this.keyboard.destroy()
       this.floaters.destroy()
@@ -232,14 +243,24 @@ export class WorldScene extends Phaser.Scene {
     this.updateAnimation(this.mover.moving, this.mover.facing)
 
     const target = this.interactableAt(frontTile(this.mover.tile, this.mover.facing))
+    const actionHeld = this.hub.state.action
+    // hub.state.actionPressed 를 쓰지 않는다. 그건 beginFrame() 이 지우는 한 프레임짜리
+    // 신호인데, 여기(같은 update() 호출) 의 beginFrame() 이 매번 자기 자신의 읽음보다
+    // 먼저 실행된다 — 터치는 이벤트 콜백으로 비동기에 쓰므로 그 신호가 서는 시점은
+    // 항상 "이 update() 호출이 시작되기 전" 이고, 그러면 이 호출의 beginFrame() 이
+    // 그 신호를 자기 자신이 읽기도 전에 지워버린다. 즉 터치가 쥔 actionPressed 는
+    // 이 update() 안에서는 절대 참으로 보이지 않는다(프레임 경계 운이 아니라 항상).
+    // beginFrame() 이 지우지 않는 지속값(action)을 스스로 이전 프레임과 비교해서
+    // "막 눌림" 을 판정하면 소스가 언제 썼든 다음 읽음에서 반드시 보인다.
+    const justPressed = actionHeld && !this.wasActionHeld
     if (target) {
-      const held = this.hub.state.action
-      if (this.hub.state.actionPressed) {
+      if (justPressed) {
         this.interact(target)
-      } else if (held && this.repeatsOn(target)) {
+      } else if (actionHeld && this.repeatsOn(target)) {
         this.interact(target)
       }
     }
+    this.wasActionHeld = actionHeld
 
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
   }

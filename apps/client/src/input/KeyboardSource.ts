@@ -1,15 +1,31 @@
 import type Phaser from 'phaser'
 import type { Direction } from '@nogada/shared'
-import type { InputHub } from './InputState.js'
+import type { InputButton, InputHub } from './InputState.js'
 
 /**
  * PC 개발용 입력. 실기에는 키보드가 없다.
  *
  * 방향키와 WASD 를 둘 다 받는 이유는 개발 중 손이 어디 있든 쓰기 위해서다.
  * 여러 방향키가 동시에 눌리면 하나만 고른다 — 대각선이 없으므로 합칠 수 없다.
+ *
+ * hub 에는 값이 "바뀔 때만" 쓴다. 매 프레임 무조건 쓰면(바뀌지 않았어도) 다른
+ * 소스를 밀어낸다 — 키가 하나도 안 눌린 매 프레임마다 setDir(null) 을 불러서
+ * TouchSource 가 이벤트로 쥐어 둔 방향을 바로 다음 프레임에 지워버린다. 실기에는
+ * 키보드가 없으니 readDir() 이 항상 null 이라 이 문제가 항상 일어난다 — 개발 중에만
+ * 드러나는 게 아니라 터치 입력 자체가 통째로 죽는다. 그래서 "내 마지막 읽음값과
+ * 이번 읽음값이 다를 때"만 부른다: 안 눌린 채로 가만있으면 아예 아무것도 안 써서
+ * 다른 소스가 쥔 값을 그대로 둔다.
  */
 export class KeyboardSource {
   private readonly keys: Record<string, Phaser.Input.Keyboard.Key>
+
+  private lastDir: Direction | null = null
+  private readonly lastButton: Record<InputButton, boolean> = {
+    action: false,
+    cancel: false,
+    bag: false,
+    craft: false,
+  }
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -26,11 +42,22 @@ export class KeyboardSource {
 
   /** 매 프레임 부른다. hub.beginFrame() 뒤에 와야 한다. */
   update(): void {
-    this.hub.setDir(this.readDir())
-    this.hub.setButton('action', this.down('SPACE') || this.down('J'))
-    this.hub.setButton('cancel', this.down('ESC') || this.down('K'))
-    this.hub.setButton('bag', this.down('I'))
-    this.hub.setButton('craft', this.down('C'))
+    const dir = this.readDir()
+    if (dir !== this.lastDir) {
+      this.hub.setDir(dir)
+      this.lastDir = dir
+    }
+
+    this.updateButton('action', this.down('SPACE') || this.down('J'))
+    this.updateButton('cancel', this.down('ESC') || this.down('K'))
+    this.updateButton('bag', this.down('I'))
+    this.updateButton('craft', this.down('C'))
+  }
+
+  private updateButton(button: InputButton, down: boolean): void {
+    if (down === this.lastButton[button]) return
+    this.hub.setButton(button, down)
+    this.lastButton[button] = down
   }
 
   destroy(): void {
