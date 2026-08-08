@@ -3,6 +3,18 @@ import type { Direction } from '@nogada/shared'
 import type { InputButton, InputHub } from './InputState.js'
 
 /**
+ * 버튼 하나의 등록 상태: 지금 이 버튼을 쥔 포인터 id(안 쥐었으면 null)와, 놓을 때 할 일.
+ *
+ * heldBy 를 갖고 있는 이유는 pointerupoutside 핸들러가 "나간 그 포인터가 이 버튼도
+ * 쥐고 있었는가" 를 버튼마다 스스로 답하게 해야 하기 때문이다 — 이 파일 밖에서는
+ * 쓸 일이 없다.
+ */
+interface Binding {
+  heldBy: number | null
+  release(): void
+}
+
+/**
  * 터치 버튼을 hub 에 연결한다.
  *
  * KeyboardSource 와 짝을 이루는 장치별 입력 소스이지만 모양이 다르다. 키보드는
@@ -20,17 +32,25 @@ import type { InputButton, InputHub } from './InputState.js'
  *    이걸 touchend 와 같은 경로(processUpEvents/processOutEvents)로 처리하므로
  *    위 두 이벤트로 이미 잡힌다. 따로 구독할 이벤트가 없다.
  *  - 포인터가 캔버스 밖에서 놓임(주로 데스크톱에서 마우스를 누른 채 캔버스
- *    밖으로 드래그해 놓을 때) → pointerupoutside. Phaser 에서 이건 개별
- *    게임 오브젝트가 아니라 씬 전체(this.input)에서만 발생하는 이벤트다 —
- *    버튼에 걸어도 절대 불리지 않는다. 게다가 이 시점엔 어느 버튼 것이었는지도
- *    알 수 없으므로 전부 놓는다.
+ *    밖으로 드래그해 놓을 때, 또는 터치 손가락이 캔버스 밖에서 들릴 때) →
+ *    pointerupoutside. Phaser 에서 이건 개별 게임 오브젝트가 아니라 씬
+ *    전체(this.input)에서만 발생하는 이벤트다 — 버튼에 걸어도 절대 불리지
+ *    않는다. 그리고 이 이벤트가 주는 건 어느 포인터가 나갔는지뿐, 어느
+ *    버튼이었는지는 주지 않는다. 그렇다고 전부 놓으면, 패드를 쥔 손가락이
+ *    캔버스 밖에서 떨어질 때마다 A 를 쥔 다른 손가락까지 놓여버린다 — 패드로
+ *    걸으며 A 로 채집하는, 이 게임에서 가장 흔한 두 손가락 조작이 매번
+ *    끊긴다. 그래서 버튼마다 자신을 누른 포인터의 id 를 기억해 뒀다가, 나간
+ *    포인터의 id 와 같을 때만 놓는다.
  *  - 창이 포커스를 잃음(알림 내리기, 앱 전환, 전화 수신) → 이 경우 touchend
  *    류 이벤트 자체가 안 올 수 있다. game.events 의 BLUR/HIDDEN 에서 전부
  *    놓는다.
  */
 export class TouchSource {
-  /** 버튼마다 "눌림 해제됨" 을 알려줄 시각 콜백. 전체 놓임(releaseAll)에서 전부 부른다. */
-  private readonly resetVisuals: Array<() => void> = []
+  /**
+   * 버튼마다 하나씩. pointerupoutside 가 "이 포인터를 쥔 버튼만" 골라 놓는 것도,
+   * releaseAll 이 "전부" 놓는 것도 이 목록 하나만 훑으면 된다.
+   */
+  private readonly bindings: Binding[] = []
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -40,7 +60,7 @@ export class TouchSource {
     // A 를 누르는 두 번째 손가락이 아예 추적되지 않아 걸으면서 채집이 불가능하다.
     scene.input.addPointer(2)
 
-    scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.releaseAll, this)
+    scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.releasePointer, this)
     scene.game.events.on(Phaser.Core.Events.BLUR, this.releaseAll, this)
     scene.game.events.on(Phaser.Core.Events.HIDDEN, this.releaseAll, this)
   }
@@ -58,20 +78,23 @@ export class TouchSource {
     onPressChange?: (pressed: boolean) => void,
   ): void {
     const setVisual = onPressChange ?? (() => {})
+    const binding: Binding = { heldBy: null, release: () => {} }
 
-    shape.on('pointerdown', () => {
+    shape.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      binding.heldBy = pointer.id
       this.hub.setDir(dir)
       setVisual(true)
     })
 
-    const release = (): void => {
+    binding.release = (): void => {
+      binding.heldBy = null
       setVisual(false)
       if (this.hub.state.dir === dir) this.hub.setDir(null)
     }
-    shape.on('pointerup', release)
-    shape.on('pointerout', release)
+    shape.on('pointerup', binding.release)
+    shape.on('pointerout', binding.release)
 
-    this.resetVisuals.push(() => setVisual(false))
+    this.bindings.push(binding)
   }
 
   /** A·B·가방·제작처럼 독립적인 눌림 버튼 하나를 연결한다. */
@@ -81,36 +104,54 @@ export class TouchSource {
     onPressChange?: (pressed: boolean) => void,
   ): void {
     const setVisual = onPressChange ?? (() => {})
+    const binding: Binding = { heldBy: null, release: () => {} }
 
-    shape.on('pointerdown', () => {
+    shape.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      binding.heldBy = pointer.id
       this.hub.setButton(button, true)
       setVisual(true)
     })
 
-    const release = (): void => {
+    binding.release = (): void => {
+      binding.heldBy = null
       setVisual(false)
       this.hub.setButton(button, false)
     }
-    shape.on('pointerup', release)
-    shape.on('pointerout', release)
+    shape.on('pointerup', binding.release)
+    shape.on('pointerout', binding.release)
 
-    this.resetVisuals.push(() => setVisual(false))
+    this.bindings.push(binding)
+  }
+
+  /**
+   * 나간 포인터가 쥐고 있던 버튼만 골라 놓는다. pointerupoutside 전용.
+   *
+   * 이 이벤트는 씬 전체에서 한 번만 발생하고 어느 포인터가 나갔는지만 알려준다 —
+   * 어느 버튼이었는지는 이벤트 자체에 없다. 그래서 반대로 버튼마다 "너를 쥔 게
+   * 이 포인터냐" 를 스스로 답하게 하고, 그렇다는 버튼만 놓는다. 두 손가락을 동시에
+   * 쓰는 조작(패드+A)에서 관계없는 다른 손가락의 버튼은 자기 포인터가 아니므로
+   * 그대로 눌린 채 남는다.
+   */
+  private releasePointer(pointer: Phaser.Input.Pointer): void {
+    for (const binding of this.bindings) {
+      if (binding.heldBy === pointer.id) binding.release()
+    }
   }
 
   /**
    * 이 소스가 쥐고 있던 입력을 전부 놓는다.
    *
-   * pointerupoutside·창 포커스 상실에서 쓴다. 어느 손가락이 어느 버튼 위에
-   * 있었는지 이 시점엔 알 수 없으므로 개별 버튼이 아니라 전부를 놓는다 —
-   * 과하게 놓는 것이 아무것도 안 놓는 것보다 항상 안전하다.
+   * BLUR·HIDDEN(창이 포커스를 잃거나 앱이 백그라운드로 감)과 destroy() 에서 쓴다.
+   * 이 경우엔 화면의 모든 손가락이 함께 사라진 것과 같으므로, releasePointer 처럼
+   * 포인터를 가려낼 필요 없이 전부 놓는 게 맞다.
    */
   releaseAll(): void {
     this.hub.releaseAll()
-    for (const reset of this.resetVisuals) reset()
+    for (const binding of this.bindings) binding.release()
   }
 
   destroy(): void {
-    this.scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.releaseAll, this)
+    this.scene.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.releasePointer, this)
     this.scene.game.events.off(Phaser.Core.Events.BLUR, this.releaseAll, this)
     this.scene.game.events.off(Phaser.Core.Events.HIDDEN, this.releaseAll, this)
     this.releaseAll()
