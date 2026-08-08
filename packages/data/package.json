@@ -10,7 +10,8 @@
     "./maps/world.json": "./maps/world.json"
   },
   "scripts": {
-    "build": "tsx src/build.ts"
+    "build": "tsx src/build.ts",
+    "content": "tsx src/content-cli.ts"
   },
   "dependencies": {
     "@nogada/shared": "workspace:*"

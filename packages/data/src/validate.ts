@@ -12,8 +12,14 @@ import {
 import { dialogueLocation } from './dialogueParse.js'
 import type { MapTerrain } from './placements.js'
 
-/** 조건 하나를 작가가 파일에 쓴 모양 그대로 되살린다 — 메시지에서 눈으로 찾을 수 있게. */
-function conditionText(condition: Condition): string {
+/**
+ * 조건 하나를 작가가 파일에 쓴 모양 그대로 되살린다 — 메시지에서 눈으로 찾을 수 있게.
+ *
+ * export 하는 이유는 content-cli.ts(시뮬레이터)도 조건을 똑같은 모양으로 화면에
+ * 보여줘야 해서다 — 검증 메시지와 시뮬레이터 출력이 조건을 다른 글자로 적으면
+ * 작가가 같은 것을 가리키는지 매번 다시 확인해야 한다.
+ */
+export function conditionText(condition: Condition): string {
   return `${condition.fact}${condition.op}${condition.value}`
 }
 
@@ -66,6 +72,46 @@ function contradicts(a: Condition, b: Condition): boolean {
   if (lower.value > upper.value) return true
   // 양 끝이 같은 값이면, 양쪽 다 그 값을 포함할 때만(>= 와 <=) 살아남는다.
   return lower.value === upper.value && !(lower.op === '>=' && upper.op === '<=')
+}
+
+/** findDeadDialogueRules 가 찾아낸 모순 하나 — 규칙과 서로 어긋나는 조건 두 개. */
+export interface DeadDialogueRule {
+  rule: DialogueRule
+  a: Condition
+  b: Condition
+}
+
+/**
+ * 자기 조건끼리 어긋나 **어떤 세계 상태에서도 나오지 않는** 규칙을 찾는다.
+ *
+ * validateGameData(빌드 실패)와 content-cli.ts 의 `dead` 명령(시뮬레이터 보고)이
+ * 이 함수 하나를 함께 부른다 — 계산을 두 곳에 나눠 두면 언젠가 갈라져서, 빌드는
+ * 통과했는데 시뮬레이터는 죽었다고 말하는(또는 그 반대인) 상황이 생긴다.
+ *
+ * "다른 규칙에 가려진다"는 이유로는 죽었다고 말하지 않는 것에 유의한다.
+ * selectDialogue 는 **맞은 규칙들 안에서만** 조건 개수를 비교하므로, 조건이
+ * 적은 규칙은 조건이 많은 형제가 함께 맞는 순간에만 지고 나머지 시간에는
+ * 그대로 나온다 — 그게 폴백이고, 설계 문서 §5 가 작가에게 보여주는 대표
+ * 패턴이다(설계 문서 §7). 부분집합이라는 이유로 죽었다고 말하려면 "더 많은
+ * 그 조건들이 항상 참"임을 알아야 하는데, 그건 논리적 함의를 따져야 하는
+ * 다른 일이라 이 함수는 다루지 않는다 — 여기서 잡는 것은 한 규칙 안에서
+ * 함의 없이도 확실한 자기모순뿐이다.
+ *
+ * 규칙 하나에 모순 쌍이 여럿이면 전부 반환한다 — 작가가 하나만 고치고 다시
+ * 돌렸을 때 남은 모순을 못 보는 것을 막기 위해서다.
+ */
+export function findDeadDialogueRules(dialogue: readonly DialogueRule[]): DeadDialogueRule[] {
+  const dead: DeadDialogueRule[] = []
+  for (const rule of dialogue) {
+    for (let i = 0; i < rule.conditions.length; i++) {
+      for (let j = i + 1; j < rule.conditions.length; j++) {
+        const a = rule.conditions[i]!
+        const b = rule.conditions[j]!
+        if (contradicts(a, b)) dead.push({ rule, a, b })
+      }
+    }
+  }
+  return dead
 }
 
 /**
@@ -321,24 +367,13 @@ export function validateGameData(data: GameData): string[] {
   }
 
   // 자기 조건끼리 어긋나는 규칙 — 어떤 세계 상태에서도 나오지 않는다.
-  //
-  // "다른 규칙에 가려진다"는 이유로 죽었다고 말하지 않는 것에 유의한다.
-  // selectDialogue 는 **맞은 규칙들 안에서만** 조건 개수를 비교하므로, 조건이
-  // 적은 규칙은 조건이 많은 형제가 함께 맞는 순간에만 지고 나머지 시간에는
-  // 그대로 나온다 — 그게 폴백이고, 설계 문서 §5 가 작가에게 보여주는 대표
-  // 패턴이다. 부분집합이라는 이유로 죽었다고 말하려면 "더 많은 그 조건들이
-  // 항상 참"임을 알아야 하는데, 그건 논리적 함의를 따져야 하는 다른 일이다.
-  for (const rule of data.dialogue) {
-    for (let i = 0; i < rule.conditions.length; i++) {
-      for (let j = i + 1; j < rule.conditions.length; j++) {
-        const a = rule.conditions[i]!
-        const b = rule.conditions[j]!
-        if (!contradicts(a, b)) continue
-        violations.push(
-          `${at(rule)}: 조건 "${conditionText(a)}" 과 "${conditionText(b)}" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다`,
-        )
-      }
-    }
+  // 계산 자체는 findDeadDialogueRules(아래) 하나뿐이다 — content-cli.ts 의
+  // `dead` 명령이 이 빌드 실패와 다른 계산을 쓰면 둘이 갈라질 수 있어서,
+  // 그 명령도 이 함수를 그대로 불러 쓴다.
+  for (const { rule, a, b } of findDeadDialogueRules(data.dialogue)) {
+    violations.push(
+      `${at(rule)}: 조건 "${conditionText(a)}" 과 "${conditionText(b)}" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다`,
+    )
   }
 
   // 대사 파일이 없는 화자, 화자가 없는 대사 파일 — 배치(speakers.csv)와

@@ -9,7 +9,8 @@
     "typecheck": "pnpm data:build && tsc --build && pnpm --filter @nogada/client typecheck",
     "data:build": "pnpm --filter @nogada/data build",
     "dev:server": "pnpm data:build && pnpm --filter @nogada/server dev",
-    "dev:client": "pnpm data:build && pnpm --filter @nogada/client dev"
+    "dev:client": "pnpm data:build && pnpm --filter @nogada/client dev",
+    "content": "pnpm data:build && pnpm --filter @nogada/data content"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

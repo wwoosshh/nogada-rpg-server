@@ -169,8 +169,12 @@ function parseConditionToken(token: string, file: string, line: number): Conditi
  * 비교가 된다(문자열끼리는 크기 비교를 허용하지 않는다). 그 외에는 그대로
  * 문자열이다 — `weather=rain`, `justAchieved=ice_10000` 처럼 식별자를 값으로
  * 쓰는 경우가 훨씬 많아서, 숫자로 읽히지 않는 한 원문을 그대로 믿는다.
+ *
+ * content-cli.ts(시뮬레이터)도 `--사실=값` 을 같은 규칙으로 해석해야 한다 —
+ * `.dlg` 파일의 값과 명령줄의 값이 같은 문법인데 여기서만 export 하지 않으면
+ * 시뮬레이터가 이 함수를 몰래 다시 구현하게 되고, 언젠가 둘이 갈라진다.
  */
-function parseFactValue(raw: string): FactValue {
+export function parseFactValue(raw: string): FactValue {
   if (raw === 'true') return true
   if (raw === 'false') return false
   if (raw !== '' && Number.isFinite(Number(raw))) return Number(raw)

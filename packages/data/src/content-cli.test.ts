@@ -1,0 +1,334 @@
+import { describe, expect, it } from 'vitest'
+import {
+  createRng,
+  emptyDialogueHistory,
+  gameTimeAt,
+  selectDialogue,
+  type DialogueRule,
+  type GameData,
+  type SpeakerDef,
+} from '@nogada/shared'
+import { collectDialogueNotices, validateGameData } from './validate.js'
+import { loadGameData } from './load.js'
+import {
+  parseArgs,
+  parseFactOverrides,
+  runDeadCommand,
+  runDialogueCommand,
+  runFactsCommand,
+  runWaitingCommand,
+} from './content-cli.js'
+
+// 고정 시각 — season/hour/dayOfSeason 기본값이 "언제 테스트를 돌렸는지"에 따라
+// 달라지면 이 파일의 단언이 날짜가 바뀔 때마다 깨진다.
+const FIXED_NOW = Date.UTC(2026, 2, 1, 12, 0, 0)
+
+function emptyGameData(): GameData {
+  return { items: {}, nodes: {}, recipes: {}, placements: {}, milestones: [], speakers: {}, dialogue: [] }
+}
+
+/** validate.test.ts 의 dRule 과 같은 모양 — 조건·사건만 바꿔 규칙을 짧게 만든다. */
+function dRule(overrides: Partial<DialogueRule> & Pick<DialogueRule, 'id' | 'event' | 'conditions'>): DialogueRule {
+  return {
+    speaker: '노인',
+    lines: [`(${overrides.id})`],
+    source: { file: '노인.dlg', line: 1 },
+    ...overrides,
+  }
+}
+
+const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'x' }
+
+// ---- 사건 서열이 있는 화자 하나로 다섯 종류의 상황(story 없음, quest, milestone,
+// greet 구체적, greet 동점)을 전부 만들어 두고 아래 describe 들이 나눠 쓴다.
+const questRule = dRule({ id: 'q', event: 'quest', conditions: [{ fact: 'quest.q', op: '=', value: 1 }] })
+const milestoneRule = dRule({
+  id: 'm',
+  event: 'milestone',
+  conditions: [{ fact: 'justAchieved', op: '=', value: 'm1' }],
+})
+const rainClose = dRule({
+  id: 'rainClose',
+  event: 'greet',
+  conditions: [
+    { fact: 'weather', op: '=', value: 'rain' },
+    { fact: 'affinity', op: '>=', value: 30 },
+  ],
+})
+const rain = dRule({ id: 'rain', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] })
+const bare1 = dRule({ id: 'bare1', event: 'greet', conditions: [] })
+const bare2 = dRule({ id: 'bare2', event: 'greet', conditions: [] })
+
+function fixtureData(): GameData {
+  return {
+    ...emptyGameData(),
+    speakers: { 노인: testSpeaker },
+    dialogue: [questRule, milestoneRule, rainClose, rain, bare1, bare2],
+  }
+}
+
+describe('parseArgs', () => {
+  it('facts·dead·waiting 은 인자 없이 그 명령으로 해석된다', () => {
+    expect(parseArgs(['facts'])).toEqual({ kind: 'facts' })
+    expect(parseArgs(['dead'])).toEqual({ kind: 'dead' })
+    expect(parseArgs(['waiting'])).toEqual({ kind: 'waiting' })
+  })
+
+  it('dialogue 는 화자 id 와 --사실=값 여러 개를 함께 받는다', () => {
+    const cmd = parseArgs(['dialogue', '채집장노인', '--skill.ice=15000', '--justAchieved=ice_10000'])
+    expect(cmd).toEqual({
+      kind: 'dialogue',
+      speaker: '채집장노인',
+      overrides: { 'skill.ice': 15000, justAchieved: 'ice_10000' },
+    })
+  })
+
+  it('알 수 없는 명령을 거부하고 쓸 수 있는 네 명령을 안내한다', () => {
+    expect(() => parseArgs(['nope'])).toThrow(/dialogue, facts, dead, waiting/)
+  })
+
+  it('명령이 아예 없으면 거부한다', () => {
+    expect(() => parseArgs([])).toThrow()
+  })
+
+  it('dialogue 인데 화자 id 가 없으면 거부한다', () => {
+    expect(() => parseArgs(['dialogue'])).toThrow(/화자/)
+  })
+
+  it('facts·dead·waiting 뒤에 남는 인자가 있으면 거부한다 — 조용히 무시하면 오타를 못 알아챈다', () => {
+    expect(() => parseArgs(['facts', '뭔가'])).toThrow()
+  })
+})
+
+describe('parseFactOverrides', () => {
+  it('선언되지 않은 사실 이름을 거부한다', () => {
+    expect(() => parseFactOverrides(['--affinty=30'])).toThrow(/선언되지 않은 사실/)
+  })
+
+  it('speaker 를 사실처럼 주면 거부한다 — selectDialogue 는 speaker 를 별도 매개변수로 받는다', () => {
+    expect(() => parseFactOverrides(['--speaker=채집장노인'])).toThrow(/선언되지 않은 사실/)
+  })
+
+  it('-- 로 시작하지 않는 인자를 거부한다', () => {
+    expect(() => parseFactOverrides(['skill.ice=100'])).toThrow()
+  })
+
+  it('= 가 없는 인자를 거부한다', () => {
+    expect(() => parseFactOverrides(['--weather'])).toThrow()
+  })
+
+  it('숫자·불리언·문자열 값을 dialogueParse 의 parseFactValue 와 같은 규칙으로 해석한다', () => {
+    const facts = parseFactOverrides(['--skill.ice=15000', '--talkedBefore=true', '--weather=rain'])
+    expect(facts).toEqual({ 'skill.ice': 15000, talkedBefore: true, weather: 'rain' })
+  })
+})
+
+describe('runDialogueCommand — 사건 서열', () => {
+  it('아무 사실도 안 주면 story·quest·milestone 은 규칙 없음이고 greet 무조건 규칙끼리 동점 처리된다', () => {
+    const out = runDialogueCommand(fixtureData(), '노인', {}, { now: FIXED_NOW, seed: 1 })
+    expect(out).toMatch(/story\s+규칙 없음/)
+    expect(out).toMatch(/quest\s+규칙 없음/)
+    expect(out).toMatch(/milestone\s+규칙 없음/)
+    expect(out).toMatch(/greet\s+← 채택 \(조건 맞는 규칙 2개\)/) // rain·rainClose 는 weather 없이 안 맞는다
+    expect(out).toContain('동점 후보 2개 중 무작위')
+    expect(out).toContain('무작위 추첨에서 안 뽑힘')
+  })
+
+  it('milestone 이 채택되면 그 규칙이 그대로 선택되고 이유가 "선택됨"으로 나온다', () => {
+    const out = runDialogueCommand(fixtureData(), '노인', { justAchieved: 'm1' }, { now: FIXED_NOW, seed: 0 })
+    expect(out).toMatch(/milestone\s+← 채택 \(조건 맞는 규칙 1개\)/)
+    expect(out).toContain('✓')
+    expect(out).toContain('선택됨 (조건 1)')
+    expect(out).toContain('출력: "(m)"')
+  })
+
+  it('원인(b): quest 가 채택되면 그보다 아래인 greet 은 평가하지 않았다고 표시하고, 맞았을 후보 수를 알려준다', () => {
+    const out = runDialogueCommand(fixtureData(), '노인', { 'quest.q': 1 }, { now: FIXED_NOW, seed: 0 })
+    expect(out).toMatch(/quest\s+← 채택/)
+    // bare1·bare2 는 조건이 없어 quest 와 무관하게 항상 맞지만, quest 가 상위라
+    // selectDialogue 는 greet 을 아예 훑지 않는다 — 그 사실을 시뮬레이터가 따로
+    // 확인해서 "평가 안 함" 으로 보여준다(원인 a·c 와 구분되는 원인 b).
+    expect(out).toMatch(/greet\s+평가 안 함 — 조건 맞는 규칙 2개가 있었지만 quest 사건이 상위라 순서상 못 나옴/)
+  })
+
+  it('조건이 가장 많은 규칙이 유일하게 이기면 나머지는 "더 구체적인 규칙에 밀림"으로 표시된다', () => {
+    const out = runDialogueCommand(
+      fixtureData(),
+      '노인',
+      { weather: 'rain', affinity: 40 },
+      { now: FIXED_NOW, seed: 0 },
+    )
+    expect(out).toContain('선택됨 (조건 2)')
+    expect(out).toContain('조건 1개 — 더 구체적인 규칙(조건 2개)에 밀려 후보에서 빠짐')
+    expect(out).toContain('조건 0개 — 더 구체적인 규칙(조건 2개)에 밀려 후보에서 빠짐')
+  })
+
+  it('같은 시드로 두 번 부르면 무작위 승자를 포함해 완전히 같은 결과를 낸다', () => {
+    const out1 = runDialogueCommand(fixtureData(), '노인', {}, { now: FIXED_NOW, seed: 7 })
+    const out2 = runDialogueCommand(fixtureData(), '노인', {}, { now: FIXED_NOW, seed: 7 })
+    expect(out1).toBe(out2)
+  })
+
+  it('시드가 다르면 동점 승자가 달라질 수 있다 — 무작위가 진짜로 반영된다는 뜻이다', () => {
+    const outs = new Set(
+      [0, 1, 2, 3, 4, 5].map((seed) => runDialogueCommand(fixtureData(), '노인', {}, { now: FIXED_NOW, seed })),
+    )
+    expect(outs.size).toBeGreaterThan(1)
+  })
+
+  it('모르는 화자를 거부하고 아는 화자 목록을 보여준다', () => {
+    expect(() => runDialogueCommand(fixtureData(), '없는사람', {}, { now: FIXED_NOW, seed: 0 })).toThrow(
+      /화자 "없는사람" 를 모른다/,
+    )
+  })
+
+  it('조건이 맞는 규칙이 하나도 없으면 침묵을 알린다', () => {
+    const lonely: GameData = {
+      ...emptyGameData(),
+      speakers: { 외톨이: { ...testSpeaker, id: '외톨이' } },
+      dialogue: [],
+    }
+    const out = runDialogueCommand(lonely, '외톨이', {}, { now: FIXED_NOW, seed: 0 })
+    expect(out).toContain('말을 걸어도 지금은 할 말이 없다')
+  })
+
+  it('발화가 여러 줄이면 번호를 매겨 순서대로 보여준다', () => {
+    const multiline: GameData = {
+      ...fixtureData(),
+      dialogue: [{ ...milestoneRule, lines: ['첫 줄.', '둘째 줄.'] }],
+    }
+    const out = runDialogueCommand(multiline, '노인', { justAchieved: 'm1' }, { now: FIXED_NOW, seed: 0 })
+    expect(out).toContain('출력 (2칸, 대사창이 순서대로 넘김):')
+    expect(out).toContain('1. "첫 줄."')
+    expect(out).toContain('2. "둘째 줄."')
+  })
+
+  it('기본값(지금 시각)과 명시적으로 준 사실을 요약해서 보여준다', () => {
+    const out = runDialogueCommand(fixtureData(), '노인', { 'skill.ice': 15000 }, { now: FIXED_NOW, seed: 0 })
+    const t = gameTimeAt(FIXED_NOW)
+    expect(out).toContain(`season=${t.season}`)
+    expect(out).toContain(`hour=${t.hour}`)
+    expect(out).toContain('skill.ice=15000')
+  })
+
+  it('보고하는 승자는 selectDialogue 가 직접 고른 규칙과 항상 같다 — 시뮬레이터가 승자를 따로 정하지 않는다', () => {
+    const facts = { weather: 'rain', affinity: 40 }
+    const data = fixtureData()
+    const direct = selectDialogue('노인', data.dialogue, facts, emptyDialogueHistory(), createRng(3))
+    const out = runDialogueCommand(data, '노인', facts, { now: FIXED_NOW, seed: 3 })
+    expect(direct?.rule.id).toBe('rainClose')
+    expect(out).toContain(`출력: "(${direct?.rule.id})"`)
+  })
+})
+
+describe('runFactsCommand', () => {
+  it('사실별로 그것을 쓰는 대사 줄 수를 센다', () => {
+    const data: GameData = {
+      ...emptyGameData(),
+      dialogue: [
+        dRule({ id: 'a', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }], lines: ['한 줄'] }),
+        dRule({
+          id: 'b',
+          event: 'greet',
+          conditions: [{ fact: 'weather', op: '=', value: 'rain' }],
+          lines: ['두', '줄'],
+        }),
+        dRule({ id: 'c', event: 'greet', conditions: [{ fact: 'skill.ice', op: '>=', value: 100 }], lines: ['한 줄'] }),
+      ],
+    }
+    const out = runFactsCommand(data)
+    expect(out).toContain('weather: 3줄')
+    expect(out).toContain('skill.ice: 1줄')
+  })
+
+  it('한 규칙 안에서 같은 사실을 두 번 걸어도 그 규칙의 줄 수를 두 번 세지 않는다', () => {
+    const data: GameData = {
+      ...emptyGameData(),
+      dialogue: [
+        dRule({
+          id: 'a',
+          event: 'greet',
+          conditions: [
+            { fact: 'skill.ice', op: '>=', value: 100 },
+            { fact: 'skill.ice', op: '<', value: 999 },
+          ],
+          lines: ['한 줄'],
+        }),
+      ],
+    }
+    expect(runFactsCommand(data)).toContain('skill.ice: 1줄')
+  })
+
+  it('아무도 안 쓴 고정 이름 사실도 0줄로 보여준다 — 완전한 목록이라야 "아직 아무도 안 썼다"를 알 수 있다', () => {
+    expect(runFactsCommand(emptyGameData())).toContain('season: 0줄')
+  })
+})
+
+describe('runDeadCommand', () => {
+  it('정상 데이터는 죽은 대사가 없다고 말한다', () => {
+    expect(runDeadCommand(emptyGameData())).toContain('죽은 대사 없음')
+  })
+
+  it('자기모순 규칙을 찾아 위치와 조건을 보여주고, validateGameData 와 정확히 같은 위반을 낸다', () => {
+    const data: GameData = {
+      ...emptyGameData(),
+      speakers: { 노인: testSpeaker },
+      dialogue: [
+        dRule({ id: 'bare', event: 'greet', conditions: [] }), // @greet 무조건 규칙 검사를 피하려고 채워 둔다
+        dRule({
+          id: 'bad',
+          event: 'greet',
+          conditions: [
+            { fact: 'skill.ice', op: '>=', value: 100 },
+            { fact: 'skill.ice', op: '<', value: 50 },
+          ],
+          source: { file: '노인.dlg', line: 7 },
+        }),
+      ],
+    }
+
+    const out = runDeadCommand(data)
+    expect(out).toContain('노인.dlg:7행')
+    expect(out).toContain('"skill.ice>=100" 과 "skill.ice<50" 가 동시에 참일 수 없다')
+
+    // dead 명령이 검증과 다른 계산을 하면 여기서 어긋난다 — 같은 데이터에 같은
+    // 위반을 내야 "두 곳에 따로 구현하지 않는다"는 브리프의 요구가 지켜진다.
+    const buildViolations = validateGameData(data).filter((v) => v.includes('동시에 참일 수 없다'))
+    expect(buildViolations).toEqual([
+      'dialogue[노인] 노인.dlg:7행: 조건 "skill.ice>=100" 과 "skill.ice<50" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다',
+    ])
+  })
+
+  it('실제로 출하되는 대사 데이터는 죽은 대사가 없다', () => {
+    expect(runDeadCommand(loadGameData())).toContain('죽은 대사 없음')
+  })
+})
+
+describe('runWaitingCommand', () => {
+  it('공급자가 없는 사실을 쓴 대사를 collectDialogueNotices 와 같은 내용으로 보여준다', () => {
+    const data: GameData = {
+      ...emptyGameData(),
+      dialogue: [
+        dRule({ id: 'a', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }], lines: ['한 줄'] }),
+      ],
+    }
+    const notices = collectDialogueNotices(data)
+    const out = runWaitingCommand(data)
+    expect(notices.length).toBeGreaterThan(0)
+    for (const notice of notices) expect(out).toContain(notice)
+  })
+
+  it('실제 출하 데이터에서 빌드의 안내와 정확히 같은 내용을 보여준다', () => {
+    const data = loadGameData()
+    const notices = collectDialogueNotices(data)
+    const out = runWaitingCommand(data)
+    // 이 assertion 이 공허하게 통과하지 않도록(둘 다 비어서 그냥 통과) 못박아 둔다 —
+    // 채집장노인.dlg 의 weather=rain 규칙 때문에 실제로 최소 1건은 있어야 한다.
+    expect(notices.length).toBeGreaterThan(0)
+    for (const notice of notices) expect(out).toContain(notice)
+  })
+
+  it('기다리는 대사가 없으면 그렇다고 말한다', () => {
+    expect(runWaitingCommand(emptyGameData())).toContain('없음')
+  })
+})
