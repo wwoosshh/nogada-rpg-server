@@ -34,7 +34,7 @@ export class NodeMarker {
       .setStrokeStyle(2, 0x241c1c)
 
     this.caption = addText(scene, 0, 18, label, {
-      fontSize: `${FONT_SIZE.body}px`,
+      fontSize: `${FONT_SIZE.caption}px`,
       color: '#e8dcc0',
     }).setOrigin(0.5, 0)
 
