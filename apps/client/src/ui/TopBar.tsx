@@ -30,6 +30,7 @@ const fmt = (n: number): string => n.toLocaleString('ko-KR')
 function describeNextMilestone(data: GameData, player: PlayerState): string | null {
   const next = nextMilestone(data.milestones, player)
   if (!next) return null
+  // every 분기: 지금 데이터로는 실제로 뽑히지 않는다 — 구성 이정표가 항상 같은 비율을 먼저 내며 동점에서 파일 순서로 이긴다(milestoneRatio 문서 참고). 그래도 타입상 반드시 있어야 하고, 데이터가 바뀌면 그대로 살아난다.
   const subject = next.metric.kind === 'skill' ? SKILL_LABELS[next.metric.skill] : next.name
   const value = metricValue(next, player, data.milestones)
   return `다음 · ${subject} ${fmt(value)} / ${fmt(next.threshold)}`
@@ -62,8 +63,22 @@ export function TopBar(): JSX.Element {
         {SEASON_LABELS[t.season]} {t.dayOfSeason}일 · {pad(t.hour)}:{pad(t.minute)}
       </span>
       {milestoneLine !== null && <span className="topbar__milestone">{milestoneLine}</span>}
-      {/* 설정 버튼이 들어올 자리. 지금은 비워 두되 공간은 잡아 둔다. */}
-      <span className="topbar__actions" />
+      {/*
+        상세 메뉴(Phaser 의 PanelScene)를 설정 탭으로 여는 두 번째 입구다 — B 와
+        같은 목적지를 가리킨다. 메뉴 자체는 React 가 아니라 Phaser 씬이라 여기서
+        직접 그리지 않는다(App.tsx 에 커밋되면 안 되는 개발용 훅이 있어 그 파일을
+        건드리지 않기로 했고, 그것이 메뉴를 Phaser 씬으로 만든 이유이기도 하다) —
+        대신 gameStore 의 openMenu() 로 요청만 남기고, PanelScene 이 그 요청을
+        구독해서 연다(gameStore.ts 의 MenuRequest 문서 참고).
+      */}
+      <button
+        type="button"
+        className="topbar__gear"
+        aria-label="설정"
+        onClick={() => useGameStore.getState().openMenu('settings')}
+      >
+        ⚙
+      </button>
     </div>
   )
 }

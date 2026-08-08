@@ -57,19 +57,39 @@ export interface Milestone {
  */
 export type Connection = 'connecting' | 'online' | 'offline'
 
+/** B 의 상세 메뉴 탭. PanelScene 의 TABS 순서가 진짜 출처이고, 여기는 그중 어느 것을 가리킬지 정하는 이름표일 뿐이다. */
+export type DetailMenuTab = 'skills' | 'milestones' | 'settings'
+
+/**
+ * 상단 바 톱니(React)가 상세 메뉴(Phaser 씬)를 열어 달라는 요청.
+ *
+ * 톱니는 DOM 버튼이고 메뉴는 PanelScene 안의 Phaser 오브젝트라 직접 부를 수 없다 —
+ * App.tsx 를 건드리지 않고 두 세계를 잇는 유일한 통로가 이 스토어다. milestone
+ * 채널과 같은 모양(seq 로 "새 사건"을 구분)을 쓴다: 같은 tab 을 두 번 연달아
+ * 요청해도(예: 톱니를 두 번 누름) seq 가 매번 올라가야 PanelScene 의 구독이
+ * "이미 처리한 요청"으로 착각해 무시하지 않는다.
+ */
+export interface MenuRequest {
+  seq: number
+  tab: DetailMenuTab
+}
+
 interface GameStore {
   data: GameData
   player: PlayerState | null
   connection: Connection
   lastAction: ActionFeedback | null
   milestone: Milestone | null
+  menuRequest: MenuRequest | null
   connect: () => Promise<void>
   gather: (instanceId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
+  openMenu: (tab: DetailMenuTab) => void
 }
 
 let actionSeq = 0
 let milestoneSeq = 0
+let menuRequestSeq = 0
 
 /** 서버와 말 자체를 못 한 경우에만 true. HTTP 4xx 는 서버가 살아있는 것이다. */
 function isNetworkFailure(err: unknown): boolean {
@@ -87,6 +107,7 @@ export const useGameStore = create<GameStore>((set) => ({
   connection: 'connecting',
   lastAction: null,
   milestone: null,
+  menuRequest: null,
 
   /**
    * 게임 진입 조건. 서버 시계를 맞추고 플레이어 상태를 받아온다.
@@ -175,6 +196,10 @@ export const useGameStore = create<GameStore>((set) => ({
       console.error(err)
     }
   },
+
+  // 톱니 클릭 자체는 게임 상태가 아니지만, App.tsx 를 건드리지 않고 React ->
+  // Phaser 로 "메뉴를 열어라"를 전달할 통로가 이 스토어뿐이라 여기 둔다.
+  openMenu: (tab) => set({ menuRequest: { seq: ++menuRequestSeq, tab } }),
 }))
 
 type SetFn = (partial: Partial<GameStore>) => void

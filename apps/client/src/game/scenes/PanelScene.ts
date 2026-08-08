@@ -1,16 +1,34 @@
 import Phaser from 'phaser'
+import {
+  achievedIds,
+  actionIntervalMs,
+  metricValue,
+  milestoneRatio,
+  SKILL_IDS,
+  SKILL_LABELS,
+  type GameData,
+  type MilestoneDef,
+  type MilestoneEffect,
+  type PlayerState,
+} from '@nogada/shared'
 import type { InputHub } from '../../input/InputState.js'
+import { useGameStore, type DetailMenuTab } from '../../store/gameStore.js'
+import { ScrollList, type ScrollListLine } from '../ScrollList.js'
 
 /*
  * ControlScene 과 같은 팔레트다(tokens.css 의 --c-panel / --c-panel-edge /
- * --c-accent / --c-parchment / --c-ink). 두 파일이 상수를 공유하지 않고 각자
- * 리터럴로 옮겨 적는 이유는 NodeMarker·FloatingText 와 같다 — ControlScene.ts
- * 상단 주석 참고. 바꿀 때 tokens.css 와 함께 고친다.
+ * --c-accent / --c-parchment / --c-parchment-dim / --c-success / --c-ink).
+ * 두 파일이 상수를 공유하지 않고 각자 리터럴로 옮겨 적는 이유는
+ * NodeMarker·FloatingText 와 같다 — ControlScene.ts 상단 주석 참고. 바꿀 때
+ * tokens.css 와 함께 고친다.
  */
 const PANEL_COLOR = 0x3a2f2a
 const PANEL_EDGE_COLOR = 0x6b5646
+const ACCENT_COLOR = 0xd9a441
 const ACCENT_TEXT_COLOR = '#d9a441'
 const LABEL_COLOR = '#e8dcc0'
+const DIM_COLOR = '#c9b895'
+const SUCCESS_COLOR = '#7fa650'
 const INK_COLOR = '#241c1c'
 
 /** 배경 위에서도 글자가 또렷이 읽혀야 하므로 컨트롤러 버튼(0.55)보다 훨씬 불투명하다. */
@@ -29,27 +47,189 @@ const TOP_MARGIN = 40
  * 파일이 정확히 같은 상수를 공유하게 만드는 비용이 지금은 이득보다 크다.
  */
 const BOTTOM_RESERVE = 196
+/** 극단적으로 낮은 화면에서도 두 줄 글자가 안 뭉개지는 최소 높이. */
+const MIN_HEIGHT = 64
+
+// 가방·제작 — 아직 자리만 있는 작은 안내 상자의 치수.
 const SIDE_MARGIN = 32
 const MAX_WIDTH = 380
 const MAX_HEIGHT = 170
-/** 극단적으로 낮은 화면에서도 두 줄 글자가 안 뭉개지는 최소 높이. */
-const MIN_HEIGHT = 64
 const TEXT_PADDING = 16
 
-type PanelId = 'bag' | 'craft'
+// 상세 메뉴 — 안이 스크롤되므로(ScrollList) 세로 안전 영역을 꽉 채운다.
+// 가로만 이 폭 안에서 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
+const MENU_MAX_WIDTH = 720
+const MENU_SIDE_MARGIN = 16
+const MENU_TAB_BAR_HEIGHT = 26
+const MENU_CONTENT_GAP = 8
+const MENU_CONTENT_PADDING = 8
+const TAB_INDICATOR_HEIGHT = 2
+const TAB_LABEL_FONT_SIZE = 13
+const ROW_NAME_FONT_SIZE = 12
+const ROW_DETAIL_FONT_SIZE = 10
 
-/** 어느 패널인지와 "아직 안 만들었다"만 말한다 — 내용은 설계 문서 §9 에서 범위 밖이다. */
-const PANEL_TEXT: Record<PanelId, { title: string; body: string }> = {
+/**
+ * 어느 패널이 열려 있는지.
+ *
+ * `bag`·`craft` 는 아직 자리만 있다(설계 문서 §9 가 내용을 범위 밖에 뒀다) —
+ * 무엇이 열렸는지와 "아직 안 만들었다"만 보여준다. `menu` 는 이 태스크가
+ * 채우는 B 의 상세 메뉴다: 탭으로 나뉘고 실제 내용(숙련도·이정표·설정)이 있다.
+ */
+type PanelId = 'bag' | 'craft' | 'menu'
+
+/** 어느 패널인지와 "아직 안 만들었다"만 말한다 — bag·craft 의 내용은 설계 문서 §9 에서 범위 밖이다. */
+const PANEL_TEXT: Record<'bag' | 'craft', { title: string; body: string }> = {
   bag: { title: '가방', body: '아직 만들지 않았습니다.' },
   craft: { title: '제작', body: '아직 만들지 않았습니다.' },
 }
 
+const fmt = (n: number): string => n.toLocaleString('ko-KR')
+
+/** ids 가 가리키는 대상의 실제 이름을 모아 사람이 읽는 목록으로 만든다. 데이터에 없으면 id 를 그대로 보여준다(조용히 지우지 않는다). */
+function namesOf(ids: readonly string[], table: Record<string, { name: string }>): string {
+  return ids.map((id) => table[id]?.name ?? id).join(' · ')
+}
+
 /**
- * 가방·제작 버튼이 여는 패널.
+ * 이정표 하나의 효과를 한 줄로 설명한다.
  *
- * 설계 문서 §9 는 패널 "내용"을 범위 밖에 두고 "버튼과 열고 닫기"만 남긴다.
- * 그래서 이 씬은 지금 어느 패널이 열려 있는지와 아직 안 만들었다는 것만
- * 보여준다 — 가짜 인벤토리를 꾸미지 않는다.
+ * achieved 로 시제를 가른다 — 달성한 것은 "지금 이렇다", 못한 것은 "달성하면
+ * 이렇게 된다". `title` 은 achieved 여부와 무관하게 효과가 없다는 사실 자체를
+ * 그대로 말한다 — 보상을 암시하고 안 주는 줄은 아예 없는 줄보다 나쁘다.
+ */
+function effectDescription(effect: MilestoneEffect, data: GameData, achieved: boolean): string {
+  switch (effect.kind) {
+    case 'repeat':
+      return achieved ? '누르고 있으면 계속된다' : '달성하면 누르고 있는 것만으로 계속된다'
+    case 'recipes': {
+      const names = namesOf(effect.ids, data.recipes)
+      return achieved ? `만들 수 있다 — ${names}` : `달성하면 만들 수 있다 — ${names}`
+    }
+    case 'nodes': {
+      const names = namesOf(effect.ids, data.nodes)
+      return achieved ? `캘 수 있다 — ${names}` : `달성하면 캘 수 있다 — ${names}`
+    }
+    case 'title':
+      return achieved ? '칭호. 그 외 효과는 없다' : '칭호 — 효과는 없다'
+    default: {
+      // MilestoneEffect 에 새 kind 가 늘었는데 위에서 못 따라가면 여기서 컴파일이
+      // 깨진다 — InputHub.setButton 과 같은 자세다.
+      const exhaustive: never = effect
+      throw new Error(`처리하지 않은 이정표 효과: ${String(exhaustive)}`)
+    }
+  }
+}
+
+interface MilestoneRow {
+  def: MilestoneDef
+  achieved: boolean
+  current: number
+  ratio: number
+}
+
+/**
+ * 못한 것을 남은 비율이 작은 순(= 진척 ratio 가 큰 순)으로 먼저, 달성한 것을 뒤에 둔다.
+ *
+ * `data.milestones` 자체는 절대 정렬하지 않는다 — `nextMilestone` 의 동점
+ * 처리와 `every` 이정표의 순환 없음 검증이 그 정의 순서에 기댄다(milestones.ts,
+ * packages/data/src/validate.ts). 여기서 만드는 것은 표시 전용 사본이다.
+ */
+function buildMilestoneRows(data: GameData, player: PlayerState): MilestoneRow[] {
+  const achieved = achievedIds(data.milestones, player)
+  const rows: MilestoneRow[] = data.milestones.map((def) => ({
+    def,
+    achieved: achieved.has(def.id),
+    current: metricValue(def, player, data.milestones),
+    ratio: milestoneRatio(def, player, data.milestones),
+  }))
+
+  const pending = rows.filter((r) => !r.achieved).sort((a, b) => b.ratio - a.ratio)
+  const done = rows.filter((r) => r.achieved)
+  return [...pending, ...done]
+}
+
+/** 이정표 탭의 내용. 줄마다 이름+진척(또는 체크) 한 줄과 효과 설명 한 줄, 두 줄씩이다. */
+function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLine[] {
+  const lines: ScrollListLine[] = []
+  for (const row of buildMilestoneRows(data, player)) {
+    // "???" 를 쓰지 않는다 — 못한 것도 지금 값과 필요한 값을 그대로 적는다.
+    const head = row.achieved
+      ? `✓ ${row.def.name}`
+      : `${row.def.name}   ${fmt(row.current)} / ${fmt(row.def.threshold)}`
+    lines.push({
+      text: head,
+      color: row.achieved ? SUCCESS_COLOR : LABEL_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+    })
+    lines.push({
+      text: effectDescription(row.def.effect, data, row.achieved),
+      color: DIM_COLOR,
+      fontSize: ROW_DETAIL_FONT_SIZE,
+    })
+  }
+  return lines
+}
+
+/** 숙련도 탭의 내용. 다섯 기술의 현재 숙련도와 그 숙련도에서의 행동 간격 — 둘 다 서버와 같은 공식(actionIntervalMs)으로 계산한다. */
+function buildSkillLines(_data: GameData, player: PlayerState): ScrollListLine[] {
+  return SKILL_IDS.map((skill) => {
+    const value = player.skills[skill]
+    const interval = actionIntervalMs(value)
+    return {
+      text: `${SKILL_LABELS[skill]}   숙련도 ${fmt(value)}   행동 간격 ${interval}ms`,
+      color: LABEL_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+    }
+  })
+}
+
+/** 설정 탭의 내용. 지금은 톱니를 눌러도 나올 실제 설정이 없다 — bag·craft 와 같은 자세로 정직하게 "아직 안 만들었다"만 말한다. */
+function buildSettingsLines(): ScrollListLine[] {
+  return [{ text: '아직 만들지 않았습니다.', color: DIM_COLOR, fontSize: ROW_NAME_FONT_SIZE }]
+}
+
+type LineBuilder = (data: GameData, player: PlayerState) => ScrollListLine[]
+
+interface TabDef {
+  id: DetailMenuTab
+  label: string
+  buildLines: LineBuilder
+}
+
+/**
+ * 상세 메뉴의 탭 목록. 이 배열이 유일한 출처다 — 이벤트·퀘스트 탭을 더할 때
+ * 여기 항목 하나(id·label·buildLines)만 늘리면 되고, 탭 바 레이아웃·전환·
+ * 스크롤은 전부 이 배열의 길이와 내용에 맞춰 자동으로 따라온다(아래 layoutMenu·
+ * render 참고). 이 파일 밖은 건드릴 필요가 없다.
+ */
+const TABS: readonly TabDef[] = [
+  { id: 'skills', label: '숙련도', buildLines: buildSkillLines },
+  { id: 'milestones', label: '이정표', buildLines: buildMilestoneLines },
+  { id: 'settings', label: '설정', buildLines: buildSettingsLines },
+]
+
+interface TabButton {
+  id: DetailMenuTab
+  label: Phaser.GameObjects.Text
+  /** 탭 글자 자체는 짧아 히트 영역이 좁다 — 칸 전체(탭 폭 × 탭 바 높이)를 따로 잡는다. */
+  hitZone: Phaser.GameObjects.Zone
+}
+
+/**
+ * 가방·제작 버튼과 B 가 여는 상세 메뉴.
+ *
+ * 세 가지를 그린다:
+ *  - `bag`·`craft`: 아직 자리만 있다(설계 문서 §9 범위 밖) — 무엇이 열렸는지와
+ *    "아직 안 만들었다"만 보여준다. 가짜 인벤토리를 꾸미지 않는다.
+ *  - `menu`: B 의 상세 메뉴. 탭(숙련도·이정표·설정)으로 나뉘고 실제 내용이
+ *    있다 — 원작에서 특수 메뉴를 호출하는 커먼이벤트 이름이 `[★B]특수메뉴호출`
+ *    이고 숙련도 정보 화면이 그 안에 있던 것과 같은 자리다.
+ *
+ * B 의 의미는 하나다: 셋 중 무엇이든 열려 있으면 닫고, 아무것도 없으면
+ * `menu` 를 연다(applyInput 참고) — 휴대폰 뒤로 가기와 같은 규칙이다. 상단
+ * 바 톱니는 같은 메뉴를 설정 탭으로 여는 두 번째 입구다(openMenuTab 참고 —
+ * gameStore.ts 의 MenuRequest 채널이 그 통로다. App.tsx 를 건드리지 않고
+ * React 의 톱니 버튼과 이 Phaser 씬을 잇는 유일한 길이 그것이다).
  *
  * ControlScene 처럼 WorldScene 과 별도인 씬이다 — 이유도 같다. WorldScene 의
  * 카메라 스크롤과 낮밤 명암은 그 씬 안의 오브젝트에만 적용되므로, 별도 씬으로
@@ -69,11 +249,21 @@ const PANEL_TEXT: Record<PanelId, { title: string; body: string }> = {
  * WorldScene.create() 가 명시적으로 launch 한다.
  */
 export class PanelScene extends Phaser.Scene {
+  // 가방·제작 — 작은 안내 상자.
   private box!: Phaser.GameObjects.Rectangle
   private title!: Phaser.GameObjects.Text
   private body!: Phaser.GameObjects.Text
+
+  // 상세 메뉴.
+  private menuBox!: Phaser.GameObjects.Rectangle
+  private tabButtons: TabButton[] = []
+  private tabIndicator!: Phaser.GameObjects.Rectangle
+  private scrollList!: ScrollList
+
   private hub: InputHub | null = null
   private open: PanelId | null = null
+  private menuTab: DetailMenuTab = 'skills'
+  private unsubscribeMenuRequest: (() => void) | null = null
 
   constructor() {
     super({ key: 'Panel' })
@@ -109,8 +299,57 @@ export class PanelScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setVisible(false)
 
+    this.menuBox = this.add
+      .rectangle(0, 0, 10, 10, PANEL_COLOR, PANEL_ALPHA)
+      .setStrokeStyle(2, PANEL_EDGE_COLOR, 1)
+      .setVisible(false)
+
+    this.tabButtons = TABS.map((tab) => {
+      const label = this.add
+        .text(0, 0, tab.label, {
+          fontSize: `${TAB_LABEL_FONT_SIZE}px`,
+          color: DIM_COLOR,
+          stroke: INK_COLOR,
+          strokeThickness: 2,
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5)
+        .setVisible(false)
+
+      // origin (0,0) + 칸 전체 크기를 히트 영역으로 쓰면 글자 자체의 좁은
+      // 경계 대신 탭 칸 전체가 눌린다 — 짧은 라벨("설정")도 넓게 누를 수 있다.
+      // 명시적 Rectangle 을 주는 이유는 ScrollList.hitZone 생성부의 주석과
+      // 같다 — 크기 0인 Zone 에 인자 없이 setInteractive() 를 부르면 Phaser 가
+      // input 자체를 안 붙이는 경우가 있었다(실측). layoutMenu() 가 매 리사이즈마다
+      // 이 Rectangle 의 크기를 직접 갱신한다.
+      const hitZone = this.add
+        .zone(0, 0, 0, 0)
+        .setOrigin(0, 0)
+        .setInteractive(new Phaser.Geom.Rectangle(0, 0, 0, 0), Phaser.Geom.Rectangle.Contains)
+      hitZone.on('pointerdown', () => this.selectTab(tab.id))
+
+      return { id: tab.id, label, hitZone }
+    })
+
+    this.tabIndicator = this.add
+      .rectangle(0, 0, 0, TAB_INDICATOR_HEIGHT, ACCENT_COLOR)
+      .setOrigin(0.5, 0)
+      .setVisible(false)
+
+    this.scrollList = new ScrollList(this)
+
     this.layout(this.scale.width, this.scale.height)
     this.scale.on('resize', this.handleResize, this)
+
+    // 톱니(React)가 gameStore.openMenu() 로 세운 요청을 여기서 받는다 —
+    // MenuRequest 문서(gameStore.ts) 참고. seq 비교는 milestone 채널과 같은
+    // 이유다: 같은 tab 을 두 번 연달아 요청해도(톱니를 두 번 누름) "이미
+    // 처리함"으로 착각해 무시하지 않는다.
+    this.unsubscribeMenuRequest = useGameStore.subscribe((state, prev) => {
+      const req = state.menuRequest
+      if (!req || req.seq === prev.menuRequest?.seq) return
+      this.openMenuTab(req.tab)
+    })
 
     // ControlScene 과 같은 이유로 SHUTDOWN·DESTROY 둘 다에 같은 정리를 걸고
     // 두 번째 호출은 가드로 무시한다 — ControlScene.create() 의 주석 참고.
@@ -119,6 +358,9 @@ export class PanelScene extends Phaser.Scene {
       if (cleanedUp) return
       cleanedUp = true
       this.scale.off('resize', this.handleResize, this)
+      this.unsubscribeMenuRequest?.()
+      this.unsubscribeMenuRequest = null
+      this.scrollList.destroy()
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)
@@ -162,49 +404,114 @@ export class PanelScene extends Phaser.Scene {
     } else if (state.toggleCraftPressed) {
       next = this.open === 'craft' ? null : 'craft'
     } else if (state.cancelPressed) {
-      // 열린 게 없으면 null → null 이라 아래 비교에서 걸러진다. B 에 다른
-      // 취소 대상이 아직 없으므로 "아무 일도 안 함"이 자연히 나온다.
-      next = null
+      // B 의 의미는 하나다: 무엇이든(가방·제작·메뉴) 열려 있으면 닫고,
+      // 아무것도 없으면 상세 메뉴를 연다 — 휴대폰 뒤로 가기와 같은 규칙이다.
+      next = this.open === null ? 'menu' : null
     }
 
+    this.setOpen(next)
+  }
+
+  private setOpen(next: PanelId | null): void {
     if (next === this.open) return
     this.open = next
+    // B 로 새로 열 때는 항상 첫 탭(숙련도)에서 시작한다 — 톱니로 연 설정
+    // 탭과 달리, B 는 "무엇을 보러 왔는지"를 모르는 진입이라 고정된 시작점이 필요하다.
+    if (next === 'menu') this.menuTab = 'skills'
     this.render()
-    hub.setWorldInputLocked(this.open !== null)
+    this.hub?.setWorldInputLocked(this.open !== null)
+  }
+
+  /**
+   * 상단 바 톱니(React) 전용 진입점 — gameStore 의 MenuRequest 구독이 부른다.
+   *
+   * 토글이 아니라 "그 탭으로 이동"이다: 가방이 열려 있어도, 메뉴가 이미
+   * 다른 탭으로 열려 있어도 항상 그 탭을 보여준다. 두 번째 입구는 "누르면
+   * 거기 도착한다"가 계약이지 "다시 누르면 닫힌다"가 아니다 — 그건 B 의 일이다.
+   */
+  private openMenuTab(tab: DetailMenuTab): void {
+    this.open = 'menu'
+    this.menuTab = tab
+    this.render()
+    this.hub?.setWorldInputLocked(true)
+  }
+
+  /** 메뉴 안 탭 바를 눌렀을 때. 메뉴는 이미 열려 있으므로 open·잠금은 건드리지 않는다. */
+  private selectTab(tab: DetailMenuTab): void {
+    if (this.menuTab === tab) return
+    this.menuTab = tab
+    this.render()
   }
 
   private render(): void {
     const open = this.open
-    if (!open) {
-      this.box.setVisible(false)
-      this.title.setVisible(false)
-      this.body.setVisible(false)
-      return
+
+    const showSimple = open === 'bag' || open === 'craft'
+    this.box.setVisible(showSimple)
+    this.title.setVisible(showSimple)
+    this.body.setVisible(showSimple)
+    if (showSimple) {
+      const content = PANEL_TEXT[open]
+      this.title.setText(content.title)
+      this.body.setText(content.body)
     }
 
-    const content = PANEL_TEXT[open]
-    this.title.setText(content.title)
-    this.body.setText(content.body)
-    this.box.setVisible(true)
-    this.title.setVisible(true)
-    this.body.setVisible(true)
+    const showMenu = open === 'menu'
+    this.menuBox.setVisible(showMenu)
+    this.tabIndicator.setVisible(showMenu)
+    for (const btn of this.tabButtons) btn.label.setVisible(showMenu)
+    this.scrollList.setVisible(showMenu)
+    if (showMenu) this.refreshMenu()
+  }
+
+  /** 메뉴를 열거나 탭을 바꿀 때: 위치(탭 밑줄 포함)까지 다시 잡고 내용도 다시 짠다. */
+  private refreshMenu(): void {
+    this.layout(this.scale.width, this.scale.height)
+    this.rebuildMenuContent()
+  }
+
+  /**
+   * 메뉴 내용만 다시 짠다(위치는 그대로) — 리사이즈로 줄바꿈 폭이 바뀌었을
+   * 때 쓴다. 플레이어 상태는 스토어에서 그때그때 읽는다 — 메뉴가 열려 있는
+   * 동안은 hub.setWorldInputLocked() 가 이동·행동을 막아 그 사이 값이 바뀔
+   * 수 없으므로, 매 프레임 다시 그릴 이유가 없다(ScrollList.setLines 문서 참고).
+   */
+  private rebuildMenuContent(): void {
+    for (const btn of this.tabButtons) {
+      btn.label.setColor(btn.id === this.menuTab ? ACCENT_TEXT_COLOR : DIM_COLOR)
+    }
+
+    const { data, player } = useGameStore.getState()
+    if (!player) return // 접속 전에는 메뉴를 열 방법이 없지만(App.tsx), 방어적으로 넘어간다
+
+    const tab = TABS.find((t) => t.id === this.menuTab)
+    if (!tab) throw new Error(`알 수 없는 탭: ${this.menuTab}`)
+    this.scrollList.setLines(tab.buildLines(data, player))
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
     this.layout(gameSize.width, gameSize.height)
+    // 메뉴가 열린 채로 리사이즈되면 줄바꿈 폭이 달라지므로 내용을 다시 짠다.
+    if (this.open === 'menu') this.rebuildMenuContent()
   }
 
   /**
-   * 패널 상자를 화면 크기에 맞게 다시 잡는다.
+   * 패널 상자들을 화면 크기에 맞게 다시 잡는다.
    *
    * 위로는 상단 바, 아래로는 컨트롤러 버튼 묶음을 침범하지 않는 안전 영역을
    * 계산하고 그 안에 상자를 맞춘다 — 가로 화면 전용이라 세로 폭이 늘 좁으므로,
-   * 화면이 작아져도 두 영역과 겹치지 않는 게 최우선이다.
+   * 화면이 작아져도 두 영역과 겹치지 않는 게 최우선이다. bag·craft 와 menu
+   * 둘 다 같은 안전 영역을 쓴다.
    */
   private layout(width: number, height: number): void {
     const safeBottom = Math.max(TOP_MARGIN + MIN_HEIGHT, height - BOTTOM_RESERVE)
     const safeHeight = safeBottom - TOP_MARGIN
 
+    this.layoutSimplePanel(width, safeHeight)
+    this.layoutMenu(width, safeHeight)
+  }
+
+  private layoutSimplePanel(width: number, safeHeight: number): void {
     const boxWidth = Math.min(MAX_WIDTH, Math.max(160, width - SIDE_MARGIN * 2))
     const boxHeight = Math.min(MAX_HEIGHT, safeHeight)
 
@@ -215,5 +522,46 @@ export class PanelScene extends Phaser.Scene {
     this.title.setPosition(x, y - 16)
     this.body.setPosition(x, y + 12)
     this.body.setWordWrapWidth(boxWidth - TEXT_PADDING * 2)
+  }
+
+  /**
+   * 상세 메뉴는 안이 스크롤되므로(ScrollList) bag·craft 상자처럼 작게 가둘
+   * 이유가 없다 — 같은 세로 안전 영역을 꽉 채운다. 가로만 MENU_MAX_WIDTH 로
+   * 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
+   */
+  private layoutMenu(width: number, safeHeight: number): void {
+    const menuWidth = Math.min(MENU_MAX_WIDTH, Math.max(240, width - MENU_SIDE_MARGIN * 2))
+    const menuLeft = (width - menuWidth) / 2
+    const menuTop = TOP_MARGIN
+
+    this.menuBox.setPosition(width / 2, menuTop + safeHeight / 2).setSize(menuWidth, safeHeight)
+
+    const tabWidth = menuWidth / TABS.length
+    const tabBarCenterY = menuTop + MENU_TAB_BAR_HEIGHT / 2
+    this.tabButtons.forEach((btn, i) => {
+      const colLeft = menuLeft + tabWidth * i
+      btn.hitZone.setPosition(colLeft, menuTop).setSize(tabWidth, MENU_TAB_BAR_HEIGHT)
+      // Zone 의 setInteractive() 는 호출 시점의 width/height 로 히트 영역을
+      // 스냅샷한다(ScrollList.setViewport 의 같은 주석, 원출처는
+      // ControlScene.setCircularHitArea) — setSize() 는 그 스냅샷을 자동으로
+      // 따라오지 않으므로 리사이즈마다 직접 갱신한다.
+      const hitArea = btn.hitZone.input?.hitArea as Phaser.Geom.Rectangle | undefined
+      hitArea?.setTo(0, 0, tabWidth, MENU_TAB_BAR_HEIGHT)
+      btn.label.setPosition(colLeft + tabWidth / 2, tabBarCenterY)
+    })
+
+    const activeIndex = Math.max(
+      0,
+      TABS.findIndex((t) => t.id === this.menuTab),
+    )
+    this.tabIndicator
+      .setPosition(menuLeft + tabWidth * activeIndex + tabWidth / 2, menuTop + MENU_TAB_BAR_HEIGHT)
+      .setSize(tabWidth * 0.6, TAB_INDICATOR_HEIGHT)
+
+    const contentTop = menuTop + MENU_TAB_BAR_HEIGHT + MENU_CONTENT_GAP
+    const contentLeft = menuLeft + MENU_CONTENT_PADDING
+    const contentWidth = menuWidth - MENU_CONTENT_PADDING * 2
+    const contentHeight = Math.max(0, menuTop + safeHeight - MENU_CONTENT_PADDING - contentTop)
+    this.scrollList.setViewport(contentLeft, contentTop, contentWidth, contentHeight)
   }
 }

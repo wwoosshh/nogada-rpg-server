@@ -55,11 +55,28 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 설정 버튼 자리. 지금은 비어 있지만 폭을 잡아 두어 시계가 가운데로 밀리지 않게 한다. */
-.topbar__actions {
+/*
+ * 상세 메뉴(설정 탭)를 여는 톱니. 브라우저 기본 버튼 스타일을 지우고 상단 바
+ * 팔레트에 맞춘다. min-width/height 는 이전에 이 자리에 있던 빈 예약 공간과
+ * 같은 값이다 — 시계가 가운데로 밀리지 않게 폭을 계속 잡아 둔다.
+ */
+.topbar__gear {
   flex: none;
   min-width: 32px;
   min-height: 24px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--c-parchment-dim);
+  cursor: pointer;
+}
+
+.topbar__gear:active {
+  color: var(--c-parchment);
 }
 
 /*
