@@ -1,5 +1,7 @@
 export * from './parse.js'
 export * from './placements.js'
 export * from './milestones.js'
+export * from './speakers.js'
+export * from './dialogueParse.js'
 export * from './validate.js'
 export * from './load.js'

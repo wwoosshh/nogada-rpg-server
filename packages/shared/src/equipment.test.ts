@@ -19,6 +19,8 @@ const data: GameData = {
   recipes: {},
   placements: {},
   milestones: [],
+  speakers: {},
+  dialogue: [],
 }
 
 function player(overrides: Partial<PlayerState> = {}): PlayerState {

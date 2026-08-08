@@ -36,6 +36,8 @@ const data: GameData = {
     'mithril_vein-1': { instanceId: 'mithril_vein-1', nodeId: 'mithril_vein', x: 7, y: 3 },
   },
   milestones: [],
+  speakers: {},
+  dialogue: [],
 }
 
 function player(overrides: Partial<PlayerState> = {}): PlayerState {

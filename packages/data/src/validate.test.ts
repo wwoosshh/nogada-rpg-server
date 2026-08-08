@@ -1,12 +1,14 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { GameData, ItemDef, MilestoneDef } from '@nogada/shared'
+import type { DialogueRule, GameData, ItemDef, MilestoneDef, SpeakerDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMilestones } from './milestones.js'
 import { parsePlacements } from './placements.js'
-import { validateGameData } from './validate.js'
+import { parseSpeakers } from './speakers.js'
+import { parseDialogue } from './dialogueParse.js'
+import { collectDialogueNotices, validateGameData } from './validate.js'
 
 /**
  * baseData()의 유일한 채집 기술(mineral)에 필요한 최소 이정표 하나.
@@ -75,6 +77,12 @@ function baseData(): GameData {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
     },
     milestones: [mineralRepeatMilestone],
+    // 대화 검사 대상이 없는 픽스처다 — 화자·대사가 비어 있으면 "화자마다
+    // 무조건 인사가 있어야 한다" 같은 대화 검사는 순회할 대상이 없어
+    // 조용히 통과하고, 이 파일의 나머지(도달 가능성 등) 테스트를 방해하지
+    // 않는다.
+    speakers: {},
+    dialogue: [],
   }
 }
 
@@ -157,10 +165,18 @@ function deadlockedTierData(): GameData {
       'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', x: 1, y: 0 },
     },
     milestones: [],
+    speakers: {},
+    dialogue: [],
   }
 }
 
-/** 실제로 출하되는 CSV·맵을 그대로 파싱한 GameData. 여러 describe 가 공유한다. */
+/** dialogue/ 아래 모든 .dlg 파일을 읽어 하나의 배열로 합친다. build.ts 와 같은 방식이다. */
+function readRealDialogue(dialogueDir: string): DialogueRule[] {
+  const files = readdirSync(dialogueDir).filter((f) => f.endsWith('.dlg'))
+  return files.flatMap((f) => parseDialogue(readFileSync(join(dialogueDir, f), 'utf8'), f))
+}
+
+/** 실제로 출하되는 CSV·맵·대사를 그대로 파싱한 GameData. 여러 describe 가 공유한다. */
 function loadRealGameData(): GameData {
   const here = dirname(fileURLToPath(import.meta.url))
   const csvDir = join(here, '..', 'csv')
@@ -175,6 +191,8 @@ function loadRealGameData(): GameData {
     recipes,
     placements: parsePlacements(mapJson, nodes),
     milestones: parseMilestones(readRealCsv('milestones.csv'), nodes, recipes),
+    speakers: parseSpeakers(readRealCsv('speakers.csv')),
+    dialogue: readRealDialogue(join(here, '..', 'dialogue')),
   }
 }
 
@@ -401,6 +419,8 @@ describe('validateGameData 의 조기 반환', () => {
         'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
       },
       milestones: [mineralRepeatMilestone],
+      speakers: {},
+      dialogue: [],
     }
 
     expect(validateGameData(data)).toEqual([
@@ -568,5 +588,275 @@ describe('validateGameData 의 이정표 검사', () => {
 
   it('실제로 출하되는 CSV 데이터는 이정표 검사를 통과한다', () => {
     expect(validateGameData(loadRealGameData())).toEqual([])
+  })
+})
+
+// ---- 대화 검사 ----
+//
+// 화자·대사 픽스처는 baseData() 를 베이스로 speakers·dialogue 만 바꾼다 —
+// 나머지(아이템·노드·레시피·이정표)는 baseData() 가 이미 위반 0건을 보장하므로,
+// 대화 검사 하나만 격리해서 볼 수 있다.
+
+const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'npc' }
+
+/** 대화 검사 테스트용 DialogueRule 을 짧게 만든다. */
+function dRule(overrides: Partial<DialogueRule> & Pick<DialogueRule, 'id' | 'event' | 'conditions'>): DialogueRule {
+  return {
+    speaker: '노인',
+    lines: ['...'],
+    source: { file: '노인.dlg', line: 1 },
+    ...overrides,
+  }
+}
+
+/** 조건 없는 인사 규칙 — "무조건 @greet 필수" 검사를 만족시키는 채움용이다. */
+function unconditionalGreet(id = 'bare'): DialogueRule {
+  return dRule({ id, event: 'greet', conditions: [] })
+}
+
+describe('validateGameData 의 대화 검사 — 선언되지 않은 사실', () => {
+  it('선언되지 않은 사실 이름을 쓰는 조건을 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'typo', event: 'greet', conditions: [{ fact: 'affinty', op: '=', value: 30 }] }),
+    ]
+    expect(validateGameData(data)).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
+  })
+
+  it('실제로 출하되는 대사 데이터는 전부 선언된 사실만 쓴다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('선언되지 않은 사실'))
+    expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — 무조건 인사', () => {
+  it('@greet 무조건 규칙이 없는 화자를 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    // greet 이 전부 조건부라 weather 가 비 오는 상태가 아니면 노인은 할 말이 없다.
+    data.dialogue = [dRule({ id: 'rain', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] })]
+    expect(validateGameData(data)).toContain(
+      'dialogue[노인]: @greet 무조건 규칙이 없다 — 말을 걸어도 아무 일도 안 일어날 수 있다',
+    )
+  })
+
+  it('대사 파일이 아예 없는 화자는 이 검사가 아니라 "대사 파일이 없다" 검사가 알린다', () => {
+    // 같은 원인(대사가 없다)을 두 검사가 동시에 보고하면 노이즈만 커진다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = []
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('무조건 규칙이 없다'))).toBe(false)
+    expect(violations).toContain('speakers[노인]: 대사 파일이 없다')
+  })
+
+  it('실제로 출하되는 화자는 전부 무조건 인사가 있다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('무조건 규칙이 없다'))
+    expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — 가려지는 규칙', () => {
+  it('조건이 다른 규칙의 부분집합이면서 개수가 적은 규칙을 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'spring', event: 'greet', conditions: [{ fact: 'season', op: '=', value: 'spring' }] }),
+      dRule({
+        id: 'springMorning',
+        event: 'greet',
+        conditions: [
+          { fact: 'season', op: '=', value: 'spring' },
+          { fact: 'hour', op: '>=', value: 10 },
+        ],
+      }),
+    ]
+    const violations = validateGameData(data)
+    expect(
+      violations.some((v) => v.startsWith('dialogue[노인] 노인.dlg:1행') && v.includes('완전히 가려진다')),
+    ).toBe(true)
+  })
+
+  it('무조건 규칙(조건 0개)은 더 구체적인 규칙과 나란히 있어도 가려진 것으로 보지 않는다', () => {
+    // "@greet 무조건 규칙 필수" 검사와 정면으로 충돌하지 않으려면, 무조건
+    // 규칙이 더 구체적인 형제 규칙 옆에 있는 것 자체는 정상이어야 한다 —
+    // 이게 바로 이 시스템이 광고하는 "새 상황을 조건으로 얹기"(설계 4.4절)다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'spring', event: 'greet', conditions: [{ fact: 'season', op: '=', value: 'spring' }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('완전히 가려진다'))).toBe(false)
+  })
+
+  it('실제로 출하되는 대사 데이터에는 가려지는 규칙이 없다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('완전히 가려진다'))
+    expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — 화자·대사 파일 대응', () => {
+  it('대사 파일이 없는 화자(배치)를 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = []
+    expect(validateGameData(data)).toContain('speakers[노인]: 대사 파일이 없다')
+  })
+
+  it('화자가 없는 대사 파일을 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = {}
+    data.dialogue = [unconditionalGreet()]
+    expect(validateGameData(data)).toContain('dialogue[노인]: 화자 정의(speakers.csv)가 없다')
+  })
+
+  it('실제로 출하되는 데이터는 화자·대사 파일이 서로 대응한다', () => {
+    const violations = validateGameData(loadRealGameData()).filter(
+      (v) => v.includes('대사 파일이 없다') || v.includes('화자 정의'),
+    )
+    expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조', () => {
+  it('존재하지 않는 이정표를 가리키는 조건을 잡아낸다', () => {
+    const data = baseData() // baseData 의 이정표는 mineral_repeat 하나뿐이다
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'ghost', event: 'milestone', conditions: [{ fact: 'milestone.ice_10000', op: '=', value: true }] }),
+    ]
+    expect(validateGameData(data)).toContain(
+      'dialogue[노인] 노인.dlg:1행: 존재하지 않는 이정표 "ice_10000" 를 가리킨다',
+    )
+  })
+
+  it('존재하지 않는 기술을 가리키는 조건을 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'ghost', event: 'greet', conditions: [{ fact: 'skill.mining', op: '>=', value: 10 }] }),
+    ]
+    expect(validateGameData(data)).toContain('dialogue[노인] 노인.dlg:1행: 존재하지 않는 기술 "mining" 를 가리킨다')
+  })
+
+  it('실제로 출하되는 대사 데이터는 전부 존재하는 이정표·기술만 가리킨다', () => {
+    const violations = validateGameData(loadRealGameData()).filter(
+      (v) => v.includes('존재하지 않는 이정표') || v.includes('존재하지 않는 기술'),
+    )
+    expect(violations).toEqual([])
+  })
+})
+
+describe('validateGameData 의 대화 검사 — once 사건의 상한 없는 사실', () => {
+  // 이 그룹은 Task 1 리뷰가 남긴 지적을 닫는다: onceKey 는 규칙의 조건들이
+  // "지금 갖는 값"을 그대로 엮으므로, once 사건(story·quest·milestone)의
+  // 조건이 상한 없이 계속 바뀌는 사실에 크기 비교(>,>=,<,<=)를 걸면 매번
+  // 새 키가 생겨 "한 번만 말한다"가 깨지고 dialogueHistory.said 가 무한히
+  // 자란다.
+
+  it('once 사건 + 상한 없는 사실 + 크기 비교를 잡아낸다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'grind', event: 'quest', conditions: [{ fact: 'skill.ice', op: '>=', value: 1000 }] }),
+    ]
+    expect(validateGameData(data)).toContain(
+      'dialogue[노인] 노인.dlg:1행: once 사건(quest)의 조건 "skill.ice>=1000" 이 상한 없는 사실에 크기 비교를 건다 — dialogueHistory.said 가 무한히 자란다',
+    )
+  })
+
+  it('once 사건이라도 등호는 괜찮다 — quest.촌장=3 패턴은 계속 동작해야 한다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'chief3', event: 'quest', conditions: [{ fact: 'quest.촌장', op: '=', value: 3 }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('상한 없는 사실'))).toBe(false)
+  })
+
+  it('상한 없는 사실이라도 등호면 once 사건에서도 괜찮다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'exact', event: 'milestone', conditions: [{ fact: 'skill.ice', op: '=', value: 10000 }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('상한 없는 사실'))).toBe(false)
+  })
+
+  it('greet 은 once 사건이 아니므로 크기 비교를 걸어도 괜찮다', () => {
+    // 채집장노인.dlg 의 실제 규칙(@greet skill.ice>=50000)과 같은 모양이다.
+    // greet 은 매번 다시 후보에 오르므로 onceKey 를 아예 안 쓴다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'veteran', event: 'greet', conditions: [{ fact: 'skill.ice', op: '>=', value: 50000 }] }),
+    ]
+    const violations = validateGameData(data)
+    expect(violations.some((v) => v.includes('상한 없는 사실'))).toBe(false)
+  })
+
+  it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
+    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('상한 없는 사실'))
+    expect(violations).toEqual([])
+  })
+})
+
+describe('collectDialogueNotices', () => {
+  it('공급자가 없는 사실을 쓴 대사의 줄 수를 안내로 센다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'rain',
+        event: 'greet',
+        conditions: [{ fact: 'weather', op: '=', value: 'rain' }],
+        lines: ['이런 날엔 얼음이 잘 안 잡히지.'],
+      }),
+    ]
+    expect(collectDialogueNotices(data)).toContain('대사 1줄이 weather 를 기다린다')
+  })
+
+  it('같은 사실을 쓰는 규칙이 여럿이면 줄 수를 합산한다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({
+        id: 'rain1', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }], lines: ['한 줄'],
+      }),
+      dRule({
+        id: 'rain2', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'snow' }],
+        lines: ['두 줄', '세 줄'],
+      }),
+    ]
+    expect(collectDialogueNotices(data)).toContain('대사 3줄이 weather 를 기다린다')
+  })
+
+  it('공급자가 있는 사실만 쓰면 안내가 없다', () => {
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [unconditionalGreet()]
+    expect(collectDialogueNotices(data)).toEqual([])
+  })
+
+  it('실제로 출하되는 대사 데이터는 weather 대기 안내를 낸다', () => {
+    // 채집장노인.dlg 의 "@greet weather=rain" 규칙(대사 1줄)이 근거다 — 날씨
+    // 스펙이 아직 없으므로 이 대사는 지금 절대 나오지 않는다.
+    const notices = collectDialogueNotices(loadRealGameData())
+    expect(notices).toContain('대사 1줄이 weather 를 기다린다')
   })
 })

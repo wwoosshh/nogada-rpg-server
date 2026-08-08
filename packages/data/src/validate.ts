@@ -1,5 +1,5 @@
 import type { GameData, MilestoneDef } from '@nogada/shared'
-import { STARTING_TOOL_IDS, actionIntervalMs, toolAppliesTo } from '@nogada/shared'
+import { ONCE_EVENTS, SKILL_IDS, STARTING_TOOL_IDS, actionIntervalMs, findFactSpec, toolAppliesTo } from '@nogada/shared'
 
 /**
  * 시작 도구에서 출발해 고정점(fixpoint)까지 확장한 "도달 가능한 아이템" 집합을 구한다.
@@ -292,5 +292,157 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
+  // ---- 대화 검사 ----
+  //
+  // 여기부터는 화자(speakers)·대사(dialogue)를 본다. 위쪽의 이른 반환(참조
+  // 무결성 위반 시 도달 가능성 계산을 건너뛰는 것)에는 걸리지 않는다 —
+  // 아이템·레시피·이정표 오타와 대사 데이터는 서로 다른 것을 참조해서,
+  // 한쪽의 오타가 다른 쪽의 진짜 문제를 가릴 이유가 없다. 대사 검사가
+  // 참조하는 것(SKILL_IDS, data.milestones)은 이미 그 자체로 안전하거나
+  // (SKILL_IDS 는 코드 상수) 독립적으로 검사된다(위 이정표 검사).
+  const speakersList = Object.values(data.speakers)
+  const speakerIds = new Set(speakersList.map((s) => s.id))
+  const dialogueSpeakerIds = new Set(data.dialogue.map((r) => r.speaker))
+  // milestoneIds 는 위 이정표 검사가 이미 선언했다 — 여기서 다시 만들지 않고 그대로 쓴다.
+  const isKnownSkill = (id: string): boolean => (SKILL_IDS as readonly string[]).includes(id)
+
+  // 선언되지 않은 사실 이름을 쓰는 조건 — 오타(affinty)가 조용히 "절대 안
+  // 맞는 조건"이 되면 작가가 원인을 못 찾는다(설계 문서 6.3).
+  for (const rule of data.dialogue) {
+    for (const condition of rule.conditions) {
+      if (!findFactSpec(condition.fact)) {
+        violations.push(
+          `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 선언되지 않은 사실 "${condition.fact}" 를 쓴다`,
+        )
+      }
+    }
+  }
+
+  // @greet 무조건 규칙이 없는 화자 — 어떤 상황에서도 할 말이 없으면 말을
+  // 걸어도 아무 일도 안 일어난다. 대사 파일 자체가 없는 화자(ownRules 가
+  // 비어 있다)는 여기서 또 알리지 않는다 — 아래 "대사 파일이 없다" 검사가
+  // 이미 같은 원인을 알려주므로, 둘 다 보고하면 노이즈만 커진다.
+  for (const speaker of speakersList) {
+    const ownRules = data.dialogue.filter((r) => r.speaker === speaker.id)
+    if (ownRules.length === 0) continue
+    const hasUnconditionalGreet = ownRules.some((r) => r.event === 'greet' && r.conditions.length === 0)
+    if (!hasUnconditionalGreet) {
+      violations.push(`dialogue[${speaker.id}]: @greet 무조건 규칙이 없다 — 말을 걸어도 아무 일도 안 일어날 수 있다`)
+    }
+  }
+
+  // 같은 사건 안에서 다른 규칙에 완전히 가려지는 규칙 — 조건이 다른 규칙의
+  // 부분집합이면서 개수가 적으면, 그 다른 규칙이 맞을 때는 항상 조건 개수가
+  // 더 많은 그 규칙에 밀린다(selectDialogue 는 사건 안에서 조건 최댓값만
+  // 남긴다). 조건 0개(무조건 규칙)는 이 검사에서 뺀다 — 그건 "무조건 규칙
+  // 필수" 검사가 요구하는 정상 상태이고, 더 구체적인 형제 규칙과 나란히
+  // 있는 것 자체가 이 시스템의 핵심 패턴이다(설계 4.4절 "새 상황을 추가할
+  // 때 기존 줄을 건드리지 않는다").
+  for (const rule of data.dialogue) {
+    if (rule.conditions.length === 0) continue
+    const shadowedBy = data.dialogue.find(
+      (other) =>
+        other !== rule &&
+        other.speaker === rule.speaker &&
+        other.event === rule.event &&
+        other.conditions.length > rule.conditions.length &&
+        rule.conditions.every((c) =>
+          other.conditions.some((oc) => oc.fact === c.fact && oc.op === c.op && oc.value === c.value),
+        ),
+    )
+    if (shadowedBy) {
+      violations.push(
+        `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 규칙이 같은 사건(${rule.event})의 다른 규칙(${shadowedBy.source.file}:${shadowedBy.source.line}행)에 완전히 가려진다 (조건이 그 규칙의 부분집합이고 개수가 적다)`,
+      )
+    }
+  }
+
+  // 대사 파일이 없는 화자, 화자가 없는 대사 파일 — 배치(speakers.csv)와
+  // 대사(dialogue/*.dlg)는 서로 다른 파일이라 하나만 고치고 잊기 쉽다.
+  for (const speaker of speakersList) {
+    if (!dialogueSpeakerIds.has(speaker.id)) {
+      violations.push(`speakers[${speaker.id}]: 대사 파일이 없다`)
+    }
+  }
+  for (const id of dialogueSpeakerIds) {
+    if (!speakerIds.has(id)) {
+      violations.push(`dialogue[${id}]: 화자 정의(speakers.csv)가 없다`)
+    }
+  }
+
+  // 없는 이정표·기술을 가리키는 조건 — 이정표 검사에서 배운 것과 같다:
+  // 데이터가 서로를 가리키면 빌드가 그 참조를 확인한다.
+  for (const rule of data.dialogue) {
+    for (const condition of rule.conditions) {
+      if (condition.fact.startsWith('milestone.')) {
+        const id = condition.fact.slice('milestone.'.length)
+        if (!milestoneIds.has(id)) {
+          violations.push(
+            `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 존재하지 않는 이정표 "${id}" 를 가리킨다`,
+          )
+        }
+      } else if (condition.fact.startsWith('skill.')) {
+        const id = condition.fact.slice('skill.'.length)
+        if (!isKnownSkill(id)) {
+          violations.push(
+            `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: 존재하지 않는 기술 "${id}" 를 가리킨다`,
+          )
+        }
+      }
+    }
+  }
+
+  // once 사건(story·quest·milestone)의 조건이 상한 없는 사실(skill.* 등,
+  // FactSpec.unbounded)에 크기 비교(>,>=,<,<=)를 걸면 문제가 생긴다 —
+  // onceKey(packages/shared/src/dialogue.ts)는 조건의 "지금 값"을 그대로
+  // 엮으므로, 채집할 때마다 오르는 skill.ice 같은 값에 걸면 값이 바뀔
+  // 때마다 새 키가 생겨 "한 번만 말한다"가 조용히 "말할 때마다 새로
+  // 말한다"로 깨지고 dialogueHistory.said 가 무한히 자란다(Task 1 리뷰
+  // 지적). 등호(`quest.촌장=3` 같은)는 다른 문제다 — 이산 값이 바뀌는 일
+  // 자체가 드물고, 그때 다시 말하는 것은 의도된 동작이다(설계 4.2절).
+  const MAGNITUDE_OPS: ReadonlySet<string> = new Set(['>', '>=', '<', '<='])
+  for (const rule of data.dialogue) {
+    if (!ONCE_EVENTS.has(rule.event)) continue
+    for (const condition of rule.conditions) {
+      if (!MAGNITUDE_OPS.has(condition.op)) continue
+      if (findFactSpec(condition.fact)?.unbounded) {
+        violations.push(
+          `dialogue[${rule.speaker}] ${rule.source.file}:${rule.source.line}행: once 사건(${rule.event})의 조건 "${condition.fact}${condition.op}${condition.value}" 이 상한 없는 사실에 크기 비교를 건다 — dialogueHistory.said 가 무한히 자란다`,
+        )
+      }
+    }
+  }
+
   return violations
+}
+
+/**
+ * 공급자가 아직 없는 사실을 쓴 대사를 안내로 모은다.
+ *
+ * validateGameData 의 결과(violations)에는 넣지 않는다 — 빌드를 막는 실패가
+ * 아니라 "언젠가 쓰일 준비가 됐다"는 정보이기 때문이다(설계 문서 6.3: 작가가
+ * 미리 써 두는 것과 오타는 다른 일이다). build.ts 가 이 함수의 결과를
+ * violations 와 별도로 출력한다.
+ *
+ * 사실 이름별로 묶는다 — `quest.촌장`·`quest.보리`처럼 접두사가 같아도
+ * 구체적인 이름이 다르면 따로 센다. "정확히 어느 사실이 무엇을 막고
+ * 있는지"가 "quest 전체가 막혔다"보다 작가에게 쓸모 있는 정보다.
+ */
+export function collectDialogueNotices(data: GameData): string[] {
+  const totalLinesByFact = new Map<string, number>()
+
+  for (const rule of data.dialogue) {
+    // 한 규칙 안에서 같은 사실을 두 번 조건으로 걸어도(드물지만 가능하다)
+    // 그 규칙의 줄 수를 두 번 더하지 않도록 Set 으로 한 번만 센다.
+    const unsuppliedFacts = new Set(
+      rule.conditions.map((c) => c.fact).filter((fact) => findFactSpec(fact)?.supplied === false),
+    )
+    for (const fact of unsuppliedFacts) {
+      totalLinesByFact.set(fact, (totalLinesByFact.get(fact) ?? 0) + rule.lines.length)
+    }
+  }
+
+  return [...totalLinesByFact.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([fact, lineCount]) => `대사 ${lineCount}줄이 ${fact} 를 기다린다`)
 }

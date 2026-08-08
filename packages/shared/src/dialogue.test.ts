@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DECLARED_FACTS,
   EVENT_ORDER,
   ONCE_EVENTS,
   emptyDialogueHistory,
+  findFactSpec,
   matchesCondition,
   onceKey,
   ruleMatches,
@@ -219,5 +221,47 @@ describe('selectDialogue — 시뮬레이터용 흔적', () => {
     // 도구가 "왜 그것이 이겼는지" 를 보여주려면 선택 과정이 결과에 남아야 한다.
     expect(got?.trace.map((t) => t.event)).toEqual(['story', 'quest'])
     expect(got?.trace.at(-1)?.matched.map((r) => r.id)).toEqual(['q'])
+  })
+})
+
+describe('findFactSpec', () => {
+  it('고정 이름 사실을 찾는다', () => {
+    expect(findFactSpec('season')).toEqual({ name: 'season', prefix: false, supplied: true, unbounded: false })
+  })
+
+  it('접두사 사실을 찾는다 — 접두사 뒤는 임의의 이름이다', () => {
+    expect(findFactSpec('skill.ice')?.name).toBe('skill.')
+    expect(findFactSpec('milestone.ice_10000')?.name).toBe('milestone.')
+    expect(findFactSpec('quest.촌장')?.name).toBe('quest.')
+  })
+
+  it('선언되지 않은 이름(오타)은 찾지 못한다', () => {
+    // affinty 는 affinity 의 오타다 — 이게 조용히 "절대 안 맞는 조건"이 되면
+    // 작가가 원인을 못 찾는다는 것이 이 목록이 존재하는 이유다.
+    expect(findFactSpec('affinty')).toBeUndefined()
+  })
+
+  it('접두사가 아닌 사실은 접두사로 우연히 걸리지 않는다', () => {
+    // 'skill' 이 'skill.' 의 부분 문자열이라고 해서 통과시키면 안 된다 —
+    // 실제로 값이 채워지는 키는 항상 'skill.<기술>' 형태다.
+    expect(findFactSpec('skill')).toBeUndefined()
+  })
+
+  it('공급자가 있는 사실과 없는 사실이 설계 문서 6장대로 나뉜다', () => {
+    const suppliedNames = DECLARED_FACTS.filter((f) => f.supplied).map((f) => f.name)
+    const unsuppliedNames = DECLARED_FACTS.filter((f) => !f.supplied).map((f) => f.name)
+    expect(suppliedNames).toEqual([
+      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'justAchieved', 'talkedBefore', 'daysSinceLastTalk',
+    ])
+    expect(unsuppliedNames).toEqual(['weather', 'affinity', 'quest.', 'story', 'activity', 'location'])
+  })
+
+  it('상한 없이 계속 커지는 사실만 unbounded 다', () => {
+    // skill.* 는 PlayerState.skills 문서(types.ts)가 "상한이 없다"고 명시한다.
+    // daysSinceLastTalk 도 대화 없이 시간이 갈수록 계속 커진다. 나머지는 전부
+    // 작은 범위를 돌거나(hour 0~23, dayOfSeason 1~28, season 4종) 이산적인
+    // 상태값(milestone.*, quest.*)이라 크기 비교로 값이 끝없이 갈아치워지지 않는다.
+    const unbounded = DECLARED_FACTS.filter((f) => f.unbounded).map((f) => f.name)
+    expect(unbounded).toEqual(['skill.', 'daysSinceLastTalk'])
   })
 })

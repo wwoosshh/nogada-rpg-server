@@ -30,6 +30,89 @@ export interface Condition {
 }
 
 /**
+ * 조건에 쓸 수 있는 사실 하나의 스펙.
+ *
+ * 검증(packages/data)이 오타를 잡으려면 "쓸 수 있는 사실 이름"의 목록이 코드
+ * 어딘가에 있어야 한다 — 그 목록이 DECLARED_FACTS 이고, 이건 그 원소 하나의
+ * 모양이다. `season` 처럼 이름이 고정된 사실도 있고 `skill.ice`·
+ * `milestone.ice_10000` 처럼 접두사 뒤가 열려 있는 사실도 있어서 `prefix` 로
+ * 구분한다.
+ */
+export interface FactSpec {
+  /** 고정 이름이면 그 이름 전체(`season`), 접두사 사실이면 `.` 로 끝나는 접두사(`skill.`). */
+  name: string
+  /** true 면 `name` 뒤에 임의의 이름이 붙는 열린 사실이다(`skill.ice`, `milestone.ice_10000`, `quest.촌장`). */
+  prefix: boolean
+  /**
+   * 지금 이 사실에 실제 값을 채워 주는 공급자가 있는가.
+   *
+   * false 여도 조건 자체는 유효하다 — 다만 그 공급자가 생기기 전까지
+   * matchesCondition 은 이 사실을 항상 undefined 로 보므로 조건이 영원히
+   * 거짓이다. 검증은 이것을 오류가 아니라 안내로 알린다: 작가가 미리 써
+   * 두는 것과 오타는 다른 일이기 때문이다(설계 문서 6.3).
+   */
+  supplied: boolean
+  /**
+   * 이 사실이 상한 없이 계속 커지는 값인가.
+   *
+   * once 사건(ONCE_EVENTS)의 규칙이 이런 사실에 크기 비교(`>`,`>=`,`<`,`<=`)를
+   * 걸면 문제가 생긴다 — onceKey 는 조건의 "지금 값"을 그대로 엮으므로, 값이
+   * 바뀔 때마다(예: 채집할 때마다 오르는 skill.ice) 새 키가 생겨 "한 번만
+   * 말한다"가 조용히 "말할 때마다 새로 말한다"로 깨지고 dialogueHistory.said
+   * 가 무한히 자란다. `quest.<id>` 같은 이산적인 단계값에 등호(`=`)를 쓰는
+   * 것은 다른 문제다 — 값이 바뀌는 일 자체가 드물고, 그때 다시 말하는 것이
+   * 오히려 의도된 동작이다(4.2절 "상태가 바뀌면 상위 사건이 다시 말한다").
+   * 그래서 이 플래그는 "값이 자주 바뀌는가"가 아니라 "그 사실의 정의역
+   * 자체에 상한이 없는가"를 뜻한다.
+   */
+  unbounded: boolean
+}
+
+/**
+ * 조건에 쓸 수 있는 사실 이름의 전체 목록.
+ *
+ * `season`·`hour`·`dayOfSeason`·`skill.*`·`milestone.*`·`justAchieved`·
+ * `talkedBefore`·`daysSinceLastTalk` 는 지금 공급자가 있다(설계 문서 6.1).
+ * `weather`·`affinity`·`quest.*`·`story`·`activity`·`location` 은 자리만
+ * 만들어 뒀다(6.2) — 관련 스펙(날씨·호감도·퀘스트·일과)이 생기기 전까지는
+ * 그 이름을 쓴 조건이 파싱은 되지만 절대 맞지 않는다.
+ *
+ * `speaker` 가 이 목록에 없는 것은 실수가 아니다 — selectDialogue 는 화자를
+ * facts 가 아니라 별도 매개변수로 받으므로(위 selectDialogue 문서 참고),
+ * 조건에 `speaker=...` 를 쓰는 것 자체가 이미 잘못된 사용이라 오타와 똑같이
+ * 막아야 한다.
+ */
+export const DECLARED_FACTS: readonly FactSpec[] = [
+  { name: 'season', prefix: false, supplied: true, unbounded: false },
+  { name: 'hour', prefix: false, supplied: true, unbounded: false },
+  { name: 'dayOfSeason', prefix: false, supplied: true, unbounded: false },
+  { name: 'skill.', prefix: true, supplied: true, unbounded: true },
+  { name: 'milestone.', prefix: true, supplied: true, unbounded: false },
+  { name: 'justAchieved', prefix: false, supplied: true, unbounded: false },
+  { name: 'talkedBefore', prefix: false, supplied: true, unbounded: false },
+  { name: 'daysSinceLastTalk', prefix: false, supplied: true, unbounded: true },
+  { name: 'weather', prefix: false, supplied: false, unbounded: false },
+  { name: 'affinity', prefix: false, supplied: false, unbounded: false },
+  { name: 'quest.', prefix: true, supplied: false, unbounded: false },
+  { name: 'story', prefix: false, supplied: false, unbounded: false },
+  { name: 'activity', prefix: false, supplied: false, unbounded: false },
+  { name: 'location', prefix: false, supplied: false, unbounded: false },
+] as const
+
+/**
+ * fact 이름이 DECLARED_FACTS 의 어느 스펙과 맞는지 찾는다.
+ *
+ * 접두사 스펙은 `fact.startsWith(spec.name)` 으로 비교한다 — `spec.name` 이
+ * 이미 `.` 로 끝나므로(`'skill.'`) `skillx` 같은 우연한 오탐은 없다.
+ *
+ * 반환값이 undefined 면 선언되지 않은 이름이다 — packages/data 의 검증이
+ * 이것을 오타로 본다.
+ */
+export function findFactSpec(fact: string): FactSpec | undefined {
+  return DECLARED_FACTS.find((spec) => (spec.prefix ? fact.startsWith(spec.name) : fact === spec.name))
+}
+
+/**
  * 대사 규칙 하나. 화자 한 명이 특정 사건에서 조건이 전부 맞을 때 할 수 있는 말이다.
  *
  * `event` 는 자유 문자열이다. EVENT_ORDER 에 없는 값을 담아도 타입 에러는

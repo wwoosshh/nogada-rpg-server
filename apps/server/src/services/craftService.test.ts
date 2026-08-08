@@ -30,6 +30,8 @@ const data: GameData = {
   },
   placements: {},
   milestones: [],
+  speakers: {},
+  dialogue: [],
 }
 
 function player(overrides: Partial<PlayerState> = {}): PlayerState {

@@ -1,4 +1,4 @@
-import type { DialogueHistory } from './dialogue.js'
+import type { DialogueHistory, DialogueRule } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
 
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
@@ -140,6 +140,30 @@ export interface NodePlacement {
   y: number
 }
 
+/**
+ * 대화 상대 하나 — NPC 이거나 말하는 사물(간판·잠긴 문·기념비 등)이다.
+ *
+ * 사물을 NPC 와 같은 타입으로 두는 이유는 설계 문서 2장에 있다: 규칙도
+ * 대사창도 서버 경로도 같고, 다른 것은 `kind` 뿐이라 굳이 타입을 나누면
+ * 화자를 다루는 모든 코드가 두 갈래로 갈라진다.
+ *
+ * `mapId`·`x`·`y` 는 NodePlacement 와 같은 성격이다 — 지금 맵은 `world`
+ * 하나뿐이지만 처음부터 맵 id 를 넣어 둔다(설계 문서 9장). 맵이 하나뿐인
+ * 지금 넣는 비용은 필드 하나이고, 나중에 맵이 늘 때 넣으면 이미 나간
+ * speakers.csv 전체를 마이그레이션해야 한다.
+ */
+export interface SpeakerDef {
+  id: string
+  name: string
+  /** 'sign' 은 간판처럼 서서 안내만 하는 사물이다. 사람처럼 움직이지 않는다. */
+  kind: 'npc' | 'sign'
+  mapId: string
+  /** 타일 좌표. NodePlacement 의 x·y 와 같다. */
+  x: number
+  y: number
+  sprite: string
+}
+
 export interface GameData {
   items: Record<string, ItemDef>
   nodes: Record<string, NodeDef>
@@ -147,4 +171,14 @@ export interface GameData {
   placements: Record<string, NodePlacement>
   /** 정의 순서를 유지한다 — nextMilestone 의 동점 처리가 이 순서를 쓴다 */
   milestones: MilestoneDef[]
+  speakers: Record<string, SpeakerDef>
+  /**
+   * 모든 화자의 모든 대사 규칙이 화자 구분 없이 한 배열에 담긴다.
+   *
+   * speaker 별로 미리 나누지 않는 것은 selectDialogue 자체가 `speaker`
+   * 매개변수로 걸러 받도록 설계됐기 때문이다(dialogue.ts 참고) — 여기서
+   * 미리 나누면 "이미 걸러서 넘겨야 한다"는 관례가 하나 더 생기고, 그건
+   * 정확히 Task 1 리뷰가 지적하고 없앤 종류의 함정이다.
+   */
+  dialogue: DialogueRule[]
 }
