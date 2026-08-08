@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import type { Direction } from '@nogada/shared'
 import type { InputHub } from '../../input/InputState.js'
 import { TouchSource } from '../../input/TouchSource.js'
 
@@ -40,8 +41,21 @@ const PAD_RADIUS = PAD_DIAMETER / 2
  * 패드 중심에서 각 방향 버튼 중심까지. 인접한 두 버튼(예: 위·왼쪽)의 중심 거리는
  * 대각선이므로 `PAD_ARM_DIST * √2`(≈62.2) 다. 두 버튼(반지름 26 씩)이 겹치지
  * 않으려면 이 값이 52(반지름 합)보다 커야 하고, 여유 6px 정도를 더 두었다.
+ *
+ * 방향 버튼 네 개는 이제 순수 시각 요소다 — 히트 테스트는 아래 padSurface
+ * 하나가 대신 받는다(TouchSource.bindPad). 이 값은 그 네 원을 어디에
+ * 그릴지만 정한다.
  */
 const PAD_ARM_DIST = 44
+/**
+ * 패드 전체를 덮는 정사각 입력 표면의 한 변.
+ *
+ * 중심에서 가장 먼 방향 버튼의 바깥 가장자리(PAD_ARM_DIST + PAD_RADIUS = 70)
+ * 를 반변으로 삼는다 — 네 원이 차지하는 시각적 범위를 정확히 감싸는 정사각형이다.
+ * 대각선 모서리(예: 위와 오른쪽 버튼 사이 빈틈)를 눌러도 이 표면 안이므로
+ * 죽지 않고, TouchSource 가 거리로 가까운 축 하나를 고른다.
+ */
+const PAD_SURFACE_SIZE = (PAD_ARM_DIST + PAD_RADIUS) * 2
 
 const ACTION_DIAMETER = 72 // 가장 많이 누르는 버튼이므로 가장 크다.
 const ACTION_RADIUS = ACTION_DIAMETER / 2
@@ -69,7 +83,10 @@ interface ButtonVisual {
 }
 
 /**
- * 원 하나 + 글자 하나로 버튼 하나를 만든다.
+ * 원 하나 + 글자 하나로 버튼 하나를 만든다. 시각 요소만 만들 뿐 히트 테스트는
+ * 켜지 않는다 — 인터랙티브 여부와 히트 영역 모양은 호출한 쪽이 정한다
+ * (방향 패드는 padSurface 하나가 대신 받고, 오른쪽 버튼 묶음은 원형 히트
+ * 영역을 스스로 켠다).
  *
  * `setPressed` 가 자기 `fillColor` 를 클로저로 들고 있어서, 이 함수가 반환한
  * 객체를 어디로 넘기고 `this` 없이 호출해도(예: 콜백으로 그대로 전달) 안전하다.
@@ -84,7 +101,6 @@ function createButtonVisual(
   const shape = scene.add
     .circle(0, 0, radius, fillColor, BASE_ALPHA)
     .setStrokeStyle(2, PANEL_EDGE_COLOR, 0.9)
-    .setInteractive()
 
   const label = scene.add
     .text(0, 0, labelText, {
@@ -128,6 +144,8 @@ export class ControlScene extends Phaser.Scene {
   private dirDown!: ButtonVisual
   private dirLeft!: ButtonVisual
   private dirRight!: ButtonVisual
+  /** 방향 패드의 입력 표면. 시각 요소가 아니라 히트 테스트 전용 Zone 이다 — bind() 참고. */
+  private padSurface!: Phaser.GameObjects.Zone
   private btnAction!: ButtonVisual
   private btnCancel!: ButtonVisual
   private btnBag!: ButtonVisual
@@ -144,11 +162,23 @@ export class ControlScene extends Phaser.Scene {
     this.dirLeft = createButtonVisual(this, PAD_RADIUS, PANEL_COLOR, '◀', 18)
     this.dirRight = createButtonVisual(this, PAD_RADIUS, PANEL_COLOR, '▶', 18)
 
+    // 방향 버튼 네 개는 순수 시각 요소라 인터랙티브를 켜지 않는다. 대신 이
+    // Zone 하나가 패드 전체의 입력을 받는다 — 이유는 bindPad 의 문서 참고.
+    // Zone 은 그리지 않으므로 크기가 시각과 어긋나도 눈에 보이지 않는다;
+    // PAD_SURFACE_SIZE 가 네 원의 시각적 범위와 맞춰 두는 이유가 그것이다.
+    this.padSurface = this.add.zone(0, 0, PAD_SURFACE_SIZE, PAD_SURFACE_SIZE).setInteractive()
+
     // A 만 강조색이다 — 가장 많이 누르는 버튼이라는 걸 크기에 이어 색으로도 표시한다.
     this.btnAction = createButtonVisual(this, ACTION_RADIUS, ACCENT_COLOR, 'A', 26)
     this.btnCancel = createButtonVisual(this, CANCEL_RADIUS, PANEL_COLOR, 'B', 20)
     this.btnBag = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '가방', 11)
     this.btnCraft = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '제작', 11)
+    // 오른쪽 버튼 묶음은 각자 인터랙티브를 켠다 — 히트 영역 모양은 커밋
+    // 단위로 갈린 별도 문제라 여기서는 기존 기본값(경계 사각형)을 그대로 켠다.
+    this.btnAction.shape.setInteractive()
+    this.btnCancel.shape.setInteractive()
+    this.btnBag.shape.setInteractive()
+    this.btnCraft.shape.setInteractive()
 
     this.layout(this.scale.width, this.scale.height)
     this.scale.on('resize', this.handleResize, this)
@@ -184,15 +214,28 @@ export class ControlScene extends Phaser.Scene {
     const touchSource = new TouchSource(this, hub)
     this.touchSource = touchSource
 
-    touchSource.bindDirection(this.dirUp.shape, 'up', this.dirUp.setPressed)
-    touchSource.bindDirection(this.dirDown.shape, 'down', this.dirDown.setPressed)
-    touchSource.bindDirection(this.dirLeft.shape, 'left', this.dirLeft.setPressed)
-    touchSource.bindDirection(this.dirRight.shape, 'right', this.dirRight.setPressed)
+    touchSource.bindPad(this.padSurface, (dir) => this.setActiveDirection(dir))
 
     touchSource.bindButton(this.btnAction.shape, 'action', this.btnAction.setPressed)
     touchSource.bindButton(this.btnCancel.shape, 'cancel', this.btnCancel.setPressed)
     touchSource.bindButton(this.btnBag.shape, 'bag', this.btnBag.setPressed)
     touchSource.bindButton(this.btnCraft.shape, 'craft', this.btnCraft.setPressed)
+  }
+
+  /**
+   * 패드가 고른 방향에 맞는 화살표 하나만 강조한다.
+   *
+   * 버튼이 넷에서 표면 하나로 줄면서 방향별 pointerdown/up 이 사라져 개별
+   * setPressed 를 부를 지점이 없어졌다. 대신 TouchSource 가 방향이 바뀔
+   * 때마다(눌림·슬라이드·뗌) 이 콜백으로 알리고, 여기서 해당 화살표만 켜고
+   * 나머지는 끈다 — 눌림 표시라는 기존 시각 언어(알파 상승, setPressed)를
+   * 그대로 재사용한다. dir 이 null 이면(뗌, 또는 데드존) 넷 다 꺼진다.
+   */
+  private setActiveDirection(dir: Direction | null): void {
+    this.dirUp.setPressed(dir === 'up')
+    this.dirDown.setPressed(dir === 'down')
+    this.dirLeft.setPressed(dir === 'left')
+    this.dirRight.setPressed(dir === 'right')
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
@@ -213,6 +256,7 @@ export class ControlScene extends Phaser.Scene {
     this.dirDown.reposition(padCenterX, padCenterY + PAD_ARM_DIST)
     this.dirLeft.reposition(padCenterX - PAD_ARM_DIST, padCenterY)
     this.dirRight.reposition(padCenterX + PAD_ARM_DIST, padCenterY)
+    this.padSurface.setPosition(padCenterX, padCenterY)
 
     const actionCenterX = width - EDGE_MARGIN_SIDE - CLUSTER_RIGHTMOST_OFFSET
     const actionCenterY = height - EDGE_MARGIN_BOTTOM - ACTION_RADIUS

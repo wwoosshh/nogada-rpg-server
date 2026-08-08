@@ -3,6 +3,17 @@ import type { Direction } from '@nogada/shared'
 import type { InputButton, InputHub } from './InputState.js'
 
 /**
+ * 패드 중심에서 이 반경 안이면 방향을 고르지 않는다.
+ *
+ * 엄지가 패드 한가운데 가만히 놓인 것과 축 하나를 확실히 고른 것을 구별해야
+ * 한다 — 안 그러면 손가락을 떼기 전 마지막 미세한 떨림이 엉뚱한 방향으로
+ * 캐릭터를 한 걸음 걷게 만든다. 값은 방향 버튼 반지름(26px)의 절반에도
+ * 못 미치게 작게 잡았다 — 죽은 영역이 방향 판정 자체를 눈에 띄게 좁히면
+ * 안 되기 때문이다.
+ */
+const PAD_DEAD_ZONE_RADIUS = 12
+
+/**
  * 버튼 하나의 등록 상태: 지금 이 버튼을 쥔 포인터 id(안 쥐었으면 null)와, 놓을 때 할 일.
  *
  * heldBy 를 갖고 있는 이유는 pointerupoutside 핸들러가 "나간 그 포인터가 이 버튼도
@@ -21,7 +32,7 @@ interface Binding {
  * 매 프레임 상태를 다시 읽지만(update()), 터치는 포인터 이벤트 자체가 신호다 —
  * "이번 프레임에 눌렸는가" 가 아니라 "지금 이 순간 눌렸다/떼졌다" 이기 때문이다.
  * 그래서 update() 가 없다. ControlScene 이 만든 도형에 이벤트를 붙이는
- * bindDirection·bindButton 만 있고, hub 에는 이벤트 콜백에서 바로 쓴다.
+ * bindPad·bindButton 만 있고, hub 에는 이벤트 콜백에서 바로 쓴다.
  *
  * 손가락이 버튼과의 접촉을 잃는 경로를 전부 여기서 막는다:
  *  - 버튼 위에서 정상적으로 뗌 → pointerup.
@@ -66,30 +77,64 @@ export class TouchSource {
   }
 
   /**
-   * 방향 패드 버튼 하나를 연결한다.
+   * 방향 패드를 버튼 네 개가 아니라 표면 하나로 연결한다.
    *
-   * 뗄 때 무조건 null 을 부르지 않는다. 다른 손가락이 이미 다른 방향을 눌러
-   * hub 의 방향을 가져간 뒤라면, 내가 뗀다고 그 방향을 끊으면 안 된다.
-   * 그래서 "지금 hub 의 방향이 여전히 나인가" 를 확인하고서 끊는다.
+   * 설계 문서(§7)는 "누른 지점에서 가장 가까운 축 방향 하나를 고른다"고
+   * 못박는다 — 패드는 하나의 면이지 버튼 네 개가 아니다. 버튼 네 개로
+   * 나누면 두 가지가 깨진다.
+   *
+   * 1. 어느 버튼의 히트 영역도 닿지 않는 패드 정중앙의 사각 사각지대가 생긴다
+   *    (버튼은 원인데 각자 반지름만큼 중심에서 떨어져 있으니까).
+   * 2. Phaser 는 TOUCH_MOVE 에서 processMoveEvents·processOverOutEvents 만
+   *    돌리고 processDownEvents 는 다시 부르지 않는다(InputPlugin.update() 의
+   *    TOUCH_MOVE 분기). 그래서 눌린 채로 ◀ 에서 ▲ 로 슬라이드하면 ◀ 은
+   *    pointerout 으로 풀리고 ▲ 는 pointerover 만 받을 뿐 pointerdown 을
+   *    못 받아 영영 눌리지 않는다.
+   *
+   * 표면을 하나로 합치면 두 문제 다 사라진다 — 표면 전체가 한 히트 영역이라
+   * 사각지대가 없고, 슬라이드는 그 표면 위의 pointermove 이므로 매번 다시
+   * 축을 계산할 수 있다.
    */
-  bindDirection(
-    shape: Phaser.GameObjects.GameObject,
-    dir: Direction,
-    onPressChange?: (pressed: boolean) => void,
-  ): void {
-    const setVisual = onPressChange ?? (() => {})
+  bindPad(shape: Phaser.GameObjects.Zone, onDirectionChange: (dir: Direction | null) => void): void {
     const binding: Binding = { heldBy: null, release: () => {} }
 
-    shape.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      binding.heldBy = pointer.id
+    const resolve = (pointer: Phaser.Input.Pointer): Direction | null => {
+      const dx = pointer.x - shape.x
+      const dy = pointer.y - shape.y
+      if (Math.hypot(dx, dy) < PAD_DEAD_ZONE_RADIUS) return null
+      // 동률(|dx| === |dy|, 정확히 대각선)이면 세로를 고른다. '>' 비교라
+      // 가로가 더 클 때만 가로가 이기고, 같으면 자연히 세로 분기로
+      // 떨어진다 — 프레임마다 다른 쪽으로 흔들리지 않으려면 이 갈림이
+      // 결정적이어야 한다.
+      if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left'
+      return dy > 0 ? 'down' : 'up'
+    }
+
+    const apply = (pointer: Phaser.Input.Pointer): void => {
+      const dir = resolve(pointer)
       this.hub.setDir(dir)
-      setVisual(true)
+      onDirectionChange(dir)
+    }
+
+    shape.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (binding.heldBy !== null) return // 이미 다른 손가락이 패드를 쥐고 있다
+      binding.heldBy = pointer.id
+      apply(pointer)
+    })
+
+    // 패드 표면 위에서 손가락이 움직일 때마다 다시 판정한다 — 슬라이드로
+    // 방향을 바꾸는 조작이 여기서 나온다. heldBy 로 내가 쥔 포인터인지
+    // 확인하는 이유는, 눌리지 않은 채 지나가는 포인터(데스크톱 마우스 호버 등)
+    // 까지 방향으로 잡으면 안 되기 때문이다.
+    shape.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (binding.heldBy !== pointer.id) return
+      apply(pointer)
     })
 
     binding.release = (): void => {
       binding.heldBy = null
-      setVisual(false)
-      if (this.hub.state.dir === dir) this.hub.setDir(null)
+      this.hub.setDir(null)
+      onDirectionChange(null)
     }
     shape.on('pointerup', binding.release)
     shape.on('pointerout', binding.release)
