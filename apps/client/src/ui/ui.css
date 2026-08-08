@@ -32,12 +32,32 @@
 }
 
 .topbar__clock {
+  flex: none;
   color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 다음 이정표 한 줄. 시계와 설정 버튼(둘 다 flex: none) 사이의 남는 공간을
+ * 전부 가져가되, 그 공간보다 문구가 길어지면 줄바꿈이나 넘침 대신 말줄임표로
+ * 줄어든다 — 상단 바 높이를 그대로 지키면서 좁은 가로 폭에서도 시계와 설정
+ * 버튼을 밀어내지 않는 유일한 조건이 "이 칸만 줄어든다" 이기 때문이다.
+ * min-width: 0 이 없으면 flex 아이템은 내용 크기 밑으로 줄어들지 않아
+ * overflow/ellipsis 가 아예 발동하지 않는다.
+ */
+.topbar__milestone {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--c-parchment-dim);
   font-variant-numeric: tabular-nums;
 }
 
 /* 설정 버튼 자리. 지금은 비어 있지만 폭을 잡아 두어 시계가 가운데로 밀리지 않게 한다. */
 .topbar__actions {
+  flex: none;
   min-width: 32px;
   min-height: 24px;
 }
