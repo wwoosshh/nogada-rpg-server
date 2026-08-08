@@ -28,7 +28,7 @@ const PANEL_ALPHA = 0.94
 /** 상단 바를 침범하지 않을 위쪽 여백. */
 const TOP_MARGIN = 40
 /**
- * 화면 맨 아래에서 패널이 침범하지 않는 높이.
+ * 화면 맨 아래에서 bag·craft 안내 상자가 침범하지 않는 높이.
  *
  * ControlScene 의 가방·제작 토글 줄 윗변은 대략 `height - 192` 다
  * (EDGE_MARGIN_BOTTOM + 버튼 반지름들의 합, ControlScene.ts 의 layout() 참고).
@@ -36,8 +36,36 @@ const TOP_MARGIN = 40
  * 안 된다. 정확한 값을 다시 계산해 맞추는 대신 여유를 더한 근사값을 쓴다 —
  * 실기 확인 전까지는 컨트롤러 치수 자체가 조정 대상이라(설계 문서 §10), 두
  * 파일이 정확히 같은 상수를 공유하게 만드는 비용이 지금은 이득보다 크다.
+ *
+ * 안내 상자는 두 줄짜리 고정 텍스트라 이 예산을 실제로 쓴 적이 없다
+ * (MAX_HEIGHT=170 에서 이미 잘린다) — 그래서 아무도 "화면 세로의 절반"이라는
+ * 크기를 신경 쓰지 않았다. 스크롤되는 상세 메뉴는 다르다. 그 트레이드가
+ * MENU_BOTTOM_RESERVE 를 따로 둔 이유다.
  */
 const BOTTOM_RESERVE = 196
+/**
+ * 상세 메뉴 전용 아래 여백 — bag·craft 와 달리 훨씬 작다.
+ *
+ * BOTTOM_RESERVE 를 그대로 썼을 때 812×375 가로 화면에서 스크롤 내용 높이가
+ * 97px 남짓이었다 — 이정표 27개(두 줄씩, 약 760px)를 보려면 한 화면에 서너
+ * 줄만 보이고 나머지는 전부 스크롤이었다. bag·craft 상자는 절대 안 쓰는
+ * 공간을 스크롤 목록에서는 실제로 쓴다.
+ *
+ * 그래도 화면 물리적 맨 아래는 피한다 — ControlScene.EDGE_MARGIN_BOTTOM 과
+ * 같은 값, 같은 이유다(안드로이드 제스처 내비게이션 영역과 겹치면 스와이프를
+ * OS 가 먼저 가로챈다). 이 여백만으로는 가방·제작 토글 버튼(height - 192)을
+ * 다 피하지 못해 메뉴 내용과 그 버튼이 겹친다 — 의도한 트레이드다. PanelScene
+ * 이 WorldScene 과 ControlScene 사이에 있는 이유(클래스 문서)가 정확히 이
+ * 상황을 위한 것이다: Control 의 버튼은 항상 이 패널보다 위에 그려지고 자기
+ * 원형 히트 영역을 스스로 갖고 있어(setCircularHitArea), 시각적으로 겹쳐도
+ * 버튼은 계속 눌린다 — 그 버튼들이 패널이 열려 있는 동안에도 눌려야 한다는
+ * 요구사항은 BOTTOM_RESERVE 주석과 같다.
+ *
+ * 812×375 가로 화면에서 실제로 확인했다: 목록을 이 겹치는 영역까지 스크롤한
+ * 채로 가방·제작·취소(B) 버튼을 눌러도 정확히 그 패널로 전환된다 — 겹침이
+ * 히트 테스트를 방해하지 않는다.
+ */
+const MENU_BOTTOM_RESERVE = 32
 /** 극단적으로 낮은 화면에서도 두 줄 글자가 안 뭉개지는 최소 높이. */
 const MIN_HEIGHT = 64
 
@@ -47,7 +75,8 @@ const MAX_WIDTH = 380
 const MAX_HEIGHT = 170
 const TEXT_PADDING = 16
 
-// 상세 메뉴 — 안이 스크롤되므로(ScrollList) 세로 안전 영역을 꽉 채운다.
+// 상세 메뉴 — 안이 스크롤되므로(ScrollList) 자기 몫의 세로 안전 영역을 꽉
+// 채운다(MENU_BOTTOM_RESERVE — bag·craft 의 안전 영역보다 아래로 더 내려간다).
 // 가로만 이 폭 안에서 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
 const MENU_MAX_WIDTH = 720
 const MENU_SIDE_MARGIN = 16
@@ -376,17 +405,18 @@ export class PanelScene extends Phaser.Scene {
   /**
    * 패널 상자들을 화면 크기에 맞게 다시 잡는다.
    *
-   * 위로는 상단 바, 아래로는 컨트롤러 버튼 묶음을 침범하지 않는 안전 영역을
-   * 계산하고 그 안에 상자를 맞춘다 — 가로 화면 전용이라 세로 폭이 늘 좁으므로,
-   * 화면이 작아져도 두 영역과 겹치지 않는 게 최우선이다. bag·craft 와 menu
-   * 둘 다 같은 안전 영역을 쓴다.
+   * 위로는 상단 바를 침범하지 않는 안전 영역을 계산하고 그 안에 상자를
+   * 맞춘다 — 가로 화면 전용이라 세로 폭이 늘 좁으므로, 화면이 작아져도 그
+   * 영역과 겹치지 않는 게 최우선이다. 아래쪽 여백은 bag·craft 와 menu 가
+   * 다르다(BOTTOM_RESERVE·MENU_BOTTOM_RESERVE 각 주석 참고) — 그래서 안전
+   * 영역도 둘을 따로 계산한다.
    */
   private layout(width: number, height: number): void {
-    const safeBottom = Math.max(TOP_MARGIN + MIN_HEIGHT, height - BOTTOM_RESERVE)
-    const safeHeight = safeBottom - TOP_MARGIN
+    const simpleSafeBottom = Math.max(TOP_MARGIN + MIN_HEIGHT, height - BOTTOM_RESERVE)
+    const menuSafeBottom = Math.max(TOP_MARGIN + MIN_HEIGHT, height - MENU_BOTTOM_RESERVE)
 
-    this.layoutSimplePanel(width, safeHeight)
-    this.layoutMenu(width, safeHeight)
+    this.layoutSimplePanel(width, simpleSafeBottom - TOP_MARGIN)
+    this.layoutMenu(width, menuSafeBottom - TOP_MARGIN)
   }
 
   private layoutSimplePanel(width: number, safeHeight: number): void {
@@ -404,8 +434,9 @@ export class PanelScene extends Phaser.Scene {
 
   /**
    * 상세 메뉴는 안이 스크롤되므로(ScrollList) bag·craft 상자처럼 작게 가둘
-   * 이유가 없다 — 같은 세로 안전 영역을 꽉 채운다. 가로만 MENU_MAX_WIDTH 로
-   * 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
+   * 이유가 없다 — 자기 몫의 세로 안전 영역(layout() 이 MENU_BOTTOM_RESERVE 로
+   * 계산한, bag·craft 보다 더 아래로 내려가는 영역)을 꽉 채운다. 가로만
+   * MENU_MAX_WIDTH 로 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
    */
   private layoutMenu(width: number, safeHeight: number): void {
     const menuWidth = Math.min(MENU_MAX_WIDTH, Math.max(240, width - MENU_SIDE_MARGIN * 2))

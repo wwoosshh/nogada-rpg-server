@@ -64,10 +64,10 @@ export class ScrollList {
       .zone(0, 0, 0, 0)
       .setOrigin(0, 0)
       .setInteractive(new Phaser.Geom.Rectangle(0, 0, 0, 0), Phaser.Geom.Rectangle.Contains)
+    // pointerdown 만 hitZone 에 붙인다 — 드래그는 그 좁은 사각형 안에서
+    // 시작해야 하지만, 일단 시작하면 그 밖까지 이어져야 한다. move/up 을
+    // 씬 전체에 붙이는 이유는 handlePointerDown 문서 참고.
     this.hitZone.on('pointerdown', this.handlePointerDown, this)
-    this.hitZone.on('pointermove', this.handlePointerMove, this)
-    this.hitZone.on('pointerup', this.handlePointerUp, this)
-    this.hitZone.on('pointerout', this.handlePointerUp, this)
     // 휠은 데스크톱 개발 편의용이다 — 실기는 터치뿐이라 드래그가 진짜 경로다.
     scene.input.on('wheel', this.handleWheel, this)
   }
@@ -135,27 +135,26 @@ export class ScrollList {
    * 씬이 통째로 사라질 때까지) 그 오브젝트들을 붙잡아 둘 이유가 없다 —
    * PanelScene.render() 가 메뉴를 닫을 때 이것을 부른다.
    *
-   * 드래그 추적 상태도 함께 지운다. 그렇지 않으면: 리스트가 보이는 동안
-   * 드래그가 시작되고(dragPointerId 설정) 손을 떼기 전에 메뉴가 닫히면,
-   * 그 사이의 pointerup 은 handlePointerUp 의 visible 가드에 막혀 무시되고
-   * dragPointerId 가 지워지지 않은 채 남는다. 마우스는 항상 id 1 이므로,
-   * 다음에 메뉴를 열었을 때 버튼을 누르지 않고 그 위를 지나가기만 해도
-   * (hover 로 오는 pointermove 도 같은 id 1) 남아있던 값과 우연히 일치해
-   * 리스트가 저 혼자 스크롤될 수 있다 — 그 경로를 여기서 끊는다.
+   * 드래그 추적 상태도 함께 지운다(endDrag()). 그렇지 않으면: 리스트가 보이는
+   * 동안 드래그가 시작되고(scene.input 에 move/up 리스너가 붙고) 손을 떼기
+   * 전에 메뉴가 닫히면, 그 사이의 pointerup 은 handlePointerUp 의 visible
+   * 가드에 막혀 무시되고 dragPointerId 도 scene.input 의 리스너도 지워지지
+   * 않은 채 남는다. 마우스는 항상 id 1 이므로, 다음에 메뉴를 열었을 때
+   * 버튼을 누르지 않고 그 위를 지나가기만 해도(hover 로 오는 pointermove 도
+   * 같은 id 1) 남아있던 값과 우연히 일치해 리스트가 저 혼자 스크롤될 수
+   * 있다 — 게다가 리스너가 중복으로 남아 있으면 다음 드래그의 pointermove
+   * 가 두 번 계산된다. endDrag() 가 이 경로를 전부 끊는다.
    */
   clear(): void {
     for (const row of this.rows) row.destroy()
     this.rows = []
     this.contentHeight = 0
     this.scrollY = 0
-    this.dragPointerId = null
+    this.endDrag()
   }
 
   destroy(): void {
     this.hitZone.off('pointerdown', this.handlePointerDown, this)
-    this.hitZone.off('pointermove', this.handlePointerMove, this)
-    this.hitZone.off('pointerup', this.handlePointerUp, this)
-    this.hitZone.off('pointerout', this.handlePointerUp, this)
     this.scene.input.off('wheel', this.handleWheel, this)
     this.clear()
     this.container.destroy()
@@ -163,17 +162,31 @@ export class ScrollList {
     this.hitZone.destroy()
   }
 
-  // 네 핸들러(down/move/up) 모두 컨테이너가 안 보이면 아무 일도 하지 않는다.
+  // 세 핸들러(down/move/up) 모두 컨테이너가 안 보이면 아무 일도 하지 않는다.
   // hitZone 자체는 container.visible 과 무관하게 항상 그 자리에서 입력을
   // 받는다(별도 오브젝트라 setVisible(false) 의 영향을 안 받는다) — 그래서
   // 이 가드가 없으면 메뉴가 닫힌 뒤에도 숨은 리스트의 스크롤 위치가 계속
-  // 바뀔 수 있다(clear() 의 dragPointerId 정리가 그중 드래그 상태 쪽을
-  // 맡고, 이 가드들은 그 사이에 일어나는 계산 자체를 막는다).
+  // 바뀔 수 있다(clear() 의 endDrag() 가 리스너를 실제로 떼어내는 쪽을
+  // 맡고, 이 가드들은 떼어내기 전 그 사이에 일어나는 계산 자체를 막는
+  // 두 번째 방어선이다).
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (!this.container.visible) return
     this.dragPointerId = pointer.id
     this.dragStartY = pointer.y
     this.dragStartScroll = this.scrollY
+    // move/up 은 hitZone 이 아니라 씬 전체(scene.input)에 붙인다. hitZone 은
+    // 뷰포트만큼만 크고(가로 화면이라 세로로 좁다 — PanelScene 의
+    // MENU_BOTTOM_RESERVE 주석 참고) 자연스러운 스와이프는 손가락이 시작
+    // 지점보다 한참 아래로 내려가 그 좁은 띠를 쉽게 벗어난다. 예전에는
+    // pointerout 이 그 순간 드래그를 끊어 긴 스와이프가 여러 번의 짧은
+    // 드래그로 조각났다 — 지금은 pointerout 자체를 쓰지 않는다.
+    // off 를 먼저 부르는 것은 이미 붙어 있어도 중복 등록하지 않기 위해서다
+    // (예: 드래그 도중 다른 손가락의 pointerdown 이 또 오는 경우) — 안
+    // 그러면 다음 pointermove 가 두 번 계산된다.
+    this.scene.input.off('pointermove', this.handlePointerMove, this)
+    this.scene.input.off('pointerup', this.handlePointerUp, this)
+    this.scene.input.on('pointermove', this.handlePointerMove, this)
+    this.scene.input.on('pointerup', this.handlePointerUp, this)
   }
 
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
@@ -191,7 +204,14 @@ export class ScrollList {
   private handlePointerUp(pointer: Phaser.Input.Pointer): void {
     if (!this.container.visible) return
     if (this.dragPointerId !== pointer.id) return
+    this.endDrag()
+  }
+
+  /** 드래그를 끝낸다 — id 를 지우고 scene.input 에 붙였던 move/up 리스너를 뗀다. */
+  private endDrag(): void {
     this.dragPointerId = null
+    this.scene.input.off('pointermove', this.handlePointerMove, this)
+    this.scene.input.off('pointerup', this.handlePointerUp, this)
   }
 
   private handleWheel(
