@@ -122,6 +122,28 @@ describe('POST /api/gather', () => {
     await app.close()
   })
 
+  it('응답에 achieved 배열이 실린다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { instanceId: 'copper_vein-1' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { achieved: unknown }
+    expect(Array.isArray(body.achieved)).toBe(true)
+
+    // mineral 숙련도의 가장 낮은 이정표(mineral_1000)도 1000 인데 copper_vein 채집
+    // 한 번은 숙련도를 1~2 만 올리므로, 신규 플레이어는 이 한 번으로 어떤 문턱도
+    // 넘지 못한다 — 빈 배열이 기대값이다. 그래도 이 필드가 서비스 계층을 넘어 HTTP
+    // 응답까지 실제로 실려 오는지는 이 단정 없이는 아무도 확인하지 못했다.
+    expect(body.achieved).toEqual([])
+
+    await app.close()
+  })
+
   it('간격 안에 재요청하면 400 too_fast 를 반환한다', async () => {
     const app = buildTestApp()
 
