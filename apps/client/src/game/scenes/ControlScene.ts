@@ -127,6 +127,25 @@ function createButtonVisual(
 }
 
 /**
+ * 원으로 그린 버튼의 히트 영역을 실제로 원으로 켠다.
+ *
+ * `shape.setInteractive()` 를 인자 없이 부르면 Phaser 는 `width`/`height` 로
+ * 사각 히트 영역을 만든다(InputPlugin.setHitAreaFromTexture — 텍스처가 없는
+ * 도형은 `new Rectangle(0, 0, width, height)`). `Arc` 의 `width`/`height` 는
+ * 지름이므로, 그 사각형은 실제로 그려진 원보다 넓다 — 특히 네 모서리가
+ * 화면에는 없는 히트 영역이 된다. 이 파일의 반지름 합·중심 거리 주석들이
+ * 실제로 참이 되려면 히트 영역도 원이어야 한다.
+ *
+ * `radius, radius` 를 중심으로 준 것은 우연이 아니다: `Arc` 의 원점은
+ * (0.5, 0.5) 이므로 로컬 좌표계에서 도형의 좌상단은 (0, 0), 중심은
+ * (radius, radius) 다 — 사각 히트 영역이 `Rectangle(0, 0, width, height)` 를
+ * 쓰는 것과 같은 좌표계다.
+ */
+function setCircularHitArea(shape: Phaser.GameObjects.Arc, radius: number): void {
+  shape.setInteractive(new Phaser.Geom.Circle(radius, radius, radius), Phaser.Geom.Circle.Contains)
+}
+
+/**
  * 화면 위에 그리는 가상 컨트롤러. 왼쪽 아래에 4방향 패드, 오른쪽 아래에
  * A(행동)·B(취소)·가방·제작 버튼 묶음을 둔다.
  *
@@ -173,12 +192,12 @@ export class ControlScene extends Phaser.Scene {
     this.btnCancel = createButtonVisual(this, CANCEL_RADIUS, PANEL_COLOR, 'B', 20)
     this.btnBag = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '가방', 11)
     this.btnCraft = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '제작', 11)
-    // 오른쪽 버튼 묶음은 각자 인터랙티브를 켠다 — 히트 영역 모양은 커밋
-    // 단위로 갈린 별도 문제라 여기서는 기존 기본값(경계 사각형)을 그대로 켠다.
-    this.btnAction.shape.setInteractive()
-    this.btnCancel.shape.setInteractive()
-    this.btnBag.shape.setInteractive()
-    this.btnCraft.shape.setInteractive()
+    // 오른쪽 버튼 묶음은 원형 히트 영역을 스스로 켠다 — 이유는
+    // setCircularHitArea 의 문서 참고.
+    setCircularHitArea(this.btnAction.shape, ACTION_RADIUS)
+    setCircularHitArea(this.btnCancel.shape, CANCEL_RADIUS)
+    setCircularHitArea(this.btnBag.shape, TOGGLE_RADIUS)
+    setCircularHitArea(this.btnCraft.shape, TOGGLE_RADIUS)
 
     this.layout(this.scale.width, this.scale.height)
     this.scale.on('resize', this.handleResize, this)
