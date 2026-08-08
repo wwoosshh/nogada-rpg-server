@@ -5,10 +5,32 @@ export interface ScrollListLine {
   /** 이미 hex 문자열이다(예: '#e8dcc0') — Text 스타일이 그대로 받는 형식과 맞춘다. */
   color: string
   fontSize: number
+  /**
+   * 이 줄이 속한 누름 그룹. 연속된 줄이 같은 groupId 를 가지면 그 줄들 전체가
+   * 하나의 누를 수 있는 "행"이 된다 — 제작 패널의 레시피 한 칸이 이름·재료·
+   * 성공률 여러 줄로 이루어지면서도 전체가 하나의 대상이어야 해서 생겼다.
+   * null 이거나 생략하면(숙련도·이정표·설정 탭이 그렇다) 이 줄은 누를 수
+   * 없다 — 그 세 탭은 순수 표시 전용이라 지금도 아무것도 안 바뀐다.
+   */
+  groupId?: string | null
 }
 
 /** 줄 사이 세로 여백. 폰트 크기와 무관하게 고정값을 쓴다 — 줄마다 폰트 크기가 달라도 리듬이 일정해야 읽기 편하다. */
 const ROW_GAP = 3
+
+/**
+ * 손가락이 이 거리(px)를 넘게 움직이면 "그룹을 쥐고 있다"를 놓고 순수
+ * 스크롤로 확정한다. TouchSource 의 PAD_DEAD_ZONE_RADIUS(12) 와 같은 성격의
+ * 여유값이지만 가르는 것은 다르다 — 저건 "가만히 있다 vs 방향을 골랐다"를
+ * 가르고, 이건 "레시피를 누르고 있다 vs 목록을 스크롤하기 시작했다"를 가른다.
+ */
+const PRESS_CANCEL_DISTANCE = 10
+
+interface PressGroup {
+  id: string
+  top: number
+  bottom: number
+}
 
 /**
  * 세로로 쌓이는 텍스트 줄을 마스크 + 드래그로 스크롤한다.
@@ -30,6 +52,8 @@ export class ScrollList {
   private readonly maskShape: Phaser.GameObjects.Graphics
   private readonly hitZone: Phaser.GameObjects.Zone
   private rows: Phaser.GameObjects.Text[] = []
+  /** buildRows() 가 채운다 — groupId 가 있는 줄들의 세로 범위. 화면 Y 로부터 "어느 그룹을 눌렀는가"를 답하는 데 쓴다(groupAt). */
+  private groups: PressGroup[] = []
 
   private viewX = 0
   private viewY = 0
@@ -42,6 +66,11 @@ export class ScrollList {
   private dragPointerId: number | null = null
   private dragStartY = 0
   private dragStartScroll = 0
+
+  /** 지금 손가락이 쥐고 있는 그룹. 드래그 임계값을 넘으면(스크롤로 확정되면) null 로 풀린다. */
+  private heldGroupId: string | null = null
+  /** 이번 눌림에서 "새로" 눌린 그룹 — 한 번 읽으면(consumeTap) 소비된다. InputState 의 actionPressed 와 같은 에지 신호다. */
+  private tappedGroupId: string | null = null
 
   constructor(private readonly scene: Phaser.Scene) {
     this.container = scene.add.container(0, 0)
@@ -94,17 +123,17 @@ export class ScrollList {
   }
 
   /**
-   * 내용을 통째로 다시 그리고 스크롤을 맨 위로 되돌린다.
-   *
-   * 탭을 바꾸거나 메뉴를 새로 열 때만 부른다 — 메뉴가 열려 있는 동안은
-   * hub.setWorldInputLocked() 가 이동·행동을 막아 플레이어 상태가 바뀔 수
-   * 없으므로, 매 프레임 다시 그릴 이유가 없다(PanelScene.renderMenu 참고).
+   * 줄(Text 오브젝트)과 groups 를 통째로 다시 만든다. setLines·updateLines 가
+   * 공유하는 내부 구현이다 — 둘의 차이는 이 함수가 끝난 뒤 스크롤·눌림
+   * 상태를 되돌리는지 여부뿐이다(각 문서 참고).
    */
-  setLines(lines: readonly ScrollListLine[]): void {
+  private buildRows(lines: readonly ScrollListLine[]): void {
     for (const row of this.rows) row.destroy()
     this.rows = []
+    this.groups = []
 
     let y = 0
+    let openGroup: PressGroup | null = null
     const wrapWidth = Math.max(0, this.viewW - 8)
     for (const line of lines) {
       const text = this.scene.add
@@ -116,13 +145,82 @@ export class ScrollList {
         .setOrigin(0, 0)
       this.container.add(text)
       this.rows.push(text)
-      y += text.height + ROW_GAP
+
+      const top = y
+      const bottom = y + text.height
+      const groupId = line.groupId ?? null
+      if (groupId === null) {
+        openGroup = null
+      } else if (openGroup && openGroup.id === groupId) {
+        // 바로 앞 줄과 같은 그룹이 이어진다 — 새 그룹을 만들지 않고 범위만 늘린다.
+        openGroup.bottom = bottom
+      } else {
+        openGroup = { id: groupId, top, bottom }
+        this.groups.push(openGroup)
+      }
+
+      y = bottom + ROW_GAP
     }
 
     this.contentHeight = y
+  }
+
+  /**
+   * 내용을 통째로 다시 그리고 스크롤·눌림 상태를 전부 중립으로 되돌린다.
+   *
+   * 탭을 바꾸거나 패널을 새로 열 때만 부른다 — "새로 연다"는 선언이라 전부
+   * 되돌린다. 메뉴 탭(숙련도·이정표·설정)이 열려 있는 동안은
+   * hub.setWorldInputLocked() 가 이동·행동을 막아 플레이어 상태가 바뀔 수
+   * 없으므로, 매 프레임 다시 그릴 이유가 없다(PanelScene.rebuildMenuContent
+   * 참고). 제작 패널은 다르다 — 그 안에서 제작이라는 행동 자체가 일어나므로
+   * 결과가 올 때마다 다시 그려야 하고, 그때는 이 함수가 아니라 updateLines() 를
+   * 쓴다(그 문서 참고).
+   */
+  setLines(lines: readonly ScrollListLine[]): void {
+    this.buildRows(lines)
     this.scrollY = 0
+    this.heldGroupId = null
+    this.tappedGroupId = null
     this.clampScroll()
     this.applyScroll()
+  }
+
+  /**
+   * 내용을 다시 그리되 스크롤 위치와 눌림 상태는 그대로 둔다.
+   *
+   * setLines() 와 짝이지만 쓰임이 다르다: 제작 패널은 결과가 올 때마다(성공·
+   * 실패 모두) 재료 수·성공률 숫자가 바뀌어 다시 그려야 하는데, 그렇다고
+   * 반복 제작 중인 손가락을 스크롤 맨 위로 튕겨내거나(setLines 는 scrollY 를
+   * 0 으로 되돌린다) 쥐고 있던 그룹을 놓아버리면(heldGroupId 가 풀리면 반복이
+   * 뚝 끊긴다) "누르고 있으면 계속된다"는 계약이 깨진다. clampScroll() 만
+   * 다시 부르는 이유는 내용 높이가 줄어들어(레시피가 화면 밖으로 밀려날 만큼)
+   * 지금 scrollY 가 더는 유효하지 않을 수 있어서다.
+   */
+  updateLines(lines: readonly ScrollListLine[]): void {
+    this.buildRows(lines)
+    this.clampScroll()
+    this.applyScroll()
+  }
+
+  /** 화면 Y 좌표(포인터 좌표계)가 속한 그룹의 id. 그룹이 없는 자리(순수 표시 줄, 또는 내용 밖)면 null. */
+  private groupAt(screenY: number): string | null {
+    const contentY = screenY - this.viewY + this.scrollY
+    for (const g of this.groups) {
+      if (contentY >= g.top && contentY < g.bottom) return g.id
+    }
+    return null
+  }
+
+  /** 이번 프레임에 새로 눌린 그룹. 한 번 읽으면 소비된다 — 다음 읽음부터는 새로 눌리기 전까지 null. */
+  consumeTap(): string | null {
+    const g = this.tappedGroupId
+    this.tappedGroupId = null
+    return g
+  }
+
+  /** 지금 손가락이 쥐고 있는 그룹(스크롤로 확정되지 않은 채 눌려 있는 동안만). */
+  heldGroup(): string | null {
+    return this.heldGroupId
   }
 
   setVisible(visible: boolean): void {
@@ -148,8 +246,10 @@ export class ScrollList {
   clear(): void {
     for (const row of this.rows) row.destroy()
     this.rows = []
+    this.groups = []
     this.contentHeight = 0
     this.scrollY = 0
+    this.tappedGroupId = null
     this.endDrag()
   }
 
@@ -174,6 +274,17 @@ export class ScrollList {
     this.dragPointerId = pointer.id
     this.dragStartY = pointer.y
     this.dragStartScroll = this.scrollY
+
+    // 누른 자리에 그룹(예: 레시피 한 칸)이 있으면 "쥐었다"와 "새로 눌렸다"를
+    // 동시에 켠다. 이 시점에는 아직 드래그인지 탭인지 모르지만, 탭은 눌린
+    // 순간 바로 한 번 반응해야 자연스럽고(놓을 때까지 기다리면 반응이 늦다)
+    // 스크롤로 확정되면 handlePointerMove 가 heldGroupId 만 따로 풀어준다 —
+    // tappedGroupId 는 건드리지 않으므로 짧은 탭이 곧바로 스크롤 제스처로
+    // 이어져도(예: 탭 직후 약간의 흔들림) 최초 한 번의 시도는 살아남는다.
+    const group = this.groupAt(pointer.y)
+    this.heldGroupId = group
+    this.tappedGroupId = group
+
     // move/up 은 hitZone 이 아니라 씬 전체(scene.input)에 붙인다. hitZone 은
     // 뷰포트만큼만 크고(가로 화면이라 세로로 좁다 — PanelScene 의
     // MENU_BOTTOM_RESERVE 주석 참고) 자연스러운 스와이프는 손가락이 시작
@@ -192,10 +303,20 @@ export class ScrollList {
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
     if (!this.container.visible) return
     if (this.dragPointerId !== pointer.id) return
+
+    const dy = pointer.y - this.dragStartY
+
+    // 스크롤로 확정되면(임계값을 넘는 이동) 쥐고 있던 그룹을 놓는다 — 한
+    // 손가락 제스처가 "레시피를 누르고 있다"와 "목록을 스크롤한다"를 동시에
+    // 뜻할 수는 없으므로 하나만 살아남아야 한다. 이미 풀렸으면(null) 매
+    // 프레임 다시 계산할 것도 없다.
+    if (this.heldGroupId !== null && Math.abs(dy) > PRESS_CANCEL_DISTANCE) {
+      this.heldGroupId = null
+    }
+
     // 손가락이 위로(화면 y 감소) 갈수록 목록은 아래 내용을 보여줘야
     // 하므로(스크롤 값 증가) 부호를 뒤집는다 — 흔한 "내용을 손가락으로
     // 직접 미는" 스크롤 방향이다.
-    const dy = pointer.y - this.dragStartY
     this.scrollY = this.dragStartScroll - dy
     this.clampScroll()
     this.applyScroll()
@@ -207,9 +328,17 @@ export class ScrollList {
     this.endDrag()
   }
 
-  /** 드래그를 끝낸다 — id 를 지우고 scene.input 에 붙였던 move/up 리스너를 뗀다. */
+  /**
+   * 드래그를 끝낸다 — id 를 지우고 scene.input 에 붙였던 move/up 리스너를 뗀다.
+   *
+   * heldGroupId 도 여기서 놓는다: 손가락을 떼면(정상적인 pointerup) 반복이
+   * 멈춰야 한다. tappedGroupId 는 건드리지 않는다 — 그건 "이번 눌림에서 한
+   * 번은 시도했는가"를 PanelScene 이 다음 폴링에서 소비할 때까지 남아 있어야
+   * 하는 에지 신호라, 아주 짧은 탭(누르자마자 뗌)도 놓치면 안 되기 때문이다.
+   */
   private endDrag(): void {
     this.dragPointerId = null
+    this.heldGroupId = null
     this.scene.input.off('pointermove', this.handlePointerMove, this)
     this.scene.input.off('pointerup', this.handlePointerUp, this)
   }

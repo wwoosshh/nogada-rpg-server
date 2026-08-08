@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
 import type { InputHub } from '../../input/InputState.js'
 import { useGameStore } from '../../store/gameStore.js'
+import { worldNow } from '../../time/clock.js'
+import { buildCraftLines, canAffordCraft, craftRepeatUnlocked } from '../craftPanelContent.js'
 import { DIM_COLOR, LABEL_COLOR, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
 import { ScrollList } from '../ScrollList.js'
 
@@ -89,17 +91,17 @@ const TAB_LABEL_FONT_SIZE = 13
 /**
  * 어느 패널이 열려 있는지.
  *
- * `bag`·`craft` 는 아직 자리만 있다(설계 문서 §9 가 내용을 범위 밖에 뒀다) —
- * 무엇이 열렸는지와 "아직 안 만들었다"만 보여준다. `menu` 는 이 태스크가
- * 채우는 B 의 상세 메뉴다: 탭으로 나뉘고 실제 내용(숙련도·이정표·설정)이 있다.
+ * `bag` 는 아직 자리만 있다(설계 문서 §9 가 내용을 범위 밖에 뒀다) — 무엇이
+ * 열렸는지와 "아직 안 만들었다"만 보여준다. `craft` 는 레시피 목록이다 —
+ * menu 와 같은 큰 상자·ScrollList 를 쓰지만 탭은 없다(레시피 자체가 목록의
+ * 유일한 단위라 탭으로 더 나눌 게 없다). `menu` 는 B 의 상세 메뉴다: 탭으로
+ * 나뉘고 실제 내용(숙련도·이정표·설정)이 있다.
  */
 type PanelId = 'bag' | 'craft' | 'menu'
 
-/** 어느 패널인지와 "아직 안 만들었다"만 말한다 — bag·craft 의 내용은 설계 문서 §9 에서 범위 밖이다. */
-const PANEL_TEXT: Record<'bag' | 'craft', { title: string; body: string }> = {
-  bag: { title: '가방', body: '아직 만들지 않았습니다.' },
-  craft: { title: '제작', body: '아직 만들지 않았습니다.' },
-}
+/** 가방 안내 상자 문구. 가방 내용은 설계 문서 §9 에서 범위 밖이다 — craft 는 더 이상 이 자리를 쓰지 않는다(아래 refreshCraft 참고). */
+const BAG_TITLE = '가방'
+const BAG_BODY = '아직 만들지 않았습니다.'
 
 /**
  * 탭 정의(TABS)·탭 id 타입(DetailMenuTab)·탭 내용을 만드는 함수들은
@@ -120,8 +122,13 @@ interface TabButton {
  * 가방·제작 버튼과 B 가 여는 상세 메뉴.
  *
  * 세 가지를 그린다:
- *  - `bag`·`craft`: 아직 자리만 있다(설계 문서 §9 범위 밖) — 무엇이 열렸는지와
+ *  - `bag`: 아직 자리만 있다(설계 문서 §9 범위 밖) — 무엇이 열렸는지와
  *    "아직 안 만들었다"만 보여준다. 가짜 인벤토리를 꾸미지 않는다.
+ *  - `craft`: 레시피 목록. menu 와 같은 큰 상자·ScrollList 를 재사용하지만
+ *    탭은 없다 — 줄 하나하나가 레시피이고 그 줄 자체가 누르는 대상이다
+ *    (craftPanelContent.ts, ScrollList 의 groupId 문서 참고). 이정표 목록이
+ *    "구리 망치를 만들 수 있다"고 광고하면서 실제로는 만들 방법이 없었던
+ *    것이 이 화면을 채운 이유다.
  *  - `menu`: B 의 상세 메뉴. 탭(숙련도·이정표·설정)으로 나뉘고 실제 내용이
  *    있다 — 원작에서 특수 메뉴를 호출하는 커먼이벤트 이름이 `[★B]특수메뉴호출`
  *    이고 숙련도 정보 화면이 그 안에 있던 것과 같은 자리다.
@@ -150,12 +157,13 @@ interface TabButton {
  * WorldScene.create() 가 명시적으로 launch 한다.
  */
 export class PanelScene extends Phaser.Scene {
-  // 가방·제작 — 작은 안내 상자.
+  // 가방 — 아직 자리만 있는 작은 안내 상자.
   private box!: Phaser.GameObjects.Rectangle
   private title!: Phaser.GameObjects.Text
   private body!: Phaser.GameObjects.Text
 
-  // 상세 메뉴.
+  // 상세 메뉴. scrollList 는 menu 뿐 아니라 craft 도 쓴다 — PanelId 는 한 번에
+  // 하나만 열리므로(setOpen) 인스턴스를 둘로 나눌 이유가 없다.
   private menuBox!: Phaser.GameObjects.Rectangle
   private tabButtons: TabButton[] = []
   private tabIndicator!: Phaser.GameObjects.Rectangle
@@ -165,6 +173,10 @@ export class PanelScene extends Phaser.Scene {
   private open: PanelId | null = null
   private menuTab: DetailMenuTab = 'skills'
   private unsubscribeMenuRequest: (() => void) | null = null
+  /** 제작 패널이 열려 있는 동안 플레이어 상태가 바뀔 때마다(제작 결과마다) 목록을 다시 그리는 구독. */
+  private unsubscribePlayer: (() => void) | null = null
+  /** 응답이 날아가 있는 동안 같은 레시피를 또 보내지 않는다 — WorldScene.gatherPending 과 같은 이유다. */
+  private craftPending = false
 
   constructor() {
     super({ key: 'Panel' })
@@ -252,6 +264,19 @@ export class PanelScene extends Phaser.Scene {
       this.openMenuTab(req.tab)
     })
 
+    // 제작 패널이 열려 있는 동안 제작 결과(성공·실패 모두)가 올 때마다 목록을
+    // 다시 그린다. player 참조는 gather 든 craft 든 매 행동마다 서버가 새
+    // structuredClone 을 주므로 바뀐다(gameStore.applyPlayer) — Object.is 로
+    // 비교하는 이 기본 구독 비교자가 그 변화를 그대로 잡아낸다. menu·bag 는
+    // 이런 구독이 필요 없다: 패널이 열린 동안은 hub.setWorldInputLocked() 가
+    // 행동을 막아 그 사이 player 가 바뀔 수 없다(rebuildMenuContent 문서
+    // 참고) — craft 만 예외인 이유는 그 행동(제작) 자체가 이 패널 안에서
+    // 일어나기 때문이다.
+    this.unsubscribePlayer = useGameStore.subscribe((state, prev) => {
+      if (state.player === prev.player) return
+      if (this.open === 'craft') this.refreshCraftContent()
+    })
+
     // ControlScene 과 같은 이유로 SHUTDOWN·DESTROY 둘 다에 같은 정리를 걸고
     // 두 번째 호출은 가드로 무시한다 — ControlScene.create() 의 주석 참고.
     let cleanedUp = false
@@ -261,6 +286,8 @@ export class PanelScene extends Phaser.Scene {
       this.scale.off('resize', this.handleResize, this)
       this.unsubscribeMenuRequest?.()
       this.unsubscribeMenuRequest = null
+      this.unsubscribePlayer?.()
+      this.unsubscribePlayer = null
       this.scrollList.destroy()
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
@@ -311,6 +338,9 @@ export class PanelScene extends Phaser.Scene {
     }
 
     this.setOpen(next)
+
+    // 제작 패널 자체의 누름은 hub 를 거치지 않는다 — pollCraftPress 문서 참고.
+    if (this.open === 'craft') this.pollCraftPress()
   }
 
   private setOpen(next: PanelId | null): void {
@@ -347,26 +377,33 @@ export class PanelScene extends Phaser.Scene {
   private render(): void {
     const open = this.open
 
-    const showSimple = open === 'bag' || open === 'craft'
+    const showSimple = open === 'bag'
     this.box.setVisible(showSimple)
     this.title.setVisible(showSimple)
     this.body.setVisible(showSimple)
     if (showSimple) {
-      const content = PANEL_TEXT[open]
-      this.title.setText(content.title)
-      this.body.setText(content.body)
+      this.title.setText(BAG_TITLE)
+      this.body.setText(BAG_BODY)
     }
 
+    // menu·craft 는 같은 큰 상자(menuBox)와 같은 ScrollList 를 나눠 쓴다 —
+    // 한 번에 하나만 열리므로 인스턴스를 나눌 이유가 없다(클래스 문서 참고).
+    // 탭 바(라벨·밑줄)는 menu 만 그린다 — craft 에는 탭이 없다.
     const showMenu = open === 'menu'
-    this.menuBox.setVisible(showMenu)
+    const showCraft = open === 'craft'
+    this.menuBox.setVisible(showMenu || showCraft)
     this.tabIndicator.setVisible(showMenu)
     for (const btn of this.tabButtons) btn.label.setVisible(showMenu)
-    this.scrollList.setVisible(showMenu)
+    this.scrollList.setVisible(showMenu || showCraft)
+
     if (showMenu) {
       this.refreshMenu()
+    } else if (showCraft) {
+      this.refreshCraft()
     } else {
-      // 메뉴가 닫히면 줄(Text 오브젝트)을 다음에 열릴 때까지 붙잡아 둘 이유가
-      // 없다 — 여기서 바로 놓아준다(ScrollList.clear() 문서 참고).
+      // 아무 목록도 안 보이면(닫혔거나 가방이면) 줄(Text 오브젝트)을 다음에
+      // 열릴 때까지 붙잡아 둘 이유가 없다 — 여기서 바로 놓아준다
+      // (ScrollList.clear() 문서 참고).
       this.scrollList.clear()
     }
   }
@@ -396,10 +433,96 @@ export class PanelScene extends Phaser.Scene {
     this.scrollList.setLines(tab.buildLines(data, player))
   }
 
+  /**
+   * 제작 패널을 열 때: 메뉴와 같은 위치 계산을 그대로 쓴다 — layout() 은
+   * 이미 menu 와 bag 자리를 매번 다시 잡으므로 craft 를 위한 세 번째 계산을
+   * 새로 만들지 않는다. 탭 바 한 줄만큼의 위쪽 여백이 빈 채로 남지만, 그
+   * 낭비가 별도 레이아웃 함수를 하나 더 유지하는 비용보다 싸다 — 이정표
+   * 27개가 이미 이 상자 안에서 스크롤로 다 들어간다는 증거다.
+   */
+  private refreshCraft(): void {
+    this.layout(this.scale.width, this.scale.height)
+    this.rebuildCraftContent()
+  }
+
+  /** 제작 패널을 처음 열 때(또는 리사이즈): 스크롤을 맨 위로 되돌리며 다시 그린다. */
+  private rebuildCraftContent(): void {
+    const { data, player } = useGameStore.getState()
+    if (!player) return
+    this.scrollList.setLines(buildCraftLines(data, player))
+  }
+
+  /**
+   * 제작 결과가 올 때마다(성공·실패 모두, unsubscribePlayer 구독이 부른다):
+   * 손가락을 쥔 채로 숫자만 새로 그린다. rebuildCraftContent 와 달리
+   * ScrollList.updateLines() 를 써서 스크롤 위치와 눌림 상태를 그대로
+   * 이어간다(그 문서 참고) — 반복 제작 중 매번 setLines 를 쓰면 스크롤이
+   * 맨 위로 튕기고 쥐고 있던 그룹이 풀려 "누르고 있으면 계속된다"는 반복이
+   * 끊긴다.
+   */
+  private refreshCraftContent(): void {
+    const { data, player } = useGameStore.getState()
+    if (!player) return
+    this.scrollList.updateLines(buildCraftLines(data, player))
+  }
+
+  /**
+   * 제작 패널이 열려 있는 동안 매 프레임(applyInput 이 부른다): 방금 누른
+   * 레시피는 한 번, 쥐고 있는 레시피는 조합의 자동 반복 이정표를 달성했을
+   * 때만 계속 시도한다 — WorldScene 의 actionPressed(한 번) / action +
+   * repeatsOn(계속) 조합과 정확히 같은 모양이다. gather 는 그 판정 대상이
+   * 앞칸의 노드이고 이건 눌린 레시피 줄이라는 점만 다르다.
+   *
+   * 물리 A 버튼(hub.state.action)을 다시 쓰지 않는 이유: 패널이 열린 동안
+   * 세계로 새는 이동·행동을 막는 것은 모바일 조작 설계 문서 §7 의 명시적
+   * 결정이고, InputHub.setWorldInputLocked() 가 그 결정을 action 버튼째
+   * 잠근다(InputState.ts 문서 참고). 그 잠금을 풀어 재사용하면 "패널이 열린
+   * 동안 행동 입력은 막는다"는 하나의 규칙이 "막되 제작 패널 안에서는 다른
+   * 뜻으로 통과시킨다"로 갈라진다. 대신 이 패널은 탭 바(TabButton.hitZone)가
+   * 이미 쓰던 언어 — 화면 위 대상을 직접 누른다 — 를 레시피 줄에도 쓴다
+   * (ScrollList 의 groupId 기반 줄 누름). hub 의 잠금은 한 줄도 안 바뀐다.
+   */
+  private pollCraftPress(): void {
+    const tapped = this.scrollList.consumeTap()
+    if (tapped) {
+      this.tryCraft(tapped)
+      return
+    }
+
+    const { data, player } = useGameStore.getState()
+    if (!player || !craftRepeatUnlocked(data, player)) return
+
+    const held = this.scrollList.heldGroup()
+    if (held) this.tryCraft(held)
+  }
+
+  /**
+   * WorldScene.sendGather() 와 같은 세 가지 문: 응답을 기다리는 중이면
+   * 넘어가고, 서버의 다음 행동 시각(nextActionAt) 전이면 넘어가고, 이 화면이
+   * 이미 표시 중인 이유로 거부될 게 뻔하면(숙련도·재료 부족) 보내지 않는다.
+   * 서버는 이 확인 없이도 스스로 거부하므로 안전을 위한 것이 아니라, 반복
+   * 제작 중 매 프레임 거부 응답만 왕복시키지 않기 위해서다.
+   */
+  private tryCraft(recipeId: string): void {
+    if (this.craftPending) return
+    const { data, player } = useGameStore.getState()
+    if (!player || worldNow() < player.nextActionAt) return
+    if (!canAffordCraft(data, player, recipeId)) return
+
+    this.craftPending = true
+    void useGameStore
+      .getState()
+      .craft(recipeId)
+      .finally(() => {
+        this.craftPending = false
+      })
+  }
+
   private handleResize(gameSize: Phaser.Structs.Size): void {
     this.layout(gameSize.width, gameSize.height)
-    // 메뉴가 열린 채로 리사이즈되면 줄바꿈 폭이 달라지므로 내용을 다시 짠다.
+    // 메뉴·제작이 열린 채로 리사이즈되면 줄바꿈 폭이 달라지므로 내용을 다시 짠다.
     if (this.open === 'menu') this.rebuildMenuContent()
+    if (this.open === 'craft') this.rebuildCraftContent()
   }
 
   /**

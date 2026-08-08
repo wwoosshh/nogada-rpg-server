@@ -28,16 +28,21 @@ import type { ScrollListLine } from './ScrollList.js'
  */
 
 /*
- * PanelScene 의 나머지 부분(가방·제작 안내 상자 글자색, 탭 글자 기본색)도
- * 이 두 색을 그대로 쓴다 — 그래서 여기서 export 한다. SUCCESS_COLOR 등
- * 나머지 색은 아래 탭 내용에서만 쓰여 이 파일 밖으로 안 나간다. ControlScene
- * 과 PanelScene 이 팔레트 리터럴을 서로 다시 옮겨 적는 것(PanelScene.ts 상단
- * 주석)과는 다른 얘기다 — 그건 별개 파일들의 의도된 중복이고, 이 둘은 원래
- * 한 파일(PanelScene.ts)이었던 코드를 구조만 나눈 것이라 그대로 공유한다.
+ * PanelScene 의 나머지 부분(가방 안내 상자 글자색, 탭 글자 기본색)도 이 두
+ * 색을 그대로 쓴다 — 그래서 여기서 export 한다. ControlScene 과 PanelScene 이
+ * 팔레트 리터럴을 서로 다시 옮겨 적는 것(PanelScene.ts 상단 주석)과는 다른
+ * 얘기다 — 그건 별개 파일들의 의도된 중복이고, 이 둘은 원래 한 파일
+ * (PanelScene.ts)이었던 코드를 구조만 나눈 것이라 그대로 공유한다.
+ *
+ * SUCCESS_COLOR·DANGER_COLOR 도 같은 이유로 내보낸다: 제작 패널 내용
+ * (craftPanelContent.ts)이 "지금 만들 수 있다"·"재료 부족"을 이 탭의 이정표
+ * 줄과 같은 색 언어로 말해야 해서, 그 파일도 이 둘을 가져다 쓴다.
  */
 export const LABEL_COLOR = '#e8dcc0'
 export const DIM_COLOR = '#c9b895'
-const SUCCESS_COLOR = '#7fa650'
+export const SUCCESS_COLOR = '#7fa650'
+/** tokens.css 의 --c-danger 와 같은 값이다. 재료 부족처럼 "지금 안 된다"를 숫자와 함께 알리는 줄에 쓴다. */
+export const DANGER_COLOR = '#b4543a'
 
 const ROW_NAME_FONT_SIZE = 12
 const ROW_DETAIL_FONT_SIZE = 10
