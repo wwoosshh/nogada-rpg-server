@@ -4,7 +4,7 @@ import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { buildCraftLines, canAffordCraft, craftRepeatUnlocked } from '../craftPanelContent.js'
 import { DIM_COLOR, LABEL_COLOR, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
-import { addText } from '../gameText.js'
+import { addText, FONT_SIZE } from '../gameText.js'
 import { ScrollList } from '../ScrollList.js'
 import { renderScale, viewSize } from '../viewport.js'
 import type { ControlScene } from './ControlScene.js'
@@ -82,7 +82,7 @@ const CLOSE_BUTTON_MARGIN = 4
 const TAB_CLOSE_GAP = 4
 
 const TAB_INDICATOR_HEIGHT = 2
-const TAB_LABEL_FONT_SIZE = 13
+const TAB_LABEL_FONT_SIZE = FONT_SIZE.body
 
 /**
  * 어느 패널이 열려 있는지.
@@ -203,7 +203,7 @@ export class PanelScene extends Phaser.Scene {
       .setVisible(false)
 
     this.title = addText(this, 0, 0, '', {
-      fontSize: '18px',
+      fontSize: `${FONT_SIZE.title}px`,
       color: ACCENT_TEXT_COLOR,
       stroke: INK_COLOR,
       strokeThickness: 3,
@@ -214,7 +214,7 @@ export class PanelScene extends Phaser.Scene {
       .setVisible(false)
 
     this.body = addText(this, 0, 0, '', {
-      fontSize: '13px',
+      fontSize: `${FONT_SIZE.body}px`,
       color: LABEL_COLOR,
       stroke: INK_COLOR,
       strokeThickness: 2,
@@ -279,7 +279,7 @@ export class PanelScene extends Phaser.Scene {
     this.closeButtonShape.on('pointerdown', () => this.setOpen(null))
 
     this.closeButtonLabel = addText(this, 0, 0, '✕', {
-      fontSize: '20px',
+      fontSize: `${FONT_SIZE.title}px`,
       color: ACCENT_TEXT_COLOR,
       stroke: INK_COLOR,
       strokeThickness: 3,

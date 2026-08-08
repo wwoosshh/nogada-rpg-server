@@ -8,7 +8,7 @@ import { worldNow } from '../../time/clock.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
-import { addText } from '../gameText.js'
+import { addText, FONT_SIZE } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { TileMover } from '../TileMover.js'
 import { fixedToCamera, renderScale } from '../viewport.js'
@@ -376,7 +376,7 @@ export class WorldScene extends Phaser.Scene {
     // 좌표를 중앙 쪽으로 당겨 놓아야 한다 — fixedToCamera 가 그 계산이다.
     const at = fixedToCamera(cam, cam.width / 2, cam.height / 3)
     const label = addText(this, at.x, at.y, text, {
-      fontSize: '18px',
+      fontSize: `${FONT_SIZE.title}px`,
       color: '#ffe9a8',
       align: 'center',
     })

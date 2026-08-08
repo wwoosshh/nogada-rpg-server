@@ -1,6 +1,6 @@
 import type Phaser from 'phaser'
 import { DEPTH } from './depth.js'
-import { addText } from './gameText.js'
+import { addText, FONT_SIZE } from './gameText.js'
 
 /** tokens.css 의 --c-success / --c-danger 와 같은 값이다. 바꿀 때 함께 고친다. */
 const TONE_COLORS = {
@@ -24,7 +24,7 @@ function createFloatingLabel(
   tone: keyof typeof TONE_COLORS,
 ): Phaser.GameObjects.Text {
   return addText(scene, x, y, text, {
-    fontSize: '12px',
+    fontSize: `${FONT_SIZE.body}px`,
     color: TONE_COLORS[tone],
     stroke: '#241c1c',
     strokeThickness: 3,

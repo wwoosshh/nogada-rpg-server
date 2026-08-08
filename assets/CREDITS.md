@@ -29,10 +29,33 @@
 | [FREE RPG Character Sprites 32×32](https://pipoya.itch.io/pipoya-free-rpg-character-sprites-32x32) | Pipoya | itch.io | 무료 | 플레이어·NPC | ✅ | 없음 | ✅ | 권장 | ❌ 금지 |
 | [1000+ Fantasy RPG Icons](https://finalbossblues.itch.io/icons) | finalbossblues | itch.io | $6 | 아이템 아이콘 | ✅ | **없음** | ✅ | **불필요** | ❌ 금지 |
 | [game-icons.net](https://game-icons.net/) | 다수 | 웹 | 무료 | 인터페이스 기호 (SVG) | ✅ | 없음 | ✅ | **CC BY — 의무** | — |
+| Neo둥근모 Pro | 김중태(원본 둥근모꼴) / Dalgona `<me@dalgona.dev>` (변환·확장) | 사용자가 내려받아 제공 | 무료 | 게임 전체 글꼴 (DOM·캔버스 공통) | ✅ | 없음 | ✅ | **OFL — 의무** | ✅ **허용** |
 
 **Pipoya 라이선스 원문:** `For commercial or personal use.` / `Use and edit freely.` / `Not redistribute or resell this assets.`
 
 마지막 조항이 `assets/licensed/` 를 버전 관리에서 제외하는 근거다. 에셋을 리포지토리에 커밋하면 재배포에 해당한다.
+
+### 글꼴만 예외로 저장소에 커밋한다
+
+Neo둥근모 Pro 는 **SIL Open Font License 1.1** 이라 재배포가 명시적으로 허용된다 — 위 "커밋하지 않는다" 규칙의 유일한 예외다. 그래서 `apps/client/public/fonts/` 에 실제 파일(woff2·woff)이 들어 있다.
+
+라이선스는 추측이 아니라 **폰트 파일의 `name` 테이블에서 직접 읽은 것**이다:
+
+```
+copyright:  Original font was released under the public domain by Jungtae Kim
+            in 1990s. Conversion and additional character design by Dalgona.
+            <me@dalgona.dev>
+license:    This font software may be used, studied, modified, embedded and
+            redistributed under the SIL Open Font License 1.1.
+licenseUrl: https://scripts.sil.org/OFL
+version:    Version 1.020
+```
+
+**OFL 의 의무:** 저작권·라이선스 고지를 함께 배포해야 하고, 폰트 자체를 단독으로 판매할 수 없으며, 개변본에 원래 이름을 그대로 쓸 수 없다. 이 프로젝트는 폰트를 고치지 않고 그대로 쓴다.
+
+**게임 안 표기:** 상세 메뉴(B)의 설정 탭에 표시한다 — `apps/client/src/game/detailMenuTabs.ts` 의 `CREDITS`. 저장소의 이 문서는 플레이어가 볼 수 없으므로 게임 안에도 같은 내용이 있어야 한다. **한쪽만 고치면 두 곳이 다른 말을 하게 되므로 함께 갱신한다.**
+
+**설계상 제약:** `unitsPerEm = 16` 인 비트맵 계열이라 글자 크기가 16 의 배수가 아니면 획이 반픽셀에 걸려 뭉개진다. 그래서 게임의 글자 크기는 16 과 32 만 쓴다 (`apps/client/src/game/gameText.ts` 의 `FONT_SIZE`).
 
 ### 로컬 배치 및 실제 규격
 

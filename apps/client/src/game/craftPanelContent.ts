@@ -11,6 +11,7 @@ import {
 } from '@nogada/shared'
 import { DANGER_COLOR, DIM_COLOR, LABEL_COLOR, SUCCESS_COLOR } from './detailMenuTabs.js'
 import type { ScrollListLine } from './ScrollList.js'
+import { FONT_SIZE } from './gameText.js'
 
 /**
  * 제작 패널(제작 토글이 여는 화면)의 줄 내용을 만든다.
@@ -29,8 +30,8 @@ import type { ScrollListLine } from './ScrollList.js'
  * 하는 것뿐이다. 서버가 최종 판정이고, 이 파일의 결과는 표시·전송 편의다.
  */
 
-const ROW_NAME_FONT_SIZE = 12
-const ROW_DETAIL_FONT_SIZE = 10
+const ROW_NAME_FONT_SIZE = FONT_SIZE.body
+const ROW_DETAIL_FONT_SIZE = FONT_SIZE.body
 
 const fmt = (n: number): string => n.toLocaleString('ko-KR')
 

@@ -11,6 +11,7 @@ import {
   type PlayerState,
 } from '@nogada/shared'
 import type { ScrollListLine } from './ScrollList.js'
+import { FONT_SIZE } from './gameText.js'
 
 /**
  * 상세 메뉴(B 버튼)의 탭 정의와 각 탭이 보여줄 줄 내용을 만드는 함수들.
@@ -44,8 +45,8 @@ export const SUCCESS_COLOR = '#7fa650'
 /** tokens.css 의 --c-danger 와 같은 값이다. 재료 부족처럼 "지금 안 된다"를 숫자와 함께 알리는 줄에 쓴다. */
 export const DANGER_COLOR = '#b4543a'
 
-const ROW_NAME_FONT_SIZE = 12
-const ROW_DETAIL_FONT_SIZE = 10
+const ROW_NAME_FONT_SIZE = FONT_SIZE.body
+const ROW_DETAIL_FONT_SIZE = FONT_SIZE.body
 
 const fmt = (n: number): string => n.toLocaleString('ko-KR')
 
@@ -147,9 +148,62 @@ function buildSkillLines(_data: GameData, player: PlayerState): ScrollListLine[]
   })
 }
 
-/** 설정 탭의 내용. 지금은 톱니를 눌러도 나올 실제 설정이 없다 — bag·craft 와 같은 자세로 정직하게 "아직 안 만들었다"만 말한다. */
+/**
+ * 이 게임이 쓰는 남의 저작물.
+ *
+ * 게임 안에서 보여주는 이유는 두 가지다. OFL 은 저작권 표시를 유지할 것을
+ * 요구하는데, 저장소의 CREDITS.md 는 플레이어가 볼 수 없다. 그리고 무엇을
+ * 빌려 썼는지는 만든 사람이 숨길 일이 아니다.
+ *
+ * 자산을 더할 때 이 목록도 함께 늘린다 — assets/CREDITS.md 와 같은 내용이어야
+ * 한다. 한쪽만 고치면 게임 안과 저장소가 다른 말을 하게 된다.
+ */
+const CREDITS: readonly { name: string; detail: string }[] = [
+  {
+    name: 'Neo둥근모 Pro',
+    detail:
+      '1990년대 김중태의 둥근모꼴을 Dalgona 가 변환·확장. SIL Open Font License 1.1.',
+  },
+  {
+    name: 'Pipoya 무료 소재',
+    detail: '타일셋과 캐릭터 스프라이트. 자세한 조건은 저장소의 CREDITS.md 참고.',
+  },
+  {
+    name: 'game-icons.net',
+    detail: '아이템 아이콘. 자세한 조건은 저장소의 CREDITS.md 참고.',
+  },
+]
+
+/**
+ * 설정 탭의 내용.
+ *
+ * 조절할 수 있는 설정은 아직 없다 — 그 사실을 bag 과 같은 자세로 정직하게
+ * 말하고, 대신 지금 확실히 보여줄 수 있는 것(만든 사람과 빌려 쓴 것)을 싣는다.
+ */
 function buildSettingsLines(): ScrollListLine[] {
-  return [{ text: '아직 만들지 않았습니다.', color: DIM_COLOR, fontSize: ROW_NAME_FONT_SIZE }]
+  const lines: ScrollListLine[] = [
+    { text: '노가다 RPG 팬메이드', color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE },
+    {
+      text: '서비스 종료한 「노가다 RPG」를 팬이 다시 만드는 프로젝트입니다. 원작의 리소스와 수치는 쓰지 않고 전부 새로 만듭니다.',
+      color: DIM_COLOR,
+      fontSize: ROW_DETAIL_FONT_SIZE,
+    },
+    { text: '', color: DIM_COLOR, fontSize: ROW_DETAIL_FONT_SIZE },
+    { text: '사용한 저작물', color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE },
+  ]
+
+  for (const c of CREDITS) {
+    lines.push({ text: `· ${c.name}`, color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE })
+    lines.push({ text: `  ${c.detail}`, color: DIM_COLOR, fontSize: ROW_DETAIL_FONT_SIZE })
+  }
+
+  lines.push({ text: '', color: DIM_COLOR, fontSize: ROW_DETAIL_FONT_SIZE })
+  lines.push({
+    text: '조절할 수 있는 설정은 아직 만들지 않았습니다.',
+    color: DIM_COLOR,
+    fontSize: ROW_NAME_FONT_SIZE,
+  })
+  return lines
 }
 
 type LineBuilder = (data: GameData, player: PlayerState) => ScrollListLine[]

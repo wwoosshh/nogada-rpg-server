@@ -4,6 +4,29 @@ import { textResolution } from './viewport.js'
 export type GameTextStyle = Phaser.Types.GameObjects.Text.TextStyle
 
 /**
+ * DOM 과 같은 글꼴을 쓴다. tokens.css 의 `--font-ui` 와 같은 값이어야 하는데,
+ * Phaser 설정은 CSS 변수를 읽지 못해서 여기 한 번 더 적는다.
+ *
+ * Neo둥근모 Pro 는 16 단위 격자로 설계됐다(unitsPerEm = 16). 글자 크기가 16 의
+ * 배수가 아니면 획이 반픽셀에 걸려 뭉개지므로, 이 파일을 거치는 모든 글자는
+ * FONT_SIZE 의 값만 쓴다.
+ */
+const FONT_FAMILY = "'NeoDunggeunmo Pro', 'Malgun Gothic', sans-serif"
+
+/**
+ * 쓸 수 있는 글자 크기. 16 의 배수만 있다 — 이유는 FONT_FAMILY 주석 참고.
+ *
+ * 새 크기가 필요하면 여기 16 의 배수로 추가한다. 임의의 숫자를 직접 넘기면
+ * 그 글자만 뭉개지고, 화면에서 그 원인을 짚기 어렵다.
+ */
+export const FONT_SIZE = {
+  /** 본문·목록·버튼 라벨 — 기본값 */
+  body: 16,
+  /** 패널 제목, 이정표 알림 */
+  title: 32,
+} as const
+
+/**
  * 게임 화면 안의 글자는 전부 이 함수를 거친다.
  *
  * Phaser 는 글자를 별도 캔버스에 그려 텍스처로 올리는데, 그 캔버스의 해상도를
@@ -21,5 +44,10 @@ export function addText(
   text: string,
   style: GameTextStyle = {},
 ): Phaser.GameObjects.Text {
-  return scene.add.text(x, y, text, { ...style, resolution: textResolution() })
+  return scene.add.text(x, y, text, {
+    fontFamily: FONT_FAMILY,
+    fontSize: `${FONT_SIZE.body}px`,
+    ...style,
+    resolution: textResolution(),
+  })
 }

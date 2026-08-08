@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import type { Direction } from '@nogada/shared'
 import type { InputHub } from '../../input/InputState.js'
 import { TouchSource } from '../../input/TouchSource.js'
-import { addText } from '../gameText.js'
+import { addText, FONT_SIZE } from '../gameText.js'
 import { renderScale, viewSize } from '../viewport.js'
 
 /*
@@ -190,10 +190,12 @@ export class ControlScene extends Phaser.Scene {
     this.padSurface = this.add.zone(0, 0, PAD_SURFACE_SIZE, PAD_SURFACE_SIZE).setInteractive()
 
     // A 만 강조색이다 — 가장 많이 누르는 버튼이라는 걸 크기에 이어 색으로도 표시한다.
-    this.btnAction = createButtonVisual(this, ACTION_RADIUS, ACCENT_COLOR, 'A', 26)
-    this.btnCancel = createButtonVisual(this, CANCEL_RADIUS, PANEL_COLOR, 'B', 20)
-    this.btnBag = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '가방', 11)
-    this.btnCraft = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '제작', 11)
+    // 글자 크기가 16 과 32 뿐인 이유는 gameText.FONT_SIZE 문서 참고 — 이 글꼴은
+    // 16 단위 격자라 그 배수가 아니면 획이 반픽셀에 걸린다. A 만 큰 글자를 쓴다.
+    this.btnAction = createButtonVisual(this, ACTION_RADIUS, ACCENT_COLOR, 'A', FONT_SIZE.title)
+    this.btnCancel = createButtonVisual(this, CANCEL_RADIUS, PANEL_COLOR, 'B', FONT_SIZE.body)
+    this.btnBag = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '가방', FONT_SIZE.body)
+    this.btnCraft = createButtonVisual(this, TOGGLE_RADIUS, PANEL_COLOR, '제작', FONT_SIZE.body)
     // 오른쪽 버튼 묶음은 원형 히트 영역을 스스로 켠다 — 이유는
     // setCircularHitArea 의 문서 참고.
     setCircularHitArea(this.btnAction.shape, ACTION_RADIUS)

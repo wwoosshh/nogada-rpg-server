@@ -1,5 +1,24 @@
 @import './tokens.css';
 
+/*
+ * Neo둥근모 Pro — 1990년대 김중태의 둥근모꼴을 Dalgona 가 변환·확장한 것.
+ * SIL Open Font License 1.1. 출처와 조건은 assets/CREDITS.md 에 적어 두었다.
+ *
+ * `font-display: block` 인 이유는 Phaser 때문이다. Phaser 는 글자를 별도 캔버스에
+ * 그려 텍스처로 굽는데, 그 시점에 폰트가 아직 없으면 대체 글꼴로 구워지고 나중에
+ * 폰트가 도착해도 다시 그리지 않는다. swap 은 그 잘못 구워진 텍스처를 남긴다.
+ * (main.tsx 가 렌더 전에 로드를 기다리는 것이 1차 방어선이고 이것이 2차다.)
+ */
+@font-face {
+  font-family: 'NeoDunggeunmo Pro';
+  src:
+    url('/fonts/NeoDunggeunmoPro-Regular.woff2') format('woff2'),
+    url('/fonts/NeoDunggeunmoPro-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 * {
   box-sizing: border-box;
 }

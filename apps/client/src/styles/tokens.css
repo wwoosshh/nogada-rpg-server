@@ -19,7 +19,17 @@
   --c-tier-2: #9aa3ad;
   --c-tier-3: #6fc2d6;
 
-  --font-ui: system-ui, 'Malgun Gothic', sans-serif;
+  /*
+   * 게임 전체가 쓰는 글꼴. DOM(상단 바)과 캔버스(Phaser Text)가 같은 것을 쓴다.
+   *
+   * Neo둥근모 Pro 는 16 단위 격자로 설계된 비트맵 계열이라(unitsPerEm = 16)
+   * 글자 크기가 16 의 배수일 때만 획이 픽셀에 정확히 떨어진다. 그래서 이 프로젝트의
+   * 글자 크기는 16 과 32 만 쓴다 — 크기 상수를 바꿀 때 이 제약을 먼저 확인할 것.
+   *
+   * 뒤의 두 개는 폰트 로드 실패 때만 쓰이는 최후 수단이다. 정상 경로에서는
+   * main.tsx 가 렌더 전에 로드를 기다리므로 여기까지 내려오지 않는다.
+   */
+  --font-ui: 'NeoDunggeunmo Pro', 'Malgun Gothic', sans-serif;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 16px;
