@@ -326,16 +326,27 @@ describe('runDialogueCommand — 왜 안 나왔는가', () => {
 
   it('공급자가 없어 영원히 안 맞는 조건과, 이번에 값을 안 준 조건을 다르게 말한다', () => {
     // weather 는 공급자가 없어 실제 게임에서도 안 맞는다(빌드의 "안내" 와 같은 원인).
-    // justAchieved 는 공급자가 있고 이번 시뮬레이션에서 안 줬을 뿐이라, 작가가
-    // 인자 하나만 더 주면 바로 확인할 수 있다 — 서로 할 일이 다르다.
-    const justAchieved = dRule({
+    // daysSinceLastTalk 는 공급자가 있고 이번 시뮬레이션(빈 플레이어 — 이 화자와
+    // 말해 본 적이 없다)에서는 매길 값이 없었을 뿐이라, 작가가 인자 하나만 더
+    // 주면 바로 확인할 수 있다 — 서로 할 일이 다르다.
+    //
+    // (justAchieved 는 예전에 이 자리의 예시였지만, 실제로는 이 사실을 대화
+    // 요청에 실어 보내는 경로가 없어 supplied: false 로 선언돼 있다 — 리뷰
+    // finding 1. 그래서 이제 "공급자가 없다" 쪽 예시(weather)와 같은 부류라
+    // "이번에 안 줬다" 쪽 예시로 쓸 수 없다.)
+    const waitingOnLastTalk = dRule({
       id: 'ms',
       event: 'milestone',
-      conditions: [{ fact: 'justAchieved', op: '=', value: 'ice_10000' }],
+      conditions: [{ fact: 'daysSinceLastTalk', op: '>=', value: 3 }],
     })
-    const out = runDialogueCommand(whyData([rainOnly, justAchieved, bare1]), '노인', {}, { now: FIXED_NOW, seed: 0 })
+    const out = runDialogueCommand(
+      whyData([rainOnly, waitingOnLastTalk, bare1]),
+      '노인',
+      {},
+      { now: FIXED_NOW, seed: 0 },
+    )
     expect(out).toContain('weather=rain — weather 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다')
-    expect(out).toContain('justAchieved=ice_10000 — justAchieved 에 값이 없다. 이번에 주지 않았다')
+    expect(out).toContain('daysSinceLastTalk>=3 — daysSinceLastTalk 에 값이 없다. 이번에 주지 않았다')
   })
 
   it('채택된 사건이 하나도 없어도 네 줄이 저마다 이유를 말한다 — undefined 가 새어 나오지 않는다', () => {

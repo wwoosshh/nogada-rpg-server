@@ -265,19 +265,36 @@ describe('POST /api/craft', () => {
 describe('POST /api/talk', () => {
   it('화자에게 말을 걸면 발화 전체가 온다', async () => {
     const app = buildTestApp()
+    const data = loadGameData()
+    const SPEAKER = '채집장노인'
 
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/talk',
-      payload: { speakerId: '채집장노인' },
-    })
+    // 어떤 규칙이 뽑힐지는 서버 난수라 이 테스트가 통제할 수 없다. 대신 응답의
+    // 첫 줄로 실제 콘텐츠(loadGameData)에서 그 규칙을 되짚어, 그 규칙의 발화
+    // 전체와 응답을 비교한다 — `lines.length > 0` 만 보면 서비스가 발화를
+    // 한 줄로 잘라 보내도(칸 하나만 보내도) 이 테스트는 계속 통과한다.
+    const talkAndAssertFullUtterance = async (): Promise<string[]> => {
+      const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: SPEAKER } })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as { speaker: string; lines: string[] }
+      expect(body.speaker).toBe(SPEAKER)
+      expect(body.lines.length).toBeGreaterThan(0)
 
-    expect(res.statusCode).toBe(200)
-    const body = res.json() as { speaker: string; lines: string[] }
-    expect(body.speaker).toBe('채집장노인')
-    // 어떤 규칙이 뽑힐지는 서버 난수라 단정할 수 없지만, 빈 발화가 성공으로
-    // 나가는 일은 없어야 한다 — 그러면 클라이언트가 빈 대사창을 연다.
-    expect(body.lines.length).toBeGreaterThan(0)
+      const rule = data.dialogue.find((r) => r.speaker === SPEAKER && r.lines[0] === body.lines[0])
+      expect(rule, `첫 줄 "${body.lines[0]}" 로 실제 콘텐츠에서 규칙을 찾지 못했다`).toBeDefined()
+      expect(body.lines).toEqual(rule!.lines)
+      return body.lines
+    }
+
+    // 신규 플레이어에게 채집장노인의 무조건 @greet 후보는 정확히 둘이다 —
+    // 한 줄짜리("허어, 또 왔는가.")와 두 줄짜리("또 왔군." / "부지런하기도
+    // 하지."). 첫 콜은 서버 난수로 둘 중 하나가 나오고, 두 번째 콜은
+    // recent 제외로 나머지 하나가 결정적으로 나온다(dialogue.ts selectDialogue
+    // 의 "방금 말한 것 제외" 규칙) — 그래서 두 번을 부르면 두 줄짜리 발화를
+    // 반드시 한 번은 검증하게 되고, 발화를 자르는 변이를 이 테스트가 매번
+    // 잡을 수 있다.
+    const first = await talkAndAssertFullUtterance()
+    const second = await talkAndAssertFullUtterance()
+    expect(second).not.toEqual(first)
 
     await app.close()
   })

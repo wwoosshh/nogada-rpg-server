@@ -141,11 +141,15 @@ export interface FactSpec {
 /**
  * 조건에 쓸 수 있는 사실 이름의 전체 목록.
  *
- * `season`·`hour`·`dayOfSeason`·`skill.*`·`milestone.*`·`justAchieved`·
- * `talkedBefore`·`daysSinceLastTalk` 는 지금 공급자가 있다(설계 문서 6.1).
- * `weather`·`affinity`·`quest.*`·`story`·`activity`·`location` 은 자리만
- * 만들어 뒀다(6.2) — 관련 스펙(날씨·호감도·퀘스트·일과)이 생기기 전까지는
- * 그 이름을 쓴 조건이 파싱은 되지만 절대 맞지 않는다.
+ * `season`·`hour`·`dayOfSeason`·`skill.*`·`milestone.*`·`talkedBefore`·
+ * `daysSinceLastTalk` 는 지금 공급자가 있다(설계 문서 6.1).
+ * `justAchieved`·`weather`·`affinity`·`quest.*`·`story`·`activity`·`location` 은
+ * 자리만 만들어 뒀다(6.2) — `justAchieved` 는 나머지 여섯과 사정이 다르다.
+ * 가리키는 값(행동으로 방금 넘긴 이정표)은 이미 계산되지만(milestones.ts 의
+ * newlyAchieved) 그 값을 대화 요청까지 실어 보내는 경로가 없다 — "방금"이
+ * 언제까지인가(채집 직후 한 번? 그 세션 동안?)가 설계로 정해지지 않아서다.
+ * 나머지 여섯은 관련 스펙(날씨·호감도·퀘스트·일과) 자체가 아직 없다. 두
+ * 경우 다 결과는 같다 — 그 이름을 쓴 조건이 파싱은 되지만 절대 맞지 않는다.
  *
  * `speaker` 가 이 목록에 없는 것은 실수가 아니다 — selectDialogue 는 화자를
  * facts 가 아니라 별도 매개변수로 받으므로(위 selectDialogue 문서 참고),
@@ -162,11 +166,17 @@ export const DECLARED_FACTS: readonly FactSpec[] = [
   // 이정표는 달성했거나 아니거나다 — `milestone.x=1` 처럼 숫자로 쓰면 어떤
   // 상황에서도 맞지 않는다(공급자가 넣는 값은 언제나 true/false 다).
   { name: 'milestone.', prefix: true, supplied: true, unbounded: false, value: { kind: 'boolean' } },
-  // 이정표 id 하나. 그 id 가 실재하는지는 이름 목록이 아니라 데이터를 봐야
-  // 알 수 있어서 packages/data 의 검증이 따로 확인한다.
-  { name: 'justAchieved', prefix: false, supplied: true, unbounded: false, value: { kind: 'string' } },
   { name: 'talkedBefore', prefix: false, supplied: true, unbounded: false, value: { kind: 'boolean' } },
   { name: 'daysSinceLastTalk', prefix: false, supplied: true, unbounded: true, value: { kind: 'number' } },
+  // justAchieved 는 buildFacts(packages/shared/src/facts.ts)가 인자로 받으면
+  // 그대로 실어 주긴 하지만, 실제로 그 인자를 넘기는 프로덕션 호출이 없다 —
+  // talkService.ts 도 content-cli.ts 의 defaultFacts 도 넘기지 않는다. 그래서
+  // supplied 는 false 다. 나머지 여섯과 달리 값의 모양(방금 넘긴 이정표의 id,
+  // 즉 문자열)은 이미 정해져 있다는 점이 다르다 — 없는 것은 그 값을 실어
+  // 보내는 경로뿐이라 value 는 unspecified 로 낮추지 않는다(findFactSpec 아래
+  // 테스트가 이 예외를 확인한다). 이정표 id 가 실재하는지는 이름 목록이 아니라
+  // 데이터를 봐야 알 수 있어서 packages/data 의 검증이 따로 확인한다.
+  { name: 'justAchieved', prefix: false, supplied: false, unbounded: false, value: { kind: 'string' } },
   // 아래 여섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
   { name: 'weather', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
   { name: 'affinity', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },

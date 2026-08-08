@@ -14,21 +14,11 @@
  * 함수로 export 하고, 실제 실행은 파일 맨 아래 main-guard 뒤에 둔다.
  */
 import { pathToFileURL } from 'node:url'
-import type {
-  Condition,
-  DialogueHistory,
-  DialogueRule,
-  Facts,
-  FactValue,
-  GameData,
-  PlayerState,
-  SkillId,
-} from '@nogada/shared'
+import type { Condition, DialogueHistory, DialogueRule, Facts, FactValue, GameData } from '@nogada/shared'
 import {
   DECLARED_FACTS,
   EVENT_ORDER,
   ONCE_EVENTS,
-  SKILL_IDS,
   buildFacts,
   createRng,
   describeFactValueShape,
@@ -40,6 +30,7 @@ import {
   selectDialogue,
 } from '@nogada/shared'
 import { coerceFactValue, dialogueLocation } from './dialogueParse.js'
+import { emptyPlayer } from './emptyPlayer.js'
 import { collectDialogueNotices, conditionText, factReferenceError, findDeadDialogueRules } from './validate.js'
 import { loadGameData } from './load.js'
 
@@ -173,23 +164,6 @@ export function parseArgs(argv: readonly string[], data: GameData): ContentComma
  * 사이에서 진짜로 달라진다.
  */
 const SIMULATOR_SEED = 20260808
-
-/**
- * 시뮬레이터가 말하는 "빈 플레이어" — 숙련도 전부 0, 이정표 전부 미달성,
- * 대화 이력 없음(한 번도 말해 본 적 없음).
- */
-function emptyPlayer(): PlayerState {
-  return {
-    id: 'simulator',
-    skills: Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>,
-    stacks: {},
-    instances: [],
-    equipped: {},
-    nextActionAt: 0,
-    celebrated: [],
-    dialogueHistory: emptyDialogueHistory(),
-  }
-}
 
 /**
  * 기본 사실 뭉치 — "지금 월드 시각 + 빈 플레이어"(브리프 Step 1).

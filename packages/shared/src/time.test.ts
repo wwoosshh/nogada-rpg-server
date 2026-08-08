@@ -6,6 +6,7 @@ import {
   REAL_MS_PER_GAME_DAY,
   RESYNC_THRESHOLD_MS,
   estimateServerNow,
+  gameDaysBetween,
   gameTimeAt,
   needsResync,
   skyShade,
@@ -167,6 +168,28 @@ describe('estimateServerNow', () => {
 
   it('왕복이 즉시면 서버 시각 그대로다', () => {
     expect(estimateServerNow(1000, 5000, 1000)).toBe(5000)
+  })
+})
+
+describe('gameDaysBetween', () => {
+  it('현실 하루(게임 하루)마다 1씩 늘어난다', () => {
+    expect(gameDaysBetween(GAME_EPOCH_MS, afterDays(3))).toBe(3)
+  })
+
+  it('달력 날짜가 아니라 흐른 시간을 센다 — 자정 직전과 몇 분 뒤는 하루 차이가 아니다', () => {
+    const justBeforeMidnight = atClock(23, 59)
+    const fewMinutesLater = justBeforeMidnight + 5 * (REAL_MS_PER_GAME_DAY / 1440)
+    expect(gameDaysBetween(justBeforeMidnight, fewMinutesLater)).toBe(0)
+  })
+
+  it('기준 시각을 넘겨 흐른 시간이 하루 미만이면 0 이다', () => {
+    expect(gameDaysBetween(GAME_EPOCH_MS, GAME_EPOCH_MS + REAL_MS_PER_GAME_DAY - 1)).toBe(0)
+  })
+
+  it('시계가 거꾸로 가도(미래 시각을 기준으로 과거를 재도) 음수 대신 0 이다', () => {
+    // 기기·서버 시계가 뒤로 갔을 때를 대비한 바닥이다 — 미래에 말한 기록은
+    // 있을 수 없으므로 그런 값은 "방금"(0)으로 본다.
+    expect(gameDaysBetween(afterDays(5), afterDays(2))).toBe(0)
   })
 })
 

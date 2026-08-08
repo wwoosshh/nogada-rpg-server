@@ -21,7 +21,7 @@
 
 import type { Facts, FactValue } from './dialogue.js'
 import { achievedIds, type MilestoneDef } from './milestones.js'
-import { REAL_MS_PER_GAME_DAY, gameTimeAt } from './time.js'
+import { gameDaysBetween, gameTimeAt } from './time.js'
 import { SKILL_IDS, type PlayerState } from './types.js'
 
 export interface FactSources {
@@ -50,19 +50,6 @@ export interface FactSources {
   justAchieved?: string
 }
 
-/**
- * 며칠 지났는가를 세는 방식: 달력 날짜의 차이가 아니라 흐른 시간이다.
- *
- * 게임 하루가 현실 한 시간이라, 자정 직전에 말하고 몇 분 뒤에 다시 오면
- * 달력으로는 하루가 지나 있다 — "어제 보고 오늘 또 왔군" 이 2분 만에 나온다.
- * 흐른 시간으로 세면 그런 일이 없다.
- */
-function gameDaysBetween(fromMs: number, toMs: number): number {
-  // 기기·서버 시계가 뒤로 갔을 때 음수가 나오지 않게 바닥을 둔다. 미래에
-  // 말한 기록은 있을 수 없으므로 그런 값은 "방금"(0)으로 본다.
-  return Math.max(0, Math.floor((toMs - fromMs) / REAL_MS_PER_GAME_DAY))
-}
-
 export function buildFacts(sources: FactSources): Facts {
   const { speaker, player, milestones, nowMs, justAchieved } = sources
   const time = gameTimeAt(nowMs)
@@ -84,11 +71,22 @@ export function buildFacts(sources: FactSources): Facts {
 
   if (justAchieved !== undefined) facts.justAchieved = justAchieved
 
-  const lastTalkAt = player.dialogueHistory.lastTalkAt[speaker]
-  facts.talkedBefore = lastTalkAt !== undefined
-  // 한 번도 말한 적이 없으면 "며칠 지났나" 에 매길 값이 없다. 0 을 넣으면
-  // "방금 말했다"는 뜻이 되어 처음 만난 사람에게 재회 인사가 나간다.
-  if (lastTalkAt !== undefined) facts.daysSinceLastTalk = gameDaysBetween(lastTalkAt, nowMs)
+  const { lastTalkAt, recent } = player.dialogueHistory
+  const lastTalk = lastTalkAt[speaker]
+  // talkedBefore 는 lastTalkAt 뿐 아니라 recent 도 증거로 받아들인다.
+  // lastTalkAt 은 이 태스크에서 새로 생긴 필드라, 그 전 세이브는 recent 는
+  // 채워져 있는데 lastTalkAt 은 없다(세이브 스키마의 `.default({})` — store.ts).
+  // 두 필드는 "어긋날 수 없게" 한 저장소(dialogueHistory)에 같이 두었다는
+  // 설계를 지키려면, lastTalkAt 하나만 믿어서는 안 된다 — 그러면 실제로 말해
+  // 본 상대(recent 가 증명한다)에게 초면 인사가 나간다. 별도 마이그레이션
+  // 단계 대신 여기서 "둘 중 하나"로 정의하면, 새 세이브도 옛 세이브도 같은
+  // 코드로 옳게 읽힌다.
+  const hasRecentEvidence = (recent[speaker]?.length ?? 0) > 0
+  facts.talkedBefore = lastTalk !== undefined || hasRecentEvidence
+  // daysSinceLastTalk 는 다르다 — "며칠 지났나"는 정확한 시각이 있어야만 답할
+  // 수 있고 recent 에는 시각이 없다. 옛 세이브처럼 시각을 모르면 이 사실은
+  // 내지 않는다: 0 을 넣으면 "방금 말했다"가 되어 모른다고 하는 것보다 나쁘다.
+  if (lastTalk !== undefined) facts.daysSinceLastTalk = gameDaysBetween(lastTalk, nowMs)
 
   return facts
 }

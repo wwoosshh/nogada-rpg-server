@@ -83,6 +83,23 @@ export function gameTimeAt(realMs: number): GameTime {
   }
 }
 
+/**
+ * 실제 시각 두 시점 사이에 게임 날짜로 며칠이 흘렀는가.
+ *
+ * 달력 날짜의 차이가 아니라 흐른 시간이다 — 게임 하루가 현실 한 시간이라,
+ * 자정 직전에 말하고 몇 분 뒤에 다시 오면 달력으로는 하루가 지나 있다 —
+ * "어제 보고 오늘 또 왔군" 이 2분 만에 나온다. 흐른 시간으로 세면 그런 일이
+ * 없다. dialogueHistory 의 daysSinceLastTalk(packages/shared/src/facts.ts)가
+ * 이 함수로 계산한다 — 세계 시간을 다루는 다른 함수들과 같은 자리에 두는
+ * 것이, "이건 대화 전용 계산"이라는 오해를 막는다. 게임의 경과 일수를 재는
+ * 일반 계산일 뿐이다.
+ */
+export function gameDaysBetween(fromMs: number, toMs: number): number {
+  // 기기·서버 시계가 뒤로 갔을 때 음수가 나오지 않게 바닥을 둔다. 미래에
+  // 말한 기록은 있을 수 없으므로 그런 값은 "방금"(0)으로 본다.
+  return Math.max(0, Math.floor((toMs - fromMs) / REAL_MS_PER_GAME_DAY))
+}
+
 export type TimeOfDay = 'dawn' | 'morning' | 'day' | 'evening' | 'night'
 
 /**

@@ -259,9 +259,14 @@ describe('findFactSpec', () => {
     const suppliedNames = DECLARED_FACTS.filter((f) => f.supplied).map((f) => f.name)
     const unsuppliedNames = DECLARED_FACTS.filter((f) => !f.supplied).map((f) => f.name)
     expect(suppliedNames).toEqual([
-      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'justAchieved', 'talkedBefore', 'daysSinceLastTalk',
+      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk',
     ])
-    expect(unsuppliedNames).toEqual(['weather', 'affinity', 'quest.', 'story', 'activity', 'location'])
+    // justAchieved 는 실제로 넘기는 프로덕션 호출이 없어 weather 등과 함께
+    // 여기 있다 — buildFacts 가 인자로 받으면 실어 주긴 하지만, 그 인자를
+    // 주는 것은 지금 CLI 오버라이드와 테스트뿐이다(리뷰 finding 1).
+    expect(unsuppliedNames).toEqual([
+      'justAchieved', 'weather', 'affinity', 'quest.', 'story', 'activity', 'location',
+    ])
   })
 
   it('상한 없이 계속 커지는 사실만 unbounded 다', () => {
@@ -273,11 +278,21 @@ describe('findFactSpec', () => {
     expect(unbounded).toEqual(['skill.', 'daysSinceLastTalk'])
   })
 
-  it('공급자가 없는 사실은 값의 모양도 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
+  it('공급자가 없는 사실은 대개 값의 모양도 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
     // 지금 추측해서 못박으면(예: story 는 숫자다) 나중에 그 스펙이 다른 모양을
     // 고르는 순간, 이미 쓰여 있던 대사들이 빌드에서 막힌다. 반대로 공급자가
     // 있는 사실은 그 공급자가 넣는 값이 곧 모양이라 비워 둘 이유가 없다.
+    //
+    // justAchieved 는 이 규칙의 유일한 예외다 — "공급자가 없다"와 "값의
+    // 모양을 모른다"는 서로 다른 사실이다. justAchieved 가 방금 넘긴
+    // 이정표의 id(문자열)라는 것은 이미 결정된 설계이고 .dlg 도 이미 그
+    // 모양으로 쓰고 있다(justAchieved=ice_10000) — 없는 것은 그 값을 대화
+    // 요청에 실어 보내는 경로뿐이다.
     for (const spec of DECLARED_FACTS) {
+      if (spec.name === 'justAchieved') {
+        expect(spec.value.kind).toBe('string')
+        continue
+      }
       expect([spec.name, spec.value.kind === 'unspecified']).toEqual([spec.name, !spec.supplied])
     }
   })
