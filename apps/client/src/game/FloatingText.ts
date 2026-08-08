@@ -58,8 +58,6 @@ export function spawnFloatingText(
   })
 }
 
-const LIFE_MS = 900
-
 interface LiveText {
   label: Phaser.GameObjects.Text
   tween: Phaser.Tweens.Tween
@@ -94,8 +92,18 @@ export class FloatingTextGroup {
       existing.amount += feedback.amount
       existing.label.setText(this.render(existing))
       existing.label.setPosition(x, y)
-      // 수명을 처음부터 다시 센다. 반복이 이어지는 동안 사라지지 않는다.
-      existing.tween.restart()
+      // 수명을 처음부터 다시 센다(반복이 이어지는 동안 사라지지 않는다) —
+      // 그런데 tween.restart() 를 쓰지 않는다. restart() → seek(0) →
+      // TweenData.reset(true) 는 `target[key] = this.start` 를 쓴다. 그
+      // this.start 는 트윈을 "만들 때" 값을 한 번 찍어 둔 것이라, 방금 위에서
+      // setPosition 으로 옮긴 y 는 무시되고 맨 처음 이 글자가 태어난 자리의
+      // y 로 되돌아간다(alpha 는 시작값이 우리가 원하는 값(1)과 같아서
+      // 우연히 맞았을 뿐이다). 그래서 같은 수확의 두 번째 노드로 걸어가면
+      // x 는 따라오는데 y 는 첫 노드 자리로 튀는 결함이 생긴다. 대신 트윈을
+      // 새로 만든다 — 방금 setPosition 이 써 둔 y 를 Phaser 가 생성 시점의
+      // 현재값으로 그대로 시작점 삼는다.
+      existing.tween.stop()
+      existing.tween = this.spawnTween(scene, existing.label, y, feedback.groupKey)
       return
     }
 
@@ -133,18 +141,32 @@ export class FloatingTextGroup {
       amount: feedback.amount,
       tone: feedback.tone,
       baseText: baseTextOf(feedback.text, feedback.tone),
-      tween: scene.tweens.add({
-        targets: label,
-        y: y - 24,
-        alpha: { from: 1, to: 0 },
-        duration: LIFE_MS,
-        onComplete: () => {
-          this.live.delete(key)
-          label.destroy()
-        },
-      }),
+      tween: this.spawnTween(scene, label, y, key),
     }
     this.live.set(key, entry)
+  }
+
+  /**
+   * 글자 하나의 "떠오르며 사라짐" 트윈을 만든다. spawn() 과 push() 의 갱신
+   * 경로가 둘 다 쓴다 — 둘이 각자 트윈 설정을 따로 들면 한쪽만 고치는 일이
+   * 생긴다(RISE_PX 대신 24 를 박아 둔 채 남았던 것도 그렇게 생긴 어긋남이었다).
+   */
+  private spawnTween(
+    scene: Phaser.Scene,
+    label: Phaser.GameObjects.Text,
+    y: number,
+    key: string,
+  ): Phaser.Tweens.Tween {
+    return scene.tweens.add({
+      targets: label,
+      y: y - RISE_PX,
+      alpha: { from: 1, to: 0 },
+      duration: DURATION_MS,
+      onComplete: () => {
+        this.live.delete(key)
+        label.destroy()
+      },
+    })
   }
 }
 

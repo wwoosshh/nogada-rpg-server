@@ -40,7 +40,13 @@ export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; c
  */
 export function performGather(args: PerformGatherArgs): GatherResult {
   const { data, instanceId, rng, now } = args
-  const placement = data.placements[instanceId]
+  // instanceId 는 클라이언트가 그대로 보낸 문자열이다. Object.hasOwn 없이
+  // data.placements[instanceId] 로 바로 읽으면 "constructor" 같은 상속 키가
+  // 프로토타입 체인에서 값을 찾아 truthy 를 반환한다 — 그 값이 Placement
+  // 모양이 아니라서 지금은 아래 node 조회에서 결국 걸러지지만, 그건 우연이지
+  // 의도가 아니다. packages/data/src/validate.ts 의 hasItem 과 같은 방식으로
+  // 자기 소유 키인지부터 확인한다.
+  const placement = Object.hasOwn(data.placements, instanceId) ? data.placements[instanceId] : undefined
   if (!placement) return { ok: false, code: 'unknown_node' }
   const node = data.nodes[placement.nodeId]
   // 배치가 없는 노드를 가리키는 것은 데이터 검증이 막으므로 여기 오면 데이터가 깨진 것이다.

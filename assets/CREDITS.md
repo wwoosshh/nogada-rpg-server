@@ -95,7 +95,7 @@ M2 에서 아이템이 수백 종이 되면 이 방식은 무너지지만, 그�
 새 환경에서는 아래를 실행해 복원한다 (Git Bash 기준, 저장소 루트에서):
 
 ```bash
-mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/maps apps/client/public/icons
+mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/icons
 
 cp "assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32/Male/Male 01-1.png" \
    apps/client/public/sprites/player.png
@@ -155,7 +155,7 @@ $bmp.Save("apps\client\public\tilesets\pipoya-basechip.png", [System.Drawing.Ima
 타일셋 크기를 바꾸면 **맵 파일의 메타데이터도 함께 고쳐야 한다** — `world.tmx` 의 `tilecount`/`height`,
 `world.json` 의 `tilecount`/`imageheight`. 어긋나면 Phaser 가 잘못된 좌표를 계산한다.
 
-> 반대로 **맵 파일(`apps/client/public/maps/world.json`)은 우리가 만든 저작물이므로 커밋한다.**
+> 반대로 **맵 파일(`packages/data/maps/world.json`)은 우리가 만든 저작물이므로 커밋한다.**
 
 ### 도구
 

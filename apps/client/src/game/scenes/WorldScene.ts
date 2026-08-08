@@ -10,7 +10,7 @@ import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { TileMover } from '../TileMover.js'
-import type { ControlScene } from './ControlScene.js'
+import { ControlScene } from './ControlScene.js'
 
 const TILE = 32
 
@@ -160,7 +160,14 @@ export class WorldScene extends Phaser.Scene {
     // hub 가 여기서 막 만들어졌으므로 Control 씬 자신의 create() 가 끝난 뒤에야
     // bind() 로 넘길 수 있다 — CREATE 이벤트를 기다리는 이유다.
     this.scene.launch('Control')
-    const control = this.scene.get('Control') as ControlScene
+    const control = this.scene.get('Control')
+    // 다른 필수값들(tileset·ground·walls, 위 스무 줄 안)과 같은 자세다:
+    // 없으면 조용히 넘어가지 않고 바로 던진다. instanceof 가 존재 여부와
+    // 타입을 한 번에 좁혀 주므로, 이전의 `as ControlScene` 처럼 검증 없이
+    // 믿고 캐스팅하는 지점이 사라진다.
+    if (!(control instanceof ControlScene)) {
+      throw new Error('Control 씬을 찾을 수 없다: PhaserGame.ts 의 씬 배열을 확인하라')
+    }
     control.events.once(Phaser.Scenes.Events.CREATE, () => control.bind(this.hub))
 
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
@@ -303,7 +310,7 @@ export class WorldScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(DEPTH.overhead + 10)
+      .setDepth(DEPTH.milestone)
 
     this.tweens.add({
       targets: label,

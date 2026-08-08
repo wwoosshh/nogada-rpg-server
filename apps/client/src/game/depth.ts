@@ -25,4 +25,5 @@ export const DEPTH = {
   overhead: 20,
   dayNight: 30, // 낮밤 명암. 월드의 모든 것 위를 덮는다
   floatingText: 40, // 행동 피드백. 밤에도 읽혀야 하므로 명암보다 위다
+  milestone: 50, // 숙련도 해금 같은 "사건" 알림. 흔한 행동 피드백보다도 위라야 묻히지 않는다
 } as const
