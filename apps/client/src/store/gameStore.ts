@@ -16,6 +16,7 @@ import {
   type CraftOutcomeDto,
   type GatherOutcomeDto,
 } from '../api/GameClient.js'
+import type { DetailMenuTab } from '../game/detailMenuTabs.js'
 import { syncClock } from '../time/clock.js'
 
 /**
@@ -56,9 +57,6 @@ export interface Milestone {
  * 3.4 의 인프로세스 서버)는 게임 구조가 자리잡은 뒤에 별도로 만든다.
  */
 export type Connection = 'connecting' | 'online' | 'offline'
-
-/** B 의 상세 메뉴 탭. PanelScene 의 TABS 순서가 진짜 출처이고, 여기는 그중 어느 것을 가리킬지 정하는 이름표일 뿐이다. */
-export type DetailMenuTab = 'skills' | 'milestones' | 'settings'
 
 /**
  * 상단 바 톱니(React)가 상세 메뉴(Phaser 씬)를 열어 달라는 요청.

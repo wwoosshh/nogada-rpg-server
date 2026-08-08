@@ -129,18 +129,46 @@ export class ScrollList {
     this.container.setVisible(visible)
   }
 
+  /**
+   * 줄(Text 오브젝트)을 지금 당장 놓아준다. setLines() 도 다음 내용을 그리기
+   * 전에 기존 줄을 지우지만, 메뉴가 닫힌 채로 있는 동안까지(다음에 열리거나
+   * 씬이 통째로 사라질 때까지) 그 오브젝트들을 붙잡아 둘 이유가 없다 —
+   * PanelScene.render() 가 메뉴를 닫을 때 이것을 부른다.
+   *
+   * 드래그 추적 상태도 함께 지운다. 그렇지 않으면: 리스트가 보이는 동안
+   * 드래그가 시작되고(dragPointerId 설정) 손을 떼기 전에 메뉴가 닫히면,
+   * 그 사이의 pointerup 은 handlePointerUp 의 visible 가드에 막혀 무시되고
+   * dragPointerId 가 지워지지 않은 채 남는다. 마우스는 항상 id 1 이므로,
+   * 다음에 메뉴를 열었을 때 버튼을 누르지 않고 그 위를 지나가기만 해도
+   * (hover 로 오는 pointermove 도 같은 id 1) 남아있던 값과 우연히 일치해
+   * 리스트가 저 혼자 스크롤될 수 있다 — 그 경로를 여기서 끊는다.
+   */
+  clear(): void {
+    for (const row of this.rows) row.destroy()
+    this.rows = []
+    this.contentHeight = 0
+    this.scrollY = 0
+    this.dragPointerId = null
+  }
+
   destroy(): void {
     this.hitZone.off('pointerdown', this.handlePointerDown, this)
     this.hitZone.off('pointermove', this.handlePointerMove, this)
     this.hitZone.off('pointerup', this.handlePointerUp, this)
     this.hitZone.off('pointerout', this.handlePointerUp, this)
     this.scene.input.off('wheel', this.handleWheel, this)
-    for (const row of this.rows) row.destroy()
+    this.clear()
     this.container.destroy()
     this.maskShape.destroy()
     this.hitZone.destroy()
   }
 
+  // 네 핸들러(down/move/up) 모두 컨테이너가 안 보이면 아무 일도 하지 않는다.
+  // hitZone 자체는 container.visible 과 무관하게 항상 그 자리에서 입력을
+  // 받는다(별도 오브젝트라 setVisible(false) 의 영향을 안 받는다) — 그래서
+  // 이 가드가 없으면 메뉴가 닫힌 뒤에도 숨은 리스트의 스크롤 위치가 계속
+  // 바뀔 수 있다(clear() 의 dragPointerId 정리가 그중 드래그 상태 쪽을
+  // 맡고, 이 가드들은 그 사이에 일어나는 계산 자체를 막는다).
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (!this.container.visible) return
     this.dragPointerId = pointer.id
@@ -149,6 +177,7 @@ export class ScrollList {
   }
 
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
+    if (!this.container.visible) return
     if (this.dragPointerId !== pointer.id) return
     // 손가락이 위로(화면 y 감소) 갈수록 목록은 아래 내용을 보여줘야
     // 하므로(스크롤 값 증가) 부호를 뒤집는다 — 흔한 "내용을 손가락으로
@@ -160,6 +189,7 @@ export class ScrollList {
   }
 
   private handlePointerUp(pointer: Phaser.Input.Pointer): void {
+    if (!this.container.visible) return
     if (this.dragPointerId !== pointer.id) return
     this.dragPointerId = null
   }

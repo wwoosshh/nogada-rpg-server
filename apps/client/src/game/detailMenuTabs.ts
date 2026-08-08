@@ -1,0 +1,175 @@
+import {
+  achievedIds,
+  actionIntervalMs,
+  metricValue,
+  milestoneRatio,
+  SKILL_IDS,
+  SKILL_LABELS,
+  type GameData,
+  type MilestoneDef,
+  type MilestoneEffect,
+  type PlayerState,
+} from '@nogada/shared'
+import type { ScrollListLine } from './ScrollList.js'
+
+/**
+ * 상세 메뉴(B 버튼)의 탭 정의와 각 탭이 보여줄 줄 내용을 만드는 함수들.
+ *
+ * PanelScene(탭 바를 그리고 전환한다)과 gameStore(상단 바 톱니가 openMenu()
+ * 로 탭을 지정할 때 그 id 타입이 필요하다) 둘 다 아래 `TABS` 를 참조한다.
+ * 어느 한쪽 파일 안에 두면 다른 쪽이 그 파일을 거슬러 import 해야 하는데,
+ * PanelScene 은 이미 useGameStore 를 쓰고 있어(store -> PanelScene 방향으로
+ * 두면) 곧바로 순환 import 가 된다. depth.ts 가 WorldScene 과 NodeMarker
+ * 사이에서 하는 것과 같은 이유로, 어느 쪽에도 속하지 않는 이 작은 모듈에 둔다.
+ *
+ * 이 파일은 Phaser 를 import 하지 않는다 — 탭 내용은 문자열과 색·크기를
+ * 묶은 순수 데이터(`ScrollListLine`)를 만들 뿐이고, 그것을 Text 오브젝트로
+ * 그리는 일은 PanelScene 과 ScrollList 의 몫이다.
+ */
+
+/*
+ * PanelScene 의 나머지 부분(가방·제작 안내 상자 글자색, 탭 글자 기본색)도
+ * 이 두 색을 그대로 쓴다 — 그래서 여기서 export 한다. SUCCESS_COLOR 등
+ * 나머지 색은 아래 탭 내용에서만 쓰여 이 파일 밖으로 안 나간다. ControlScene
+ * 과 PanelScene 이 팔레트 리터럴을 서로 다시 옮겨 적는 것(PanelScene.ts 상단
+ * 주석)과는 다른 얘기다 — 그건 별개 파일들의 의도된 중복이고, 이 둘은 원래
+ * 한 파일(PanelScene.ts)이었던 코드를 구조만 나눈 것이라 그대로 공유한다.
+ */
+export const LABEL_COLOR = '#e8dcc0'
+export const DIM_COLOR = '#c9b895'
+const SUCCESS_COLOR = '#7fa650'
+
+const ROW_NAME_FONT_SIZE = 12
+const ROW_DETAIL_FONT_SIZE = 10
+
+const fmt = (n: number): string => n.toLocaleString('ko-KR')
+
+/** ids 가 가리키는 대상의 실제 이름을 모아 사람이 읽는 목록으로 만든다. 데이터에 없으면 id 를 그대로 보여준다(조용히 지우지 않는다). */
+function namesOf(ids: readonly string[], table: Record<string, { name: string }>): string {
+  return ids.map((id) => table[id]?.name ?? id).join(' · ')
+}
+
+/**
+ * 이정표 하나의 효과를 한 줄로 설명한다.
+ *
+ * achieved 로 시제를 가른다 — 달성한 것은 "지금 이렇다", 못한 것은 "달성하면
+ * 이렇게 된다". `title` 은 achieved 여부와 무관하게 효과가 없다는 사실 자체를
+ * 그대로 말한다 — 보상을 암시하고 안 주는 줄은 아예 없는 줄보다 나쁘다.
+ */
+function effectDescription(effect: MilestoneEffect, data: GameData, achieved: boolean): string {
+  switch (effect.kind) {
+    case 'repeat':
+      return achieved ? '누르고 있으면 계속된다' : '달성하면 누르고 있는 것만으로 계속된다'
+    case 'recipes': {
+      const names = namesOf(effect.ids, data.recipes)
+      return achieved ? `만들 수 있다 — ${names}` : `달성하면 만들 수 있다 — ${names}`
+    }
+    case 'nodes': {
+      const names = namesOf(effect.ids, data.nodes)
+      return achieved ? `캘 수 있다 — ${names}` : `달성하면 캘 수 있다 — ${names}`
+    }
+    case 'title':
+      return achieved ? '칭호. 그 외 효과는 없다' : '칭호 — 효과는 없다'
+    default: {
+      // MilestoneEffect 에 새 kind 가 늘었는데 위에서 못 따라가면 여기서 컴파일이
+      // 깨진다 — InputHub.setButton 과 같은 자세다.
+      const exhaustive: never = effect
+      throw new Error(`처리하지 않은 이정표 효과: ${String(exhaustive)}`)
+    }
+  }
+}
+
+interface MilestoneRow {
+  def: MilestoneDef
+  achieved: boolean
+  current: number
+  ratio: number
+}
+
+/**
+ * 못한 것을 남은 비율이 작은 순(= 진척 ratio 가 큰 순)으로 먼저, 달성한 것을 뒤에 둔다.
+ *
+ * `data.milestones` 자체는 절대 정렬하지 않는다 — `nextMilestone` 의 동점
+ * 처리와 `every` 이정표의 순환 없음 검증이 그 정의 순서에 기댄다(milestones.ts,
+ * packages/data/src/validate.ts). 여기서 만드는 것은 표시 전용 사본이다.
+ */
+function buildMilestoneRows(data: GameData, player: PlayerState): MilestoneRow[] {
+  const achieved = achievedIds(data.milestones, player)
+  const rows: MilestoneRow[] = data.milestones.map((def) => ({
+    def,
+    achieved: achieved.has(def.id),
+    current: metricValue(def, player, data.milestones),
+    ratio: milestoneRatio(def, player, data.milestones),
+  }))
+
+  const pending = rows.filter((r) => !r.achieved).sort((a, b) => b.ratio - a.ratio)
+  const done = rows.filter((r) => r.achieved)
+  return [...pending, ...done]
+}
+
+/** 이정표 탭의 내용. 줄마다 이름+진척(또는 체크) 한 줄과 효과 설명 한 줄, 두 줄씩이다. */
+function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLine[] {
+  const lines: ScrollListLine[] = []
+  for (const row of buildMilestoneRows(data, player)) {
+    // "???" 를 쓰지 않는다 — 못한 것도 지금 값과 필요한 값을 그대로 적는다.
+    const head = row.achieved
+      ? `✓ ${row.def.name}`
+      : `${row.def.name}   ${fmt(row.current)} / ${fmt(row.def.threshold)}`
+    lines.push({
+      text: head,
+      color: row.achieved ? SUCCESS_COLOR : LABEL_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+    })
+    lines.push({
+      text: effectDescription(row.def.effect, data, row.achieved),
+      color: DIM_COLOR,
+      fontSize: ROW_DETAIL_FONT_SIZE,
+    })
+  }
+  return lines
+}
+
+/** 숙련도 탭의 내용. 다섯 기술의 현재 숙련도와 그 숙련도에서의 행동 간격 — 둘 다 서버와 같은 공식(actionIntervalMs)으로 계산한다. */
+function buildSkillLines(_data: GameData, player: PlayerState): ScrollListLine[] {
+  return SKILL_IDS.map((skill) => {
+    const value = player.skills[skill]
+    const interval = actionIntervalMs(value)
+    return {
+      text: `${SKILL_LABELS[skill]}   숙련도 ${fmt(value)}   행동 간격 ${interval}ms`,
+      color: LABEL_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+    }
+  })
+}
+
+/** 설정 탭의 내용. 지금은 톱니를 눌러도 나올 실제 설정이 없다 — bag·craft 와 같은 자세로 정직하게 "아직 안 만들었다"만 말한다. */
+function buildSettingsLines(): ScrollListLine[] {
+  return [{ text: '아직 만들지 않았습니다.', color: DIM_COLOR, fontSize: ROW_NAME_FONT_SIZE }]
+}
+
+type LineBuilder = (data: GameData, player: PlayerState) => ScrollListLine[]
+
+interface TabDef {
+  id: string
+  label: string
+  buildLines: LineBuilder
+}
+
+/**
+ * 상세 메뉴의 탭 목록 — 유일한 출처다.
+ *
+ * 이벤트·퀘스트 탭을 더할 때 여기 항목 하나(id·label·buildLines)만 늘리면
+ * 된다. 탭 바 레이아웃·전환·스크롤(PanelScene 의 layoutMenu·render)은 전부
+ * 이 배열의 길이와 내용에서 파생된다. `id` 의 타입인 `DetailMenuTab` 도
+ * 바로 아래에서 이 배열 자체로부터 파생되므로, 다른 파일에 손으로 넓힐
+ * 유니언이 없다 — `as const satisfies` 가 각 `id` 를 리터럴로 굳히고,
+ * `(typeof TABS)[number]['id']` 가 그 리터럴들의 합집합을 뽑아낸다.
+ */
+export const TABS = [
+  { id: 'skills', label: '숙련도', buildLines: buildSkillLines },
+  { id: 'milestones', label: '이정표', buildLines: buildMilestoneLines },
+  { id: 'settings', label: '설정', buildLines: buildSettingsLines },
+] as const satisfies readonly TabDef[]
+
+/** B 의 상세 메뉴 탭. TABS 의 id 들에서 파생된다 — TABS 에 항목을 추가하면 이 유니언도 컴파일러가 자동으로 넓힌다. */
+export type DetailMenuTab = (typeof TABS)[number]['id']
