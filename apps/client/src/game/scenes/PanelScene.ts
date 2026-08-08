@@ -5,6 +5,7 @@ import { worldNow } from '../../time/clock.js'
 import { buildCraftLines, canAffordCraft, craftRepeatUnlocked } from '../craftPanelContent.js'
 import { DIM_COLOR, LABEL_COLOR, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
 import { ScrollList } from '../ScrollList.js'
+import type { ControlScene } from './ControlScene.js'
 
 /*
  * ControlScene 과 같은 팔레트다(tokens.css 의 --c-panel / --c-panel-edge /
@@ -27,64 +28,57 @@ const INK_COLOR = '#241c1c'
 /** 배경 위에서도 글자가 또렷이 읽혀야 하므로 컨트롤러 버튼(0.55)보다 훨씬 불투명하다. */
 const PANEL_ALPHA = 0.94
 
-/** 상단 바를 침범하지 않을 위쪽 여백. */
+/** 상단 바를 침범하지 않을 위쪽 여백 — 실측 상단 바 높이(약 34px: ui.css 의 .topbar 패딩 4px×2 + 톱니 min-height 24px + 테두리 2px)보다 살짝 크게 잡았다. */
 const TOP_MARGIN = 40
+
 /**
- * 화면 맨 아래에서 bag·craft 안내 상자가 침범하지 않는 높이.
+ * 위쪽을 뺀 나머지 세 면(좌·우·아래)에서 패널이 남기는 여백.
  *
- * ControlScene 의 가방·제작 토글 줄 윗변은 대략 `height - 192` 다
- * (EDGE_MARGIN_BOTTOM + 버튼 반지름들의 합, ControlScene.ts 의 layout() 참고).
- * 그 버튼들은 패널이 열려 있는 동안에도 계속 눌려야 하므로(닫기·전환) 가려지면
- * 안 된다. 정확한 값을 다시 계산해 맞추는 대신 여유를 더한 근사값을 쓴다 —
- * 실기 확인 전까지는 컨트롤러 치수 자체가 조정 대상이라(설계 문서 §10), 두
- * 파일이 정확히 같은 상수를 공유하게 만드는 비용이 지금은 이득보다 크다.
- *
- * 안내 상자는 두 줄짜리 고정 텍스트라 이 예산을 실제로 쓴 적이 없다
- * (MAX_HEIGHT=170 에서 이미 잘린다) — 그래서 아무도 "화면 세로의 절반"이라는
- * 크기를 신경 쓰지 않았다. 스크롤되는 상세 메뉴는 다르다. 그 트레이드가
- * MENU_BOTTOM_RESERVE 를 따로 둔 이유다.
+ * 컨트롤러를 피하려는 값이 더는 아니다 — 패널이 하나라도 열리면 컨트롤러
+ * 전체가 숨고 입력도 꺼진다(ControlScene.setControllerVisible — setOpen·
+ * openMenuTab 이 부른다. 클래스 문서 참고). 그래도 화면의 물리적 가장자리는
+ * 여전히 피한다: 아래쪽이 안드로이드 제스처 내비게이션 영역과 겹치면
+ * ScrollList 의 드래그 스크롤을 OS 가 먼저 가로챌 수 있다
+ * (ControlScene.EDGE_MARGIN_BOTTOM 과 같은 이유) — 좌우는 그 정도로 민감하지
+ * 않지만 화면 끝에 내용이 딱 붙지 않을 정도의 여유는 준다.
  */
-const BOTTOM_RESERVE = 196
-/**
- * 상세 메뉴 전용 아래 여백 — bag·craft 와 달리 훨씬 작다.
- *
- * BOTTOM_RESERVE 를 그대로 썼을 때 812×375 가로 화면에서 스크롤 내용 높이가
- * 97px 남짓이었다 — 이정표 27개(두 줄씩, 약 760px)를 보려면 한 화면에 서너
- * 줄만 보이고 나머지는 전부 스크롤이었다. bag·craft 상자는 절대 안 쓰는
- * 공간을 스크롤 목록에서는 실제로 쓴다.
- *
- * 그래도 화면 물리적 맨 아래는 피한다 — ControlScene.EDGE_MARGIN_BOTTOM 과
- * 같은 값, 같은 이유다(안드로이드 제스처 내비게이션 영역과 겹치면 스와이프를
- * OS 가 먼저 가로챈다). 이 여백만으로는 가방·제작 토글 버튼(height - 192)을
- * 다 피하지 못해 메뉴 내용과 그 버튼이 겹친다 — 의도한 트레이드다. PanelScene
- * 이 WorldScene 과 ControlScene 사이에 있는 이유(클래스 문서)가 정확히 이
- * 상황을 위한 것이다: Control 의 버튼은 항상 이 패널보다 위에 그려지고 자기
- * 원형 히트 영역을 스스로 갖고 있어(setCircularHitArea), 시각적으로 겹쳐도
- * 버튼은 계속 눌린다 — 그 버튼들이 패널이 열려 있는 동안에도 눌려야 한다는
- * 요구사항은 BOTTOM_RESERVE 주석과 같다.
- *
- * 812×375 가로 화면에서 실제로 확인했다: 목록을 이 겹치는 영역까지 스크롤한
- * 채로 가방·제작·취소(B) 버튼을 눌러도 정확히 그 패널로 전환된다 — 겹침이
- * 히트 테스트를 방해하지 않는다.
- */
-const MENU_BOTTOM_RESERVE = 32
+const PANEL_MARGIN = 16
+
+/** 아주 좁은 창에서도 패널이 찌그러지지 않는 최소 폭. */
+const MIN_WIDTH = 240
 /** 극단적으로 낮은 화면에서도 두 줄 글자가 안 뭉개지는 최소 높이. */
 const MIN_HEIGHT = 64
+/**
+ * 패널 폭의 상한.
+ *
+ * "화면을 거의 다 쓴다"는 요구는 실제 세로 모바일 화면(가로로 눕혀도 이
+ * 값에 닿지 않는다) 얘기다 — 데스크톱에서 개발용 창을 비정상적으로 넓게
+ * 열었을 때 목록 줄이 화면 끝까지 죽 늘어지는 것만 막는 방어값이다.
+ */
+const MAX_PANEL_WIDTH = 900
 
-// 가방·제작 — 아직 자리만 있는 작은 안내 상자의 치수.
-const SIDE_MARGIN = 32
-const MAX_WIDTH = 380
-const MAX_HEIGHT = 170
 const TEXT_PADDING = 16
 
-// 상세 메뉴 — 안이 스크롤되므로(ScrollList) 자기 몫의 세로 안전 영역을 꽉
-// 채운다(MENU_BOTTOM_RESERVE — bag·craft 의 안전 영역보다 아래로 더 내려간다).
-// 가로만 이 폭 안에서 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
-const MENU_MAX_WIDTH = 720
-const MENU_SIDE_MARGIN = 16
-const MENU_TAB_BAR_HEIGHT = 26
-const MENU_CONTENT_GAP = 8
-const MENU_CONTENT_PADDING = 8
+/**
+ * 상단 헤더 줄 높이. 닫기 버튼(CLOSE_BUTTON_DIAMETER)이 온전히 들어가는
+ * 높이로 잡았다 — menu 는 같은 줄에 탭도 놓지만(탭 라벨은 작아도 손끝으로
+ * 누를 칸은 이 줄 전체 높이만큼 크다), bag·craft 는 닫기 버튼만 있고 나머지는
+ * 비어 있다.
+ */
+const HEADER_HEIGHT = 48
+/** 헤더 줄 바로 아래, 실제 내용(목록)이 시작되기 전 틈. */
+const CONTENT_GAP = 8
+/** 목록(craft·menu) 좌우·아래 안쪽 여백. */
+const CONTENT_PADDING = 8
+
+/** 손가락 최소 크기 — ControlScene.MIN_BUTTON_DIAMETER 와 같은 스펙값이다(그 파일 상단 주석과 같은 이유로 이 파일도 리터럴을 다시 옮겨 적는다 — 두 파일은 상수를 공유하지 않는다). */
+const CLOSE_BUTTON_DIAMETER = 48
+const CLOSE_BUTTON_RADIUS = CLOSE_BUTTON_DIAMETER / 2
+/** 박스 오른쪽 변에서 닫기 버튼 원 가장자리까지 남기는 여유. */
+const CLOSE_BUTTON_MARGIN = 4
+/** 탭 바와 닫기 버튼 사이 최소 틈 — 탭 폭을 계산할 때 이만큼을 닫기 버튼 앞에서 미리 뺀다. */
+const TAB_CLOSE_GAP = 4
+
 const TAB_INDICATOR_HEIGHT = 2
 const TAB_LABEL_FONT_SIZE = 13
 
@@ -139,37 +133,55 @@ interface TabButton {
  * gameStore.ts 의 MenuRequest 채널이 그 통로다. App.tsx 를 건드리지 않고
  * React 의 톱니 버튼과 이 Phaser 씬을 잇는 유일한 길이 그것이다).
  *
+ * 화면을 거의 다 쓴다 — 위로는 상단 바(TOP_MARGIN)만, 나머지 세 면은
+ * PANEL_MARGIN 만 남긴다(layout() 참고). 예전에는 아래쪽에 컨트롤러가 들어갈
+ * 큰 여백(BOTTOM_RESERVE)을 항상 남겨 뒀지만, 그 여백이 이정표처럼 자라는
+ * 목록의 화면을 절반 가까이 깎아 먹었다 — 그런데도 컨트롤러 버튼은 레이아웃이
+ * 못 미친 자리에서 패널 위에 그려져 내용을 가렸다(가방·제작 토글 줄). 패널이
+ * 닫기 버튼을 스스로 갖게 되면서 이 트레이드를 뒤집었다: 패널이 열려 있는
+ * 동안 컨트롤러는 어차피 쓸모가 없다 — dir·action 은 hub 가 잠그고, cancel·
+ * bag·craft 로 닫거나 바꾸던 자리는 이 닫기 버튼(그리고 여전히 살아 있는
+ * 키보드 — ControlScene.setControllerVisible 문서 참고)이 대신한다. 그래서
+ * 컨트롤러에게 자리를 비켜줄 필요 자체가 없어졌고, 자리를 비켜주는 대신
+ * ControlScene.setControllerVisible() 로 통째로 숨긴다(setOpen·openMenuTab 이
+ * 부른다).
+ *
  * ControlScene 처럼 WorldScene 과 별도인 씬이다 — 이유도 같다. WorldScene 의
  * 카메라 스크롤과 낮밤 명암은 그 씬 안의 오브젝트에만 적용되므로, 별도 씬으로
  * 두면 스크롤을 안 따라가고(화면에 고정) 밤에도 어두워지지 않는다. 패널은
  * "지금 무엇이 열려 있는지"를 밤에도 분명히 보여야 하는 화면이라 컨트롤러와
  * 같은 성질이 필요하다.
  *
- * PhaserGame.ts 의 씬 배열에서 WorldScene 과 ControlScene 사이에 둔다 —
- * World 보다 위에 그려지되(그래서 안 어두워지되) Control 의 버튼(B·가방·제작)은
- * 항상 이 패널보다 위에 그려지게 하기 위해서다. 패널이 열려 있어도 그 세
- * 버튼은 계속 눌려야 하므로(닫기·전환), 레이아웃이 겹치더라도 항상 보이고
- * 눌려야 한다. 실제로는 layout() 이 컨트롤러 버튼 영역을 아예 침범하지 않게
- * 잡으므로 겹칠 일이 없지만, 이 순서는 그 계산이 살짝 어긋나도 버튼이 죽지
- * 않게 하는 두 번째 안전장치다.
+ * PhaserGame.ts 의 씬 배열에서 WorldScene 위, ControlScene 아래에 둔다. 자리가
+ * 필요한 이유는 World 보다 위에 그려져야 한다는 것 하나뿐이다(그래야 낮밤
+ * 명암 밖에 있다 — 위 문단). Control 과의 상대 순서는 더는 의미가 없다 —
+ * 패널이 열리면 Control 이 스스로 숨으므로(위 문단), 이 씬과 Control 이 동시에
+ * 화면에 보이는 상태 자체가 없다(PhaserGame.ts 의 씬 배열 주석 참고).
  *
  * ControlScene 과 마찬가지로 배열의 두 번째 이후라 자동 시작하지 않는다 —
  * WorldScene.create() 가 명시적으로 launch 한다.
  */
 export class PanelScene extends Phaser.Scene {
-  // 가방 — 아직 자리만 있는 작은 안내 상자.
-  private box!: Phaser.GameObjects.Rectangle
+  // 세 패널이 공유하는 배경 상자와 닫기 버튼 — 한 번에 하나만 열리므로
+  // (setOpen) bag·craft·menu 마다 따로 둘 이유가 없다. 항상 같은 자리에 같은
+  // 모양으로 나타난다.
+  private panelBox!: Phaser.GameObjects.Rectangle
+  private closeButtonShape!: Phaser.GameObjects.Arc
+  private closeButtonLabel!: Phaser.GameObjects.Text
+
+  // 가방 — 아직 자리만 있는 작은 안내 문구.
   private title!: Phaser.GameObjects.Text
   private body!: Phaser.GameObjects.Text
 
   // 상세 메뉴. scrollList 는 menu 뿐 아니라 craft 도 쓴다 — PanelId 는 한 번에
   // 하나만 열리므로(setOpen) 인스턴스를 둘로 나눌 이유가 없다.
-  private menuBox!: Phaser.GameObjects.Rectangle
   private tabButtons: TabButton[] = []
   private tabIndicator!: Phaser.GameObjects.Rectangle
   private scrollList!: ScrollList
 
   private hub: InputHub | null = null
+  /** 패널이 열리고 닫힐 때 컨트롤러를 같이 숨기고 보이는 통로 — bind() 참고. */
+  private control: ControlScene | null = null
   private open: PanelId | null = null
   private menuTab: DetailMenuTab = 'skills'
   private unsubscribeMenuRequest: (() => void) | null = null
@@ -183,8 +195,8 @@ export class PanelScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.box = this.add
-      .rectangle(0, 0, MAX_WIDTH, MAX_HEIGHT, PANEL_COLOR, PANEL_ALPHA)
+    this.panelBox = this.add
+      .rectangle(0, 0, 10, 10, PANEL_COLOR, PANEL_ALPHA)
       .setStrokeStyle(2, PANEL_EDGE_COLOR, 1)
       .setVisible(false)
 
@@ -207,14 +219,8 @@ export class PanelScene extends Phaser.Scene {
         stroke: INK_COLOR,
         strokeThickness: 2,
         align: 'center',
-        wordWrap: { width: MAX_WIDTH - TEXT_PADDING * 2 },
       })
       .setOrigin(0.5)
-      .setVisible(false)
-
-    this.menuBox = this.add
-      .rectangle(0, 0, 10, 10, PANEL_COLOR, PANEL_ALPHA)
-      .setStrokeStyle(2, PANEL_EDGE_COLOR, 1)
       .setVisible(false)
 
     this.tabButtons = TABS.map((tab) => {
@@ -233,7 +239,7 @@ export class PanelScene extends Phaser.Scene {
       // 경계 대신 탭 칸 전체가 눌린다 — 짧은 라벨("설정")도 넓게 누를 수 있다.
       // 명시적 Rectangle 을 주는 이유는 ScrollList.hitZone 생성부의 주석과
       // 같다 — 크기 0인 Zone 에 인자 없이 setInteractive() 를 부르면 Phaser 가
-      // input 자체를 안 붙이는 경우가 있었다(실측). layoutMenu() 가 매 리사이즈마다
+      // input 자체를 안 붙이는 경우가 있었다(실측). layout() 이 매 리사이즈마다
       // 이 Rectangle 의 크기를 직접 갱신한다.
       const hitZone = this.add
         .zone(0, 0, 0, 0)
@@ -250,6 +256,39 @@ export class PanelScene extends Phaser.Scene {
       .setVisible(false)
 
     this.scrollList = new ScrollList(this)
+
+    // 닫기 버튼 — 세 패널이 공유한다(항상 같은 자리, 항상 같은 동작). 다른
+    // 내용(탭·목록) 위에 그려져야 하므로 이 씬에서 가장 마지막에 만든다 —
+    // 같은 씬 안에서는 만든 순서가 곧 그리는 순서다(뒤에 만들수록 위).
+    this.closeButtonShape = this.add
+      .circle(0, 0, CLOSE_BUTTON_RADIUS, PANEL_COLOR, PANEL_ALPHA)
+      .setStrokeStyle(2, PANEL_EDGE_COLOR, 1)
+      .setVisible(false)
+    // Arc 의 원점은 (0.5, 0.5) 라 로컬 중심이 (radius, radius) 다 —
+    // ControlScene.setCircularHitArea 와 같은 이유로 히트 영역도 원으로, 그
+    // 중심 기준으로 켠다. 지름이 고정이라(리사이즈로 크기가 안 바뀐다) 탭
+    // hitZone 과 달리 이 히트 영역은 리사이즈마다 다시 잡을 필요가 없다 —
+    // layout() 은 위치만 옮긴다.
+    this.closeButtonShape.setInteractive(
+      new Phaser.Geom.Circle(CLOSE_BUTTON_RADIUS, CLOSE_BUTTON_RADIUS, CLOSE_BUTTON_RADIUS),
+      Phaser.Geom.Circle.Contains,
+    )
+    // 무엇이 열려 있든 닫기는 항상 같은 동작이다. setOpen(null) 은 이미 아무것도
+    // 안 열려 있으면 조용히 넘어간다(그 안의 가드) — 탭 hitZone 과 달리 이
+    // 버튼은 안 보일 때도 인터랙티브를 따로 끄지 않는다(닫힌 상태에서 눌려도
+    // 부작용이 없기 때문이다).
+    this.closeButtonShape.on('pointerdown', () => this.setOpen(null))
+
+    this.closeButtonLabel = this.add
+      .text(0, 0, '✕', {
+        fontSize: '20px',
+        color: ACCENT_TEXT_COLOR,
+        stroke: INK_COLOR,
+        strokeThickness: 3,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setVisible(false)
 
     this.layout(this.scale.width, this.scale.height)
     this.scale.on('resize', this.handleResize, this)
@@ -299,10 +338,16 @@ export class PanelScene extends Phaser.Scene {
    * 같은 이유로 미룬다 — 이 씬의 create() 가 끝나야 존재하고, hub 는
    * WorldScene.create() 가 만든다. 두 시점 어느 쪽 생성 시점에도 넘길 수
    * 없으므로 별도 진입점으로 나중에 연결한다.
+   *
+   * control 도 같은 이유로 함께 받는다 — 패널이 열리고 닫힐 때 컨트롤러를
+   * 숨기고 보이려면(setOpen·openMenuTab 참고) 그 씬을 가리킬 방법이 있어야
+   * 한다. WorldScene 이 Control 을 먼저 launch·bind 한 뒤 Panel 을 bind 하므로
+   * (WorldScene.create() 참고) 이 시점에는 이미 유효한 참조다.
    */
-  bind(hub: InputHub): void {
+  bind(hub: InputHub, control: ControlScene): void {
     if (this.hub) throw new Error('PanelScene.bind 은 한 번만 부를 수 있다')
     this.hub = hub
+    this.control = control
   }
 
   /**
@@ -351,6 +396,8 @@ export class PanelScene extends Phaser.Scene {
     if (next === 'menu') this.menuTab = 'skills'
     this.render()
     this.hub?.setWorldInputLocked(this.open !== null)
+    // 컨트롤러 전체를 같이 여닫는다 — ControlScene.setControllerVisible 문서 참고.
+    this.control?.setControllerVisible(this.open === null)
   }
 
   /**
@@ -365,10 +412,17 @@ export class PanelScene extends Phaser.Scene {
     this.menuTab = tab
     this.render()
     this.hub?.setWorldInputLocked(true)
+    this.control?.setControllerVisible(false)
   }
 
   /** 메뉴 안 탭 바를 눌렀을 때. 메뉴는 이미 열려 있으므로 open·잠금은 건드리지 않는다. */
   private selectTab(tab: DetailMenuTab): void {
+    // 탭 hitZone 은 헤더 줄 전체를 차지하고(layout() 참고), 그 줄은 craft 에도
+    // 있다(탭 없이 비어 있을 뿐이다). menu 가 아닐 때 이 눌림을 무시하지
+    // 않으면, craft 가 열린 동안 그 빈 자리를 탭하는 것만으로 menuTab 이
+    // 바뀌고 render() 가 refreshCraft() 를 다시 불러 스크롤 위치가 맨 위로
+    // 튕긴다(ScrollList.setLines 문서 참고) — 보이지도 않는 탭을 눌렀을 뿐인데.
+    if (this.open !== 'menu') return
     if (this.menuTab === tab) return
     this.menuTab = tab
     this.render()
@@ -376,9 +430,15 @@ export class PanelScene extends Phaser.Scene {
 
   private render(): void {
     const open = this.open
+    const isOpen = open !== null
+
+    // 세 패널이 배경 상자와 닫기 버튼을 공유한다 — 무엇이 열렸든 이 둘은
+    // 같은 자리에 같은 모양으로 나타난다(클래스 문서 참고).
+    this.panelBox.setVisible(isOpen)
+    this.closeButtonShape.setVisible(isOpen)
+    this.closeButtonLabel.setVisible(isOpen)
 
     const showSimple = open === 'bag'
-    this.box.setVisible(showSimple)
     this.title.setVisible(showSimple)
     this.body.setVisible(showSimple)
     if (showSimple) {
@@ -386,12 +446,11 @@ export class PanelScene extends Phaser.Scene {
       this.body.setText(BAG_BODY)
     }
 
-    // menu·craft 는 같은 큰 상자(menuBox)와 같은 ScrollList 를 나눠 쓴다 —
-    // 한 번에 하나만 열리므로 인스턴스를 나눌 이유가 없다(클래스 문서 참고).
-    // 탭 바(라벨·밑줄)는 menu 만 그린다 — craft 에는 탭이 없다.
+    // menu·craft 는 같은 ScrollList 를 나눠 쓴다 — 한 번에 하나만 열리므로
+    // 인스턴스를 나눌 이유가 없다(클래스 문서 참고). 탭 바(라벨·밑줄)는 menu
+    // 만 그린다 — craft 에는 탭이 없다.
     const showMenu = open === 'menu'
     const showCraft = open === 'craft'
-    this.menuBox.setVisible(showMenu || showCraft)
     this.tabIndicator.setVisible(showMenu)
     for (const btn of this.tabButtons) btn.label.setVisible(showMenu)
     this.scrollList.setVisible(showMenu || showCraft)
@@ -526,59 +585,51 @@ export class PanelScene extends Phaser.Scene {
   }
 
   /**
-   * 패널 상자들을 화면 크기에 맞게 다시 잡는다.
+   * 패널 상자를 화면 크기에 맞게 다시 잡는다 — bag·craft·menu 세 패널이 전부
+   * 같은 계산을 쓴다(클래스 문서 참고: 컨트롤러가 열려 있는 동안 숨으므로
+   * 더는 패널마다 다른 안전 영역을 계산할 이유가 없다).
    *
-   * 위로는 상단 바를 침범하지 않는 안전 영역을 계산하고 그 안에 상자를
-   * 맞춘다 — 가로 화면 전용이라 세로 폭이 늘 좁으므로, 화면이 작아져도 그
-   * 영역과 겹치지 않는 게 최우선이다. 아래쪽 여백은 bag·craft 와 menu 가
-   * 다르다(BOTTOM_RESERVE·MENU_BOTTOM_RESERVE 각 주석 참고) — 그래서 안전
-   * 영역도 둘을 따로 계산한다.
+   * 위로는 상단 바(TOP_MARGIN)를, 나머지 세 면은 PANEL_MARGIN 을 남기고 그
+   * 사이를 꽉 채운다 — "화면을 거의 다 쓴다"는 요구가 그대로 이 한 사각형이다.
    */
   private layout(width: number, height: number): void {
-    const simpleSafeBottom = Math.max(TOP_MARGIN + MIN_HEIGHT, height - BOTTOM_RESERVE)
-    const menuSafeBottom = Math.max(TOP_MARGIN + MIN_HEIGHT, height - MENU_BOTTOM_RESERVE)
+    const boxWidth = Phaser.Math.Clamp(width - PANEL_MARGIN * 2, MIN_WIDTH, MAX_PANEL_WIDTH)
+    const boxHeight = Math.max(MIN_HEIGHT, height - TOP_MARGIN - PANEL_MARGIN)
+    const boxLeft = (width - boxWidth) / 2
+    const boxTop = TOP_MARGIN
+    const centerX = width / 2
 
-    this.layoutSimplePanel(width, simpleSafeBottom - TOP_MARGIN)
-    this.layoutMenu(width, menuSafeBottom - TOP_MARGIN)
-  }
+    this.panelBox.setPosition(centerX, boxTop + boxHeight / 2).setSize(boxWidth, boxHeight)
 
-  private layoutSimplePanel(width: number, safeHeight: number): void {
-    const boxWidth = Math.min(MAX_WIDTH, Math.max(160, width - SIDE_MARGIN * 2))
-    const boxHeight = Math.min(MAX_HEIGHT, safeHeight)
+    // 닫기 버튼 — 박스 우상단, 헤더 줄 한가운데. 세 패널 모두 같은 자리를
+    // 쓴다(어느 패널이 열려도 엄지가 다시 찾을 필요가 없도록).
+    const closeCenterX = boxLeft + boxWidth - CLOSE_BUTTON_MARGIN - CLOSE_BUTTON_RADIUS
+    const closeCenterY = boxTop + HEADER_HEIGHT / 2
+    this.closeButtonShape.setPosition(closeCenterX, closeCenterY)
+    this.closeButtonLabel.setPosition(closeCenterX, closeCenterY)
 
-    const x = width / 2
-    const y = TOP_MARGIN + safeHeight / 2
-
-    this.box.setPosition(x, y).setSize(boxWidth, boxHeight)
-    this.title.setPosition(x, y - 16)
-    this.body.setPosition(x, y + 12)
+    // bag 안내 문구 — 헤더 아래 남은 영역 한가운데.
+    const contentTop = boxTop + HEADER_HEIGHT
+    const contentHeight = boxHeight - HEADER_HEIGHT
+    const simpleCenterY = contentTop + contentHeight / 2
+    this.title.setPosition(centerX, simpleCenterY - 16)
+    this.body.setPosition(centerX, simpleCenterY + 12)
     this.body.setWordWrapWidth(boxWidth - TEXT_PADDING * 2)
-  }
 
-  /**
-   * 상세 메뉴는 안이 스크롤되므로(ScrollList) bag·craft 상자처럼 작게 가둘
-   * 이유가 없다 — 자기 몫의 세로 안전 영역(layout() 이 MENU_BOTTOM_RESERVE 로
-   * 계산한, bag·craft 보다 더 아래로 내려가는 영역)을 꽉 채운다. 가로만
-   * MENU_MAX_WIDTH 로 상한을 둔다(너무 넓으면 한 줄이 길어져 오히려 읽기 나쁘다).
-   */
-  private layoutMenu(width: number, safeHeight: number): void {
-    const menuWidth = Math.min(MENU_MAX_WIDTH, Math.max(240, width - MENU_SIDE_MARGIN * 2))
-    const menuLeft = (width - menuWidth) / 2
-    const menuTop = TOP_MARGIN
-
-    this.menuBox.setPosition(width / 2, menuTop + safeHeight / 2).setSize(menuWidth, safeHeight)
-
-    const tabWidth = menuWidth / TABS.length
-    const tabBarCenterY = menuTop + MENU_TAB_BAR_HEIGHT / 2
+    // 탭 바(menu 전용) — 헤더 줄 안, 닫기 버튼 왼쪽까지만 쓴다.
+    const tabsRight = closeCenterX - CLOSE_BUTTON_RADIUS - TAB_CLOSE_GAP
+    const tabsWidth = Math.max(0, tabsRight - boxLeft)
+    const tabWidth = tabsWidth / TABS.length
+    const tabBarCenterY = boxTop + HEADER_HEIGHT / 2
     this.tabButtons.forEach((btn, i) => {
-      const colLeft = menuLeft + tabWidth * i
-      btn.hitZone.setPosition(colLeft, menuTop).setSize(tabWidth, MENU_TAB_BAR_HEIGHT)
+      const colLeft = boxLeft + tabWidth * i
+      btn.hitZone.setPosition(colLeft, boxTop).setSize(tabWidth, HEADER_HEIGHT)
       // Zone 의 setInteractive() 는 호출 시점의 width/height 로 히트 영역을
       // 스냅샷한다(ScrollList.setViewport 의 같은 주석, 원출처는
       // ControlScene.setCircularHitArea) — setSize() 는 그 스냅샷을 자동으로
       // 따라오지 않으므로 리사이즈마다 직접 갱신한다.
       const hitArea = btn.hitZone.input?.hitArea as Phaser.Geom.Rectangle | undefined
-      hitArea?.setTo(0, 0, tabWidth, MENU_TAB_BAR_HEIGHT)
+      hitArea?.setTo(0, 0, tabWidth, HEADER_HEIGHT)
       btn.label.setPosition(colLeft + tabWidth / 2, tabBarCenterY)
     })
 
@@ -587,13 +638,14 @@ export class PanelScene extends Phaser.Scene {
       TABS.findIndex((t) => t.id === this.menuTab),
     )
     this.tabIndicator
-      .setPosition(menuLeft + tabWidth * activeIndex + tabWidth / 2, menuTop + MENU_TAB_BAR_HEIGHT)
+      .setPosition(boxLeft + tabWidth * activeIndex + tabWidth / 2, boxTop + HEADER_HEIGHT - TAB_INDICATOR_HEIGHT)
       .setSize(tabWidth * 0.6, TAB_INDICATOR_HEIGHT)
 
-    const contentTop = menuTop + MENU_TAB_BAR_HEIGHT + MENU_CONTENT_GAP
-    const contentLeft = menuLeft + MENU_CONTENT_PADDING
-    const contentWidth = menuWidth - MENU_CONTENT_PADDING * 2
-    const contentHeight = Math.max(0, menuTop + safeHeight - MENU_CONTENT_PADDING - contentTop)
-    this.scrollList.setViewport(contentLeft, contentTop, contentWidth, contentHeight)
+    // 목록(craft·menu) — 헤더 아래 남은 영역을 꽉 채운다.
+    const listTop = contentTop + CONTENT_GAP
+    const listLeft = boxLeft + CONTENT_PADDING
+    const listWidth = boxWidth - CONTENT_PADDING * 2
+    const listHeight = Math.max(0, boxTop + boxHeight - CONTENT_PADDING - listTop)
+    this.scrollList.setViewport(listLeft, listTop, listWidth, listHeight)
   }
 }

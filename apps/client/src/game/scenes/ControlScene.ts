@@ -170,6 +170,8 @@ export class ControlScene extends Phaser.Scene {
   private btnBag!: ButtonVisual
   private btnCraft!: ButtonVisual
   private touchSource: TouchSource | null = null
+  /** setControllerVisible() 의 마지막 값 — 같은 값이면 다시 적용하지 않는다. */
+  private controllerVisible = true
 
   constructor() {
     super({ key: 'Control' })
@@ -239,6 +241,66 @@ export class ControlScene extends Phaser.Scene {
     touchSource.bindButton(this.btnCancel.shape, 'cancel', this.btnCancel.setPressed)
     touchSource.bindButton(this.btnBag.shape, 'bag', this.btnBag.setPressed)
     touchSource.bindButton(this.btnCraft.shape, 'craft', this.btnCraft.setPressed)
+  }
+
+  /**
+   * 패널이 열리고 닫힐 때 PanelScene 이 부른다(PanelScene.setOpen·
+   * openMenuTab 참고).
+   *
+   * 왜 숨기는가: 패널이 화면을 거의 다 쓰게 되면서(모바일 조작 설계 문서 §7,
+   * PanelScene.ts 클래스 문서) 여덟 버튼 모두 어느 패널이 열려도 그 안에
+   * 깔린다. 그런데도 계속 그려 두면 눌러도 반응 없는 유령 버튼이 되고, 이
+   * 씬이 PanelScene 보다 나중에 그려지는 순서라(PhaserGame.ts 의 씬 배열)
+   * 인터랙티브 상태까지 남겨 두면 오히려 이 버튼이 패널 내용(목록 줄 등)
+   * 대신 탭을 가로챈다 — "컨트롤러 버튼을 패널 너머로 누를 수 없어야 한다"는
+   * 요구를 어기는 셈이다. setVisible 만으로는 부족하다: Phaser 는 안 보이는
+   * 오브젝트의 히트 테스트를 자동으로 막지 않는다.
+   *
+   * dir·action 은 이미 hub.setWorldInputLocked() 로 세계에 못 미치게 막혀
+   * 있지만(InputState.ts), cancel·bag·craft 는 그 잠금을 일부러 피해 간다 —
+   * 패널을 닫거나 바꾸는 유일한 통로였기 때문이다. 이제 그 자리를 패널
+   * 자신의 닫기 버튼이 대신한다. 화면 버튼과 달리 KeyboardSource(ESC·K·I·C)
+   * 는 이 메서드와 무관하게 계속 살아 있다 — hub.setButton() 을 직접 부르지
+   * 이 씬의 도형을 거치지 않기 때문이다. 그래서 취소·가방·제작은 키보드로는
+   * 패널이 열린 동안에도 여전히 같은 동작을 한다.
+   */
+  setControllerVisible(visible: boolean): void {
+    if (visible === this.controllerVisible) return
+    this.controllerVisible = visible
+
+    const visuals: ButtonVisual[] = [
+      this.dirUp,
+      this.dirDown,
+      this.dirLeft,
+      this.dirRight,
+      this.btnAction,
+      this.btnCancel,
+      this.btnBag,
+      this.btnCraft,
+    ]
+    for (const btn of visuals) {
+      btn.shape.setVisible(visible)
+      btn.label.setVisible(visible)
+    }
+    this.padSurface.setVisible(visible)
+
+    // 방향 버튼 네 개는 애초에 인터랙티브가 아니다(패드 표면 하나가 대신
+    // 받는다 — bindPad 문서 참고) — padSurface 와 나머지 네 개(A·B·가방·제작)
+    // 만 히트 테스트를 켜고 끈다. setInteractive()/disableInteractive() 는
+    // 기존 히트 영역 도형(원·사각형)을 그대로 두고 켜고 끄기만 한다 — Phaser
+    // 의 InputPlugin.enable() 은 이미 input 설정이 있으면(비활성 상태여도)
+    // setHitArea 를 다시 부르지 않는다.
+    const interactive: Phaser.GameObjects.GameObject[] = [
+      this.padSurface,
+      this.btnAction.shape,
+      this.btnCancel.shape,
+      this.btnBag.shape,
+      this.btnCraft.shape,
+    ]
+    for (const obj of interactive) {
+      if (visible) obj.setInteractive()
+      else obj.disableInteractive()
+    }
   }
 
   /**

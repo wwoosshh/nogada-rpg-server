@@ -41,11 +41,12 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
     // WorldScene.create() 가 this.scene.launch() 로 각각 명시적으로 띄운다.
     // 그래야 hub 가 만들어진 뒤에 연결할 수 있다.
     //
-    // 배열 순서가 곧 그리는 순서다(뒤에 올수록 위) — PanelScene 을 WorldScene 과
-    // ControlScene 사이에 둔 것은 패널이 세계 위에 그려지되(낮밤 명암의 영향을
-    // 안 받되) 컨트롤러의 B·가방·제작 버튼(패널을 열고 닫는 통로)은 패널이
-    // 열려 있어도 항상 그 위에서 눌리게 하기 위해서다. PanelScene.ts 클래스
-    // 문서 참고.
+    // 배열 순서가 곧 그리는 순서다(뒤에 올수록 위) — PanelScene 을 WorldScene
+    // 위에 두는 이유는 패널이 세계 위에 그려지되 낮밤 명암의 영향을 안 받기
+    // 위해서다(PanelScene.ts 클래스 문서). PanelScene 과 ControlScene 의 상대
+    // 순서는 더는 중요하지 않다 — 패널이 하나라도 열리면 컨트롤러 전체가
+    // 스스로 숨고 인터랙티브도 꺼지므로(ControlScene.setControllerVisible),
+    // 이 둘이 동시에 화면에 보이는 상태 자체가 없다.
     scene: [WorldScene, PanelScene, ControlScene],
   })
 }

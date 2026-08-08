@@ -185,13 +185,14 @@ export class WorldScene extends Phaser.Scene {
 
     // 패널도 Control 과 같은 자세로 띄운다 — 별도 씬, launch, CREATE 이벤트를
     // 기다린 뒤 bind(). 이유는 PanelScene 클래스 문서와 ControlScene.bind() 의
-    // 주석 참고.
+    // 주석 참고. control 도 같이 넘기는 이유는 PanelScene.bind() 문서 참고 —
+    // 패널이 열리고 닫힐 때 컨트롤러를 숨기고 보이려면 그 씬을 가리켜야 한다.
     this.scene.launch('Panel')
     const panel = this.scene.get('Panel')
     if (!(panel instanceof PanelScene)) {
       throw new Error('Panel 씬을 찾을 수 없다: PhaserGame.ts 의 씬 배열을 확인하라')
     }
-    panel.events.once(Phaser.Scenes.Events.CREATE, () => panel.bind(this.hub))
+    panel.events.once(Phaser.Scenes.Events.CREATE, () => panel.bind(this.hub, control))
     this.panel = panel
 
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
