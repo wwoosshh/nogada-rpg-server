@@ -14,9 +14,14 @@ import { validateGameData } from './validate.js'
  * validateGameData 가 "채집 기술마다 repeat 이정표가 정확히 하나" 를 요구하므로,
  * 이게 없으면 이정표와 무관한 기존 검사를 위한 픽스처들까지 전부 위반이 하나씩
  * 더 생겨 정확한 개수를 기대하는 단언(.toEqual([...]))이 깨진다.
+ *
+ * threshold 는 임의의 숫자가 아니라 10000 이어야 한다 — validateGameData 가
+ * repeat 이정표의 threshold 마다 actionIntervalMs(threshold) === 200 을 요구하므로,
+ * 다른 값을 쓰면 이 "정상" 픽스처 자체가 그 검사에 걸려 baseData() 를 재사용하는
+ * 여러 .toEqual([]) 단언이 깨진다.
  */
 const mineralRepeatMilestone: MilestoneDef = {
-  id: 'mineral_repeat', metric: { kind: 'skill', skill: 'mineral' }, threshold: 100,
+  id: 'mineral_repeat', metric: { kind: 'skill', skill: 'mineral' }, threshold: 10000,
   name: '광물이 손에 익다', announce: '', effect: { kind: 'repeat', skill: 'mineral' },
 }
 
@@ -548,6 +553,16 @@ describe('validateGameData 의 이정표 검사', () => {
     ]
     expect(validateGameData(data)).toContain(
       'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 [mineral_repeat,mineral_repeat_2](2개)다',
+    )
+  })
+
+  it('repeat 이정표의 threshold 가 행동 간격 200ms 지점이 아니면 잡아낸다', () => {
+    // 100 은 actionIntervalMs(100) = 350ms 인 지점이라, 자동 반복 해금 문턱(연타로
+    // 따라잡을 수 없어지는 200ms 지점)이 아니다.
+    const data = baseData()
+    data.milestones = [{ ...mineralRepeatMilestone, threshold: 100 }]
+    expect(validateGameData(data)).toContain(
+      'milestones[mineral_repeat]: threshold(100) 의 행동 간격이 200ms 가 아니라 350ms 다 — 자동 반복 해금 문턱은 연타로 따라잡을 수 없어지는 지점이어야 한다',
     )
   })
 

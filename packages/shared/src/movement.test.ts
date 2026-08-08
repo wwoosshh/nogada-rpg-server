@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { actionIntervalMs } from './formulas/proficiency.js'
 import {
   DIRECTIONS,
-  REPEAT_UNLOCK_PROFICIENCY,
   STEP_MS,
-  canRepeat,
   frontTile,
   isAdjacentFacing,
   samePos,
@@ -67,24 +64,6 @@ describe('isAdjacentFacing', () => {
 
   it('대각선으로 인접한 칸은 거짓이다', () => {
     expect(isAdjacentFacing({ x: 3, y: 7 }, 'left', { x: 2, y: 6 })).toBe(false)
-  })
-})
-
-describe('canRepeat', () => {
-  it('문턱 미만에서는 반복할 수 없다', () => {
-    expect(canRepeat(0)).toBe(false)
-    expect(canRepeat(REPEAT_UNLOCK_PROFICIENCY - 1)).toBe(false)
-  })
-
-  it('문턱에 닿으면 반복할 수 있다', () => {
-    expect(canRepeat(REPEAT_UNLOCK_PROFICIENCY)).toBe(true)
-    expect(canRepeat(REPEAT_UNLOCK_PROFICIENCY * 100)).toBe(true)
-  })
-
-  it('문턱은 손가락이 병목이 되는 지점이다 — 초당 5회', () => {
-    // 이 단정문이 문턱의 의미를 못 박는다. 값만 바꾸고 이 관계를 깨면 여기서 걸린다.
-    // 초당 5회를 넘어가면 연타로 따라갈 수 없으므로 그때 해금이 온다.
-    expect(actionIntervalMs(REPEAT_UNLOCK_PROFICIENCY)).toBe(200)
   })
 })
 

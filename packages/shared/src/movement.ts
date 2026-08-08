@@ -23,15 +23,6 @@ export interface TilePos {
 /** 한 걸음에 걸리는 시간. 원작의 이동 속도에서 추정한 값이라 조정 가능하다. */
 export const STEP_MS = 200
 
-/**
- * 이 숙련도를 넘으면 그 기술의 자동 반복이 열린다.
- *
- * 이 값에서 행동 간격이 200ms — 초당 5회다. 연타로 지속하기 어려운 경계이므로,
- * 해금이 정확히 손가락이 병목이 되는 순간에 온다. 그 전까지는 연타가 실제로
- * 가능하니 잠겨 있어도 손해가 없고, 그 뒤로는 잠겨 있으면 손해라서 열린다.
- */
-export const REPEAT_UNLOCK_PROFICIENCY = 10_000
-
 const DELTAS: Record<Direction, TilePos> = {
   up: { x: 0, y: -1 },
   down: { x: 0, y: 1 },
@@ -63,9 +54,4 @@ export function samePos(a: TilePos, b: TilePos): boolean {
  */
 export function isAdjacentFacing(from: TilePos, facing: Direction, target: TilePos): boolean {
   return samePos(frontTile(from, facing), target)
-}
-
-/** 그 숙련도에서 누르고 있는 것만으로 반복되는가. */
-export function canRepeat(proficiency: number): boolean {
-  return proficiency >= REPEAT_UNLOCK_PROFICIENCY
 }

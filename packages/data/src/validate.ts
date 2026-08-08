@@ -1,5 +1,5 @@
 import type { GameData, MilestoneDef } from '@nogada/shared'
-import { STARTING_TOOL_IDS, toolAppliesTo } from '@nogada/shared'
+import { STARTING_TOOL_IDS, actionIntervalMs, toolAppliesTo } from '@nogada/shared'
 
 /**
  * 시작 도구에서 출발해 고정점(fixpoint)까지 확장한 "도달 가능한 아이템" 집합을 구한다.
@@ -270,6 +270,24 @@ export function validateGameData(data: GameData): string[] {
       const milestoneIdList = repeatMilestones.map((m) => m.id).join(',')
       violations.push(
         `skills[${skill}]: repeat 이정표가 정확히 1개여야 하는데 [${milestoneIdList}](${repeatMilestones.length}개)다`,
+      )
+    }
+  }
+
+  // repeat 이정표의 threshold 는 임의의 숙련도가 아니라 행동 간격이 200ms(초당 5회)로
+  // 떨어지는 지점이어야 한다. 그 아래로는 연타가 실제로 따라잡을 수 있어 자동 반복이
+  // 잠겨 있어도 손해가 없고, 그 위로는 손가락이 병목이 되어 잠겨 있으면 손해다 —
+  // 해금이 정확히 그 경계에 오게 하는 것이 이 문턱의 존재 이유다. 곡선 자체는
+  // @nogada/shared 의 actionIntervalMs 를 그대로 쓴다 — 여기서 다시 구현하면 두 번째
+  // 진실 공급원이 생겨, 곡선이 바뀔 때 이 검사만 조용히 낡은 채로 남을 수 있다.
+  for (const milestone of data.milestones) {
+    const effect = milestone.effect
+    if (effect.kind !== 'repeat') continue
+
+    const interval = actionIntervalMs(milestone.threshold)
+    if (interval !== 200) {
+      violations.push(
+        `milestones[${milestone.id}]: threshold(${milestone.threshold}) 의 행동 간격이 200ms 가 아니라 ${interval}ms 다 — 자동 반복 해금 문턱은 연타로 따라잡을 수 없어지는 지점이어야 한다`,
       )
     }
   }
