@@ -46,8 +46,6 @@ export class WorldScene extends Phaser.Scene {
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
-  /** 지난 프레임에 action 이 눌려 있었는가. "막 눌림" 을 직접 판정하는 데 쓴다 — 이유는 update() 참고. */
-  private wasActionHeld = false
 
   constructor() {
     super({ key: 'World' })
@@ -233,7 +231,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    this.hub.beginFrame()
     this.keyboard.update()
 
     this.mover.update(delta, this.hub.state.dir)
@@ -243,26 +240,37 @@ export class WorldScene extends Phaser.Scene {
     this.updateAnimation(this.mover.moving, this.mover.facing)
 
     const target = this.interactableAt(frontTile(this.mover.tile, this.mover.facing))
-    const actionHeld = this.hub.state.action
-    // hub.state.actionPressed 를 쓰지 않는다. 그건 beginFrame() 이 지우는 한 프레임짜리
-    // 신호인데, 여기(같은 update() 호출) 의 beginFrame() 이 매번 자기 자신의 읽음보다
-    // 먼저 실행된다 — 터치는 이벤트 콜백으로 비동기에 쓰므로 그 신호가 서는 시점은
-    // 항상 "이 update() 호출이 시작되기 전" 이고, 그러면 이 호출의 beginFrame() 이
-    // 그 신호를 자기 자신이 읽기도 전에 지워버린다. 즉 터치가 쥔 actionPressed 는
-    // 이 update() 안에서는 절대 참으로 보이지 않는다(프레임 경계 운이 아니라 항상).
-    // beginFrame() 이 지우지 않는 지속값(action)을 스스로 이전 프레임과 비교해서
-    // "막 눌림" 을 판정하면 소스가 언제 썼든 다음 읽음에서 반드시 보인다.
-    const justPressed = actionHeld && !this.wasActionHeld
     if (target) {
-      if (justPressed) {
+      if (this.hub.state.actionPressed) {
         this.interact(target)
-      } else if (actionHeld && this.repeatsOn(target)) {
+      } else if (this.hub.state.action && this.repeatsOn(target)) {
         this.interact(target)
       }
     }
-    this.wasActionHeld = actionHeld
 
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
+
+    // beginFrame() 은 반드시 update() 의 맨 끝에 있어야 한다 — 위로 옮기고
+    // 싶어지면 이 주석부터 다시 읽을 것.
+    //
+    // 터치 이벤트는 Phaser 의 프레임 루프 밖, DOM 핸들러에서 동기적으로
+    // 온다. 그래서 누름과 뗌이 이번 update() 와 다음 update() 사이(예:
+    // 이 함수가 끝난 직후)에 둘 다 일어날 수 있다 — 그러면 actionPressed 는
+    // 그 사이에 참이 되고, 다음 update() 가 읽으러 올 때까지 그대로 남아
+    // 있어야 다음 update() 가 그 탭을 잡을 수 있다. beginFrame() 이 맨
+    // 앞에 있으면 다음 update() 가 "자기 자신이 읽기도 전에" 그 신호를
+    // 지워버려서, 두 update() 사이에 완전히 끝난 탭(누름+뗌)이 통째로
+    // 사라진다 — 60fps 에서 약 16ms, 버벅이는 폰에서는 그보다 더 넓은
+    // 창이다. 원래 이 게임 루프의 핵심 동작이 숙련도 10,000 이 되기 전까지
+    // 행동 버튼을 계속 두드리는 것이므로, 이 창에 걸리는 탭은 드문 사고가
+    // 아니라 "가끔 안 캐진다" 로 매일 체감되는 손실이었다.
+    //
+    // 맨 끝에 두면 이번 프레임이 신호를 다 읽은 뒤에만 지우므로, 두
+    // update() 사이에 낀 탭도 다음 update() 에서 반드시 한 번 잡힌다.
+    // 키보드는 다르다 — KeyboardSource.update() 는 이 함수 위쪽, 즉 읽기
+    // 전에 동기로 쓰므로 beginFrame() 위치와 무관하게 항상 같은 프레임
+    // 안에서 잡힌다.
+    this.hub.beginFrame()
   }
 
   /**

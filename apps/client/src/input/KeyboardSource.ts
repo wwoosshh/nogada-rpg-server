@@ -40,7 +40,13 @@ export class KeyboardSource {
     >
   }
 
-  /** 매 프레임 부른다. hub.beginFrame() 뒤에 와야 한다. */
+  /**
+   * 매 프레임 부른다. WorldScene.update() 가 hub 상태를 읽기 전에는 와야
+   * 하지만, hub.beginFrame() 보다는 반드시 앞이어야 한다 — beginFrame() 은
+   * 이제 그 update() 의 맨 끝에서 한 번만 불린다(WorldScene.update() 참고).
+   * 이 순서가 지켜져야 이번 프레임에 새로 눌린 키가 beginFrame() 에
+   * 지워지기 전에 읽힌다.
+   */
   update(): void {
     const dir = this.readDir()
     if (dir !== this.lastDir) {

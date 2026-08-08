@@ -88,13 +88,21 @@ export class InputHub {
       case 'craft':
         if (justPressed) this.current.toggleCraftPressed = true
         break
+      default: {
+        // InputButton 에 새 멤버가 추가되는데 위 case 들이 못 따라가면 여기서
+        // 컴파일이 깨진다 — button 이 never 로 좁혀지지 않기 때문이다.
+        const exhaustive: never = button
+        throw new Error(`처리하지 않은 버튼: ${String(exhaustive)}`)
+      }
     }
   }
 
   /** 모든 입력을 놓은 상태로 되돌린다. 패널이 열릴 때처럼 입력을 끊어야 할 때 쓴다. */
   releaseAll(): void {
     this.setDir(null)
-    for (const button of ['action', 'cancel', 'bag', 'craft'] as InputButton[]) {
+    // 버튼 이름을 여기 따로 다시 적지 않고 held 의 키를 그대로 쓴다 — 목록을
+    // 두 곳에 두면 InputButton 이 늘어날 때 한쪽만 갱신하기 쉽다.
+    for (const button of Object.keys(this.held) as InputButton[]) {
       this.setButton(button, false)
     }
     this.beginFrame()
