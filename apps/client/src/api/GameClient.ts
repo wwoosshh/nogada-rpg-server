@@ -28,6 +28,18 @@ export interface CraftOutcomeDto {
   player: PlayerState
 }
 
+/**
+ * 대화 한 번의 결과.
+ *
+ * `lines` 는 발화 **전체**다 — 대사창이 순서대로 넘길 칸들이고, 칸마다 서버에
+ * 다시 묻지 않는다(설계 문서 4.5).
+ */
+export interface TalkOutcomeDto {
+  speaker: string
+  lines: string[]
+  player: PlayerState
+}
+
 export class ApiError extends Error {
   constructor(readonly code: string) {
     super(code)
@@ -96,5 +108,11 @@ export const GameClient = {
     request<CraftOutcomeDto>('/api/craft', {
       method: 'POST',
       body: JSON.stringify({ recipeId }),
+    }),
+
+  talk: (speakerId: string) =>
+    request<TalkOutcomeDto>('/api/talk', {
+      method: 'POST',
+      body: JSON.stringify({ speakerId }),
     }),
 }

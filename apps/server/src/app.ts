@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerGatherRoutes } from './routes/gather.js'
 import { registerStateRoutes } from './routes/state.js'
+import { registerTalkRoutes } from './routes/talk.js'
 import { registerTimeRoutes } from './routes/time.js'
 import { PlayerStore } from './state/store.js'
 
@@ -42,6 +43,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerStateRoutes(app, store)
   registerGatherRoutes(app, store, data)
   registerCraftRoutes(app, store, data)
+  registerTalkRoutes(app, store, data)
 
   return app
 }

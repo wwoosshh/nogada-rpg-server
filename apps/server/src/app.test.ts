@@ -262,6 +262,92 @@ describe('POST /api/craft', () => {
   })
 })
 
+describe('POST /api/talk', () => {
+  it('화자에게 말을 걸면 발화 전체가 온다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/talk',
+      payload: { speakerId: '채집장노인' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { speaker: string; lines: string[] }
+    expect(body.speaker).toBe('채집장노인')
+    // 어떤 규칙이 뽑힐지는 서버 난수라 단정할 수 없지만, 빈 발화가 성공으로
+    // 나가는 일은 없어야 한다 — 그러면 클라이언트가 빈 대사창을 연다.
+    expect(body.lines.length).toBeGreaterThan(0)
+
+    await app.close()
+  })
+
+  it('대화 이력을 저장해서 다음 조회에 반영한다', async () => {
+    const app = buildTestApp()
+
+    const talk = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    expect(talk.statusCode).toBe(200)
+
+    const state = await app.inject({ method: 'GET', url: '/api/state' })
+    const saved = state.json() as {
+      player: { dialogueHistory: { recent: Record<string, string[]>; lastTalkAt: Record<string, number> } }
+    }
+
+    // 저장하지 않으면 같은 인사가 매번 처음처럼 나오고 once 규칙은 영원히 한 번째다.
+    expect(saved.player.dialogueHistory.recent['채집장노인']).toHaveLength(1)
+    expect(saved.player.dialogueHistory.lastTalkAt['채집장노인']).toBeGreaterThan(0)
+
+    await app.close()
+  })
+
+  it('대화는 행동 간격을 소비하지 않는다', async () => {
+    const app = buildTestApp()
+
+    // 서비스 단위 테스트가 같은 것을 보지만, 라우트가 나중에 채집처럼 간격을
+    // 걸도록 "통일"되는 순간 그 단위 테스트는 아무것도 막지 못한다.
+    const before = await app.inject({ method: 'GET', url: '/api/state' })
+    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    const after = await app.inject({ method: 'GET', url: '/api/state' })
+
+    const nextActionAt = (res: typeof before) => (res.json() as { player: { nextActionAt: number } }).player.nextActionAt
+    expect(nextActionAt(after)).toBe(nextActionAt(before))
+
+    await app.close()
+  })
+
+  it('연달아 말을 걸어도 거부하지 않는다', async () => {
+    const app = buildTestApp()
+
+    // 채집이라면 두 번째가 too_fast 다. 대화에는 간격이 없다.
+    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+
+    expect(res.statusCode).toBe(200)
+
+    await app.close()
+  })
+
+  it('없는 화자는 400 unknown_speaker 를 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '유령' } })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'unknown_speaker' })
+
+    await app.close()
+  })
+
+  it('speakerId 가 없으면 400 을 반환한다', async () => {
+    const app = buildTestApp()
+
+    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: {} })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
 describe('GET /api/time', () => {
   it('서버 현재 시각을 반환한다', async () => {
     const app = buildTestApp()

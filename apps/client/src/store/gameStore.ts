@@ -15,6 +15,7 @@ import {
   NETWORK_ERROR,
   type CraftOutcomeDto,
   type GatherOutcomeDto,
+  type TalkOutcomeDto,
 } from '../api/GameClient.js'
 import type { DetailMenuTab } from '../game/detailMenuTabs.js'
 import { syncClock } from '../time/clock.js'
@@ -50,6 +51,23 @@ export interface Milestone {
 }
 
 /**
+ * 화자가 지금 한 말.
+ *
+ * `lines` 는 한 마디 전체다 — 대사창이 순서대로 넘길 칸들이고, 칸마다 서버에
+ * 다시 묻지 않는다. 서버가 한 번의 판정으로 전부 정해서 보낸다.
+ *
+ * milestone 채널과 같은 모양(seq 로 "새 사건"을 구분)을 쓴다: 같은 화자에게
+ * 두 번 말을 걸어 같은 대사가 다시 나와도(동점 후보가 하나뿐인 경우) seq 가
+ * 올라가야 구독자가 "이미 처리한 발화"로 착각해 무시하지 않는다.
+ */
+export interface Utterance {
+  seq: number
+  /** 화자 id. 이름·초상은 구독자가 `data.speakers` 에서 찾는다. */
+  speaker: string
+  lines: string[]
+}
+
+/**
  * 서버 연결 상태.
  *
  * 이 게임은 모든 판정을 서버가 한다. 서버에 닿지 못하면 채집도 제작도 불가능하므로
@@ -78,15 +96,18 @@ interface GameStore {
   connection: Connection
   lastAction: ActionFeedback | null
   milestone: Milestone | null
+  utterance: Utterance | null
   menuRequest: MenuRequest | null
   connect: () => Promise<void>
   gather: (instanceId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
+  talk: (speakerId: string) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
 }
 
 let actionSeq = 0
 let milestoneSeq = 0
+let utteranceSeq = 0
 let menuRequestSeq = 0
 
 /** 서버와 말 자체를 못 한 경우에만 true. HTTP 4xx 는 서버가 살아있는 것이다. */
@@ -105,6 +126,7 @@ export const useGameStore = create<GameStore>((set) => ({
   connection: 'connecting',
   lastAction: null,
   milestone: null,
+  utterance: null,
   menuRequest: null,
 
   /**
@@ -191,6 +213,30 @@ export const useGameStore = create<GameStore>((set) => ({
         return
       }
       pushAction(set, describeError(err), 'bad')
+      console.error(err)
+    }
+  },
+
+  /**
+   * 말을 건다. 대화 한 번이 요청 한 번이고, 발화 전체가 한 번에 온다.
+   *
+   * 채집·제작과 달리 실패를 머리 위 글자로 알리지 않는다. 말을 건 결과가
+   * 거부되는 경우는 둘뿐인데(없는 화자·할 말 없음) 둘 다 플레이어의 조작
+   * 실수가 아니라 데이터나 콘텐츠의 구멍이라, 플레이어에게 보여 줄 말이 없다.
+   * 그럴 때 스토어는 아무것도 바꾸지 않는다 — 대사창은 열리지 않고 플레이어
+   * 상태도 그대로다.
+   */
+  talk: async (speakerId) => {
+    try {
+      const outcome: TalkOutcomeDto = await GameClient.talk(speakerId)
+      applyPlayer(set, outcome.player)
+      set({ utterance: { seq: ++utteranceSeq, speaker: outcome.speaker, lines: outcome.lines } })
+    } catch (err) {
+      // 서버와 끊겼으면 대사창이 아니라 게이트가 할 일이다 — 채집과 같다.
+      if (isNetworkFailure(err)) {
+        set({ connection: 'offline' })
+        return
+      }
       console.error(err)
     }
   },

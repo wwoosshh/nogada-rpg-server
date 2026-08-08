@@ -14,17 +14,26 @@
  * 함수로 export 하고, 실제 실행은 파일 맨 아래 main-guard 뒤에 둔다.
  */
 import { pathToFileURL } from 'node:url'
-import type { Condition, DialogueHistory, DialogueRule, Facts, FactValue, GameData } from '@nogada/shared'
+import type {
+  Condition,
+  DialogueHistory,
+  DialogueRule,
+  Facts,
+  FactValue,
+  GameData,
+  PlayerState,
+  SkillId,
+} from '@nogada/shared'
 import {
   DECLARED_FACTS,
   EVENT_ORDER,
   ONCE_EVENTS,
   SKILL_IDS,
+  buildFacts,
   createRng,
   describeFactValueShape,
   emptyDialogueHistory,
   findFactSpec,
-  gameTimeAt,
   matchesCondition,
   onceKey,
   ruleMatches,
@@ -166,27 +175,40 @@ export function parseArgs(argv: readonly string[], data: GameData): ContentComma
 const SIMULATOR_SEED = 20260808
 
 /**
+ * 시뮬레이터가 말하는 "빈 플레이어" — 숙련도 전부 0, 이정표 전부 미달성,
+ * 대화 이력 없음(한 번도 말해 본 적 없음).
+ */
+function emptyPlayer(): PlayerState {
+  return {
+    id: 'simulator',
+    skills: Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>,
+    stacks: {},
+    instances: [],
+    equipped: {},
+    nextActionAt: 0,
+    celebrated: [],
+    dialogueHistory: emptyDialogueHistory(),
+  }
+}
+
+/**
  * 기본 사실 뭉치 — "지금 월드 시각 + 빈 플레이어"(브리프 Step 1).
  *
- * 빈 플레이어는 숙련도 전부 0, 이정표 전부 미달성, 대화 이력 없음(한 번도
- * 말해 본 적 없음)이다. `justAchieved`(방금 넘긴 문턱)와
- * `daysSinceLastTalk`(마지막 대화로부터 며칠)는 일부러 채우지 않는다 — 방금
- * 아무것도 안 넘겼고, 애초에 마지막 대화 자체가 없는 사람에게는 값을 매길
- * 수 없다. matchesCondition 은 없는 사실을 항상 거짓으로 보므로, 이 두
- * 사실을 조건으로 건 규칙은 명시적으로 --사실=값 을 주기 전까지 자연히
+ * 여기서 사실을 직접 만들지 않는다. 서버가 대화를 판정할 때 쓰는 공급자
+ * (`buildFacts`, packages/shared)를 빈 플레이어로 부를 뿐이다 — 이 도구의
+ * 값어치는 "실제로 돌아가는 게임에서 무슨 말이 나오는가"를 보여주는 것이고,
+ * 사실을 따로 만들면 언젠가 그 둘이 갈라져 도구가 자기만의 세계를 설명하게
+ * 된다.
+ *
+ * 빈 플레이어에게는 `justAchieved`(방금 넘긴 문턱)와 `daysSinceLastTalk`
+ * (마지막 대화로부터 며칠)가 없다 — 방금 아무것도 안 넘겼고, 애초에 마지막
+ * 대화 자체가 없는 사람에게는 값을 매길 수 없다. 공급자도 같은 이유로 그
+ * 둘을 넣지 않는다. matchesCondition 은 없는 사실을 항상 거짓으로 보므로, 이
+ * 두 사실을 조건으로 건 규칙은 명시적으로 --사실=값 을 주기 전까지 자연히
  * 안 나온다 — 그게 "빈 플레이어"의 정확한 의미다.
  */
-function defaultFacts(data: GameData, nowMs: number): Facts {
-  const time = gameTimeAt(nowMs)
-  const facts: Record<string, FactValue> = {
-    season: time.season,
-    hour: time.hour,
-    dayOfSeason: time.dayOfSeason,
-    talkedBefore: false,
-  }
-  for (const skill of SKILL_IDS) facts[`skill.${skill}`] = 0
-  for (const milestone of data.milestones) facts[`milestone.${milestone.id}`] = false
-  return facts
+function defaultFacts(data: GameData, speaker: string, nowMs: number): Facts {
+  return buildFacts({ speaker, player: emptyPlayer(), milestones: data.milestones, nowMs })
 }
 
 /** 조건 없는 규칙의 라벨. 설계 문서 8.1 이 쓰는 그대로다. */
@@ -399,7 +421,7 @@ export function runDialogueCommand(
     throw new Error(`화자 "${speakerId}" 를 모른다 — 있는 화자: ${known}`)
   }
 
-  const facts: Facts = { ...defaultFacts(data, opts.now), ...overrides }
+  const facts: Facts = { ...defaultFacts(data, speakerId, opts.now), ...overrides }
   const history = emptyDialogueHistory() // 시뮬레이터는 매번 "방금 처음 말 건" 상태를 본다 — talkedBefore=false 와 짝을 맞춘다.
   const rng = createRng(opts.seed)
   const speakerRules = data.dialogue.filter((r) => r.speaker === speakerId)

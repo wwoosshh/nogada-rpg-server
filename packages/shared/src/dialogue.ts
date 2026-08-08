@@ -213,6 +213,7 @@ export interface DialogueRule {
  * - `said`: onceKey 로 만든, ONCE_EVENTS 사건 규칙 중 이미 말한 것들의 키.
  * - `recent`: 화자 이름별로 최근에 나온 규칙 id — 같은 사건 안에서 방금 한
  *   말을 곧바로 반복하지 않게 한다.
+ * - `lastTalkAt`: 화자 이름별로 마지막으로 말을 건 실제 시각(epoch ms).
  *
  * 이 모듈(selectDialogue)은 히스토리를 읽기만 한다. 고른 결과를 said·recent
  * 에 반영하는 것과 recent 를 몇 개로 잘라 무한히 자라지 않게 하는 것은 이
@@ -221,11 +222,35 @@ export interface DialogueRule {
 export interface DialogueHistory {
   said: string[]
   recent: Record<string, string[]>
+  /**
+   * 화자별 마지막 대화 시각. `talkedBefore` 와 `daysSinceLastTalk` 두 사실이
+   * 여기서 나온다(설계 문서 6.1 — "대화 이력, 4.3 과 같은 저장소").
+   *
+   * `recent` 가 비지 않았는지로 talkedBefore 를 대신할 수도 있지만, 그러면
+   * daysSinceLastTalk 를 만들 수 있는 곳이 어디에도 없다 — 시각은 유도할 수
+   * 없는 진짜 상태라 저장하는 수밖에 없다. 두 사실을 같은 자리에서 뽑으면
+   * "말해 본 적 있다"와 "며칠 전에 말했다"가 어긋날 수도 없다.
+   */
+  lastTalkAt: Record<string, number>
 }
 
 export function emptyDialogueHistory(): DialogueHistory {
-  return { said: [], recent: {} }
+  return { said: [], recent: {}, lastTalkAt: {} }
 }
+
+/**
+ * `recent` 를 화자마다 몇 개까지 기억하는가.
+ *
+ * 이 숫자는 게임 규칙이라 여기 있다. 자르는 일 자체는 상태를 저장하는 서버가
+ * 하지만(위 문서 참고), "몇 개인가"는 대사가 얼마나 빨리 되풀이돼도 되는지를
+ * 정하는 밸런스 값이다.
+ *
+ * 후보가 이 수 이하인 화자에서는 제외가 후보를 전부 비워 selectDialogue 의
+ * 폴백(침묵보다 반복이 낫다)이 걸린다 — 즉 과하게 잡아도 해가 없다. 반대로
+ * 너무 작게 잡으면 대사를 아무리 많이 써도 두세 마디마다 같은 말이 돌아오고,
+ * 그건 폴백처럼 되돌릴 방법이 없다. 그래서 콘텐츠가 적은 지금도 크게 잡는다.
+ */
+export const RECENT_DIALOGUE_LIMIT = 3
 
 /**
  * 사건 서열. 앞에 올수록 중요하고, selectDialogue 는 이 순서대로 훑어 후보가

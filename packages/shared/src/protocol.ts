@@ -32,6 +32,10 @@ const skillsShape = Object.fromEntries(
 const DialogueHistorySchema = z.object({
   said: z.array(z.string()),
   recent: z.record(z.string(), z.array(z.string())),
+  // `.default({})` 라 이 필드가 생기기 전의 세이브도 그대로 통과한다. 없으면
+  // 빈 기록으로 읽히고, 그건 "아직 아무와도 말해 본 적 없다"와 같은 뜻이라
+  // 마이그레이션 없이 맞는 답이다 — 필수로 두면 기존 세이브가 통째로 버려진다.
+  lastTalkAt: z.record(z.string(), z.number()).default({}),
 })
 
 export const PlayerStateSchema = z.object({
@@ -53,3 +57,13 @@ export type GatherRequest = z.infer<typeof GatherRequestSchema>
 
 export const CraftRequestSchema = z.object({ recipeId: z.string().min(1) })
 export type CraftRequest = z.infer<typeof CraftRequestSchema>
+
+/**
+ * 대화 요청. 화자 id 하나뿐이다.
+ *
+ * 어떤 줄이 나올지는 요청에 담기지 않는다 — 그것은 서버가 정하는 판정이고,
+ * 클라이언트가 규칙 id 를 지목할 수 있게 하는 순간 대사가 곧 효과가 되는
+ * 앞으로의 설계(설계 문서 4.5)에서 그 효과를 클라이언트가 고르게 된다.
+ */
+export const TalkRequestSchema = z.object({ speakerId: z.string().min(1) })
+export type TalkRequest = z.infer<typeof TalkRequestSchema>
