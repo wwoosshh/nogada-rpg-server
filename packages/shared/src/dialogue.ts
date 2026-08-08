@@ -132,7 +132,7 @@ export function onceKey(rule: DialogueRule, facts: Facts): string {
   return JSON.stringify({ id: rule.id, snapshot })
 }
 
-/** selectDialogue 가 훑은 사건 하나와, 그 사건에서 조건까지 맞은 규칙들(한 번 필터 적용 전). */
+/** selectDialogue 가 훑은 사건 하나와, 그 사건에서 화자로 거르고 조건까지 맞은 규칙들(once 필터 적용 전). */
 export interface DialogueTraceEntry {
   event: string
   matched: DialogueRule[]
@@ -146,6 +146,15 @@ export interface DialogueSelection {
 /**
  * 지금 할 말을 고른다. 후보가 하나도 없으면 null.
  *
+ * 0) 먼저 `speaker` 로 rules 를 걸러 그 화자의 규칙만 남긴다. 이 필터가
+ *    함수의 첫 줄인 것이 중요하다 — 예전에는 "지금 화자의 규칙만 추려서
+ *    넘겨라"가 호출자에게 맡겨진 관례였는데, 그 관례를 어기고 화자가 섞인
+ *    배열(예: GameData.dialogue 전체)을 그대로 넘기면 다른 화자의 아직
+ *    안 나온 story·quest 가 사건 서열에서 이 화자의 greet 을 가로챈다.
+ *    조건이 하나도 안 맞을 때와 달리 이 사고는 에러도 빈 결과도 아니고
+ *    그냥 엉뚱한 화자 말투의 대사가 나오므로 테스트도 못 잡는다 — 그래서
+ *    "걸러서 넘기기"를 관례가 아니라 이 함수의 구조로 만든다. 아래 1~4는
+ *    전부 이 걸러진 부분집합 위에서만 일어난다.
  * 1) EVENT_ORDER 순으로 사건을 훑는다. 각 사건에서 조건까지 맞는 규칙을
  *    모으고(trace 에 기록), ONCE_EVENTS 사건이면 이미 말한(said) 것을 뺀다.
  *    남은 것이 있는 첫 사건에서 멈춘다 — 사건 서열이 조건 개수보다 먼저라는
@@ -157,19 +166,41 @@ export interface DialogueSelection {
  *    나으므로 빼지 않는다.
  * 4) 남은 후보에서 rng() 로 하나를 고른다.
  *
+ * `speaker` 와 `facts` 는 서로 다른 것을 정한다 — 섞지 않는다. 대사창을
+ * 채우는 facts 뭉치에는 (설계 문서의 "사실 뭉치"처럼) 참고용 `speaker`
+ * 사실이 함께 들어갈 수도 있지만, 이 함수는 facts 안의 어떤 키도 "누구
+ * 차례인가"를 정하는 데 쓰지 않는다 — 그 결정은 이 매개변수 하나가 전부
+ * 한다. facts 는 `Record<string, FactValue>` 로 모양이 열려 있어 키가
+ * 있다는 것도 이름이 맞다는 것도 컴파일러가 보장하지 못한다. 거기 기대어
+ * `speaker` 매개변수와 맞는지 검증하기 시작하면, "규칙을 걸러서 넘겨라"
+ * 였던 예전 관례가 "facts.speaker 를 정확히 채워라"는 관례로 자리만
+ * 옮긴다 — 여전히 잊을 수 있는 약속이다. 진실의 출처를 하나로 두어야
+ * 잊을 수 없다.
+ *
  * history 는 읽기만 한다 — 고른 결과를 said·recent 에 반영하는 것은
  * 호출자(서버)의 몫이다.
  */
 export function selectDialogue(
+  speaker: string,
   rules: readonly DialogueRule[],
   facts: Facts,
   history: DialogueHistory,
   rng: () => number,
 ): DialogueSelection | null {
+  // 이 필터 한 줄이 이 함수를 "화자가 섞인 배열을 넘겨도 안전"하게 만든다.
+  // 아래 루프는 이 결과(speakerRules)만 보고 rules 원본을 다시 참조하지
+  // 않는다 — 그래야 이 필터가 우회 가능한 지름길이 아니라 유일한 입구다.
+  const speakerRules = rules.filter((r) => r.speaker === speaker)
+
+  // recent 는 화자별로 묶여 있지만, 위 필터를 거친 뒤로는 speakerRules 의
+  // 모든 규칙이 이미 이 speaker 것이다 — 그래서 규칙마다 다시 찾지 않고
+  // 한 번만 꺼내 쓴다.
+  const recentForSpeaker = history.recent[speaker] ?? []
+
   const trace: DialogueTraceEntry[] = []
 
   for (const event of EVENT_ORDER) {
-    const matched = rules.filter((r) => r.event === event && ruleMatches(r, facts))
+    const matched = speakerRules.filter((r) => r.event === event && ruleMatches(r, facts))
     trace.push({ event, matched })
 
     const eligible = ONCE_EVENTS.has(event)
@@ -187,7 +218,7 @@ export function selectDialogue(
 
     // 화자가 방금 한 말은 잠시 뺀다. 전부 최근이면(=뺄 게 없으면) 침묵보다는
     // 반복이 나으므로 빼지 않는다.
-    const fresh = mostSpecific.filter((r) => !(history.recent[r.speaker] ?? []).includes(r.id))
+    const fresh = mostSpecific.filter((r) => !recentForSpeaker.includes(r.id))
     const candidates = fresh.length > 0 ? fresh : mostSpecific
 
     const index = Math.min(candidates.length - 1, Math.floor(rng() * candidates.length))

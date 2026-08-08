@@ -92,21 +92,21 @@ describe('selectDialogue — 사건 서열', () => {
   it('조건이 적어도 상위 사건이 이긴다', () => {
     // 이 설계의 핵심. 조건 개수로만 고르면 날씨 잡담(2개)이 퀘스트 실마리(1개)를
     // 이겨서 진행이 영원히 묻힌다.
-    const got = selectDialogue([weatherChat, questHint], facts, emptyDialogueHistory(), always)
+    const got = selectDialogue('노인', [weatherChat, questHint], facts, emptyDialogueHistory(), always)
     expect(got?.rule.id).toBe('quest3')
   })
 
   it('상위 사건을 이미 말했으면 아래로 내려온다', () => {
     const history = emptyDialogueHistory()
     history.said.push(onceKey(questHint, facts))
-    const got = selectDialogue([weatherChat, questHint], facts, history, always)
+    const got = selectDialogue('노인', [weatherChat, questHint], facts, history, always)
     expect(got?.rule.id).toBe('chat')
   })
 
   it('상태가 바뀌면 상위 사건이 다시 말한다', () => {
     const history = emptyDialogueHistory()
     history.said.push(onceKey(questHint, { ...facts, 'quest.촌장': 2 }))
-    const got = selectDialogue([weatherChat, questHint], facts, history, always)
+    const got = selectDialogue('노인', [weatherChat, questHint], facts, history, always)
     expect(got?.rule.id).toBe('quest3')
   })
 
@@ -114,9 +114,49 @@ describe('selectDialogue — 사건 서열', () => {
     const only = [rule('hi', 'greet', [])]
     const history = emptyDialogueHistory()
     for (let i = 0; i < 5; i++) {
-      const got = selectDialogue(only, {}, history, always)
+      const got = selectDialogue('노인', only, {}, history, always)
       expect(got?.rule.id).toBe('hi')
     }
+  })
+})
+
+describe('selectDialogue — 화자로 거른다', () => {
+  // 리뷰 지적 그 자체: 호출자가 화자를 미리 걸러서 넘기지 않고
+  // GameData.dialogue 처럼 여러 화자의 규칙이 섞인 배열을 그대로 넘겨도,
+  // speaker 인자가 내부에서 이 화자의 것만 추려야 한다. 안 그러면 다른
+  // 화자의 아직 안 나온 quest 가 사건 서열에서 이 화자의 greet 을
+  // 가로챈다 — 조건이 안 맞는 경우와 달리 에러도 실패도 없이 그냥 엉뚱한
+  // 화자 말투가 나오므로, 규칙이 전부 화자 하나뿐인 테스트로는 이 경로
+  // 자체가 존재하지 않아 지금까지 아무도 못 잡았다.
+  it('다른 화자의 안 나온 상위 사건이 이 화자의 인사를 가리지 않는다', () => {
+    const otherSpeakerQuest: DialogueRule = {
+      id: 'q-상인',
+      speaker: '상인',
+      event: 'quest',
+      conditions: [],
+      lines: ['상인만 할 수 있는 대사'],
+      source: { file: 'y.dlg', line: 1 },
+    }
+    const myGreet = rule('hi', 'greet', [])
+    const got = selectDialogue('노인', [otherSpeakerQuest, myGreet], {}, emptyDialogueHistory(), always)
+    expect(got?.rule.id).toBe('hi')
+  })
+
+  it('이 화자 자신의 상위 사건은 다른 화자와 섞여도 정상적으로 이긴다', () => {
+    // 위 테스트가 "걸러야 한다"만 증명하면, 지나치게 걸러서 이 화자 몫까지
+    // 함께 지워도 (우연히) 통과할 수 있다. 이 화자의 quest 가 다른 화자의
+    // greet 과 같은 배열에 있어도 여전히 서열대로 이겨야 한다.
+    const myQuest = rule('q-노인', 'quest', [])
+    const otherGreet: DialogueRule = {
+      id: 'hi-상인',
+      speaker: '상인',
+      event: 'greet',
+      conditions: [],
+      lines: ['상인의 인사'],
+      source: { file: 'y.dlg', line: 1 },
+    }
+    const got = selectDialogue('노인', [otherGreet, myQuest], {}, emptyDialogueHistory(), always)
+    expect(got?.rule.id).toBe('q-노인')
   })
 })
 
@@ -132,20 +172,20 @@ describe('selectDialogue — 사건 안에서는 조건 개수', () => {
   ]
 
   it('가장 구체적인 것이 이긴다', () => {
-    expect(selectDialogue(rules, facts, emptyDialogueHistory(), always)?.rule.id).toBe('rainClose')
+    expect(selectDialogue('노인', rules, facts, emptyDialogueHistory(), always)?.rule.id).toBe('rainClose')
   })
 
   it('조건이 맞지 않으면 덜 구체적인 것으로 내려간다', () => {
-    const got = selectDialogue(rules, { weather: 'rain', affinity: 5 }, emptyDialogueHistory(), always)
+    const got = selectDialogue('노인', rules, { weather: 'rain', affinity: 5 }, emptyDialogueHistory(), always)
     expect(got?.rule.id).toBe('rain')
   })
 
   it('아무 조건도 안 맞으면 무조건 규칙이 나온다', () => {
-    expect(selectDialogue(rules, {}, emptyDialogueHistory(), always)?.rule.id).toBe('bare')
+    expect(selectDialogue('노인', rules, {}, emptyDialogueHistory(), always)?.rule.id).toBe('bare')
   })
 
   it('할 말이 하나도 없으면 null 이다', () => {
-    expect(selectDialogue([], {}, emptyDialogueHistory(), always)).toBeNull()
+    expect(selectDialogue('노인', [], {}, emptyDialogueHistory(), always)).toBeNull()
   })
 })
 
@@ -153,29 +193,29 @@ describe('selectDialogue — 동점과 반복', () => {
   const tie = [rule('a', 'greet', []), rule('b', 'greet', []), rule('c', 'greet', [])]
 
   it('동점이면 난수로 고른다', () => {
-    expect(selectDialogue(tie, {}, emptyDialogueHistory(), () => 0)?.rule.id).toBe('a')
-    expect(selectDialogue(tie, {}, emptyDialogueHistory(), () => 0.99)?.rule.id).toBe('c')
+    expect(selectDialogue('노인', tie, {}, emptyDialogueHistory(), () => 0)?.rule.id).toBe('a')
+    expect(selectDialogue('노인', tie, {}, emptyDialogueHistory(), () => 0.99)?.rule.id).toBe('c')
   })
 
   it('최근에 나온 것은 잠시 빠진다', () => {
     const history = emptyDialogueHistory()
     history.recent['노인'] = ['a']
     // a 가 빠지면 후보는 b·c 뿐이고 난수 0 은 첫 번째를 고른다.
-    expect(selectDialogue(tie, {}, history, () => 0)?.rule.id).toBe('b')
+    expect(selectDialogue('노인', tie, {}, history, () => 0)?.rule.id).toBe('b')
   })
 
   it('전부 최근이면 그래도 하나는 말한다', () => {
     // 침묵하는 것보다 반복하는 편이 낫다.
     const history = emptyDialogueHistory()
     history.recent['노인'] = ['a', 'b', 'c']
-    expect(selectDialogue(tie, {}, history, () => 0)).not.toBeNull()
+    expect(selectDialogue('노인', tie, {}, history, () => 0)).not.toBeNull()
   })
 })
 
 describe('selectDialogue — 시뮬레이터용 흔적', () => {
   it('훑은 사건과 맞은 규칙을 남긴다', () => {
     const rules = [rule('hi', 'greet', []), rule('q', 'quest', [{ fact: 'q', op: '=', value: 1 }])]
-    const got = selectDialogue(rules, { q: 1 }, emptyDialogueHistory(), always)
+    const got = selectDialogue('노인', rules, { q: 1 }, emptyDialogueHistory(), always)
     // 도구가 "왜 그것이 이겼는지" 를 보여주려면 선택 과정이 결과에 남아야 한다.
     expect(got?.trace.map((t) => t.event)).toEqual(['story', 'quest'])
     expect(got?.trace.at(-1)?.matched.map((r) => r.id)).toEqual(['q'])
