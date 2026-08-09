@@ -1,6 +1,6 @@
 import type { DialogueHistory, DialogueRule } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
-import type { Direction } from './movement.js'
+import type { Direction, TilePos } from './movement.js'
 
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
 
@@ -163,6 +163,16 @@ export interface MapDef {
   file: string
   width: number
   height: number
+  /**
+   * 이 맵에서 시작하는 칸. 맵 파일의 `spawn` 오브젝트가 유일한 출처다.
+   *
+   * 두 자리에서 쓰인다 — 새 플레이어가 서는 칸, 그리고 세이브의 `location` 이
+   * 없어진 맵을 가리킬 때 돌아오는 칸이다. 좌표를 코드에 적지 않는 이유가
+   * 여기 있다: 맵을 고쳐 그리면 시작 칸이 함께 움직여야 하는데, 코드에 적힌
+   * 숫자는 따라오지 않는다. 빌드가 이 칸이 벽·노드·화자 위가 아닌지 본다
+   * (validateMapSpawns).
+   */
+  spawn: TilePos
 }
 
 /**

@@ -1,5 +1,6 @@
 export * from './parse.js'
 export * from './placements.js'
+export * from './tmx.js'
 export * from './maps.js'
 export * from './transitions.js'
 export * from './milestones.js'

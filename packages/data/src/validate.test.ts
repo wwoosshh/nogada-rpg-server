@@ -11,7 +11,12 @@ import type { MapTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
 import { parseTransitions } from './transitions.js'
 import { parseDialogue } from './dialogueParse.js'
-import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
+import {
+  collectDialogueNotices,
+  validateGameData,
+  validateMapSpawns,
+  validateSpeakerPlacements,
+} from './validate.js'
 
 /**
  * baseData()의 유일한 채집 기술(mineral)에 필요한 최소 이정표 하나.
@@ -79,7 +84,7 @@ function baseData(): GameData {
     // 화자(testSpeaker)와 배치가 가리키는 맵이 등록부에 있어야 한다 — 없으면
     // "없는 맵에 놓였다" 위반이 하나 더 생겨, 이 픽스처를 재사용하는 여러
     // .toEqual([]) 단언이 그것 때문에 깨진다.
-    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
     // 전환 검사는 validateTransitions 의 몫이라 이 파일의 픽스처는 비워 둔다.
     transitions: [],
     placements: {
@@ -169,7 +174,7 @@ function deadlockedTierData(): GameData {
         skillGainMin: 10, skillGainMax: 20,
       },
     },
-    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
     transitions: [],
     placements: {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
@@ -446,7 +451,7 @@ describe('validateGameData 의 조기 반환', () => {
           skillGainMin: 10, skillGainMax: 20,
         },
       },
-      maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+      maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
       transitions: [],
       placements: {
         'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
@@ -1274,7 +1279,7 @@ describe('validateSpeakerPlacements', () => {
     const data = baseData()
     data.maps = {
       ...data.maps,
-      숲: { id: '숲', name: '숲', file: '숲.tmx', width: 20, height: 15 },
+      숲: { id: '숲', name: '숲', file: '숲.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 } },
     }
     data.speakers = { 노인: { ...testSpeaker, mapId: '숲', x: 0, y: 0 } }
     const withForest: Record<string, MapTerrain> = {
@@ -1296,6 +1301,56 @@ describe('validateSpeakerPlacements', () => {
 
   it('실제로 출하되는 화자 배치는 통과한다', () => {
     expect(validateSpeakerPlacements(loadRealGameData(), loadRealMaps().terrains)).toEqual([])
+  })
+})
+
+/**
+ * 맵의 spawn 오브젝트가 정말로 설 수 있는 칸인가.
+ *
+ * 이 값은 새 플레이어의 시작 칸이고, 세이브가 없어진 맵을 가리킬 때 되돌아가는
+ * 자리이기도 하다 — 벽이나 노드 위를 가리키면 그 두 경우 모두가 "움직일 수 없는
+ * 상태로 시작한다"가 된다. 화자 배치 검사와 같은 이유로 지형이 필요해서
+ * validateGameData 와 나뉜다.
+ */
+describe('validateMapSpawns', () => {
+  const terrains: Record<string, MapTerrain> = {
+    world: { width: 30, height: 30, walls: new Set(['5,5']) },
+  }
+
+  function withSpawn(x: number, y: number): GameData {
+    const data = baseData()
+    data.maps = { world: { ...data.maps['world']!, spawn: { x, y } } }
+    return data
+  }
+
+  it('빈 칸의 spawn 은 통과한다', () => {
+    expect(validateMapSpawns(withSpawn(10, 10), terrains)).toEqual([])
+  })
+
+  it('벽 칸의 spawn 을 잡아낸다 — 시작하자마자 벽 속이다', () => {
+    expect(validateMapSpawns(withSpawn(5, 5), terrains).join('\n')).toMatch(
+      /maps\[world\]: 시작 칸 \(5, 5\) 이 벽이다/,
+    )
+  })
+
+  it('노드 칸의 spawn 을 잡아낸다', () => {
+    // baseData 의 copper_vein-1 은 world (0,0) 에 있다. 노드 칸은 걸을 수
+    // 없는 칸이라(WorldScene 의 blocked) 벽과 결과가 같다.
+    expect(validateMapSpawns(withSpawn(0, 0), terrains).join('\n')).toMatch(/copper_vein-1/)
+  })
+
+  it('맵 밖의 spawn 을 잡아낸다', () => {
+    expect(validateMapSpawns(withSpawn(30, 0), terrains).join('\n')).toMatch(/맵 밖/)
+  })
+
+  it('화자 칸의 spawn 을 잡아낸다 — 그 칸에는 화자가 서 있다', () => {
+    const data = withSpawn(7, 7)
+    data.speakers = { 노인: { ...testSpeaker, x: 7, y: 7 } }
+    expect(validateMapSpawns(data, terrains).join('\n')).toMatch(/노인/)
+  })
+
+  it('실제로 출하되는 맵의 시작 칸은 통과한다', () => {
+    expect(validateMapSpawns(loadRealGameData(), loadRealMaps().terrains)).toEqual([])
   })
 })
 

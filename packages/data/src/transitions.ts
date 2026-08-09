@@ -1,11 +1,9 @@
 import { DIRECTIONS, type Direction, type GameData, type TransitionDef } from '@nogada/shared'
+import { START_MAP_ID } from './maps.js'
 import { requireCell, toInt } from './parse.js'
 import type { MapTerrain } from './placements.js'
 
 type Row = Record<string, string>
-
-/** 시작 맵. 도달 가능성 검사의 출발점이고, 새 플레이어가 시작하는 곳이다. */
-export const START_MAP_ID = 'world'
 
 function toFacing(value: string, ctx: string): Direction | null {
   if (value === '') return null
@@ -85,6 +83,21 @@ export function validateTransitions(
     if (node) {
       violations.push(`${at(t)}: 도착 칸에 노드 ${node.instanceId} 이 있다 — 노드 칸에는 설 수 없다`)
     }
+  }
+
+  // 시작 맵이 실재하는지가 먼저다. START_MAP_ID 는 코드 상수이고 maps.csv 는
+  // 데이터라, 맵 id 를 개명하면 둘이 갈라진다. 그때 아래 도달 가능성 검사를
+  // 그대로 돌리면 **모든 맵**이 "시작 맵 world 에서 걸어서 닿을 수 없다" 라고
+  // 말한다 — 있지도 않은 맵의 이름을 대면서. 진짜 원인은 한 줄이고 나머지는
+  // 전부 그 한 줄의 그림자라, validate.ts 가 참조 위반이 있으면 도달 가능성
+  // 계산을 미루는 것과 같은 저울로 여기서 멈춘다.
+  if (!data.maps[START_MAP_ID]) {
+    violations.push(
+      `maps: 시작 맵 "${START_MAP_ID}" 가 maps.csv 에 없다 — 새 플레이어가 시작하고 도달 가능성 ` +
+        `검사가 출발하는 맵이다. maps.csv 에 id 가 "${START_MAP_ID}" 인 행을 두거나, ` +
+        `맵 이름을 바꿨다면 packages/data/src/maps.ts 의 START_MAP_ID 도 함께 바꾼다`,
+    )
+    return violations
   }
 
   // 시작 맵에서 걸어서 닿는 맵을 넓혀 간다. 못 닿는 맵은 만들어도 아무도 못 본다.

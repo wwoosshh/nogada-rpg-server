@@ -76,6 +76,16 @@ export interface TiledMapJson {
   tilesets: TiledTilesetJson[]
 }
 
+/**
+ * 클라이언트가 타일셋을 찾는 이름. `addTilesetImage(TILESET_NAME, TILESET_NAME)`
+ * 의 첫 인자가 Tiled 안의 타일셋 이름이라, 맵이 다른 이름을 쓰면 그 호출이
+ * null 을 돌려주고 WorldScene 이 그 자리에서 던진다 — 검은 화면이다.
+ *
+ * 그래서 빌드와 클라이언트가 **같은 글자**를 봐야 한다. 여기 한 곳에 두고
+ * 양쪽이 가져다 쓴다.
+ */
+export const TILESET_NAME = 'pipoya-basechip'
+
 /** 하나뿐인 자식을 객체로 접는 XML 파서의 습성을 여기서 한 번에 편다. */
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return []
@@ -120,6 +130,15 @@ export function parseTmx(xml: string): TiledMapJson {
   const map = root['map']
   if (!map) throw new Error('맵 파일에 <map> 이 없다 — Tiled 로 저장한 .tmx 가 맞는지 확인한다')
 
+  // 무한 맵은 타일을 <data> 가 아니라 그 안의 <chunk> 들에 나눠 담는다. 그러면
+  // 아래 타일 수 검사가 "0 개다" 라고만 말하는데, 그 말로는 무엇을 고쳐야 하는지
+  // 알 수 없다 — 고칠 곳은 맵 속성의 체크박스 하나다. 여기서 먼저 짚는다.
+  if (map['@infinite'] === '1') {
+    throw new Error(
+      '맵이 무한(Infinite) 으로 저장됐다 — Tiled 의 Map ▸ Map Properties 에서 Infinite 를 끄고 다시 저장한다',
+    )
+  }
+
   const width = toNumber(map['@width'], 'width')
   const height = toNumber(map['@height'], 'height')
   const tilewidth = toNumber(map['@tilewidth'], 'tilewidth')
@@ -148,6 +167,19 @@ export function parseTmx(xml: string): TiledMapJson {
     if (ts['@spacing'] !== undefined) out.spacing = toNumber(ts['@spacing'], `타일셋 "${name}" 의 spacing`)
     return out
   })
+
+  // 타일셋이 없거나 이름이 다르면 예전에는 `tilesets: []` 이 조용히 나왔다.
+  // 그 맵은 빌드를 통과한 뒤 클라이언트의 addTilesetImage 가 null 을 돌려주는
+  // 자리에서야 터지고, 화면에는 아무것도 안 나온다 — 맵을 그린 사람이 스스로
+  // 원인을 짚을 수 없는 실패다. 그리는 시점에 말한다.
+  if (!tilesets.some((ts) => ts.name === TILESET_NAME)) {
+    const found = tilesets.map((ts) => `"${ts.name}"`).join(', ')
+    throw new Error(
+      `맵에 "${TILESET_NAME}" 타일셋이 없다${found ? ` (들어 있는 것: ${found})` : ''} — ` +
+        `Tiled 의 Map ▸ Add External Tileset 이 아니라, 타일셋 이름을 "${TILESET_NAME}" 으로 두고 ` +
+        `Embed Tileset 으로 저장한다. 클라이언트가 이 이름으로 타일셋을 찾는다`,
+    )
+  }
 
   const layers: TiledLayerJson[] = []
 

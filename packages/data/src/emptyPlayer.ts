@@ -1,5 +1,6 @@
 import { SKILL_IDS, emptyDialogueHistory, type PlayerState, type SkillId } from '@nogada/shared'
-import { START_MAP_ID } from './transitions.js'
+import { loadGameData } from './load.js'
+import { startLocation } from './maps.js'
 
 /**
  * "빈 플레이어" — 숙련도 전부 0, 이정표 전부 미달성, 대화 이력 없음(한 번도
@@ -25,8 +26,8 @@ export function emptyPlayer(): PlayerState {
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
     // 시뮬레이터가 "아직 아무 데도 안 간 사람" 을 흉내 내는 것이므로 시작 맵의
-    // 시작 칸이다. 여기서는 packages/data 안이라 START_MAP_ID 를 그대로 쓸 수
-    // 있다 — protocol.ts 가 맵 id 를 글자로 적어야 했던 것과 다른 점이다.
-    location: { mapId: START_MAP_ID, x: 15, y: 16 },
+    // 시작 칸이다. 좌표를 여기 적지 않는다 — 그 칸은 world.tmx 의 spawn
+    // 오브젝트가 갖고 있고, 맵을 고쳐 그리면 이 값도 함께 움직여야 한다.
+    location: startLocation(loadGameData()),
   }
 }

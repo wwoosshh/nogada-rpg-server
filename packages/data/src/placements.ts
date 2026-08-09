@@ -1,4 +1,18 @@
-import type { NodeDef, NodePlacement } from '@nogada/shared'
+import type { NodeDef, NodePlacement, TilePos } from '@nogada/shared'
+
+/**
+ * 클라이언트가 맵마다 이름으로 찾는 타일 레이어. 없으면 `WorldScene.create` 가
+ * 그 자리에서 던진다 — 그래서 빌드도 같은 것을 요구한다.
+ *
+ * `decor`·`overhead` 는 여기 없다. 장식이 없는 맵도 정상이라 클라이언트가
+ * 있으면 그리고 없으면 넘어간다.
+ */
+export const GROUND_LAYER = 'ground'
+export const WALLS_LAYER = 'walls'
+
+/** 맵의 시작 칸을 적어 두는 오브젝트 레이어와 그 안의 오브젝트 이름. */
+const SPAWN_LAYER = 'spawn'
+const SPAWN_OBJECT = 'player'
 
 interface TiledProperty {
   name: string
@@ -6,6 +20,7 @@ interface TiledProperty {
 }
 
 interface TiledObject {
+  name?: string
   x?: number
   y?: number
   properties?: TiledProperty[]
@@ -47,6 +62,11 @@ export interface MapTerrain {
  * 벽의 기준은 클라이언트의 걷기 판정과 같아야 한다 — `walls` 레이어의 비어
  * 있지 않은 타일이 벽이다(apps/client 의 WorldScene 참고). 여기서 다른 기준을
  * 쓰면 빌드는 통과하는데 실제로는 못 가는 자리가 생긴다.
+ *
+ * **없는 레이어를 빈 것으로 넘기지 않는다.** `walls` 가 없을 때 빈 집합을
+ * 돌려주면 그 맵을 향한 벽 검사가 **전부 통과한다** — "도착 칸이 벽이다",
+ * "화자가 벽 칸에 놓였다" 가 조용히 참이 되어, 안전망이 하필 작가가 실수한
+ * 맵에서만 사라진다. 레이어 하나가 없는 것보다 그쪽이 나쁘다.
  */
 export function parseTerrain(mapJson: unknown): MapTerrain {
   const map = mapJson as TiledMap
@@ -56,8 +76,24 @@ export function parseTerrain(mapJson: unknown): MapTerrain {
     throw new Error('맵에 칸 수(width·height)가 없다')
   }
 
-  const layer = map.layers?.find((l) => l.name === 'walls' && l.type === 'tilelayer')
-  const tiles = layer?.data ?? []
+  const ground = map.layers?.find((l) => l.name === GROUND_LAYER && l.type === 'tilelayer')
+  if (!ground) {
+    throw new Error(
+      `맵에 "${GROUND_LAYER}" 타일 레이어가 없다 — 바닥을 그리는 레이어다. ` +
+        `Tiled 에서 Tile Layer 를 만들고 이름을 "${GROUND_LAYER}" 으로 둔다`,
+    )
+  }
+
+  const layer = map.layers?.find((l) => l.name === WALLS_LAYER && l.type === 'tilelayer')
+  if (!layer) {
+    throw new Error(
+      `맵에 "${WALLS_LAYER}" 타일 레이어가 없다 — 못 지나가는 칸을 그리는 레이어다. ` +
+        `비어 있어도 되지만 레이어 자체는 있어야 한다: 없으면 이 맵의 벽 검사가 ` +
+        `("도착 칸이 벽이다", "화자가 벽 칸에 놓였다") 전부 통과해 버린다. ` +
+        `Tiled 에서 Tile Layer 를 만들고 이름을 "${WALLS_LAYER}" 으로 둔다`,
+    )
+  }
+  const tiles = layer.data ?? []
 
   const walls = new Set<string>()
   tiles.forEach((tile, index) => {
@@ -66,6 +102,42 @@ export function parseTerrain(mapJson: unknown): MapTerrain {
   })
 
   return { width, height, walls }
+}
+
+/**
+ * 맵의 시작 칸을 뽑는다 — `spawn` 오브젝트 레이어의 `player` 오브젝트.
+ *
+ * **왜 이것이 시작 칸의 유일한 출처인가:** 예전엔 (15, 16) 이 서버·프로토콜·
+ * 시뮬레이터 세 곳에 글자로 박혀 있었다. 셋을 서로 묶는 테스트는 있었지만
+ * **맵에 묶는 것은 아무것도 없어서**, 그 칸에 벽을 그리면 새 플레이어가 전부
+ * 벽 속에서 시작했다. 맵 옆에 있고 Tiled 에서 눈에 보이는 이 오브젝트가 그
+ * 사실이 있어야 할 자리다 — 맵을 고쳐 그리면 시작 칸이 따라 움직인다.
+ *
+ * 좌표 계산은 parsePlacements 와 같다(반올림이 아니라 내림). 어느 맵인지는
+ * 메시지에 적지 않는다 — parseMaps 가 맵마다 그것을 앞에 붙인다.
+ */
+export function parseSpawn(mapJson: unknown): TilePos {
+  const map = mapJson as TiledMap
+  const tileWidth = map.tilewidth ?? 0
+  const tileHeight = map.tileheight ?? 0
+  if (tileWidth <= 0 || tileHeight <= 0) {
+    throw new Error('맵에 타일 크기가 없다')
+  }
+
+  const layer = map.layers?.find((l) => l.name === SPAWN_LAYER && l.type === 'objectgroup')
+  const spawn = layer?.objects?.find((o) => o.name === SPAWN_OBJECT)
+  if (!spawn) {
+    throw new Error(
+      `맵에 시작 칸이 없다 — Tiled 에서 "${SPAWN_LAYER}" 오브젝트 레이어를 만들고, ` +
+        `그 안에 이름이 "${SPAWN_OBJECT}" 인 오브젝트를 시작할 칸에 하나 찍는다. ` +
+        `새 플레이어가 서는 자리이고, 세이브가 없어진 맵을 가리킬 때 돌아오는 자리다`,
+    )
+  }
+
+  return {
+    x: Math.floor((spawn.x ?? 0) / tileWidth),
+    y: Math.floor((spawn.y ?? 0) / tileHeight),
+  }
 }
 
 function propOf(obj: TiledObject, name: string): string | undefined {

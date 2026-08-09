@@ -702,6 +702,71 @@ export function validateSpeakerPlacements(
 }
 
 /**
+ * 맵의 시작 칸(`spawn` 오브젝트)이 정말로 설 수 있는 칸인지 검사한다.
+ *
+ * 이 값은 두 자리에서 쓰인다 — 새 플레이어가 서는 칸, 그리고 세이브가 없어진
+ * 맵을 가리킬 때 돌아오는 칸이다. 둘 다 "여기서 시작한다"라서, 벽이나 노드
+ * 위를 가리키면 결과가 같다: **움직일 수 없는 상태로 시작한다.** 노드·화자
+ * 칸이 벽과 같은 취급인 것은 클라이언트가 그 칸들을 걸을 수 없는 칸으로
+ * 세기 때문이다(WorldScene 의 blocked).
+ *
+ * 지형이 필요해서 validateGameData 와 나뉜다 — validateSpeakerPlacements 와
+ * 같은 이유이고 같은 모양이다.
+ */
+export function validateMapSpawns(
+  data: GameData,
+  terrains: Record<string, MapTerrain>,
+): string[] {
+  const violations: string[] = []
+
+  const nodeAt = new Map<string, string>()
+  for (const placement of Object.values(data.placements)) {
+    nodeAt.set(`${placement.mapId}:${placement.x},${placement.y}`, placement.instanceId)
+  }
+  const speakerAt = new Map<string, string>()
+  for (const speaker of Object.values(data.speakers)) {
+    speakerAt.set(`${speaker.mapId}:${speaker.x},${speaker.y}`, speaker.id)
+  }
+
+  for (const map of Object.values(data.maps)) {
+    const terrain = terrains[map.id]
+    if (!terrain) continue
+
+    const { x, y } = map.spawn
+    const key = `${map.id}:${x},${y}`
+
+    if (x < 0 || y < 0 || x >= terrain.width || y >= terrain.height) {
+      violations.push(
+        `maps[${map.id}]: 시작 칸 (${x}, ${y}) 이 맵 밖이다 — 맵은 가로 ${terrain.width}, 세로 ${terrain.height} 칸이라 x 는 0~${terrain.width - 1}, y 는 0~${terrain.height - 1} 이다. ${map.file} 의 spawn 오브젝트를 맵 안으로 옮긴다`,
+      )
+      continue // 맵 밖이면 벽인지 노드인지 따질 칸 자체가 없다
+    }
+
+    if (terrain.walls.has(`${x},${y}`)) {
+      violations.push(
+        `maps[${map.id}]: 시작 칸 (${x}, ${y}) 이 벽이다 — 여기서 시작하는 사람은 벽 속에서 시작한다. ${map.file} 의 spawn 오브젝트를 빈 칸으로 옮긴다`,
+      )
+    }
+
+    const node = nodeAt.get(key)
+    if (node) {
+      violations.push(
+        `maps[${map.id}]: 시작 칸 (${x}, ${y}) 에 노드 ${node} 이 있다 — 노드 칸에는 설 수 없다. ${map.file} 의 spawn 오브젝트를 빈 칸으로 옮긴다`,
+      )
+    }
+
+    const speaker = speakerAt.get(key)
+    if (speaker) {
+      violations.push(
+        `maps[${map.id}]: 시작 칸 (${x}, ${y}) 에 화자 ${speaker} 가 있다 — 화자 칸에는 설 수 없다. ${map.file} 의 spawn 오브젝트를 빈 칸으로 옮긴다`,
+      )
+    }
+  }
+
+  return violations
+}
+
+/**
  * 공급자가 아직 없는 사실을 쓴 대사를 안내로 모은다.
  *
  * validateGameData 의 결과(violations)에는 넣지 않는다 — 빌드를 막는 실패가

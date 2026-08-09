@@ -7,8 +7,8 @@ const data: GameData = {
   nodes: {},
   recipes: {},
   maps: {
-    world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 },
-    시험숲: { id: '시험숲', name: '시험 숲', file: '시험숲.tmx', width: 20, height: 15 },
+    world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 15, y: 16 } },
+    시험숲: { id: '시험숲', name: '시험 숲', file: '시험숲.tmx', width: 20, height: 15, spawn: { x: 10, y: 7 } },
   },
   transitions: [
     { fromMap: 'world', fromX: 3, fromY: 0, toMap: '시험숲', toX: 10, toY: 13, facing: 'up' },

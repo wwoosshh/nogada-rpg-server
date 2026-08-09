@@ -31,7 +31,7 @@ const data: GameData = {
   },
   recipes: {},
   // 채집 판정은 맵을 보지 않지만 배치가 자기 맵을 가리키므로, 등록부에 그 맵이 있어야 앞뒤가 맞는다.
-  maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+  maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
   transitions: [],
   placements: {
     'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 3, y: 3 },

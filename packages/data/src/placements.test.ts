@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { NodeDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
-import { parsePlacements, parseTerrain } from './placements.js'
+import { parsePlacements, parseSpawn, parseTerrain } from './placements.js'
 import { parseTmx } from './tmx.js'
 
 const nodes: Record<string, NodeDef> = {
@@ -81,11 +81,14 @@ describe('parseTerrain', () => {
   // "어디까지가 맵이고 어디가 벽인가"를 알려줘야 한다. 그 기준은 클라이언트의
   // 걷기 판정과 같아야 한다 — walls 레이어의 비어 있지 않은 타일이 벽이다.
 
-  /** walls 레이어 하나짜리 맵. data 는 행 우선(row-major) 타일 id 배열이다. */
+  /** ground·walls 를 갖춘 최소 맵. data 는 행 우선(row-major) 타일 id 배열이다. */
   function mapWithWalls(width: number, height: number, data: number[]): unknown {
     return {
       width, height, tilewidth: 32, tileheight: 32,
-      layers: [{ name: 'walls', type: 'tilelayer', width, height, data }],
+      layers: [
+        { name: 'ground', type: 'tilelayer', width, height, data: data.map(() => 1) },
+        { name: 'walls', type: 'tilelayer', width, height, data },
+      ],
     }
   }
 
@@ -101,9 +104,26 @@ describe('parseTerrain', () => {
     expect([...t.walls]).toEqual(['1,0'])
   })
 
-  it('walls 레이어가 없으면 벽이 하나도 없다', () => {
-    const t = parseTerrain({ width: 3, height: 3, layers: [] })
-    expect(t.walls.size).toBe(0)
+  // 왜: walls 가 없으면 예전엔 빈 집합이 조용히 나왔고, 그 순간 이 맵을 향한
+  //     "도착 칸이 벽이다"·"화자가 벽 칸에 놓였다" 검사가 **전부 통과**한다 —
+  //     안전망이 사라지는 것이 레이어가 없다는 사실보다 나쁘다. 그러고 나서
+  //     클라이언트가 walls 레이어를 못 찾아 그 자리에서 던진다.
+  it('walls 레이어가 없으면 던진다 — 벽 검사 전체가 조용히 통과해 버린다', () => {
+    const map = {
+      width: 3, height: 3, tilewidth: 32, tileheight: 32,
+      layers: [{ name: 'ground', type: 'tilelayer', width: 3, height: 3, data: Array(9).fill(1) }],
+    }
+    expect(() => parseTerrain(map)).toThrow(/walls/)
+  })
+
+  // 왜: 클라이언트는 ground 를 필수로 찾고 없으면 던진다(WorldScene.create).
+  //     빌드가 같은 것을 요구하지 않으면 맵을 그린 사람은 게임에 들어가서야 안다.
+  it('ground 레이어가 없으면 던진다', () => {
+    const map = {
+      width: 3, height: 3, tilewidth: 32, tileheight: 32,
+      layers: [{ name: 'walls', type: 'tilelayer', width: 3, height: 3, data: Array(9).fill(0) }],
+    }
+    expect(() => parseTerrain(map)).toThrow(/ground/)
   })
 
   it('실제 맵을 읽는다', () => {
@@ -115,5 +135,41 @@ describe('parseTerrain', () => {
     expect(t.width).toBe(30)
     expect(t.height).toBe(30)
     expect(t.walls.size).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * 맵의 spawn 오브젝트는 "이 맵에서는 여기서 시작한다"의 유일한 출처다.
+ *
+ * 예전에는 시작 칸 (15,16) 이 서버·프로토콜·시뮬레이터 세 곳에 글자로 박혀 있었고,
+ * 그 셋을 서로 묶어 두는 테스트는 있어도 **맵에 묶어 두는 것**은 아무것도 없었다 —
+ * 그 칸에 벽을 그리면 새 플레이어가 전부 벽 속에서 시작한다. 맵 옆에 있고 Tiled
+ * 에서 눈으로 보이는 이 오브젝트가 그 사실의 자연스러운 자리다.
+ */
+describe('parseSpawn', () => {
+  function mapWithSpawn(objects: unknown[]): unknown {
+    return {
+      tilewidth: 32, tileheight: 32,
+      layers: [{ name: 'spawn', type: 'objectgroup', objects }],
+    }
+  }
+
+  it('오브젝트의 픽셀 좌표를 타일 좌표로 바꾼다', () => {
+    // Tiled 는 오브젝트를 격자에 딱 맞춰 놓지 않아 소수가 섞인다 — 내림이
+    // 언제나 그 칸을 준다(parsePlacements 와 같은 계산이다).
+    expect(parseSpawn(mapWithSpawn([{ name: 'player', x: 495.644, y: 523.935 }]))).toEqual({
+      x: 15, y: 16,
+    })
+  })
+
+  // 왜: 오브젝트가 없으면 예전 클라이언트는 조용히 (2,2) 에서 시작했다. 이제는
+  //     이 값이 새 플레이어의 시작 칸이자 세이브 복구 지점이라, 없는 채로
+  //     통과시키면 "어디서 시작하는지"를 아무도 모르는 맵이 생긴다.
+  it('spawn 레이어가 없으면 무엇을 그려야 하는지 말하며 던진다', () => {
+    expect(() => parseSpawn({ tilewidth: 32, tileheight: 32, layers: [] })).toThrow(/spawn/)
+  })
+
+  it('player 라는 이름의 오브젝트가 없으면 던진다', () => {
+    expect(() => parseSpawn(mapWithSpawn([{ name: '시작', x: 32, y: 32 }]))).toThrow(/player/)
   })
 })

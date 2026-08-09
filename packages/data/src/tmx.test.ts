@@ -118,6 +118,31 @@ describe('parseTmx — Phaser 가 실제로 읽는 칸', () => {
     expect(() => parseTmx(xml)).toThrow(/Embed Tileset/)
   })
 
+  // 왜: <tileset> 이 아예 없으면 `tilesets: []` 이 조용히 나오고, 그 맵은 빌드를
+  //     통과한 뒤 클라이언트의 addTilesetImage 가 null 을 돌려주는 자리에서야
+  //     "타일셋을 찾을 수 없다" 로 터진다 — 검은 화면이고, 맵을 그린 사람은
+  //     자기가 무엇을 빠뜨렸는지 알 길이 없다.
+  it('타일셋이 하나도 없으면 던진다', () => {
+    const xml = SAMPLE.replace(/ <tileset[\s\S]*?<\/tileset>\n/, '')
+    expect(() => parseTmx(xml)).toThrow(/pipoya-basechip/)
+  })
+
+  // 왜: 클라이언트는 타일셋을 **이름으로** 찾는다(addTilesetImage('pipoya-basechip')).
+  //     이름이 다르면 타일셋이 있어도 못 찾아 같은 자리에서 같은 검은 화면이 된다.
+  it('타일셋 이름이 다르면 던지고, 무엇이 들어 있는지 말한다', () => {
+    const xml = SAMPLE.replace('name="pipoya-basechip"', 'name="basechip"')
+    expect(() => parseTmx(xml)).toThrow(/basechip/)
+    expect(() => parseTmx(xml)).toThrow(/pipoya-basechip/)
+  })
+
+  // 왜: Tiled 의 Infinite 체크박스는 타일을 <data> 대신 <chunk> 안에 넣는다.
+  //     그러면 타일 수가 0 으로 읽혀 "900 개여야 하는데 0 개다" 라는, 원인을
+  //     짚어 주지 않는 말만 나온다 — 정작 고칠 곳은 맵 속성의 체크박스 하나다.
+  it('무한 맵이면 Infinite 를 짚어서 던진다', () => {
+    const xml = SAMPLE.replace('infinite="0"', 'infinite="1"')
+    expect(() => parseTmx(xml)).toThrow(/Infinite/)
+  })
+
   // 왜: Tiled 는 opacity=1·visible=true(둘 다 기본값)일 때 속성 자체를 아예 안 쓴다.
   // SAMPLE 의 layer·objectgroup 이 정확히 이 상태다. 기본값을 안 채우면 undefined 가
   // Phaser 의 곱셈·논리곱을 타고 내려가 레이어가 안 보이게 된다.

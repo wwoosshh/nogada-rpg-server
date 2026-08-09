@@ -1,15 +1,19 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
-import { parseMaps } from './maps.js'
+import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import { parseSpeakers } from './speakers.js'
-import { parseTmx } from './tmx.js'
 import { parseTransitions, validateTransitions } from './transitions.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
-import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
+import {
+  collectDialogueNotices,
+  validateGameData,
+  validateMapSpawns,
+  validateSpeakerPlacements,
+} from './validate.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const csvDir = join(here, '..', 'csv')
@@ -54,11 +58,41 @@ if (dialogueErrors.length > 0) fail(dialogueErrors)
 const nodes = parseNodes(readCsv('nodes.csv'))
 const recipes = parseRecipes(readCsv('recipes.csv'))
 
-const { maps, terrains, placements } = parseMaps(
-  readCsv('maps.csv'),
-  (file) => readFileSync(join(mapsDir, file), 'utf8'),
-  nodes,
-)
+/**
+ * 맵 파일을 읽는다. **없는 파일에 던지지 않고 빈 문자열을 돌려준다.**
+ *
+ * 예전에는 readFileSync 를 그대로 넘겨서, maps.csv 가 없는 `.tmx` 를 가리키면
+ * 빌드가 raw `ENOENT: ... open 'C:\…\ghost.tmx'` 스택 트레이스로 죽었다 —
+ * parseMaps 안에 준비돼 있던 안내는 테스트의 가짜 리더에서만 닿았고, 정작
+ * 설계 문서가 4절 첫 줄에 적어 둔 검증이 실제로는 없는 셈이었다.
+ */
+function readMapFile(file: string): string {
+  const path = join(mapsDir, file)
+  return existsSync(path) ? readFileSync(path, 'utf8') : ''
+}
+
+/**
+ * 맵 파일에 관한 실패를 검증 위반과 **같은 꼴로** 보고한다.
+ *
+ * 맵 파일이 없다, 타일셋이 안 박혀 있다, walls 레이어를 안 그렸다, 시작 칸이
+ * 없다 — 전부 맵을 그리는 사람의 실수인데, 파싱 단계라는 이유만으로 스택
+ * 트레이스가 나오면 그 사람은 "이건 다른 종류의 문제인가"부터 고민하게 된다.
+ * 대사 문법 오류를 검증보다 먼저·단독으로 보고하는 것과 같은 자세다: 파싱이
+ * 깨진 맵은 규칙을 하나도 내놓지 못하므로 그 한 건만 말하고 멈춘다.
+ *
+ * 프로그래밍 오류(TypeError 등)는 그대로 다시 던진다 — 그건 작가가 고칠 수
+ * 있는 것이 아니라 우리가 고칠 것이고, 스택이 지워지면 찾을 수 없다.
+ */
+function parseMapsOrFail(): ParsedMaps {
+  try {
+    return parseMaps(readCsv('maps.csv'), readMapFile, nodes)
+  } catch (err) {
+    if (!(err instanceof Error) || err instanceof TypeError || err instanceof RangeError) throw err
+    fail([err.message])
+  }
+}
+
+const { maps, terrains, mapJson, placements } = parseMapsOrFail()
 
 const data: GameData = {
   items: parseItems(readCsv('items.csv')),
@@ -72,11 +106,12 @@ const data: GameData = {
   dialogue,
 }
 
-// 화자 배치·전환 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 — 그래서
-// validateGameData 와 나뉘어 있고, 여기서 셋을 합쳐 한 번에 보고한다.
+// 화자 배치·시작 칸·전환 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 —
+// 그래서 validateGameData 와 나뉘어 있고, 여기서 넷을 합쳐 한 번에 보고한다.
 const violations = [
   ...validateGameData(data),
   ...validateSpeakerPlacements(data, terrains),
+  ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
 ]
 if (violations.length > 0) fail(violations)
@@ -84,12 +119,15 @@ if (violations.length > 0) fail(violations)
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf8')
 
-// 클라이언트가 이 파일을 import 한다. gamedata.json 과 같은 생성 폴더에 둔다 —
+// 클라이언트가 이 파일을 실행 중에 받아 간다. gamedata.json 과 같은 생성 폴더에 둔다 —
 // 저장소에 커밋된 .json 을 두면 .tmx 와 어긋날 수 있고, 그것을 없애려고 이 단계를 만들었다.
+//
+// parseMaps 가 이미 파싱해 둔 것을 그대로 쓴다. 예전엔 여기서 같은 .tmx 를
+// 두 번째로 읽어 두 번째로 파싱했다 — 맵이 수십 장이 되면 그 낭비가 맵 수만큼이고,
+// 두 번 읽는 사이에 파일이 바뀌면 검증한 맵과 내보낸 맵이 달라질 수도 있다.
 mkdirSync(join(outDir, 'maps'), { recursive: true })
-for (const map of Object.values(maps)) {
-  const json = parseTmx(readFileSync(join(mapsDir, map.file), 'utf8'))
-  writeFileSync(join(outDir, 'maps', `${map.id}.json`), JSON.stringify(json), 'utf8')
+for (const [id, json] of Object.entries(mapJson)) {
+  writeFileSync(join(outDir, 'maps', `${id}.json`), JSON.stringify(json), 'utf8')
 }
 
 console.log(

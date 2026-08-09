@@ -22,8 +22,8 @@ function data(transitions = parseTransitions(ROWS)): GameData {
   return {
     items: {}, nodes: {}, recipes: {}, milestones: [], speakers: {}, dialogue: [],
     maps: {
-      world: { id: 'world', name: '월드', file: 'w.tmx', width: 20, height: 15 },
-      숲: { id: '숲', name: '숲', file: 's.tmx', width: 20, height: 15 },
+      world: { id: 'world', name: '월드', file: 'w.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 } },
+      숲: { id: '숲', name: '숲', file: 's.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 } },
     },
     placements: {},
     transitions,
@@ -64,6 +64,18 @@ describe('validateTransitions', () => {
   it('시작 맵에서 못 닿는 맵을 막는다', () => {
     const violations = validateTransitions(data(parseTransitions([])), terrains)
     expect(violations.join('\n')).toMatch(/닿을 수 없다/)
+  })
+
+  // 왜: START_MAP_ID 는 코드 상수이고 maps.csv 는 데이터라, 맵 id 를 개명하면
+  //     둘이 갈라진다. 예전에는 그때 **모든 맵**이 "시작 맵 world 에서 걸어서
+  //     닿을 수 없다" 라고 말했다 — 없는 맵의 이름을 대면서. 진짜 원인은 한
+  //     줄이고, 나머지는 그 한 줄의 그림자다.
+  it('시작 맵이 등록부에 없으면 그것만 말하고 도달 가능성으로 도배하지 않는다', () => {
+    const d = data()
+    delete d.maps['world']
+    const violations = validateTransitions(d, terrains)
+    expect(violations.filter((v) => v.includes('닿을 수 없다'))).toEqual([])
+    expect(violations.join('\n')).toMatch(/시작 맵 "world" 가 maps\.csv 에 없다/)
   })
 
   // 왜: 도착 칸이 벽인지만 보면 노드 위에 내려서는 것을 놓친다 — 그 칸에서는

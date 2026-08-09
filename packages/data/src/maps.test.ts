@@ -10,17 +10,21 @@ const NODES: Record<string, NodeDef> = {
   } as NodeDef,
 }
 
-const MAP_A = `<?xml version="1.0"?><map width="2" height="2" tilewidth="32" tileheight="32">
+/** 게임이 맵마다 요구하는 것을 다 갖춘 최소 맵 — 타일셋, ground·walls, spawn. */
+function map(instanceId: string): string {
+  return `<?xml version="1.0"?><map width="2" height="2" tilewidth="32" tileheight="32">
+ <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32">
+  <image source="x.png" width="256" height="2048"/></tileset>
+ <layer name="ground" width="2" height="2"><data encoding="csv">1,1,1,1</data></layer>
  <layer name="walls" width="2" height="2"><data encoding="csv">0,0,0,0</data></layer>
+ <objectgroup name="spawn"><object name="player" x="32" y="0"/></objectgroup>
  <objectgroup name="nodes"><object x="0" y="32">
-  <properties><property name="nodeId" value="ice_vein"/><property name="instanceId" value="ice-1"/></properties>
+  <properties><property name="nodeId" value="ice_vein"/><property name="instanceId" value="${instanceId}"/></properties>
  </object></objectgroup></map>`
+}
 
-const MAP_B = `<?xml version="1.0"?><map width="2" height="2" tilewidth="32" tileheight="32">
- <layer name="walls" width="2" height="2"><data encoding="csv">0,0,0,0</data></layer>
- <objectgroup name="nodes"><object x="0" y="32">
-  <properties><property name="nodeId" value="ice_vein"/><property name="instanceId" value="ice-2"/></properties>
- </object></objectgroup></map>`
+const MAP_A = map('ice-1')
+const MAP_B = map('ice-2')
 
 const FILES: Record<string, string> = { 'a.tmx': MAP_A, 'b.tmx': MAP_B }
 const read = (file: string): string => FILES[file] ?? ''
@@ -32,9 +36,43 @@ const ROWS = [
 
 describe('parseMaps', () => {
   // 왜: 맵 크기는 맵 파일에만 있는데, 검증과 서버가 "맵 안인가"를 물어야 한다.
-  it('맵 파일에서 크기를 읽어 등록부에 싣는다', () => {
+  //     시작 칸도 마찬가지다 — 맵 옆의 spawn 오브젝트가 그 사실의 유일한 출처라야
+  //     맵을 고쳐 그렸을 때 시작 칸이 따라 움직인다.
+  it('맵 파일에서 크기와 시작 칸을 읽어 등록부에 싣는다', () => {
     const { maps } = parseMaps(ROWS, read, NODES)
-    expect(maps['alpha']).toEqual({ id: 'alpha', name: '알파', file: 'a.tmx', width: 2, height: 2 })
+    expect(maps['alpha']).toEqual({
+      id: 'alpha', name: '알파', file: 'a.tmx', width: 2, height: 2, spawn: { x: 1, y: 0 },
+    })
+  })
+
+  // 왜: 예전에는 build.ts 가 같은 .tmx 를 두 번 읽어 두 번 파싱했다 — 한 번은
+  //     검증하려고, 한 번은 JSON 을 쓰려고. 맵이 수십 장이 되면 그만큼 두 배다.
+  it('파싱한 맵 JSON 을 함께 돌려준다 — 빌드가 같은 파일을 두 번 읽지 않도록', () => {
+    const { mapJson } = parseMaps(ROWS, read, NODES)
+    expect(Object.keys(mapJson).sort()).toEqual(['alpha', 'beta'])
+    expect(mapJson['alpha']?.layers.map((l) => l.name)).toContain('walls')
+  })
+
+  // 왜: 예전에는 build.ts 가 readFileSync 를 그대로 넘겨서, maps.csv 가 없는
+  //     파일을 가리키면 ENOENT 스택 트레이스가 났다 — 여기 준비된 안내는
+  //     테스트에서만 닿았다. 맵을 그리는 사람이 읽을 말이 나와야 한다.
+  it('맵 파일을 못 읽으면 어느 행의 어느 파일인지 말한다', () => {
+    const rows = [{ id: 'ghost', name: '유령', file: 'ghost.tmx' }]
+    expect(() => parseMaps(rows, read, NODES)).toThrow(/ghost\.tmx/)
+    expect(() => parseMaps(rows, read, NODES)).toThrow(/maps\//)
+  })
+
+  // 왜: 맵 파일 하나만 보는 파서들(parseTmx·parseTerrain·parseSpawn)은 자기가
+  //     어느 맵인지 모른다. 맵이 두 장일 땐 짐작할 수 있지만 수십 장이 되면
+  //     "타일셋이 없다" 만 듣고는 어느 파일을 열어야 할지 알 수 없다.
+  it('맵 파일이 잘못됐으면 어느 맵의 어느 파일인지 앞에 붙인다', () => {
+    const broken: Record<string, string> = {
+      'c.tmx': MAP_A.replace(/ <layer name="walls"[\s\S]*?<\/layer>\n/, ''),
+    }
+    const rows = [{ id: 'gamma', name: '감마', file: 'c.tmx' }]
+    expect(() => parseMaps(rows, (f) => broken[f] ?? '', NODES)).toThrow(
+      /maps\.csv\[gamma\] \(c\.tmx\): .*walls/,
+    )
   })
 
   // 왜: 이것이 이 태스크의 존재 이유다. 두 맵의 (0,1) 이 같은 칸으로 뭉치면
