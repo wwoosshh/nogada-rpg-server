@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadGameData } from '@nogada/data'
+import { loadGameData, startLocation } from '@nogada/data'
 import { STARTING_TOOL_IDS } from '@nogada/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PlayerStore, createInitialPlayer } from './store.js'
@@ -49,6 +49,22 @@ describe('createInitialPlayer', () => {
 
   it('인벤토리 스택은 비어 있다', () => {
     expect(createInitialPlayer('local').stacks).toEqual({})
+  })
+
+  // 왜: 시작 칸 (15, 16) 은 예전에 서버·프로토콜·시뮬레이터 세 곳에 글자로
+  //     박혀 있었고, 셋을 서로 묶는 테스트는 있어도 **맵에 묶는 것은
+  //     아무것도 없었다** — world.tmx 의 그 칸에 벽을 그리면 새 플레이어가
+  //     전부 벽 속에서 시작한다. 이제 시작 칸은 맵의 spawn 오브젝트가 갖고,
+  //     여기서 그 둘이 같은 값인지 못 박는다.
+  it('시작 칸은 시작 맵의 spawn 오브젝트가 가리키는 칸이다', () => {
+    const data = loadGameData()
+    const p = createInitialPlayer('local')
+    expect(p.location).toEqual(startLocation(data))
+    expect(p.location).toEqual({
+      mapId: 'world',
+      x: data.maps['world']!.spawn.x,
+      y: data.maps['world']!.spawn.y,
+    })
   })
 })
 
@@ -162,12 +178,64 @@ describe('PlayerStore', () => {
     const p = new PlayerStore(file).get('local')
 
     expect(p.skills.ice).toBe(12345)
-    expect(p.location.mapId).toBe('world')
-    // 기본값은 packages/shared 가 하드코딩한다 — 그 패키지는 packages/data 를
-    // import 할 수 없어서 START_MAP_ID 를 볼 수가 없다. 그러면 시작 맵을 아는
-    // 곳이 둘이 되므로, 둘이 갈라지는 순간을 여기서 잡는다: 옛 세이브가
-    // 떨어지는 자리와 새 플레이어가 시작하는 자리는 같아야 한다.
+    // packages/shared 는 packages/data 를 import 할 수 없어서 시작 맵을 볼
+    // 방법이 없다. 그래서 스키마의 기본값은 **맵 id 가 될 수 없는 빈 문자열**
+    // 이고(maps.csv 는 빈 id 를 만들 수 없다 — requireCell 이 거절한다), 그
+    // 자리표시자는 아래 보정에 반드시 걸린다. 시작 맵을 아는 곳이 둘로
+    // 갈라질 여지 자체를 없앤 것이라, 여기서 확인할 것은 "옛 세이브가 새
+    // 플레이어와 같은 자리에 선다" 하나다.
+    expect(p.location).toEqual(startLocation(loadGameData()))
     expect(p.location).toEqual(createInitialPlayer('drift-check').location)
+  })
+
+  // 왜: 이 태스크에서 고친 것 중 유일하게 게임을 못 쓰게 만들던 것이다.
+  //     maps.csv 에서 맵 id 를 바꾸거나 행을 지우면 그 맵을 가리키던 세이브가
+  //     남는데, 아무도 그것을 보정하지 않았다 — readPlayers 도, /api/state 도,
+  //     클라이언트도. 그러면 클라이언트가 maps/<없는맵>.json 을 404 로 받고,
+  //     빈 Tilemap 을 세우고, addTilesetImage 가 null 을 돌려주며 던진다.
+  //     검은 화면이고, 게임 안에서 빠져나올 방법이 없다 — .data/ 를 지우는
+  //     것 말고는. 보정은 서버가 한다: 플레이어 상태의 주인이 서버이고,
+  //     세이브 파일은 신뢰할 수 없는 데이터가 들어오는 유일한 경계다.
+  it('없어진 맵을 가리키는 세이브는 시작 자리로 돌아온다 — 숙련도는 그대로 두고', () => {
+    const stale = {
+      id: 'local',
+      skills: { ice: 12345, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      stacks: { copper_ore: 42 },
+      instances: [],
+      equipped: {},
+      nextActionAt: 0,
+      celebrated: [],
+      dialogueHistory: { said: [], recent: {}, lastTalkAt: {} },
+      // maps.csv 에서 이 맵을 지웠거나 이름을 바꿨다.
+      location: { mapId: '없어진맵', x: 3, y: 4 },
+    }
+    writeFileSync(file, JSON.stringify({ local: stale }), 'utf8')
+
+    const p = new PlayerStore(file).get('local')
+
+    expect(p.location).toEqual(startLocation(loadGameData()))
+    // 위치만 되돌린다. 세이브를 통째로 버리면 수십 시간짜리 숙련도가 같이 간다.
+    expect(p.skills.ice).toBe(12345)
+    expect(p.stacks.copper_ore).toBe(42)
+  })
+
+  // 왜: 보정이 메모리에서만 일어나고 파일에는 안 남으면, 서버를 껐다 켤 때마다
+  //     같은 경고가 다시 나온다. 읽는 시점에 고쳐 두면 다음 저장에 함께 실린다.
+  it('되돌린 위치는 다음 저장에 그대로 실린다', () => {
+    const stale = {
+      id: 'local',
+      skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      stacks: {}, instances: [], equipped: {}, nextActionAt: 0, celebrated: [],
+      dialogueHistory: { said: [], recent: {}, lastTalkAt: {} },
+      location: { mapId: '없어진맵', x: 3, y: 4 },
+    }
+    writeFileSync(file, JSON.stringify({ local: stale }), 'utf8')
+
+    const store = new PlayerStore(file)
+    store.save(store.get('local'))
+
+    const saved = JSON.parse(readFileSync(file, 'utf8')) as Record<string, { location: unknown }>
+    expect(saved['local']?.location).toEqual(startLocation(loadGameData()))
   })
 
   it('한 세이브의 빈 이력이 다른 세이브와 같은 객체가 아니다 — 한쪽의 대화가 다른 쪽에 새면 안 된다', () => {

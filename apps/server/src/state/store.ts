@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { START_MAP_ID, loadGameData } from '@nogada/data'
+import { loadGameData, startLocation } from '@nogada/data'
 import {
   PlayerStateSchema,
   SKILL_IDS,
   STARTING_TOOL_IDS,
   emptyDialogueHistory,
+  resolvePlayerLocation,
   type ItemInstance,
   type PlayerState,
   type SkillId,
@@ -20,7 +21,8 @@ import {
  * "시작 도구가 실재하는 도구인가" 와 "무엇이 채집·제작으로 도달 가능한가" 를 판단한다.
  */
 export function createInitialPlayer(id: string): PlayerState {
-  const items = loadGameData().items
+  const data = loadGameData()
+  const items = data.items
   const instances: ItemInstance[] = []
   const equipped: Partial<Record<SkillId, string>> = {}
 
@@ -47,10 +49,10 @@ export function createInitialPlayer(id: string): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
-    // 시작 맵은 START_MAP_ID 가 유일한 출처다 — 도달 가능성 검증도 같은 상수에서
-    // 출발한다. 칸은 world.tmx 의 spawn 오브젝트가 가리키는 자리다. protocol.ts 의
-    // 옛 세이브 기본값과 같아야 하고, 그 일치는 store.test.ts 가 지킨다.
-    location: { mapId: START_MAP_ID, x: 15, y: 16 },
+    // 시작 자리는 시작 맵의 spawn 오브젝트가 유일한 출처다 — 좌표를 여기 적으면
+    // 맵을 고쳐 그려도 따라오지 않는 숫자가 하나 생기고, 그 칸에 벽을 그린
+    // 순간 새 플레이어가 전부 벽 속에서 시작한다(startLocation 참고).
+    location: startLocation(data),
   }
 }
 
@@ -74,6 +76,9 @@ function readPlayers(filePath: string): Record<string, PlayerState> {
 
   if (typeof parsed !== 'object' || parsed === null) return {}
 
+  const data = loadGameData()
+  const start = startLocation(data)
+
   const out: Record<string, PlayerState> = {}
   for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
     const result = PlayerStateSchema.safeParse(value)
@@ -82,7 +87,26 @@ function readPlayers(filePath: string): Record<string, PlayerState> {
       // skills 가 SKILL_IDS 키를 그대로 갖는 z.object 라 PlayerState.skills
       // (Record<SkillId, number>) 와 타입이 정확히 맞기 때문이다 — z.record 이던
       // 시절엔 파싱 결과의 키가 string 으로 넓어져 이 대입이 안 됐다.
-      out[id] = result.data
+      //
+      // **위치는 여기서 보정한다.** 콘텐츠는 계속 바뀌는데 세이브는 남으므로,
+      // maps.csv 에서 맵 id 를 바꾸거나 행을 지우면 없는 맵을 가리키는 세이브가
+      // 남는다. 그대로 내보내면 클라이언트가 maps/<없는맵>.json 을 404 로 받은
+      // 뒤 검은 화면으로 죽고, 게임 안에서 빠져나올 방법이 없다.
+      //
+      // 왜 하필 이 자리인가: 세이브 파일은 믿을 수 없는 데이터가 서버로 들어오는
+      // **유일한 경계**다(그 밖의 모든 위치는 moveService 가 전환표에서 정한다).
+      // 여기서 고쳐 두면 이후의 모든 읽기가, 그리고 다음 저장이 이미 성한 자리를
+      // 갖는다 — /api/state 나 클라이언트에서 매번 다시 물을 필요가 없다.
+      // 판정 자체는 packages/shared 가 갖는다: 어디에 있는가는 게임 규칙이고,
+      // 서버는 그것을 플레이어 상태에 적용하는 주인이다.
+      const location = resolvePlayerLocation(data, result.data.location, start)
+      if (location !== result.data.location) {
+        console.warn(
+          `세이브의 플레이어 "${id}" 가 지금 없는 자리(${result.data.location.mapId} ` +
+            `${result.data.location.x}, ${result.data.location.y})에 있어 시작 지점으로 되돌린다`,
+        )
+      }
+      out[id] = { ...result.data, location }
     } else {
       console.warn(`세이브의 플레이어 "${id}" 가 현재 형식과 맞지 않아 버린다`)
     }

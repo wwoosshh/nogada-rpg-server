@@ -40,7 +40,8 @@ const DialogueHistorySchema = z.object({
 })
 
 const PlayerLocationSchema = z.object({
-  mapId: z.string().min(1),
+  // `.min(1)` 이 없다. 아래 기본값이 빈 맵 id 를 자리표시자로 쓰기 때문이다.
+  mapId: z.string(),
   x: z.number().int().min(0),
   y: z.number().int().min(0),
 })
@@ -51,14 +52,18 @@ const PlayerLocationSchema = z.object({
  * 한 객체가 모든 파싱 결과에 물려 들어가서, 한 플레이어가 맵을 넘으면 다른
  * 플레이어의 위치까지 같이 움직인다.
  *
- * 맵 id 를 여기 글자로 적는다. packages/shared 는 packages/data 를 import 할 수
- * 없어서(게임 규칙이 데이터를 향해 의존하기 시작하면 규칙만 읽어서는 무슨 일이
- * 일어나는지 알 수 없게 된다) START_MAP_ID 를 볼 방법이 없다. 그래서 시작 맵을
- * 아는 곳이 둘이 되고, 그 둘이 갈라지는 순간은 서버 테스트가 잡는다
- * (store.test.ts 의 "location 이 생기기 전의 세이브도…"). 좌표는 world.tmx 의
- * spawn 오브젝트가 가리키는 칸이다.
+ * **왜 시작 맵의 이름이 아니라 빈 문자열인가:** packages/shared 는
+ * packages/data 를 import 할 수 없다(게임 규칙이 데이터를 향해 의존하기
+ * 시작하면 규칙만 읽어서는 무슨 일이 일어나는지 알 수 없게 된다). 여기 "world"
+ * 라고 적으면 시작 맵을 아는 곳이 둘이 되고, 좌표까지 적으면 맵을 고쳐 그려도
+ * 따라오지 않는 숫자가 하나 더 생긴다 — 이 태스크가 없앤 바로 그 종류다.
+ *
+ * 그래서 이 값은 "위치를 모른다"는 뜻의 자리표시자다. 빈 맵 id 는 maps.csv 가
+ * 절대 만들 수 없으므로(requireCell 이 빈 칸을 거절한다) 어떤 등록부에도 없고,
+ * 서버가 세이브를 읽는 자리에서 `resolvePlayerLocation` 이 **반드시** 이것을
+ * 시작 맵의 spawn 으로 바꾼다. 모양만 맞춰 놓고 값은 주인에게 맡기는 것이다.
  */
-const defaultLocation = (): PlayerLocation => ({ mapId: 'world', x: 15, y: 16 })
+const defaultLocation = (): PlayerLocation => ({ mapId: '', x: 0, y: 0 })
 
 export const PlayerStateSchema = z.object({
   id: z.string(),
@@ -87,6 +92,8 @@ export const PlayerStateSchema = z.object({
   // 필수로 두면 readPlayers(store.ts)가 그 플레이어를 통째로 버린다 — 숙련도도
   // 인벤토리도 강화한 도구도 넘긴 이정표도 같이. 위치가 없는 세이브는 시작 맵의
   // 시작 칸에 있는 것과 같은 뜻이라 마이그레이션 없이 그것이 맞는 답이다.
+  //
+  // 그 "시작 칸"이 무엇인지는 여기서 정하지 않는다 — defaultLocation 참고.
   location: PlayerLocationSchema.default(defaultLocation),
 })
 
