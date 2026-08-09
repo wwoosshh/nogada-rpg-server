@@ -94,9 +94,10 @@ export interface TiledMapJson {
  * 순서는 맵의 `firstgid` 순서와 같게 둔다. 그 덕에 앞 세 장의 gid 는 원본
  * 시트의 타일 번호 + 1 로 그대로 이어진다(1..512, 513..1024, 1025..1064).
  *
- * `pipoya-water` 만 출처가 다르다 — 베이스칩에는 물이 없다. 이것은 팩의
- * `[A]_type3` 오토타일 두 벌(깊은 바다·물가 파도)을 위아래로 이어 붙인
- * 96 타일짜리 시트다. 맨 뒤에 두어 앞 네 장의 gid 를 한 칸도 건드리지 않는다.
+ * `pipoya-water` 와 `pipoya-ground` 만 출처가 다르다 — 베이스칩에는 물도
+ * 지면 오토타일도 없다. 둘 다 팩의 `[A]_type3` 48타일 blob 을 위아래로 이어
+ * 붙인 시트다(물 두 벌, 지면 세 벌). 맨 뒤에 두어 앞 네 장의 gid 를 한 칸도
+ * 건드리지 않는다. 지면 blob 이 없으면 바닥 색이 바뀌는 자리가 전부 직각이 된다.
  */
 export const TILESET_NAMES = [
   'pipoya-basechip',
@@ -104,6 +105,7 @@ export const TILESET_NAMES = [
   'pipoya-basechip-3',
   'pipoya-addwork',
   'pipoya-water',
+  'pipoya-ground',
 ] as const
 
 export type TilesetName = (typeof TILESET_NAMES)[number]

@@ -74,6 +74,7 @@ assets/licensed/
 │  │  │                           "Tiled 에서 못 쓴다" 로 잠겨 있었다.)
 │  │  │                           물·폭포만 2048x192 인데, 그건 애니메이션
 │  │  │                           8프레임을 가로로 이어 붙였기 때문이다.
+│  │  │                           `pipoya-ground.png` 는 이 폴더의 `[A]Dirt4` 다
 │  │  └─ not_animation/           그 첫 프레임만 잘라 둔 것. 256x192.
 │  │                              `pipoya-water.png` 가 여기서 나온다
 │  └─ SampleMap/                  완성 .tmx + 외부 .tsx 예제
@@ -154,7 +155,7 @@ hammer_mithril:940
 ICONS
 ```
 
-타일셋은 **단순 복사가 아니라 다섯 장으로 잘라 잇는다** (아래 참조). PowerShell 에서, 저장소 루트에서:
+타일셋은 **단순 복사가 아니라 여섯 장으로 잘라 잇는다** (아래 참조). PowerShell 에서, 저장소 루트에서:
 
 ```powershell
 Add-Type -AssemblyName System.Drawing
@@ -222,7 +223,14 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 
 파일명 개명은 필수다. 원본 이름의 대괄호와 공백이 URL 인코딩 문제를 일으킨다.
 
-### 시트 다섯 장과 그 gid 구간
+지면 시트는 자를 것도 이을 것도 없다 — 팩의 blob 파일 하나를 이름만 바꿔 복사한다.
+
+```bash
+SRC="assets/licensed/Pipoya RPG Tileset 32x32/Pipoya RPG Tileset 32x32/[A]_type3"
+cp "$SRC/[A]Dirt4_pipo.png" apps/client/public/tilesets/pipoya-ground.png
+```
+
+### 시트 여섯 장과 그 gid 구간
 
 | 시트 | 원본 | 원본 행 | 크기 | 격자 | 타일 | gid |
 |---|---|---|---|---|---|---|
@@ -231,6 +239,7 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 | `pipoya-basechip-3.png` | 〃 | 128–132 | 256×160 | 8열 × 5행 | 40 | 1025 – 1064 |
 | `pipoya-addwork.png` | `Unorganized Parts/addwork.png` | 전부 | 384×2048 | **12열** × 64행 | 768 | 1065 – 1832 |
 | `pipoya-water.png` | `[A]_type3/not_animation/` 두 장 | — | 256×384 | 8열 × 12행 | 96 | 1833 – 1928 |
+| `pipoya-ground.png` | `[A]_type3/[A]Dirt4_pipo.png` | — | 256×192 | 8열 × 6행 | 48 | 1929 – 1976 |
 
 앞 세 장은 자른 순서대로 이어 붙였으므로 **gid = 원본 시트의 타일 번호 + 1** 이 시트 경계를 넘어
 그대로 성립한다. `addwork` 만 열 수가 12 라 별도 계산이다: `gid = 1065 + (행 × 12 + 열)`.
@@ -249,6 +258,15 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 **48타일 blob 은 인덱스가 곧 이웃 모양이다.** 인덱스 14(1행 6열)가 사방이 같은 종류인 한가운데,
 인덱스 47은 빈 칸이고 절대 쓰지 않는다. 나머지 45개가 모서리·변·안쪽모서리다.
 256가지 이웃 조합을 47개 인덱스로 접는 표는 `.superpowers/sdd/water-report.md` 에 있다.
+
+`pipoya-ground.png` 는 같은 48타일 blob 하나짜리다 — `[A]Dirt4`, 팩에서 가장 차가운 청회색 지면.
+**그 한가운데 타일(인덱스 14)은 베이스칩의 타일 7(gid 8)과 화소 단위로 같다.** 그래서 이 시트는
+새 지면 색을 들여오는 것이 아니라, **이미 쓰고 있던 색에 가장자리를 붙여 주는 것**이다. 시트가
+없을 때 맵의 지면 색이 바뀌는 자리가 전부 직각이던 이유가 이것이었다.
+
+물과 같은 방식으로 겹친다: `ground` 에 불투명한 바닥(포장 또는 gid 8), 그 위 `decor` 에 blob 의
+잘린 가장자리. **한가운데(인덱스 14)는 내보내지 않는다** — gid 8 과 같은 그림이라 깔아 봐야
+`decor` 만 채우고, 그 자리는 소품을 놓을 칸으로 남는 편이 낫다.
 
 ### 물을 어느 레이어에 두는가
 
@@ -310,7 +328,7 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 
 **Tiled 에서 맵을 열 때 타일셋 이미지 경로:** 맵들은 타일셋을
 `apps/client/public/tilesets/pipoya-*.png` (위 "복원 방법" 참고)로 가리킨다. 그
-경로에 다섯 장을 모두 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
+경로에 여섯 장을 모두 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
 보인다** — 다만 이건 Tiled 편집 화면에만 해당하고, **게임 실행(빌드·테스트·클라이언트)에는
 영향이 없다.** 빌드도 클라이언트도 이 경로 문자열 자체를 읽지 않기 때문이다(클라이언트는
 `WorldScene.ts` 의 `preload()` 에 적힌 별도 키로 그림을 찾는다).
