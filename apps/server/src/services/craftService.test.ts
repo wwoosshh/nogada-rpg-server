@@ -28,8 +28,9 @@ const data: GameData = {
       skillGainMin: 20, skillGainMax: 35,
     },
   },
-  // 제작 판정은 맵을 보지 않는다 — 등록부가 GameData 의 필수 칸이라 비운 채로 둔다.
+  // 제작 판정은 맵을 보지 않는다 — 등록부와 전환이 GameData 의 필수 칸이라 비운 채로 둔다.
   maps: {},
+  transitions: [],
   placements: {},
   milestones: [],
   speakers: {},

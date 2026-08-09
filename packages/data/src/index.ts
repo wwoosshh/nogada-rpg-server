@@ -1,5 +1,7 @@
 export * from './parse.js'
 export * from './placements.js'
+export * from './maps.js'
+export * from './transitions.js'
 export * from './milestones.js'
 export * from './speakers.js'
 export * from './dialogueParse.js'

@@ -1,5 +1,6 @@
 import type { DialogueHistory, DialogueRule } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
+import type { Direction } from './movement.js'
 
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
 
@@ -141,6 +142,25 @@ export interface MapDef {
 }
 
 /**
+ * 맵과 맵을 잇는 칸 하나. 그 칸을 밟으면 넘어간다.
+ *
+ * 왜 맵 파일이 아니라 별도 표인가: 전환은 맵 두 개에 걸친 사실이라, 한쪽
+ * 맵에 적으면 반대쪽과 어긋나도 알 방법이 없다. 한곳에 모으면 빌드가 양쪽을
+ * 같이 본다.
+ *
+ * `facing` 이 null 이면 들어온 방향을 그대로 유지한다.
+ */
+export interface TransitionDef {
+  fromMap: string
+  fromX: number
+  fromY: number
+  toMap: string
+  toX: number
+  toY: number
+  facing: Direction | null
+}
+
+/**
  * 맵 위에 놓인 노드 하나. `nodeId` 는 종류이고 `instanceId` 가 그 칸이다.
  *
  * 같은 종류가 여러 칸에 있으므로 종류만으로는 어느 것인지 알 수 없다.
@@ -187,6 +207,8 @@ export interface GameData {
   recipes: Record<string, RecipeDef>
   /** 맵 등록부. 키는 mapId 다. */
   maps: Record<string, MapDef>
+  /** 맵과 맵을 잇는 칸들. 순서에 의미는 없다. */
+  transitions: TransitionDef[]
   placements: Record<string, NodePlacement>
   /** 정의 순서를 유지한다 — nextMilestone 의 동점 처리가 이 순서를 쓴다 */
   milestones: MilestoneDef[]

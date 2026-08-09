@@ -32,6 +32,7 @@ function emptyGameData(): GameData {
     // 화자 픽스처(testSpeaker)가 world 에 서 있다 — 등록부가 비어 있으면 "없는
     // 맵에 놓였다" 위반이 하나 더 섞여, 이 파일이 보려는 대사 위반이 흐려진다.
     maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+    transitions: [],
     placements: {}, milestones: [], speakers: {}, dialogue: [],
   }
 }

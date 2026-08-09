@@ -7,6 +7,7 @@ import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import { parseSpeakers } from './speakers.js'
 import { parseTmx } from './tmx.js'
+import { parseTransitions, validateTransitions } from './transitions.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
 import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
@@ -64,15 +65,20 @@ const data: GameData = {
   nodes,
   recipes,
   maps,
+  transitions: parseTransitions(readCsv('transitions.csv')),
   placements,
   milestones: parseMilestones(readCsv('milestones.csv'), nodes, recipes),
   speakers: parseSpeakers(readCsv('speakers.csv')),
   dialogue,
 }
 
-// 화자 배치 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 — 그래서
-// validateGameData 와 나뉘어 있고, 여기서 둘을 합쳐 한 번에 보고한다.
-const violations = [...validateGameData(data), ...validateSpeakerPlacements(data, terrains)]
+// 화자 배치·전환 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 — 그래서
+// validateGameData 와 나뉘어 있고, 여기서 셋을 합쳐 한 번에 보고한다.
+const violations = [
+  ...validateGameData(data),
+  ...validateSpeakerPlacements(data, terrains),
+  ...validateTransitions(data, terrains),
+]
 if (violations.length > 0) fail(violations)
 
 mkdirSync(outDir, { recursive: true })
@@ -91,7 +97,8 @@ console.log(
     `노드 ${Object.keys(data.nodes).length}, 레시피 ${Object.keys(data.recipes).length}, ` +
     `맵 ${Object.keys(data.maps).length}, ` +
     `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}, ` +
-    `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}`,
+    `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}, ` +
+    `전환 ${data.transitions.length}`,
 )
 
 // 공급자가 없는 사실(weather 등)을 쓴 대사는 빌드를 막지 않는다 — 작가가

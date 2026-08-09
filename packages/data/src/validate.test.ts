@@ -9,6 +9,7 @@ import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import type { MapTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
+import { parseTransitions } from './transitions.js'
 import { parseDialogue } from './dialogueParse.js'
 import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
@@ -79,6 +80,8 @@ function baseData(): GameData {
     // "없는 맵에 놓였다" 위반이 하나 더 생겨, 이 픽스처를 재사용하는 여러
     // .toEqual([]) 단언이 그것 때문에 깨진다.
     maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+    // 전환 검사는 validateTransitions 의 몫이라 이 파일의 픽스처는 비워 둔다.
+    transitions: [],
     placements: {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
     },
@@ -167,6 +170,7 @@ function deadlockedTierData(): GameData {
       },
     },
     maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+    transitions: [],
     placements: {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
       'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: 'world', x: 1, y: 0 },
@@ -215,6 +219,7 @@ function loadRealGameData(): GameData {
     nodes,
     recipes,
     maps,
+    transitions: parseTransitions(readRealCsv('transitions.csv')),
     placements,
     milestones: parseMilestones(readRealCsv('milestones.csv'), nodes, recipes),
     speakers: parseSpeakers(readRealCsv('speakers.csv')),
@@ -442,6 +447,7 @@ describe('validateGameData 의 조기 반환', () => {
         },
       },
       maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+      transitions: [],
       placements: {
         'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
       },
