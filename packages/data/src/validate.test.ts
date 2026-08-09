@@ -1087,77 +1087,104 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
   })
 })
 
-describe('validateGameData 의 대화 검사 — once 사건의 상한 없는 사실', () => {
-  // 이 그룹은 Task 1 리뷰가 남긴 지적을 닫는다: onceKey 는 규칙의 조건들이
-  // "지금 갖는 값"을 연산자와 무관하게 그대로 엮으므로, once 사건(story·
-  // quest·milestone)의 조건이 상한 없이 계속 바뀌는 사실을 값이 고정되지
-  // 않는 방식으로 걸면 매번 새 키가 생겨 "한 번만 말한다"가 깨지고 "이미
-  // 말했다" 기록이 끝없이 늘어난다. 값을 고정하는 연산자는 = 하나뿐이다.
+describe('validateGameData 의 대화 검사 — 한 번만 하는 말의 조건은 전부 =', () => {
+  // onceKey 는 규칙의 조건들이 "지금 갖는 값"을 연산자와 무관하게 그대로
+  // 엮는다. 그러니 물어야 할 것은 그 사실의 정의역에 상한이 있는가가 아니라
+  // **규칙이 맞고 있는 동안 그 값이 달라질 수 있는가**이고, 값을 하나로
+  // 못박는 연산자는 = 하나뿐이다. 상한 유무로 묻던 시절에는 hour·season 이
+  // 상한이 있다는 이유로 그냥 통과했다 — 아래 첫 테스트가 그 구멍이다.
 
-  it('once 사건 + 상한 없는 사실 + 크기 비교를 잡아낸다', () => {
+  /** 이 검사가 낸 위반만 고른다 — 다른 검사의 위반과 섞이면 무엇을 봤는지 흐려진다. */
+  const onceViolations = (data: GameData): string[] =>
+    validateGameData(data).filter((v) => v.includes('한 번만 하는 말'))
+
+  function withRule(rule: DialogueRule): GameData {
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
-    data.dialogue = [
-      unconditionalGreet(),
-      dRule({ id: 'grind', event: 'quest', conditions: [{ fact: 'skill.ice', op: '>=', value: 1000 }] }),
-    ]
-    expect(validateGameData(data)).toContain(
-      'dialogue[노인] 노인.dlg:1행: once 사건(quest)의 조건 "skill.ice>=1000" 이 상한 없는 사실을 = 아닌 연산자로 건다 — 그 값이 바뀔 때마다 "이미 말했다" 기록이 새로 쌓여 끝없이 늘어난다. 값을 정확히 짚는 = 를 쓰거나 이 규칙을 @greet 으로 옮긴다',
+    data.dialogue = [unconditionalGreet(), rule]
+    return data
+  }
+
+  it('상한이 있는 사실이라도 잡아낸다 — "밤에만"을 붙인 한 마디가 밤마다 다시 나오면 안 된다', () => {
+    // hour 는 0~23 로 상한이 있어 예전 검사(FactSpec.unbounded)를 그냥
+    // 통과했다. 그런데 값은 매 시각 달라지므로 onceKey 는 시각마다 새 키를
+    // 만들고, 그 한 마디는 밤마다 한 번씩 영원히 나온다.
+    const violations = onceViolations(
+      withRule(
+        dRule({
+          id: 'atNight',
+          event: 'milestone',
+          conditions: [
+            { fact: 'justAchieved', op: '=', value: 'mineral_repeat' },
+            { fact: 'hour', op: '>=', value: 12 },
+          ],
+        }),
+      ),
     )
+    expect(violations).toEqual([
+      'dialogue[노인] 노인.dlg:1행: 한 번만 하는 말(@milestone)의 조건에 = 아닌 연산자를 썼다: "hour>=12" — 한 번만 하는 말은 조건에 건 사실의 "지금 값"까지 함께 기억해 두었다가 그 값이 달라지면 다시 말한다. = 이 아닌 조건은 값이 달라져도 계속 맞으므로, 그 사실이 바뀔 때마다 같은 말을 처음부터 다시 하게 된다. 값을 하나로 못박는 = 로 바꾼다. 범위 그대로 말하고 싶으면 이 규칙을 @greet 으로 옮긴다 — @greet 만 매번 다시 후보에 올라서 어떤 연산자든 쓸 수 있다',
+    ])
   })
 
-  it('once 사건 + 상한 없는 사실 + != 를 잡아낸다', () => {
-    // 크기 비교만 세면 이게 빠진다. onceKey 는 연산자를 보지 않고 조건마다
-    // 그 사실의 "지금 값"을 스냅샷하므로, skill.ice!=0 은 숙련도가 1 오를
-    // 때마다 새 키를 만든다 — 크기 비교와 똑같은 무한 증식이다.
-    const data = baseData()
-    data.speakers = { 노인: testSpeaker }
-    data.dialogue = [
-      unconditionalGreet(),
-      dRule({ id: 'notZero', event: 'quest', conditions: [{ fact: 'skill.ice', op: '!=', value: 0 }] }),
-    ]
-    const violations = validateGameData(data)
-    expect(violations.some((v) => v.includes('"skill.ice!=0" 이 상한 없는 사실을 = 아닌 연산자로 건다'))).toBe(true)
+  it('숙련도 문턱에는 바꿔 쓸 이정표 id 를 짚어 준다 — 거절만 하면 "그럼 못 쓰는 건가"로 읽힌다', () => {
+    // baseData 의 유일한 이정표가 mineral 10000 이라 그 문턱을 쓴다.
+    const violations = onceViolations(
+      withRule(dRule({ id: 'grind', event: 'story', conditions: [{ fact: 'skill.mineral', op: '>=', value: 10000 }] })),
+    )
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('"milestone.mineral_repeat=true" 로 바꾼다')
   })
 
-  it('once 사건이라도 등호는 괜찮다 — quest.촌장=3 패턴은 계속 동작해야 한다', () => {
-    const data = baseData()
-    data.speakers = { 노인: testSpeaker }
-    data.dialogue = [
-      unconditionalGreet(),
-      dRule({ id: 'chief3', event: 'quest', conditions: [{ fact: 'quest.촌장', op: '=', value: 3 }] }),
-    ]
-    const violations = validateGameData(data)
-    expect(violations.some((v) => v.includes('상한 없는 사실'))).toBe(false)
+  it('그 문턱의 이정표가 아직 없으면 id 를 지어내지 않는다 — 없는 id 를 권하면 다음 빌드가 또 막는다', () => {
+    const violations = onceViolations(
+      withRule(dRule({ id: 'grind', event: 'story', conditions: [{ fact: 'skill.ice', op: '>=', value: 50000 }] })),
+    )
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('csv/milestones.csv 에 이정표로 먼저 적고')
+    expect(violations[0]).not.toContain('milestone.ice_50000=true')
   })
 
-  it('상한 없는 사실이라도 등호면 once 사건에서도 괜찮다', () => {
-    const data = baseData()
-    data.speakers = { 노인: testSpeaker }
-    data.dialogue = [
-      unconditionalGreet(),
-      dRule({ id: 'exact', event: 'milestone', conditions: [{ fact: 'skill.ice', op: '=', value: 10000 }] }),
-    ]
-    const violations = validateGameData(data)
-    expect(violations.some((v) => v.includes('상한 없는 사실'))).toBe(false)
+  it('!= 도 잡아낸다 — onceKey 는 연산자를 보지 않으므로 크기 비교와 똑같이 값이 갈아치워진다', () => {
+    const violations = onceViolations(
+      withRule(dRule({ id: 'notZero', event: 'quest', conditions: [{ fact: 'skill.ice', op: '!=', value: 0 }] })),
+    )
+    expect(violations.some((v) => v.includes('"skill.ice!=0"'))).toBe(true)
   })
 
-  it('greet 은 once 사건이 아니므로 크기 비교를 걸어도 괜찮다', () => {
+  it('조건이 여럿이면 = 아닌 것마다 한 줄씩 나온다 — 한 줄만 고치고 다시 막히지 않게', () => {
+    const violations = onceViolations(
+      withRule(
+        dRule({
+          id: 'both',
+          event: 'quest',
+          conditions: [
+            { fact: 'hour', op: '>=', value: 12 },
+            { fact: 'dayOfSeason', op: '<', value: 5 },
+          ],
+        }),
+      ),
+    )
+    expect(violations).toHaveLength(2)
+  })
+
+  it('= 는 괜찮다 — quest.촌장=3 패턴은 계속 동작해야 한다', () => {
+    const data = withRule(dRule({ id: 'chief3', event: 'quest', conditions: [{ fact: 'quest.촌장', op: '=', value: 3 }] }))
+    expect(onceViolations(data)).toEqual([])
+  })
+
+  it('숙련도처럼 계속 오르는 사실도 = 면 괜찮다 — 값이 하나로 못박혀 키가 고정된다', () => {
+    const data = withRule(dRule({ id: 'exact', event: 'milestone', conditions: [{ fact: 'skill.ice', op: '=', value: 10000 }] }))
+    expect(onceViolations(data)).toEqual([])
+  })
+
+  it('@greet 은 매번 다시 후보에 오르므로 어떤 연산자든 쓸 수 있다', () => {
     // 채집장노인.dlg 의 실제 규칙(@greet skill.ice>=50000)과 같은 모양이다.
-    // greet 은 매번 다시 후보에 오르므로 onceKey 를 아예 안 쓴다.
-    const data = baseData()
-    data.speakers = { 노인: testSpeaker }
-    data.dialogue = [
-      unconditionalGreet(),
-      dRule({ id: 'veteran', event: 'greet', conditions: [{ fact: 'skill.ice', op: '>=', value: 50000 }] }),
-    ]
-    const violations = validateGameData(data)
-    expect(violations.some((v) => v.includes('상한 없는 사실'))).toBe(false)
+    const data = withRule(dRule({ id: 'veteran', event: 'greet', conditions: [{ fact: 'skill.ice', op: '>=', value: 50000 }] }))
+    expect(onceViolations(data)).toEqual([])
   })
 
   it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('상한 없는 사실'))
-    expect(violations).toEqual([])
+    expect(onceViolations(loadRealGameData())).toEqual([])
   })
 })
 

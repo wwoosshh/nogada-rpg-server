@@ -232,7 +232,6 @@ describe('findFactSpec', () => {
       name: 'season',
       prefix: false,
       supplied: true,
-      unbounded: false,
       value: { kind: 'enum', values: SEASONS },
     })
   })
@@ -269,15 +268,6 @@ describe('findFactSpec', () => {
     expect(unsuppliedNames).toEqual([
       'weather', 'affinity', 'quest.', 'story', 'activity', 'location',
     ])
-  })
-
-  it('상한 없이 계속 커지는 사실만 unbounded 다', () => {
-    // skill.* 는 PlayerState.skills 문서(types.ts)가 "상한이 없다"고 명시한다.
-    // daysSinceLastTalk 도 대화 없이 시간이 갈수록 계속 커진다. 나머지는 전부
-    // 작은 범위를 돌거나(hour 0~23, dayOfSeason 1~28, season 4종) 이산적인
-    // 상태값(milestone.*, quest.*)이라 크기 비교로 값이 끝없이 갈아치워지지 않는다.
-    const unbounded = DECLARED_FACTS.filter((f) => f.unbounded).map((f) => f.name)
-    expect(unbounded).toEqual(['skill.', 'daysSinceLastTalk'])
   })
 
   it('공급자가 없는 사실만 값의 모양을 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {

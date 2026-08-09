@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parseDialogue } from './dialogueParse.js'
+import { parseDialogue, parseDialogueFiles } from './dialogueParse.js'
 
 describe('parseDialogue — 이어지는 발화 vs 택일', () => {
   it('규칙 머리 한 줄과 들여쓴 두 줄이 이어지는 발화 하나로 파싱된다', () => {
@@ -137,6 +137,46 @@ describe('parseDialogue — 형식 오류', () => {
         'x.dlg',
       ),
     ).toThrow()
+  })
+})
+
+describe('parseDialogueFiles — 문법 오류를 던지지 않고 모은다', () => {
+  // 던지면 빌드가 그 자리에서 죽어 Node 스택 트레이스가 나온다. 그건 이
+  // 파이프라인의 다른 모든 실수가 나오는 꼴("데이터 검증 실패 — N건" 목록)과
+  // 다르고, 대사를 처음 써 보는 사람이 가장 먼저 만나는 오류가 하필 그것이다.
+
+  it('깨진 파일이 여럿이면 전부 보고한다 — 하나 고치고 다시 돌려야 다음을 아는 일이 없게', () => {
+    const { errors } = parseDialogueFiles([
+      { file: '노인.dlg', text: '@greet' },
+      { file: '안내판.dlg', text: ['@greet  weather==rain', '  대사'].join('\n') },
+    ])
+    expect(errors).toHaveLength(2)
+    expect(errors[0]).toContain('노인.dlg:1행')
+    expect(errors[1]).toContain('안내판.dlg:1행')
+  })
+
+  it('오류 메시지가 검증 위반과 같은 꼴이다 — 작가가 두 가지 문법을 배우지 않게', () => {
+    const { errors } = parseDialogueFiles([{ file: '노인.dlg', text: '@greet' }])
+    expect(errors).toEqual([
+      '노인.dlg:1행: 발화 없이 규칙 머리만 있다 (@greet) — 이 규칙이 할 말을 최소 한 줄 적는다',
+    ])
+  })
+
+  it('깨지지 않은 파일의 규칙은 그대로 돌려준다 — 한 파일의 오타가 나머지를 지우지 않는다', () => {
+    const { rules, errors } = parseDialogueFiles([
+      { file: '노인.dlg', text: '@greet' },
+      { file: '안내판.dlg', text: ['@greet', '  깊은 얼음은 구리 곡괭이로 깨지지 않는다.'].join('\n') },
+    ])
+    expect(errors).toHaveLength(1)
+    expect(rules.map((r) => r.speaker)).toEqual(['안내판'])
+  })
+
+  it('전부 멀쩡하면 오류가 없다', () => {
+    const { rules, errors } = parseDialogueFiles([
+      { file: '노인.dlg', text: ['@greet', '  허어, 또 왔는가.'].join('\n') },
+    ])
+    expect(errors).toEqual([])
+    expect(rules).toHaveLength(1)
   })
 })
 

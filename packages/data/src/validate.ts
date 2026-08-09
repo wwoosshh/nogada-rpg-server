@@ -75,6 +75,39 @@ export function factReferenceError(fact: string, value: FactValue, data: GameDat
   return null
 }
 
+/**
+ * "한 번만 하는 말에 `=` 아닌 연산자를 썼다"를 무엇으로 고쳐 쓰면 되는지.
+ *
+ * 막기만 하는 검사와 고쳐 쓰는 법까지 말하는 검사는 작가에게 전혀 다른
+ * 물건이다. 특히 `skill.ice>=50000` 은 작가가 잘못 생각해서 쓴 것이 아니라
+ * **그 뜻을 적는 옳은 방법을 아직 모르는 것**이라, 규칙만 거절하면 "그럼
+ * 숙련도 문턱 대사는 못 쓰는 건가"로 읽힌다. 실제로는 쓸 수 있고 이정표가 그
+ * 자리다 — 이정표는 한 번 넘기면 되돌아가지 않아(packages/shared 의 이정표
+ * 판정) 값이 하나로 고정된다.
+ *
+ * 그 문턱을 이미 선언한 이정표가 데이터에 있으면 id 까지 짚어 준다. 없으면
+ * 이름을 지어내지 않는다 — 없는 이정표 id 를 권하면 그 조건은 이번엔 "존재하지
+ * 않는 이정표" 위반으로 다시 막히고, 작가는 빌드가 시킨 대로 했는데 또 막히는
+ * 경험을 한다.
+ */
+function onceRewriteHint(condition: Condition, data: GameData): string {
+  const moveToGreet =
+    '범위 그대로 말하고 싶으면 이 규칙을 @greet 으로 옮긴다 — @greet 만 매번 다시 후보에 올라서 어떤 연산자든 쓸 수 있다'
+
+  if (condition.fact.startsWith('skill.') && typeof condition.value === 'number') {
+    const skill = condition.fact.slice('skill.'.length)
+    const milestone = data.milestones.find(
+      (m) => m.metric.kind === 'skill' && m.metric.skill === skill && m.threshold === condition.value,
+    )
+    const instead = milestone
+      ? `"milestone.${milestone.id}=true" 로 바꾼다`
+      : '그 문턱을 csv/milestones.csv 에 이정표로 먼저 적고 "milestone.<그 id>=true" 로 건다'
+    return `숙련도 문턱은 이정표로 적는다 — ${instead}. 이정표는 한 번 넘기면 되돌아가지 않아 값이 하나로 고정되고, 그래서 그 말이 정확히 한 번 나온다. ${moveToGreet}`
+  }
+
+  return `값을 하나로 못박는 = 로 바꾼다. ${moveToGreet}`
+}
+
 const LOWER_OPS: ReadonlySet<string> = new Set(['>', '>='])
 const UPPER_OPS: ReadonlySet<string> = new Set(['<', '<='])
 
@@ -468,26 +501,34 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
-  // once 사건(story·quest·milestone)의 조건이 상한 없는 사실(skill.* 등,
-  // FactSpec.unbounded)의 값을 고정하지 못하면 문제가 생긴다.
+  // 한 번만 하는 사건(story·quest·milestone)의 조건은 **전부 `=` 여야 한다.**
   //
   // onceKey(packages/shared/src/dialogue.ts)는 **연산자를 보지 않고** 규칙의
-  // 모든 조건마다 그 사실의 "지금 값"을 스냅샷해 키에 엮는다. 그래서 안전한
-  // 연산자는 값을 하나로 못박는 `=` 뿐이다 — `=` 로 걸면 규칙이 맞는 순간의
-  // 값이 언제나 그 리터럴과 같아서 키가 고정된다. 나머지 전부(`!=` 포함)는
-  // 규칙이 맞는 동안에도 값이 계속 달라질 수 있어, 채집할 때마다 오르는
-  // skill.ice 같은 사실에서는 말할 때마다 새 키가 생긴다 — "한 번만 말한다"가
-  // 조용히 "매번 새로 말한다"로 깨지고 "이미 말했다" 기록이 끝없이 늘어난다.
-  // 연산자를 열거하지 않고 "= 인가"만 묻는 이유가 이것이다.
+  // 모든 조건마다 그 사실의 "지금 값"을 스냅샷해 키에 엮는다. 그러니 여기서
+  // 물어야 할 것은 "그 사실이 끝없이 커지는가"(FactSpec.unbounded)가 아니라
+  // **"규칙이 맞고 있는 동안 그 스냅샷 값이 달라질 수 있는가"** 이고, 값을
+  // 하나로 못박는 연산자는 `=` 하나뿐이다. `=` 로 걸면 규칙이 맞는 순간의 값이
+  // 언제나 그 리터럴과 같아서 키가 고정되고, 나머지 전부(`!=` 포함)는 규칙이
+  // 맞는 동안에도 값이 계속 달라진다.
+  //
+  // 한때 이 검사는 unbounded 인 사실만 봤다. 그런데 unbounded 는 "정의역에
+  // 상한이 있는가"를 뜻할 뿐이라 hour·dayOfSeason·season 은 상한이 있다는
+  // 이유로 그냥 통과했고, `@quest ... hour<6`("밤에만") 한 줄이 밤마다 다시
+  // 나왔다 — 설계 문서 §4.2 가 결정적이라고 못박은 "한 번 알리고 배경이 된다"가
+  // 조용히 깨지는 자리다. 상한이 있어도 값은 매 시각 달라지므로 상한 유무는
+  // 애초에 물어볼 것이 아니었다.
+  //
+  // 이 검사는 `@story skill.ice>=50000` 도 막는다. 그 규칙은 실제로 고장난
+  // 규칙이고(숙련도가 1 오를 때마다 처음부터 다시 말한다), 작가가 쓰려던 것을
+  // 옳게 적는 방법이 이미 있다 — `milestone.ice_50000=true` 다. 그래서 메시지는
+  // 막기만 하지 않고 그 고쳐 쓰는 법까지 말한다(onceRewriteHint).
   for (const rule of data.dialogue) {
     if (!ONCE_EVENTS.has(rule.event)) continue
     for (const condition of rule.conditions) {
       if (condition.op === '=') continue
-      if (findFactSpec(condition.fact)?.unbounded) {
-        violations.push(
-          `${at(rule)}: once 사건(${rule.event})의 조건 "${conditionText(condition)}" 이 상한 없는 사실을 = 아닌 연산자로 건다 — 그 값이 바뀔 때마다 "이미 말했다" 기록이 새로 쌓여 끝없이 늘어난다. 값을 정확히 짚는 = 를 쓰거나 이 규칙을 @greet 으로 옮긴다`,
-        )
-      }
+      violations.push(
+        `${at(rule)}: 한 번만 하는 말(@${rule.event})의 조건에 = 아닌 연산자를 썼다: "${conditionText(condition)}" — 한 번만 하는 말은 조건에 건 사실의 "지금 값"까지 함께 기억해 두었다가 그 값이 달라지면 다시 말한다. = 이 아닌 조건은 값이 달라져도 계속 맞으므로, 그 사실이 바뀔 때마다 같은 말을 처음부터 다시 하게 된다. ${onceRewriteHint(condition, data)}`,
+      )
     }
   }
 

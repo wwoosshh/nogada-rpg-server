@@ -116,6 +116,53 @@ interface OpenRule {
   headLine: number
 }
 
+/** `.dlg` 파일 하나 — 이름과 내용. 파일을 읽는 일은 부르는 쪽(build.ts)이 한다. */
+export interface DialogueSource {
+  file: string
+  text: string
+}
+
+export interface DialogueParseResult {
+  /** 파싱에 성공한 파일들의 규칙. 넘겨받은 파일 순서대로 이어 붙인다. */
+  rules: DialogueRule[]
+  /** 파싱에 실패한 파일마다 한 줄. 검증 위반과 같은 꼴(`파일:행: 무엇을 하면 되는지`)이다. */
+  errors: string[]
+}
+
+/**
+ * `.dlg` 여러 개를 파싱하되, 문법 오류를 **던지지 않고 모은다.**
+ *
+ * parseDialogue 는 오류를 던진다 — 파일 하나를 보는 함수로서는 그게 맞다.
+ * 문제는 그 예외가 빌드까지 그대로 새어 나갈 때다. 이 파이프라인의 다른 모든
+ * 실수는 "데이터 검증 실패 — N건" 이라는 한국어 목록으로 나오는데, 규칙 머리
+ * 밑에 발화를 안 적은 것 하나만 Node 스택 트레이스로 나왔다. 그건 대사를 처음
+ * 써 보는 사람이 가장 먼저 만나는 오류이고, dialogue/README.md 가 "잘못 쓴
+ * 것이 있으면 어느 파일 몇 행인지와 함께 무엇을 하면 되는지가 한국어로
+ * 나온다"고 약속한 바로 그 자리다.
+ *
+ * 파일마다 따로 잡으므로 **깨진 파일이 여럿이면 전부 보고한다.** 한 파일 안의
+ * 두 번째 오류까지 모으지는 않는다 — 그러려면 parseDialogue 가 던지는 대신
+ * 오류를 모으며 다음 규칙 머리까지 건너뛰는 복구 파서가 되어야 하는데, 그
+ * 복구가 만들어 내는 뒤따르는 오류("규칙 머리 없이 발화 줄이 먼저 나왔다"가
+ * 줄 수만큼)는 전부 앞의 오류 하나의 그림자다. 작가에게 오탐 하나는 그것이
+ * 막아 준 진짜 오류보다 비싸다(validate.ts 가 참조 위반이 있으면 도달 가능성
+ * 검사를 미루는 것과 같은 저울이다).
+ */
+export function parseDialogueFiles(sources: readonly DialogueSource[]): DialogueParseResult {
+  const rules: DialogueRule[] = []
+  const errors: string[] = []
+
+  for (const { file, text } of sources) {
+    try {
+      rules.push(...parseDialogue(text, file))
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  return { rules, errors }
+}
+
 /**
  * "dialogue/채집장노인.dlg" 든 "채집장노인.dlg" 든 디렉터리와 확장자를 떼서
  * 화자 id 를 얻는다. 파일 하나가 화자 하나이므로(설계 문서 5장) 별도로

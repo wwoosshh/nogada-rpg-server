@@ -99,6 +99,13 @@ export function describeFactValueShape(shape: FactValueShape): string {
  * 모양이다. `season` 처럼 이름이 고정된 사실도 있고 `skill.ice`·
  * `milestone.ice_10000` 처럼 접두사 뒤가 열려 있는 사실도 있어서 `prefix` 로
  * 구분한다.
+ *
+ * 한때 여기에 `unbounded`("정의역에 상한이 없는가")가 있었고, 검증이 그것으로
+ * once 사건의 조건을 걸렀다. 그 물음 자체가 틀렸다 — onceKey 가 스냅샷하는 것은
+ * "지금 값"이라, 정의역에 상한이 있어도(`hour`·`dayOfSeason`·`season`) 값은 매
+ * 시각 달라진다. 지금은 사실이 무엇이든 once 사건의 조건이면 `=` 를 요구하고
+ * (packages/data 의 validate.ts), 그 판단에는 사실별 플래그가 필요 없어서 필드를
+ * 지웠다 — 남겨 두면 틀린 물음을 되살리라고 권하는 셈이 된다.
  */
 export interface FactSpec {
   /** 고정 이름이면 그 이름 전체(`season`), 접두사 사실이면 `.` 로 끝나는 접두사(`skill.`). */
@@ -114,20 +121,6 @@ export interface FactSpec {
    * 두는 것과 오타는 다른 일이기 때문이다(설계 문서 6.3).
    */
   supplied: boolean
-  /**
-   * 이 사실이 상한 없이 계속 커지는 값인가.
-   *
-   * once 사건(ONCE_EVENTS)의 규칙이 이런 사실에 크기 비교(`>`,`>=`,`<`,`<=`)를
-   * 걸면 문제가 생긴다 — onceKey 는 조건의 "지금 값"을 그대로 엮으므로, 값이
-   * 바뀔 때마다(예: 채집할 때마다 오르는 skill.ice) 새 키가 생겨 "한 번만
-   * 말한다"가 조용히 "말할 때마다 새로 말한다"로 깨지고 dialogueHistory.said
-   * 가 무한히 자란다. `quest.<id>` 같은 이산적인 단계값에 등호(`=`)를 쓰는
-   * 것은 다른 문제다 — 값이 바뀌는 일 자체가 드물고, 그때 다시 말하는 것이
-   * 오히려 의도된 동작이다(4.2절 "상태가 바뀌면 상위 사건이 다시 말한다").
-   * 그래서 이 플래그는 "값이 자주 바뀌는가"가 아니라 "그 사실의 정의역
-   * 자체에 상한이 없는가"를 뜻한다.
-   */
-  unbounded: boolean
   /**
    * 이 사실의 값이 무엇일 수 있는가.
    *
@@ -155,28 +148,28 @@ export interface FactSpec {
 export const DECLARED_FACTS: readonly FactSpec[] = [
   // 계절 이름은 SEASONS(time.ts)를 그대로 쓴다 — 여기에 네 개를 손으로 다시
   // 적으면 계절이 늘거나 이름이 바뀔 때 이 목록만 조용히 낡는다.
-  { name: 'season', prefix: false, supplied: true, unbounded: false, value: { kind: 'enum', values: SEASONS } },
-  { name: 'hour', prefix: false, supplied: true, unbounded: false, value: { kind: 'number' } },
-  { name: 'dayOfSeason', prefix: false, supplied: true, unbounded: false, value: { kind: 'number' } },
-  { name: 'skill.', prefix: true, supplied: true, unbounded: true, value: { kind: 'number' } },
+  { name: 'season', prefix: false, supplied: true, value: { kind: 'enum', values: SEASONS } },
+  { name: 'hour', prefix: false, supplied: true, value: { kind: 'number' } },
+  { name: 'dayOfSeason', prefix: false, supplied: true, value: { kind: 'number' } },
+  { name: 'skill.', prefix: true, supplied: true, value: { kind: 'number' } },
   // 이정표는 달성했거나 아니거나다 — `milestone.x=1` 처럼 숫자로 쓰면 어떤
   // 상황에서도 맞지 않는다(공급자가 넣는 값은 언제나 true/false 다).
-  { name: 'milestone.', prefix: true, supplied: true, unbounded: false, value: { kind: 'boolean' } },
-  { name: 'talkedBefore', prefix: false, supplied: true, unbounded: false, value: { kind: 'boolean' } },
-  { name: 'daysSinceLastTalk', prefix: false, supplied: true, unbounded: true, value: { kind: 'number' } },
+  { name: 'milestone.', prefix: true, supplied: true, value: { kind: 'boolean' } },
+  { name: 'talkedBefore', prefix: false, supplied: true, value: { kind: 'boolean' } },
+  { name: 'daysSinceLastTalk', prefix: false, supplied: true, value: { kind: 'number' } },
   // justAchieved 는 buildFacts(facts.ts)가 PlayerState.celebrated 의 마지막
   // 원소에서 유도한다 — 대화 요청이 값을 실어 나르는 것이 아니라 이미 저장된
   // 상태에서 계산하므로, buildFacts 를 부르는 쪽은 서버든 시뮬레이터든 아무것도
   // 더 할 것이 없다. 이정표 id 가 실재하는지는 이름 목록이 아니라 데이터를 봐야
   // 알 수 있어서 packages/data 의 검증이 따로 확인한다.
-  { name: 'justAchieved', prefix: false, supplied: true, unbounded: false, value: { kind: 'string' } },
+  { name: 'justAchieved', prefix: false, supplied: true, value: { kind: 'string' } },
   // 아래 여섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
-  { name: 'weather', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
-  { name: 'affinity', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
-  { name: 'quest.', prefix: true, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
-  { name: 'story', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
-  { name: 'activity', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
-  { name: 'location', prefix: false, supplied: false, unbounded: false, value: { kind: 'unspecified' } },
+  { name: 'weather', prefix: false, supplied: false, value: { kind: 'unspecified' } },
+  { name: 'affinity', prefix: false, supplied: false, value: { kind: 'unspecified' } },
+  { name: 'quest.', prefix: true, supplied: false, value: { kind: 'unspecified' } },
+  { name: 'story', prefix: false, supplied: false, value: { kind: 'unspecified' } },
+  { name: 'activity', prefix: false, supplied: false, value: { kind: 'unspecified' } },
+  { name: 'location', prefix: false, supplied: false, value: { kind: 'unspecified' } },
 ] as const
 
 /**
