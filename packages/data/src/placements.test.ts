@@ -127,10 +127,10 @@ describe('parseTerrain', () => {
   })
 
   it('실제 맵을 읽는다', () => {
-    // world.json 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를
+    // 맵 JSON 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를
     // 직접 parseTmx 로 읽는다. build.ts 가 하는 것과 같은 경로다.
     const here = dirname(fileURLToPath(import.meta.url))
-    const mapJson = parseTmx(readFileSync(join(here, '..', 'maps', 'world.tmx'), 'utf8'))
+    const mapJson = parseTmx(readFileSync(join(here, '..', 'maps', '얼음채집장.tmx'), 'utf8'))
     const t = parseTerrain(mapJson)
     expect(t.width).toBe(30)
     expect(t.height).toBe(30)

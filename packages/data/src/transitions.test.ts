@@ -5,16 +5,21 @@ import { describe, expect, it } from 'vitest'
 import { parseTransitions, validateTransitions } from './transitions.js'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
-import { parseMaps } from './maps.js'
+import { parseMaps, START_MAP_ID } from './maps.js'
 import { parseSpeakers } from './speakers.js'
 import type { MapTerrain } from './placements.js'
 
+/**
+ * 픽스처의 출발 맵은 시작 맵이어야 한다. 도달 가능성 검사가 START_MAP_ID 에서
+ * 출발하므로, 여기 다른 이름을 적으면 아래 검사들이 "닿을 수 없다" 로 뒤덮여
+ * 정작 각자가 보려던 위반이 파묻힌다.
+ */
 const ROWS = [
-  { fromMap: 'world', fromX: '15', fromY: '0', toMap: '숲', toX: '15', toY: '13', facing: 'up' },
+  { fromMap: START_MAP_ID, fromX: '15', fromY: '0', toMap: '숲', toX: '15', toY: '13', facing: 'up' },
 ]
 
 const terrains: Record<string, MapTerrain> = {
-  world: { width: 20, height: 15, walls: new Set() },
+  [START_MAP_ID]: { width: 20, height: 15, walls: new Set() },
   숲: { width: 20, height: 15, walls: new Set(['15,13']) },
 }
 
@@ -22,7 +27,9 @@ function data(transitions = parseTransitions(ROWS)): GameData {
   return {
     items: {}, nodes: {}, recipes: {}, milestones: [], speakers: {}, dialogue: [],
     maps: {
-      world: { id: 'world', name: '월드', file: 'w.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 } },
+      [START_MAP_ID]: {
+        id: START_MAP_ID, name: '시작 맵', file: 'start.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 },
+      },
       숲: { id: '숲', name: '숲', file: 's.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 } },
     },
     placements: {},
@@ -55,7 +62,7 @@ describe('validateTransitions', () => {
 
   // 왜: 한 칸에서 두 곳으로 갈 수는 없다. 무엇이 이길지 정해지지 않는다.
   it('같은 출발 칸이 둘이면 막는다', () => {
-    const rows = [ROWS[0]!, { ...ROWS[0]!, toMap: 'world', toX: '1', toY: '1' }]
+    const rows = [ROWS[0]!, { ...ROWS[0]!, toMap: START_MAP_ID, toX: '1', toY: '1' }]
     const violations = validateTransitions(data(parseTransitions(rows)), terrains)
     expect(violations.join('\n')).toMatch(/같은 칸/)
   })
@@ -67,15 +74,15 @@ describe('validateTransitions', () => {
   })
 
   // 왜: START_MAP_ID 는 코드 상수이고 maps.csv 는 데이터라, 맵 id 를 개명하면
-  //     둘이 갈라진다. 예전에는 그때 **모든 맵**이 "시작 맵 world 에서 걸어서
-  //     닿을 수 없다" 라고 말했다 — 없는 맵의 이름을 대면서. 진짜 원인은 한
-  //     줄이고, 나머지는 그 한 줄의 그림자다.
+  //     둘이 갈라진다. 예전에는 그때 **모든 맵**이 "시작 맵에서 걸어서 닿을 수
+  //     없다" 라고 말했다 — 없는 맵의 이름을 대면서. 진짜 원인은 한 줄이고,
+  //     나머지는 그 한 줄의 그림자다.
   it('시작 맵이 등록부에 없으면 그것만 말하고 도달 가능성으로 도배하지 않는다', () => {
     const d = data()
-    delete d.maps['world']
+    delete d.maps[START_MAP_ID]
     const violations = validateTransitions(d, terrains)
     expect(violations.filter((v) => v.includes('닿을 수 없다'))).toEqual([])
-    expect(violations.join('\n')).toMatch(/시작 맵 "world" 가 maps\.csv 에 없다/)
+    expect(violations.join('\n')).toMatch(new RegExp(`시작 맵 "${START_MAP_ID}" 가 maps\\.csv 에 없다`))
   })
 
   // 왜: 도착 칸이 벽인지만 보면 노드 위에 내려서는 것을 놓친다 — 그 칸에서는
@@ -92,11 +99,11 @@ describe('validateTransitions', () => {
   // 왜: 맵 안이어도 벽이면 결과는 맵 밖과 똑같다 — 아무도 그 칸에 설 수 없어
   //     전환이 조용히 죽는다. 도착 칸만 검사하면 이런 데이터가 빌드를 통과하고,
   //     플레이어가 그 가장자리까지 걸어가 보고서야 "왜 안 넘어가지" 가 된다.
-  //     이 계획이 처음 적어 둔 예시 좌표(world 15,0)가 정확히 그런 칸이었다.
+  //     이 계획이 처음 적어 둔 예시 좌표(출발 맵의 15,0)가 정확히 그런 칸이었다.
   it('출발 칸이 벽이면 막는다', () => {
     const walled: Record<string, MapTerrain> = {
       ...terrains,
-      world: { width: 20, height: 15, walls: new Set(['15,0']) },
+      [START_MAP_ID]: { width: 20, height: 15, walls: new Set(['15,0']) },
     }
     // 도착 칸은 (15,13) 벽을 피해 (15,12) 로 옮긴다 — 도착 위반이 섞이면
     // 이 테스트가 출발 검사 없이도 통과해 버린다.
@@ -107,7 +114,7 @@ describe('validateTransitions', () => {
 
   // 왜: 출발 칸이 맵 밖이면 아무도 그 칸을 밟을 수 없어 전환이 통째로 죽는다.
   it('출발 칸이 맵 밖이면 막는다', () => {
-    const rows = [{ ...ROWS[0]!, fromX: '20' }] // world 는 20 칸 폭이라 x 는 0~19 다
+    const rows = [{ ...ROWS[0]!, fromX: '20' }] // 픽스처의 출발 맵은 20 칸 폭이라 x 는 0~19 다
     const violations = validateTransitions(data(parseTransitions(rows)), terrains)
     expect(violations.join('\n')).toMatch(/출발 칸이 맵 밖이다/)
   })

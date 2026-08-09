@@ -13,7 +13,7 @@ type Row = Record<string, string>
  * 같은 id 의 행이 있을 때뿐이라서다. 둘이 갈라지면(맵 id 개명) 빌드가
  * validateTransitions 에서 그것 하나를 짚어 말한다.
  */
-export const START_MAP_ID = 'world'
+export const START_MAP_ID = '눈의마을'
 
 /**
  * 새 플레이어가 시작하는 자리 — 시작 맵의 `spawn` 오브젝트가 가리키는 칸.

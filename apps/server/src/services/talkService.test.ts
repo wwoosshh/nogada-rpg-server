@@ -70,14 +70,16 @@ function gameData(dialogue: DialogueRule[]): GameData {
     items: {},
     nodes: {},
     recipes: {},
-    // 화자 둘 다 world 에 서 있다 — 등록부에 그 맵이 있어야 앞뒤가 맞는다.
-    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
+    // 화자 둘 다 얼음채집장에 서 있다 — 등록부에 그 맵이 있어야 앞뒤가 맞는다.
+    maps: {
+      얼음채집장: { id: '얼음채집장', name: '얼음 채집장', file: '얼음채집장.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } },
+    },
     transitions: [],
     placements: {},
     milestones: [iceMilestone],
     speakers: {
-      노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: 'world', x: 1, y: 1, sprite: 'npc_elder' },
-      안내판: { id: '안내판', name: '안내판', kind: 'sign', mapId: 'world', x: 2, y: 2, sprite: 'sign_wood' },
+      노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: '얼음채집장', x: 1, y: 1, sprite: 'npc_elder' },
+      안내판: { id: '안내판', name: '안내판', kind: 'sign', mapId: '얼음채집장', x: 2, y: 2, sprite: 'sign_wood' },
     },
     dialogue,
   }
@@ -95,9 +97,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
-    // 화자 둘 다 world 에 서 있으므로 기본 플레이어도 world 에 세운다 — 그래야
+    // 화자 둘 다 얼음채집장에 서 있으므로 기본 플레이어도 거기 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.
-    location: { mapId: 'world', x: 0, y: 0 },
+    location: { mapId: '얼음채집장', x: 0, y: 0 },
     ...overrides,
   }
 }
@@ -126,7 +128,7 @@ describe('performTalk', () => {
   //     서버가 어느 맵인지 모르면 화자 id 하나만으로 맵 너머의 화자와 대화가
   //     열린다 — 그리고 그 대화는 이력에까지 남는다.
   it('다른 맵의 화자에게는 말을 걸 수 없다', () => {
-    const p = player({ location: { mapId: '시험숲', x: 1, y: 1 } })
+    const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
     expect(talk(p)).toEqual({ ok: false, code: 'wrong_map' })
   })
 
@@ -311,9 +313,18 @@ describe('performTalk — 출하 데이터의 이정표 대사', () => {
   /** 그 화자의 greet 규칙이 낼 수 있는 발화 전부 — 폴백이 걸렸는지 확인하는 데 쓴다. */
   const greetLines = shipped.dialogue.filter((r) => r.speaker === ELDER && r.event === 'greet').map((r) => r.lines)
 
+  /**
+   * 노인 앞에 선 사람. 출하 데이터에서 노인이 어느 맵에 서 있는지는 데이터가
+   * 말한다 — 여기 맵 이름을 적으면 맵을 개명할 때 이 파일이 조용히 wrong_map
+   * 으로 전부 빨개진다. 시작 맵이 마을이 된 뒤로 기본 위치는 노인 곁이 아니다.
+   */
+  function beforeElder(overrides: Partial<PlayerState> = {}): PlayerState {
+    return player({ location: { mapId: shipped.speakers[ELDER]!.mapId, x: 0, y: 0 }, ...overrides })
+  }
+
   /** 방금 얼음 10000 을 넘긴 사람. celebrated 마지막 원소가 곧 justAchieved 다. */
   function justCrossed(celebrated: string[] = ['ice_10000']): PlayerState {
-    return player({ celebrated, skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } })
+    return beforeElder({ celebrated, skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } })
   }
 
   function talkToElder(p: PlayerState, now = 0) {
@@ -344,7 +355,7 @@ describe('performTalk — 출하 데이터의 이정표 대사', () => {
   it('아무것도 안 넘긴 사람에게는 그 말이 나오지 않는다', () => {
     // justAchieved 사실 자체가 없으므로 조건이 거짓이다 — 이 대조가 없으면
     // 위 테스트는 "노인이 늘 저 말을 한다"로도 통과한다.
-    const r = talkToElder(player({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
+    const r = talkToElder(beforeElder({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.lines).not.toEqual(MILESTONE_LINES)
   })

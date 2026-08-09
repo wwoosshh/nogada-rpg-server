@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadGameData } from '@nogada/data'
-import { StateResponseSchema } from '@nogada/shared'
+import { loadGameData, startLocation } from '@nogada/data'
+import { StateResponseSchema, type TransitionDef } from '@nogada/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { buildApp } from './app.js'
 
@@ -19,6 +19,38 @@ afterEach(() => {
 /** 세이브 파일을 임시 디렉터리로 격리한다. 테스트가 저장소 루트에 .data/ 를 남기지 않는다. */
 function buildTestApp() {
   return buildApp({ dataFile: join(dir, 'players.json') })
+}
+
+type TestApp = ReturnType<typeof buildTestApp>
+
+/** 채집 노드가 놓인 맵. 어느 맵인지는 데이터가 정한다 — 여기 이름을 적으면 맵을 개명할 때 갈라진다. */
+function fieldMapId(): string {
+  const placement = loadGameData().placements['copper_vein-1']
+  if (!placement) throw new Error('copper_vein-1 배치가 없다')
+  return placement.mapId
+}
+
+/** 실제 전환표에서 두 맵을 잇는 줄. 좌표를 지어내면 CSV 가 바뀔 때 이 테스트가 거짓말을 한다. */
+function transitionBetween(fromMap: string, toMap: string): TransitionDef {
+  const t = loadGameData().transitions.find((x) => x.fromMap === fromMap && x.toMap === toMap)
+  if (!t) throw new Error(`transitions.csv 에 ${fromMap} → ${toMap} 이 없다`)
+  return t
+}
+
+/** 그 전환 칸을 밟는다. 넘어가지 못하면 여기서 세운다 — 뒤의 단정이 엉뚱한 이유로 깨지지 않도록. */
+async function step(app: TestApp, t: TransitionDef): Promise<void> {
+  const res = await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+  expect(res.statusCode).toBe(200)
+}
+
+/**
+ * 채집 노드와 화자가 있는 맵으로 걸어 넘어간다.
+ *
+ * 시작 맵은 마을이라 그 자리에는 캘 것도 말 걸 것도 없다. 채집·대화 라우트를
+ * 시험하려면 먼저 채집장에 서야 하고, 그 걸음도 실제 전환표를 밟아서 간다.
+ */
+async function enterField(app: TestApp): Promise<void> {
+  await step(app, transitionBetween(startLocation(loadGameData()).mapId, fieldMapId()))
 }
 
 describe('GET /api/health', () => {
@@ -88,6 +120,7 @@ describe('GET /api/state', () => {
 describe('POST /api/gather', () => {
   it('구리 광맥 채집 요청을 처리한다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     const res = await app.inject({
       method: 'POST',
@@ -105,6 +138,7 @@ describe('POST /api/gather', () => {
 
   it('판정 결과를 저장해서 다음 조회에 반영한다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     const gather = await app.inject({
       method: 'POST',
@@ -124,6 +158,7 @@ describe('POST /api/gather', () => {
 
   it('응답에 achieved 배열이 실린다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     const res = await app.inject({
       method: 'POST',
@@ -146,6 +181,7 @@ describe('POST /api/gather', () => {
 
   it('간격 안에 재요청하면 400 too_fast 를 반환한다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     await app.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
     const res = await app.inject({
@@ -162,6 +198,7 @@ describe('POST /api/gather', () => {
 
   it('도구 등급이 모자란 노드는 400 을 반환한다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     const res = await app.inject({
       method: 'POST',
@@ -265,6 +302,7 @@ describe('POST /api/craft', () => {
 describe('POST /api/talk', () => {
   it('화자에게 말을 걸면 발화 전체가 온다', async () => {
     const app = buildTestApp()
+    await enterField(app)
     const data = loadGameData()
     const SPEAKER = '채집장노인'
 
@@ -301,6 +339,7 @@ describe('POST /api/talk', () => {
 
   it('대화 이력을 저장해서 다음 조회에 반영한다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     const talk = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
     expect(talk.statusCode).toBe(200)
@@ -319,6 +358,7 @@ describe('POST /api/talk', () => {
 
   it('대화는 행동 간격을 소비하지 않는다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     // 서비스 단위 테스트가 같은 것을 보지만, 라우트가 나중에 채집처럼 간격을
     // 걸도록 "통일"되는 순간 그 단위 테스트는 아무것도 막지 못한다.
@@ -334,6 +374,7 @@ describe('POST /api/talk', () => {
 
   it('연달아 말을 걸어도 거부하지 않는다', async () => {
     const app = buildTestApp()
+    await enterField(app)
 
     // 채집이라면 두 번째가 too_fast 다. 대화에는 간격이 없다.
     await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
@@ -366,10 +407,16 @@ describe('POST /api/talk', () => {
 })
 
 describe('POST /api/move', () => {
-  /** 실제로 출하되는 전환 첫 줄. 픽스처를 지어내면 CSV 가 바뀔 때 이 테스트가 거짓말을 한다. */
+  /**
+   * 시작 맵에서 실제로 밟을 수 있는 전환 첫 줄. 픽스처를 지어내면 CSV 가 바뀔 때
+   * 이 테스트가 거짓말을 한다 — 그렇다고 표의 맨 앞 줄을 쓸 수도 없다: 신규
+   * 플레이어는 시작 맵에 서 있고, 다른 맵의 전환 칸은 밟을 수 없기 때문이다.
+   */
   const first = () => {
-    const t = loadGameData().transitions[0]
-    if (!t) throw new Error('transitions.csv 에 전환이 하나도 없다')
+    const data = loadGameData()
+    const start = startLocation(data).mapId
+    const t = data.transitions.find((x) => x.fromMap === start)
+    if (!t) throw new Error(`transitions.csv 에 시작 맵 "${start}" 에서 나가는 전환이 하나도 없다`)
     return t
   }
 
@@ -410,11 +457,16 @@ describe('POST /api/move', () => {
 
   it('맵을 넘어간 뒤에는 이전 맵의 화자에게 말을 걸 수 없다', async () => {
     const app = buildTestApp()
-    const t = first()
+    await enterField(app)
+    // 여기서는 말이 통한다 — 아래의 거절이 "원래 안 되는 것" 이 아니라 맵을
+    // 넘어간 결과임을 못 박는다.
+    const inside = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    expect(inside.statusCode).toBe(200)
+
     // 서비스 단위 테스트가 같은 것을 보지만, 그 검사는 라우트가 위치를 실제로
     // 저장하고 다시 읽어 오지 않으면 게임에서는 아무 효과가 없다 — 여기서
     // 확인하는 것이 그 연결이다.
-    await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+    await step(app, transitionBetween(fieldMapId(), startLocation(loadGameData()).mapId))
 
     const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
     expect(res.statusCode).toBe(400)
@@ -425,8 +477,8 @@ describe('POST /api/move', () => {
 
   it('맵을 넘어간 뒤에는 이전 맵의 노드를 캘 수 없다', async () => {
     const app = buildTestApp()
-    const t = first()
-    await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+    await enterField(app)
+    await step(app, transitionBetween(fieldMapId(), startLocation(loadGameData()).mapId))
 
     const res = await app.inject({
       method: 'POST',

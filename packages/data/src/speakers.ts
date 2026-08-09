@@ -14,7 +14,7 @@ function isSpeakerKind(value: string): value is SpeakerKind {
  * speakers.csv 를 파싱한다. 대화 상대(NPC·말하는 사물)의 정의와 배치를 함께 담는다.
  *
  * x·y 는 placements.ts 의 NodePlacement 와 같은 타일 좌표다. mapId 는 지금
- * 'world' 하나뿐이지만 처음부터 칸으로 둔다 — 맵이 늘어날 때 이 CSV 의
+ * '얼음채집장' 하나뿐이지만 처음부터 칸으로 둔다 — 맵이 늘어날 때 이 CSV 의
  * 스키마를 다시 마이그레이션하지 않기 위해서다(설계 문서 9장).
  */
 export function parseSpeakers(rows: Row[]): Record<string, SpeakerDef> {

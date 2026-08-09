@@ -1,3 +1,3 @@
 id,name,kind,mapId,x,y,sprite
-채집장노인,채집장 노인,npc,world,16,12,npc_elder
-얼음안내판,안내판,sign,world,3,27,sign_wood
+채집장노인,채집장 노인,npc,얼음채집장,16,12,npc_elder
+얼음안내판,안내판,sign,얼음채집장,3,27,sign_wood

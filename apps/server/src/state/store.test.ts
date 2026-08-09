@@ -53,7 +53,7 @@ describe('createInitialPlayer', () => {
 
   // 왜: 시작 칸 (15, 16) 은 예전에 서버·프로토콜·시뮬레이터 세 곳에 글자로
   //     박혀 있었고, 셋을 서로 묶는 테스트는 있어도 **맵에 묶는 것은
-  //     아무것도 없었다** — world.tmx 의 그 칸에 벽을 그리면 새 플레이어가
+  //     아무것도 없었다** — 시작 맵의 그 칸에 벽을 그리면 새 플레이어가
   //     전부 벽 속에서 시작한다. 이제 시작 칸은 맵의 spawn 오브젝트가 갖고,
   //     여기서 그 둘이 같은 값인지 못 박는다.
   it('시작 칸은 시작 맵의 spawn 오브젝트가 가리키는 칸이다', () => {
@@ -61,9 +61,9 @@ describe('createInitialPlayer', () => {
     const p = createInitialPlayer('local')
     expect(p.location).toEqual(startLocation(data))
     expect(p.location).toEqual({
-      mapId: 'world',
-      x: data.maps['world']!.spawn.x,
-      y: data.maps['world']!.spawn.y,
+      mapId: '눈의마을',
+      x: data.maps['눈의마을']!.spawn.x,
+      y: data.maps['눈의마을']!.spawn.y,
     })
   })
 })

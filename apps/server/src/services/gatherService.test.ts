@@ -31,12 +31,12 @@ const data: GameData = {
   },
   recipes: {},
   // 채집 판정은 맵을 보지 않지만 배치가 자기 맵을 가리키므로, 등록부에 그 맵이 있어야 앞뒤가 맞는다.
-  maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
+  maps: { 얼음채집장: { id: '얼음채집장', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
   transitions: [],
   placements: {
-    'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 3, y: 3 },
-    'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: 'world', x: 5, y: 3 },
-    'mithril_vein-1': { instanceId: 'mithril_vein-1', nodeId: 'mithril_vein', mapId: 'world', x: 7, y: 3 },
+    'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: '얼음채집장', x: 3, y: 3 },
+    'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: '얼음채집장', x: 5, y: 3 },
+    'mithril_vein-1': { instanceId: 'mithril_vein-1', nodeId: 'mithril_vein', mapId: '얼음채집장', x: 7, y: 3 },
   },
   milestones: [],
   speakers: {},
@@ -55,7 +55,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     dialogueHistory: emptyDialogueHistory(),
     // 배치가 전부 world 에 있으므로 기본 플레이어도 world 에 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.
-    location: { mapId: 'world', x: 0, y: 0 },
+    location: { mapId: '얼음채집장', x: 0, y: 0 },
     ...overrides,
   }
 }
@@ -78,7 +78,7 @@ describe('performGather', () => {
       ...data,
       placements: {
         ...data.placements,
-        'copper_vein-2': { instanceId: 'copper_vein-2', nodeId: 'copper_vein', mapId: 'world', x: 9, y: 3 },
+        'copper_vein-2': { instanceId: 'copper_vein-2', nodeId: 'copper_vein', mapId: '얼음채집장', x: 9, y: 3 },
       },
     }
     const a = performGather({ player: player(), data: d, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
@@ -91,7 +91,7 @@ describe('performGather', () => {
   //     인스턴스 id 하나로 맵 너머의 노드를 캘 수 있다 — 맵이 하나뿐일 때는
   //     존재하지 않던 구멍이라 기존 검사 어느 것도 이걸 막지 않는다.
   it('다른 맵의 노드는 캘 수 없다', () => {
-    const p = player({ location: { mapId: '시험숲', x: 1, y: 1 } })
+    const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
     const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
     expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
