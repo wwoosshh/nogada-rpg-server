@@ -278,6 +278,16 @@ export class ControlScene extends Phaser.Scene {
     if (visible === this.controllerVisible) return
     this.controllerVisible = visible
 
+    // 버튼이 손가락 밑에서 사라지므로, 이 소스가 쥐고 있던 것을 여기서 놓는다.
+    // Phaser 의 disableInteractive() 는 오브젝트를 _over 목록에서 빼기만 하고
+    // pointerout 을 내지 않으므로(InputPlugin.disable), 놓아 주지 않으면 그
+    // 버튼은 영영 "눌린 채"로 남는다 — hub.held 가 참으로 굳으면 다음에 그
+    // 버튼을 진짜로 눌러도 justPressed 가 아니라서 그 한 번이 통째로 삼켜진다.
+    // 대사창이 생기면서 이게 드문 경우가 아니게 됐다: A 로 말을 걸면 그 A 를
+    // 누른 바로 그 손가락 밑에서 컨트롤러가 사라지므로, 대화를 마칠 때마다
+    // 다음 채집 한 번이 안 먹는다.
+    if (!visible) this.touchSource?.releaseAll()
+
     const visuals: ButtonVisual[] = [
       this.dirUp,
       this.dirDown,

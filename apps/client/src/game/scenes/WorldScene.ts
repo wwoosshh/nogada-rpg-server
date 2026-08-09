@@ -10,9 +10,11 @@ import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
+import { SpeakerMarker } from '../SpeakerMarker.js'
 import { TileMover } from '../TileMover.js'
 import { fixedToCamera, renderScale } from '../viewport.js'
 import { ControlScene } from './ControlScene.js'
+import { DialogueScene } from './DialogueScene.js'
 import { PanelScene } from './PanelScene.js'
 
 const TILE = 32
@@ -26,12 +28,15 @@ const WALK_ROW: Record<Direction, number> = { down: 0, left: 1, right: 2, up: 3 
 /**
  * 앞칸에 있을 수 있는 것.
  *
- * 원작에서 "앞칸을 향해 결정 버튼"은 세계와 상호작용하는 유일한 동사다.
- * 얼음채집장 이벤트 29개 중 채집 노드는 6개뿐이고 나머지 23개(오크·노인·
- * 퀴즈도우미·소환물)가 전부 같은 입력을 쓴다. 그래서 채집 전용으로 만들지
- * 않는다 — NPC·이벤트·전투 진입점이 나중에 여기 종류를 더한다.
+ * 원작에서 "앞칸을 향해 결정 버튼"은 플레이어가 세계에 말을 거는 주된 통로다.
+ * 얼음채집장 이벤트 29개 중 채집 노드는 6개뿐이고 나머지(노인·퀴즈도우미·
+ * 소환물)의 상당수가 같은 결정 버튼 트리거를 쓴다. 그래서 채집 전용으로 만들지
+ * 않았고, 이제 두 번째 종류가 들어왔다 — 화자다. 전투 진입점 같은 것이 나중에
+ * 여기 더 붙는다.
  */
-type Interactable = { kind: 'node'; instanceId: string; nodeId: string }
+type Interactable =
+  | { kind: 'node'; instanceId: string; nodeId: string }
+  | { kind: 'speaker'; speakerId: string }
 
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite
@@ -42,6 +47,7 @@ export class WorldScene extends Phaser.Scene {
   private keyboard!: KeyboardSource
   private mover!: TileMover
   private panel!: PanelScene
+  private dialogue!: DialogueScene
   private wallLayer!: Phaser.Tilemaps.TilemapLayer
   private mapWidth = 0
   private mapHeight = 0
@@ -50,6 +56,13 @@ export class WorldScene extends Phaser.Scene {
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
+  /**
+   * 대화 요청이 날아가 있는 동안 또 보내지 않는다 — gatherPending 과 같은
+   * 이유이고, 여기서는 하나 더 있다: 응답이 도착해야 대사창이 열리고 그때
+   * 입력이 잠기므로, 그 사이에 A 를 또 누르면 발화 두 개가 연달아 도착해
+   * 첫 번째가 두 번째에 덮인다(둘 다 서버에는 "말을 걸었다"로 남는다).
+   */
+  private talkPending = false
   /**
    * 아직 화면에 못 띄운 이정표 문구들.
    *
@@ -145,6 +158,14 @@ export class WorldScene extends Phaser.Scene {
       })
     }
 
+    // 화자가 놓인 칸도 걸을 수 없다 — 노드와 같은 이유이고 같은 집합을 쓴다.
+    // 화자와 노드가 같은 칸에 놓이는 것은 빌드가 막으므로(validateSpeakerPlacements)
+    // 여기서 byTile 이 서로를 덮어쓸 수 없다.
+    for (const speaker of Object.values(useGameStore.getState().data.speakers)) {
+      this.blocked.add(`${speaker.x},${speaker.y}`)
+      this.byTile.set(`${speaker.x},${speaker.y}`, { kind: 'speaker', speakerId: speaker.id })
+    }
+
     this.mover = new TileMover({
       start: { x: Math.floor(startX / TILE), y: Math.floor(startY / TILE) },
       isWalkable: (p) => this.isWalkable(p),
@@ -154,6 +175,7 @@ export class WorldScene extends Phaser.Scene {
     this.keyboard = new KeyboardSource(this, this.hub)
 
     this.spawnNodes()
+    this.spawnSpeakers()
 
     // 스토어가 여전히 게임 상태의 단일 소유자다. 씬은 결과를 따로 보관하지
     // 않고 변화가 생길 때만 글자를 띄운다. update() 에서 폴링하면 같은
@@ -204,6 +226,17 @@ export class WorldScene extends Phaser.Scene {
     panel.events.once(Phaser.Scenes.Events.CREATE, () => panel.bind(this.hub, control))
     this.panel = panel
 
+    // 대사창도 같은 자세다 — 별도 씬, launch, CREATE 를 기다린 뒤 bind(hub, control).
+    // control 을 함께 넘기는 이유도 패널과 같다: 대사창이 열려 있는 동안 컨트롤러를
+    // 숨겨야 한다(DialogueScene 클래스 문서).
+    this.scene.launch('Dialogue')
+    const dialogue = this.scene.get('Dialogue')
+    if (!(dialogue instanceof DialogueScene)) {
+      throw new Error('Dialogue 씬을 찾을 수 없다: PhaserGame.ts 의 씬 배열을 확인하라')
+    }
+    dialogue.events.once(Phaser.Scenes.Events.CREATE, () => dialogue.bind(this.hub, control))
+    this.dialogue = dialogue
+
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
     // Systems.destroy() 만 부르고 Systems.shutdown() 은 부르지 않으므로 DESTROY 만
     // 발생하고 SHUTDOWN 은 절대 발생하지 않는다. shutdown 에만 걸면 정리가 전혀 돌지
@@ -218,6 +251,7 @@ export class WorldScene extends Phaser.Scene {
       cleanedUp = true
       this.scene.stop('Control')
       this.scene.stop('Panel')
+      this.scene.stop('Dialogue')
       this.dayNight.destroy()
       this.keyboard.destroy()
       this.floaters.destroy()
@@ -264,6 +298,31 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
+   * 말을 건다. 대화 한 번이 요청 한 번이고 발화 전체가 한 번에 온다(설계 문서 4.5).
+   *
+   * sendGather 와 달리 `nextActionAt` 을 보지 않는다 — 서버의 대화 경로에는
+   * 행동 간격 판정 자체가 없다(routes/talk.ts). 간격은 채집·제작이 자원을
+   * 만드는 속도를 묶으려고 있는 것이라, 아무것도 만들지 않는 대화에는 막을
+   * 것이 없다. 여기서 굳이 흉내 내면 채집 직후 말을 걸었을 때 아무 일도
+   * 안 일어나는 이유를 플레이어가 알 길이 없다.
+   *
+   * 응답이 실패하면(없는 화자·할 말 없음) 스토어가 아무것도 바꾸지 않으므로
+   * 대사창은 열리지 않고 조작도 잠기지 않는다 — 잠근 뒤 못 여는 상태가 생기지
+   * 않는 것은 잠금을 대사창 자신이 열릴 때만 걸기 때문이다(DialogueScene.render).
+   */
+  private sendTalk(speakerId: string): void {
+    if (this.talkPending) return
+
+    this.talkPending = true
+    void useGameStore
+      .getState()
+      .talk(speakerId)
+      .finally(() => {
+        this.talkPending = false
+      })
+  }
+
+  /**
    * 그 대상에서 누르고 있는 것만으로 반복되는가.
    *
    * 숙련도 상수를 직접 비교하지 않는다 — 그 기술의 `repeat` 이정표를 실제로
@@ -284,12 +343,20 @@ export class WorldScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     this.keyboard.update()
 
-    // 이동·행동보다 먼저 처리한다 — 이번 프레임에 패널이 막 열리거나 닫혔다면
-    // 같은 프레임의 이동조차 그 변화를 따라야 한다(설계 문서 §7). 이 씬의
+    // 이동·행동보다 먼저 처리한다 — 이번 프레임에 패널이나 대사창이 막 열리거나
+    // 닫혔다면 같은 프레임의 이동조차 그 변화를 따라야 한다(설계 문서 §7). 이 씬의
     // update() 안에서 직접 부르는 이유는 PanelScene.applyInput() 의 문서에
     // 적었다: 자신의 update() 에서 읽으면 이미 이번 프레임의 beginFrame() 이
     // 지나간 뒤다.
-    this.panel.applyInput()
+    //
+    // 대사창이 패널보다 먼저이고, 대사창이 열려 있던 프레임에는 패널이 아예
+    // 입력을 안 본다. 둘 다 같은 B(cancelPressed)를 읽기 때문이다 — 안 그러면
+    // 대사창을 B 로 닫는 그 프레임에 패널이 같은 B 를 "아무것도 안 열려 있으니
+    // 메뉴를 열라"로 읽어, 대사를 닫자마자 상세 메뉴가 열린다. 열려 있었는지를
+    // 부르기 **전에** 기억해 두는 것이 핵심이다.
+    const dialogueWasOpen = this.dialogue.isOpen
+    this.dialogue.applyInput()
+    if (!dialogueWasOpen) this.panel.applyInput()
 
     this.mover.update(delta, this.hub.state.dir)
 
@@ -334,14 +401,24 @@ export class WorldScene extends Phaser.Scene {
   /**
    * 앞칸의 대상에 작용한다.
    *
-   * 지금은 노드뿐이지만 switch 로 열어 두는 이유는, 새 종류를 더할 때
-   * 입력 계층을 건드리지 않기 위해서다.
+   * switch 로 열어 둔 덕에 화자를 더하면서 입력 계층은 한 줄도 안 바뀌었다.
+   * never 가드는 종류가 둘이 된 지금부터 값어치를 갖는다 — 세 번째 종류를
+   * Interactable 에 더하면서 여기 분기를 잊으면 그 순간 컴파일이 깨진다.
+   * 가드가 없으면 그 대상은 앞칸에 서서 A 를 눌러도 조용히 아무 일도 안
+   * 일어나고, 그건 화면만 봐서는 "아직 안 만든 것"과 구별되지 않는다.
    */
   private interact(target: Interactable): void {
     switch (target.kind) {
       case 'node':
         this.sendGather(target.instanceId)
         break
+      case 'speaker':
+        this.sendTalk(target.speakerId)
+        break
+      default: {
+        const exhaustive: never = target
+        throw new Error(`처리하지 않은 상호작용 대상: ${JSON.stringify(exhaustive)}`)
+      }
     }
   }
 
@@ -423,6 +500,33 @@ export class WorldScene extends Phaser.Scene {
         instanceId: placement.instanceId,
         label: def.name,
         tier: def.tier,
+      })
+    }
+  }
+
+  /**
+   * `data.speakers` 를 돌며 화자 마커를 놓는다. 노드 배치와 같은 방식이다 —
+   * 타일 좌표에 `* TILE + TILE / 2` 로 그 칸의 중심 픽셀을 얻는다.
+   *
+   * 배치를 맵 파일(world.tmx)이 아니라 `speakers.csv` 가 갖는 이유는 서버도
+   * 같은 배치를 알아야 하기 때문이다(설계 문서 9장). 그래서 여기서는 맵
+   * 오브젝트 레이어를 보지 않고 데이터만 본다. 좌표가 벽이거나 맵 밖이거나
+   * 노드와 겹치는 경우는 빌드가 이미 막았다(validateSpeakerPlacements).
+   *
+   * 지금 맵이 하나뿐이라 `speaker.mapId` 를 보지 않는다 — 맵이 늘면 여기서
+   * 현재 맵 id 로 걸러야 한다(같은 문서).
+   */
+  private spawnSpeakers(): void {
+    const { data } = useGameStore.getState()
+
+    for (const speaker of Object.values(data.speakers)) {
+      new SpeakerMarker({
+        scene: this,
+        x: speaker.x * TILE + TILE / 2,
+        y: speaker.y * TILE + TILE / 2,
+        speakerId: speaker.id,
+        label: speaker.name,
+        kind: speaker.kind,
       })
     }
   }

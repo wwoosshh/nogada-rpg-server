@@ -59,6 +59,23 @@ export class InputHub {
   }
 
   /**
+   * 그 버튼이 **지금 물리적으로** 눌려 있는가.
+   *
+   * `state.action` 과 다르다. 그쪽은 setWorldInputLocked() 의 영향을 받아
+   * 잠긴 동안 항상 false 지만, held 는 잠금과 무관하게 갱신된다(setButton 의
+   * 이른 반환은 held 를 쓴 **뒤에** 온다). 대사창은 자기가 그 잠금을 건
+   * 장본인이면서도 "행동키가 지금 눌려 있는가"를 알아야 한다 — 대화가 열린
+   * 시점에 눌려 있던 키는 한 번 떼야 먹는다는 규칙(설계 문서 §10) 때문이다.
+   *
+   * 한 프레임짜리 신호가 아니라 **상태**라서 beginFrame() 이 지우지 않는다.
+   * 그래서 프레임 루프 밖(예: talk 응답이 도착한 순간)에서 읽어도 0 이
+   * 나오지 않는다 — actionPressed 를 그렇게 읽으면 언제나 false 다.
+   */
+  isHeld(button: InputButton): boolean {
+    return this.held[button]
+  }
+
+  /**
    * 프레임 시작. 한 프레임짜리 신호를 지운다.
    *
    * 게임의 update() 맨 앞에서 부른다. 여기서 지우지 않으면 한 번 누른 것이

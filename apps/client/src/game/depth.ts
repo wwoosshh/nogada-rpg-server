@@ -21,6 +21,12 @@ export const DEPTH = {
   decor: 1,
   walls: 2,
   node: 5, // 채집 노드 마커
+  /**
+   * 화자(NPC·말하는 사물) 마커. 노드와 같은 층이다 — 같은 칸에 노드와 화자가
+   * 함께 있는 것을 빌드가 막으므로(validateSpeakerPlacements) 서로 가릴 일이
+   * 없고, 둘 다 "앞칸을 향하면 반응하는 것"이라 층을 나눌 이유도 없다.
+   */
+  speaker: 5,
   player: 10,
   overhead: 20,
   dayNight: 30, // 낮밤 명암. 월드의 모든 것 위를 덮는다
