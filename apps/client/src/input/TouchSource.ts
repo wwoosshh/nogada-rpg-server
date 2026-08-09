@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import type { Direction } from '@nogada/shared'
 import type { InputButton, InputHub } from './InputState.js'
+import { padDirection } from './padDirection.js'
 
 /**
  * 패드 중심에서 이 반경 안이면 방향을 고르지 않는다.
@@ -98,37 +99,56 @@ export class TouchSource {
   bindPad(shape: Phaser.GameObjects.Zone, onDirectionChange: (dir: Direction | null) => void): void {
     const binding: Binding = { heldBy: null, release: () => {} }
 
-    const resolve = (pointer: Phaser.Input.Pointer): Direction | null => {
-      const dx = pointer.x - shape.x
-      const dy = pointer.y - shape.y
-      if (Math.hypot(dx, dy) < PAD_DEAD_ZONE_RADIUS) return null
-      // 동률(|dx| === |dy|, 정확히 대각선)이면 세로를 고른다. '>' 비교라
-      // 가로가 더 클 때만 가로가 이기고, 같으면 자연히 세로 분기로
-      // 떨어진다 — 프레임마다 다른 쪽으로 흔들리지 않으려면 이 갈림이
-      // 결정적이어야 한다.
-      if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'right' : 'left'
-      return dy > 0 ? 'down' : 'up'
-    }
-
-    const apply = (pointer: Phaser.Input.Pointer): void => {
-      const dir = resolve(pointer)
+    /**
+     * 눌린 지점을 패드 중심 기준 오프셋으로 옮겨 방향을 고른다.
+     *
+     * **인자가 pointer 가 아니라 localX/localY 인 것이 이 함수의 전부다.**
+     * 한때 여기서 `pointer.x - shape.x` 를 뺐는데, 그 둘은 서로 다른 좌표계다:
+     * `pointer.x` 는 캔버스 백킹스토어 픽셀이고 `shape.x` 는 씬 좌표다. 이
+     * 게임은 캔버스를 기기 해상도로 그리고 카메라 zoom 으로 되돌리므로
+     * (viewport.renderScale, ControlScene 의 setZoom) 기기 픽셀비 2인 화면에서
+     * `pointer.x` 는 `shape.x` 의 두 배 공간에 있다. 그래서 패드 중심이 씬
+     * 좌표 (90, 273) 일 때 ◀ 를 눌러도 오프셋이 (2, 273) 으로 나와 세로가 늘
+     * 이겼다 — 실기에서 위·왼쪽으로는 아예 걸을 수 없었다. 데드존도 같은
+     * 이유로 배율만큼 좁아졌다(두 배로 부풀린 벡터를 씬 좌표 반경과 쟀으니까).
+     *
+     * Phaser 가 인터랙티브 오브젝트의 pointerdown·pointermove 콜백에 2·3번째
+     * 인자로 넘겨주는 localX/localY 는 **이미 그 오브젝트의 로컬 좌표**다 —
+     * 카메라 zoom·스크롤을 Phaser 가 되돌린 뒤(InputManager.hitTest 가
+     * camera.getWorldPoint 로 월드 점을 구하고 TransformXY 로 오브젝트 로컬로
+     * 옮긴다) displayOrigin 을 더해 준 값이라, 여기서 배율도 카메라도 알 필요가
+     * 없다. `pointer.worldX` 나 `camera.getWorldPoint()` 로도 같은 공간을 만들
+     * 수 있지만 둘 다 "지금 이 오브젝트를 그리는 카메라가 어느 것이냐" 를 이
+     * 자리에서 옳게 고르는 데 달려 있다 — 씬이 넷인 이 게임에서 다시 틀리기
+     * 쉬운 선택이다. 로컬 좌표는 고를 것 자체가 없어서 다시 틀릴 수가 없다.
+     *
+     * 중심을 `shape.displayOriginX/Y` 로 빼는 이유: 로컬 좌표계에서 도형의
+     * 좌상단이 (0, 0) 이고 `setPosition()` 이 놓은 지점(= 패드 중심)이 바로
+     * displayOrigin 이다. Zone 의 크기나 origin 을 나중에 바꿔도 같이 따라간다.
+     */
+    const apply = (localX: number, localY: number): void => {
+      const dir = padDirection(
+        localX - shape.displayOriginX,
+        localY - shape.displayOriginY,
+        PAD_DEAD_ZONE_RADIUS,
+      )
       this.hub.setDir(dir)
       onDirectionChange(dir)
     }
 
-    shape.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    shape.on('pointerdown', (pointer: Phaser.Input.Pointer, localX: number, localY: number) => {
       if (binding.heldBy !== null) return // 이미 다른 손가락이 패드를 쥐고 있다
       binding.heldBy = pointer.id
-      apply(pointer)
+      apply(localX, localY)
     })
 
     // 패드 표면 위에서 손가락이 움직일 때마다 다시 판정한다 — 슬라이드로
     // 방향을 바꾸는 조작이 여기서 나온다. heldBy 로 내가 쥔 포인터인지
     // 확인하는 이유는, 눌리지 않은 채 지나가는 포인터(데스크톱 마우스 호버 등)
     // 까지 방향으로 잡으면 안 되기 때문이다.
-    shape.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+    shape.on('pointermove', (pointer: Phaser.Input.Pointer, localX: number, localY: number) => {
       if (binding.heldBy !== pointer.id) return
-      apply(pointer)
+      apply(localX, localY)
     })
 
     binding.release = (): void => {
