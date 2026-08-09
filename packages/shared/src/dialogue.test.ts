@@ -258,14 +258,16 @@ describe('findFactSpec', () => {
   it('공급자가 있는 사실과 없는 사실이 설계 문서 6장대로 나뉜다', () => {
     const suppliedNames = DECLARED_FACTS.filter((f) => f.supplied).map((f) => f.name)
     const unsuppliedNames = DECLARED_FACTS.filter((f) => !f.supplied).map((f) => f.name)
+    // justAchieved 는 buildFacts 가 PlayerState.celebrated 의 마지막 원소에서
+    // 유도한다 — 인자로 받아 옮기는 것이 아니라 이미 저장된 상태에서 계산하므로,
+    // 서버든 시뮬레이터든 buildFacts 를 부르기만 하면 값이 들어온다.
     expect(suppliedNames).toEqual([
-      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk',
+      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved',
     ])
-    // justAchieved 는 실제로 넘기는 프로덕션 호출이 없어 weather 등과 함께
-    // 여기 있다 — buildFacts 가 인자로 받으면 실어 주긴 하지만, 그 인자를
-    // 주는 것은 지금 CLI 오버라이드와 테스트뿐이다(리뷰 finding 1).
+    // 남은 여섯은 사정이 다르다 — 가리키는 값 자체를 만드는 스펙(날씨·호감도·
+    // 퀘스트·일과)이 아직 없어서, 유도할 상태조차 없다.
     expect(unsuppliedNames).toEqual([
-      'justAchieved', 'weather', 'affinity', 'quest.', 'story', 'activity', 'location',
+      'weather', 'affinity', 'quest.', 'story', 'activity', 'location',
     ])
   })
 
@@ -278,21 +280,14 @@ describe('findFactSpec', () => {
     expect(unbounded).toEqual(['skill.', 'daysSinceLastTalk'])
   })
 
-  it('공급자가 없는 사실은 대개 값의 모양도 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
+  it('공급자가 없는 사실만 값의 모양을 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
     // 지금 추측해서 못박으면(예: story 는 숫자다) 나중에 그 스펙이 다른 모양을
     // 고르는 순간, 이미 쓰여 있던 대사들이 빌드에서 막힌다. 반대로 공급자가
     // 있는 사실은 그 공급자가 넣는 값이 곧 모양이라 비워 둘 이유가 없다.
     //
-    // justAchieved 는 이 규칙의 유일한 예외다 — "공급자가 없다"와 "값의
-    // 모양을 모른다"는 서로 다른 사실이다. justAchieved 가 방금 넘긴
-    // 이정표의 id(문자열)라는 것은 이미 결정된 설계이고 .dlg 도 이미 그
-    // 모양으로 쓰고 있다(justAchieved=ice_10000) — 없는 것은 그 값을 대화
-    // 요청에 실어 보내는 경로뿐이다.
+    // justAchieved 가 공급자를 얻으면서 이 규칙의 예외가 사라졌다 — 예전에는
+    // "값의 모양은 아는데 공급자가 없다"는 어중간한 자리에 혼자 있었다.
     for (const spec of DECLARED_FACTS) {
-      if (spec.name === 'justAchieved') {
-        expect(spec.value.kind).toBe('string')
-        continue
-      }
       expect([spec.name, spec.value.kind === 'unspecified']).toEqual([spec.name, !spec.supplied])
     }
   })

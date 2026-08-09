@@ -38,12 +38,16 @@ const NOW = 1_767_225_600_000 + 5 * 60 * 60 * 1000 // 게임 5일차 정오 언�
  * "선언된 사실을 공급자가 실제로 만드는가"를 반드시 이 모양으로만 물어야
  * 하는 이유가 리뷰 finding 1 이 지적한 결함 그 자체다: 예전 버전은 이 자리에서
  * `justAchieved` 인자를 손으로 하나 더 얹어 buildFacts 를 불렀다. 그러면 그
- * 인자를 넘기는 프로덕션 호출이 하나도 없어도(talkService.ts 도
- * content-cli.ts 의 defaultFacts 도 넘기지 않는다) 이 파일의 검사는 "만든다"고
+ * 인자를 넘기는 프로덕션 호출이 하나도 없어도 이 파일의 검사는 "만든다"고
  * 우겼다 — justAchieved 는 몇 달이고 supplied: true 로 선언된 채 아무도 채울
- * 수 없는 사실로 남아 있었다. 손으로 인자를 얹지 않고 실제 호출부와 같은
- * 모양으로만 부르면, 프로덕션이 안 주는 인자는 이 헬퍼도 못 주므로 같은
- * 종류의 드리프트가 다시는 조용히 통과할 수 없다.
+ * 수 없는 사실로 남아 있었다.
+ *
+ * 지금은 그 구멍이 관례가 아니라 타입으로 막혀 있다. FactSources 에는 저
+ * 넷 말고 얹을 인자가 없다(justAchieved 는 인자가 아니라 player.celebrated
+ * 에서 유도된다) — 그래서 이 헬퍼가 프로덕션과 다른 모양으로 부르려 해도
+ * 컴파일이 먼저 막는다. 사실 하나가 공급자를 얻을 때 인자를 늘리는 대신
+ * 상태에서 유도하기를 택하면, 이 검사가 우회 불가능해진다는 것이 그 선택의
+ * 부수적인 이득이다.
  */
 function productionFacts(player: PlayerState, nowMs: number = NOW): Facts {
   return buildFacts({ speaker: SPEAKER, player, milestones: data.milestones, nowMs })
@@ -56,11 +60,43 @@ function emptyPlayerFacts(): Facts {
 /**
  * SPEAKER 와 이미 말해 본 적 있는 플레이어 — daysSinceLastTalk 가 나오는
  * 유일한 조건이다(빈 플레이어에게는 매길 값이 없다).
+ *
+ * 여기서 lastTalkAt 을 손으로 채우는 것은 "이런 상태가 실제로 생길 수 있다"를
+ * 주장하지 않는다 — 이 파일이 지키는 것은 "상태 S 를 주면 공급자가 X 를
+ * 만든다"이지 "S 에 도달할 수 있다"가 아니다. 그 나머지 절반(실제로 서버가
+ * 이 자리를 채우는가)은 apps/server/src/services/talkService.test.ts 의
+ * "대화 시각을 화자별로 기록한다"가 지킨다. 두 파일 중 하나만 있으면 사슬이
+ * 끊기므로, 고치는 사람이 다른 쪽을 찾아갈 수 있게 여기 적어 둔다.
  */
 function talkedBeforeFacts(): Facts {
   const player = emptyPlayer()
   player.dialogueHistory.lastTalkAt[SPEAKER] = NOW - 3 * 60 * 60 * 1000
   return productionFacts(player)
+}
+
+/**
+ * 방금 문턱을 넘긴 플레이어 — justAchieved 가 나오는 유일한 조건이다(아직
+ * 아무것도 못 넘긴 빈 플레이어에게는 가리킬 이정표가 없다).
+ *
+ * 이정표 id 를 리터럴로 적지 않고 실제 데이터에서 꺼낸다 — CSV 에서 그 id 가
+ * 사라지면 이 픽스처가 "그런 이정표를 넘겼다"고 우기는 대신 여기서 먼저 깨져야
+ * 한다.
+ *
+ * 위 talkedBeforeFacts 와 같은 분업이다: celebrated 에 값이 들어가는 경로가
+ * 실재하는지는 apps/server/src/services/gatherService.test.ts·craftService.test.ts
+ * 의 "그 이정표 id 가 outcome.player.celebrated 에 들어간다" 가 지킨다.
+ */
+function justAchievedFacts(): Facts {
+  const player = emptyPlayer()
+  const milestone = data.milestones[0]
+  if (!milestone) throw new Error('이정표가 하나도 없다 — 위 전제 테스트가 먼저 실패해야 한다')
+  player.celebrated = [milestone.id]
+  return productionFacts(player)
+}
+
+/** 드리프트 검사가 보는 상태 전부. 사실 하나가 특정 상태에서만 나오면 그 상태를 여기 더한다. */
+function allProductionFacts(): Facts[] {
+  return [emptyPlayerFacts(), talkedBeforeFacts(), justAchievedFacts()]
 }
 
 describe('사실 공급자와 선언 목록', () => {
@@ -71,7 +107,7 @@ describe('사실 공급자와 선언 목록', () => {
   })
 
   it('공급자가 만드는 모든 사실이 supplied 로 선언돼 있다', () => {
-    for (const facts of [emptyPlayerFacts(), talkedBeforeFacts()]) {
+    for (const facts of allProductionFacts()) {
       for (const name of Object.keys(facts)) {
         const spec = findFactSpec(name)
         // 이름을 함께 단정해야 어느 사실이 어긋났는지가 실패 메시지에 남는다.
@@ -82,9 +118,7 @@ describe('사실 공급자와 선언 목록', () => {
 
   it('supplied 로 선언된 모든 사실을 공급자가 만든다', () => {
     const produced = new Set(
-      [...Object.keys(emptyPlayerFacts()), ...Object.keys(talkedBeforeFacts())].map(
-        (name) => findFactSpec(name)?.name,
-      ),
+      allProductionFacts().flatMap((facts) => Object.keys(facts).map((name) => findFactSpec(name)?.name)),
     )
     const missing = DECLARED_FACTS.filter((spec) => spec.supplied && !produced.has(spec.name)).map((s) => s.name)
     expect(missing).toEqual([])
@@ -114,20 +148,22 @@ describe('사실 공급자와 선언 목록', () => {
     // 모양이 어긋난 사실은 조용히 만들어지고 그 뒤로 어떤 조건과도 맞지 않는다
     // (matchesCondition 은 타입이 다르면 그냥 거짓이다). 예: milestone.<id> 를
     // true/false 가 아니라 1/0 으로 넣는 경우.
-    const facts = talkedBeforeFacts()
-    for (const [name, value] of Object.entries(facts)) {
-      const spec = findFactSpec(name)
-      if (!spec) continue // 위 테스트가 잡는다
-      expect([name, factValueFitsShape(spec.value, value)]).toEqual([name, true])
+    for (const facts of allProductionFacts()) {
+      for (const [name, value] of Object.entries(facts)) {
+        const spec = findFactSpec(name)
+        if (!spec) continue // 위 테스트가 잡는다
+        expect([name, factValueFitsShape(spec.value, value)]).toEqual([name, true])
+      }
     }
   })
 
   it('공급자가 없는 사실은 만들지 않는다 — 없는 사실이라야 조건이 거짓이다', () => {
-    const facts = talkedBeforeFacts()
-    for (const spec of DECLARED_FACTS) {
-      if (spec.supplied) continue
-      const leaked = Object.keys(facts).filter((n) => (spec.prefix ? n.startsWith(spec.name) : n === spec.name))
-      expect([spec.name, leaked]).toEqual([spec.name, []])
+    for (const facts of allProductionFacts()) {
+      for (const spec of DECLARED_FACTS) {
+        if (spec.supplied) continue
+        const leaked = Object.keys(facts).filter((n) => (spec.prefix ? n.startsWith(spec.name) : n === spec.name))
+        expect([spec.name, leaked]).toEqual([spec.name, []])
+      }
     }
   })
 })

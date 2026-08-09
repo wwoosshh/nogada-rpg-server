@@ -39,19 +39,10 @@ export interface FactSources {
   milestones: readonly MilestoneDef[]
   /** epoch ms. 세계 시각의 유일한 입력이다 — 이 함수는 시계를 직접 읽지 않는다. */
   nowMs: number
-  /**
-   * 이번 행동으로 방금 넘긴 이정표 id.
-   *
-   * 플레이어 상태에서 유도할 수 없어서 인자로 받는다. `celebrated` 의 마지막
-   * 원소는 "가장 최근에 넘긴 것" 이지 "방금 넘긴 것" 이 아니다 — 그걸 쓰면
-   * 문턱을 한 번 넘은 뒤로는 영원히 방금 넘긴 셈이 된다. 이 값은 행동의
-   * 결과(newlyAchieved)를 아는 쪽만 줄 수 있고, 주지 않으면 사실이 없다.
-   */
-  justAchieved?: string
 }
 
 export function buildFacts(sources: FactSources): Facts {
-  const { speaker, player, milestones, nowMs, justAchieved } = sources
+  const { speaker, player, milestones, nowMs } = sources
   const time = gameTimeAt(nowMs)
 
   const facts: Record<string, FactValue> = {
@@ -69,6 +60,26 @@ export function buildFacts(sources: FactSources): Facts {
   const achieved = achievedIds(milestones, player)
   for (const def of milestones) facts[`milestone.${def.id}`] = achieved.has(def.id)
 
+  // justAchieved 는 가장 최근에 넘긴 이정표다 — `celebrated` 의 마지막 원소.
+  //
+  // **새 상태를 만들지 않는 것이 핵심이다.** celebrated 는 문턱을 넘는 그
+  // 순간에만 append 되고(gatherService·craftService) 다시 정렬되지도 지워지지도
+  // 않으므로, "가장 최근에 넘긴 것"이 이미 그 배열 끝에 적혀 있다. 대화 요청이
+  // 값을 따로 실어 나르게 만들면 그 경로를 채집·제작·오프라인 복귀까지 전부
+  // 이어야 하고, 한 군데만 빠뜨려도 이 사실은 조용히 다시 죽는다.
+  //
+  // 한 번 켜지면 계속 켜져 있다. 그래도 같은 말을 되풀이하지 않는데, @milestone
+  // 이 once 사건이라(ONCE_EVENTS) 한 번 나온 규칙은 dialogueHistory.said 가
+  // 막기 때문이다 — 즉 "계속 켜져 있다"는 "영원히 반복한다"가 아니라 "다음에
+  // 누구에게든 말을 걸 때 반드시 한 번은 듣는다"는 뜻이다. 반대로 "넘긴 그
+  // 순간에만 켠다"로 하면, 채집장에서 문턱을 넘고 마을까지 걸어가는 사이에 그
+  // 말이 사라진다 — 노가다 사이사이에 진행도로 사건이 열린다는 이 게임의
+  // 약속이 정확히 거기서 조용히 깨진다.
+  //
+  // 대가: 말을 걸기 전에 문턱을 둘 넘기면 마지막 하나만 언급된다. 둘 다
+  // 말하려면 대기열이 필요하고 그건 저장·마이그레이션·비우는 시점이 따라붙는
+  // 새 상태다 — 지금 콘텐츠가 얻는 것에 비해 비싸서 일부러 받아들인 대가다.
+  const justAchieved = player.celebrated.at(-1)
   if (justAchieved !== undefined) facts.justAchieved = justAchieved
 
   const { lastTalkAt, recent } = player.dialogueHistory

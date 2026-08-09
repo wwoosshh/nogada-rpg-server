@@ -174,12 +174,15 @@ const SIMULATOR_SEED = 20260808
  * 사실을 따로 만들면 언젠가 그 둘이 갈라져 도구가 자기만의 세계를 설명하게
  * 된다.
  *
- * 빈 플레이어에게는 `justAchieved`(방금 넘긴 문턱)와 `daysSinceLastTalk`
- * (마지막 대화로부터 며칠)가 없다 — 방금 아무것도 안 넘겼고, 애초에 마지막
+ * 빈 플레이어에게는 `justAchieved`(가장 최근에 넘긴 문턱)와 `daysSinceLastTalk`
+ * (마지막 대화로부터 며칠)가 없다 — 아직 아무 문턱도 안 넘겼고, 애초에 마지막
  * 대화 자체가 없는 사람에게는 값을 매길 수 없다. 공급자도 같은 이유로 그
- * 둘을 넣지 않는다. matchesCondition 은 없는 사실을 항상 거짓으로 보므로, 이
- * 두 사실을 조건으로 건 규칙은 명시적으로 --사실=값 을 주기 전까지 자연히
- * 안 나온다 — 그게 "빈 플레이어"의 정확한 의미다.
+ * 둘을 넣지 않는다: **둘 다 공급자는 있고, 이 상태에 값이 없을 뿐이다.**
+ * matchesCondition 은 없는 사실을 항상 거짓으로 보므로, 이 두 사실을 조건으로
+ * 건 규칙은 명시적으로 --사실=값 을 주기 전까지 자연히 안 나온다 — 그게 "빈
+ * 플레이어"의 정확한 의미다. 작가가 `--justAchieved=ice_10000` 으로 문턱 대사를
+ * 미리 보는 경로가 이래서 계속 필요하다: 공급자가 생겼다고 해서, 그 문턱까지
+ * 실제로 플레이해야만 자기가 쓴 대사를 볼 수 있게 되면 안 된다.
  */
 function defaultFacts(data: GameData, speaker: string, nowMs: number): Facts {
   return buildFacts({ speaker, player: emptyPlayer(), milestones: data.milestones, nowMs })

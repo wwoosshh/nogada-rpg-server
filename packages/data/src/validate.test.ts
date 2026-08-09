@@ -1251,10 +1251,16 @@ describe('collectDialogueNotices', () => {
     expect(collectDialogueNotices(data)).toEqual([])
   })
 
-  it('실제로 출하되는 대사 데이터는 weather 대기 안내를 낸다', () => {
+  it('실제로 출하되는 대사 데이터가 기다리는 것은 weather 하나뿐이다', () => {
     // 채집장노인.dlg 의 "@greet weather=rain" 규칙(대사 1줄)이 근거다 — 날씨
     // 스펙이 아직 없으므로 이 대사는 지금 절대 나오지 않는다.
+    //
+    // toContain 이 아니라 toEqual 로 목록 전체를 못박는다. 같은 파일의
+    // "@milestone justAchieved=ice_10000"(대사 2줄)이 오래 이 목록의 두 번째
+    // 줄이었는데, 그건 안내가 아니라 결함이었다 — 이 게임의 설계를 통째로
+    // 보여주는 유일한 콘텐츠가 나올 수 없는 상태였다. 목록을 통째로 단언해야
+    // 어떤 사실이 다시 이 목록으로 미끄러져도 조용히 지나가지 않는다.
     const notices = collectDialogueNotices(loadRealGameData())
-    expect(notices).toContain('대사 1줄이 weather 를 기다린다')
+    expect(notices).toEqual(['대사 1줄이 weather 를 기다린다'])
   })
 })

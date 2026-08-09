@@ -68,20 +68,39 @@ describe('buildFacts', () => {
     expect(facts['milestone.ice_1000']).toBe(true)
   })
 
-  it('justAchieved 를 주면 그대로 싣고, 안 주면 사실 자체가 없다', () => {
-    // 없으면 undefined 가 아니라 키 자체가 없어야 한다 — matchesCondition 은
-    // "없는 사실"만 항상 거짓으로 보고, undefined 값이 있는 키는 다루지 않는다.
-    const withArg = buildFacts({
+  it('justAchieved 를 celebrated 의 마지막 원소에서 유도한다 — 새 상태를 만들지 않는다', () => {
+    // celebrated 는 문턱을 넘은 그 순간 append 된다(gatherService·craftService).
+    // 그래서 마지막 원소가 곧 "가장 최근에 넘긴 것"이고, 그 사실 하나로
+    // justAchieved 를 만들 수 있다 — 대화 요청에 값을 따로 실어 보내는 경로도,
+    // 저장·마이그레이션이 따라붙는 새 필드도 필요 없다.
+    const facts = buildFacts({
       speaker: SPEAKER,
-      player: player(),
+      player: player({ celebrated: ['wood_1000', 'ice_1000'] }),
       milestones: [],
       nowMs: NOW,
-      justAchieved: 'ice_1000',
     })
-    expect(withArg.justAchieved).toBe('ice_1000')
+    expect(facts.justAchieved).toBe('ice_1000')
+  })
 
-    const withoutArg = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
-    expect(Object.hasOwn(withoutArg, 'justAchieved')).toBe(false)
+  it('넘긴 것이 없으면 justAchieved 사실 자체가 없다', () => {
+    // 없으면 undefined 가 아니라 키 자체가 없어야 한다 — matchesCondition 은
+    // "없는 사실"만 항상 거짓으로 보고, undefined 값이 있는 키는 다루지 않는다.
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
+    expect(Object.hasOwn(facts, 'justAchieved')).toBe(false)
+  })
+
+  it('한 번 넘긴 justAchieved 는 그 뒤로도 계속 켜져 있다 — 듣기 전에 꺼지면 안 되기 때문이다', () => {
+    // 문턱을 넘은 그 한 순간만 켜 두면, 채집장에서 문턱을 넘고 마을까지 걸어가는
+    // 사이에 그 말이 사라진다 — 진행도가 사건을 연다는 이 게임의 약속이 조용히
+    // 깨지는 자리다. 계속 켜 두어도 @milestone 은 once 사건이라(ONCE_EVENTS)
+    // 한 번 나온 규칙은 dialogueHistory.said 가 막는다: "계속 켜져 있다"는
+    // "영원히 반복한다"가 아니라 "다음에 말을 걸 때 반드시 한 번은 듣는다"다.
+    const veteran = player({
+      celebrated: ['ice_1000'],
+      skills: { ice: 900_000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+    })
+    const facts = buildFacts({ speaker: SPEAKER, player: veteran, milestones: [iceNovice], nowMs: NOW })
+    expect(facts.justAchieved).toBe('ice_1000')
   })
 
   it('한 번도 말한 적 없으면 talkedBefore 는 false 고 daysSinceLastTalk 는 없다', () => {

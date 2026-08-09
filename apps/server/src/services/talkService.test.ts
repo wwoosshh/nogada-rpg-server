@@ -6,6 +6,7 @@ import {
   type MilestoneDef,
   type PlayerState,
 } from '@nogada/shared'
+import { loadGameData } from '@nogada/data'
 import { describe, expect, it } from 'vitest'
 import { performTalk } from './talkService.js'
 
@@ -275,5 +276,71 @@ describe('performTalk', () => {
     const last = talk(player(), { rng: pickLast })
     if (!first.ok || !last.ok) throw new Error('둘 다 성공해야 한다')
     expect(first.outcome.lines).not.toEqual(last.outcome.lines)
+  })
+})
+
+/**
+ * 실제로 출하되는 대사 데이터로 문턱→대사 사슬 전체를 지난다.
+ *
+ * 이 게임이 원작에서 물려받은 설계의 핵심이 여기 있다 — 노가다 사이사이에
+ * 진행도로 열리는 사건을 숨겨 두는 것. 위 테스트들은 손으로 빚은 픽스처라
+ * "규칙이 이렇게 생겼다면 이렇게 고른다"까지만 증명하지만, 정작 중요한 것은
+ * **작가가 쓴 그 파일의 그 규칙이 실제로 나오는가**다. 픽스처만 있으면
+ * 채집장노인.dlg 의 조건 한 글자가 틀려도 전부 green 이다.
+ */
+describe('performTalk — 출하 데이터의 이정표 대사', () => {
+  const shipped = loadGameData()
+  const ELDER = '채집장노인'
+  /** 채집장노인.dlg 의 `@milestone justAchieved=ice_10000` 이 내는 두 칸. */
+  const MILESTONE_LINES = ['손이 익었군.', '그 나이에 벌써 그러면 나는 뭐가 되나.']
+
+  /** 그 화자의 greet 규칙이 낼 수 있는 발화 전부 — 폴백이 걸렸는지 확인하는 데 쓴다. */
+  const greetLines = shipped.dialogue.filter((r) => r.speaker === ELDER && r.event === 'greet').map((r) => r.lines)
+
+  /** 방금 얼음 10000 을 넘긴 사람. celebrated 마지막 원소가 곧 justAchieved 다. */
+  function justCrossed(celebrated: string[] = ['ice_10000']): PlayerState {
+    return player({ celebrated, skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } })
+  }
+
+  function talkToElder(p: PlayerState, now = 0) {
+    return performTalk({ player: p, data: shipped, speakerId: ELDER, rng: pickFirst, now })
+  }
+
+  it('방금 문턱을 넘긴 사람에게 노인이 그것을 알아본다', () => {
+    const r = talkToElder(justCrossed())
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.lines).toEqual(MILESTONE_LINES)
+  })
+
+  it('그 말은 한 번뿐이다 — 두 번째 대화는 said 에 막혀 greet 으로 내려간다', () => {
+    // "계속 켜져 있는 justAchieved" 가 안전한 이유가 바로 이것이다. 사실이
+    // 꺼지지 않아도 @milestone 은 once 사건이라 said 가 반복을 막는다 —
+    // 플레이어는 그 말을 반드시 듣되, 정확히 한 번만 듣는다.
+    const first = talkToElder(justCrossed())
+    if (!first.ok) throw new Error('첫 대화가 성공해야 한다')
+
+    const second = talkToElder(first.outcome.player, 1000)
+    if (!second.ok) throw new Error('두 번째 대화도 성공해야 한다')
+    expect(second.outcome.lines).not.toEqual(MILESTONE_LINES)
+    expect(greetLines).toContainEqual(second.outcome.lines)
+    // said 에 그 키가 하나 들어갔고, 두 번째 대화가 또 넣지는 않았다.
+    expect(second.outcome.player.dialogueHistory.said).toHaveLength(1)
+  })
+
+  it('아무것도 안 넘긴 사람에게는 그 말이 나오지 않는다', () => {
+    // justAchieved 사실 자체가 없으므로 조건이 거짓이다 — 이 대조가 없으면
+    // 위 테스트는 "노인이 늘 저 말을 한다"로도 통과한다.
+    const r = talkToElder(player({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.lines).not.toEqual(MILESTONE_LINES)
+  })
+
+  it('말을 걸기 전에 문턱을 둘 넘기면 마지막 것만 언급된다 — 받아들인 대가다', () => {
+    // 대기열을 두면 둘 다 말할 수 있지만 그건 저장·마이그레이션·비우는 시점이
+    // 따라붙는 새 상태다. 이 테스트는 그 선택을 문서가 아니라 동작으로 못박는다 —
+    // 나중에 대기열을 도입한다면 여기서 먼저 빨개진다.
+    const r = talkToElder(justCrossed(['ice_10000', 'wood_1000']))
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.lines).not.toEqual(MILESTONE_LINES)
   })
 })
