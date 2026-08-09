@@ -15,6 +15,7 @@ import {
   NETWORK_ERROR,
   type CraftOutcomeDto,
   type GatherOutcomeDto,
+  type MoveOutcomeDto,
   type TalkOutcomeDto,
 } from '../api/GameClient.js'
 import type { DetailMenuTab } from '../game/detailMenuTabs.js'
@@ -102,6 +103,7 @@ interface GameStore {
   gather: (instanceId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
   talk: (speakerId: string) => Promise<void>
+  move: (x: number, y: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
 }
 
@@ -238,6 +240,30 @@ export const useGameStore = create<GameStore>((set) => ({
         return
       }
       console.error(err)
+    }
+  },
+
+  /**
+   * 전환 칸을 밟았다고 알린다. 도착지는 서버가 정해서 `player.location` 으로 온다.
+   *
+   * 채집·제작·대화와 달리 **실패를 삼키지 않고 다시 던진다.** 호출자(WorldScene)는
+   * 성공했을 때에만 씬을 다시 시작해야 하는데, 여기서 삼키면 실패도 성공처럼
+   * 보여서 서버가 거절한 전환에도 씬이 재시작된다 — 그러면 플레이어는 지금
+   * 서 있던 칸이 아니라 **마지막 전환 도착 칸**으로 되돌아가 순간이동한 것처럼
+   * 보인다. 대사창처럼 "아무것도 안 일어난다"로 끝낼 수 있는 실패가 아니다.
+   *
+   * 머리 위 글자로 알리지도 않는다. 전환이 거절되는 경우는 클라이언트와 서버가
+   * 서로 다른 전환표를 보고 있을 때뿐이라 플레이어에게 보여 줄 말이 없다.
+   */
+  move: async (x, y) => {
+    try {
+      const outcome: MoveOutcomeDto = await GameClient.move(x, y)
+      applyPlayer(set, outcome.player)
+    } catch (err) {
+      // 서버와 끊겼으면 세계를 다시 그릴 게 아니라 게이트가 할 일이다 — 채집과 같다.
+      if (isNetworkFailure(err)) set({ connection: 'offline' })
+      else console.error(err)
+      throw err
     }
   },
 

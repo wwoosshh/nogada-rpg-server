@@ -40,6 +40,16 @@ export interface TalkOutcomeDto {
   player: PlayerState
 }
 
+/**
+ * 맵을 넘어간 결과.
+ *
+ * 다른 결과들과 달리 실린 것이 플레이어뿐이다 — 전환에는 성패도 산출물도
+ * 없고, 어디에 떨어졌는지는 `player.location` 이 이미 말한다.
+ */
+export interface MoveOutcomeDto {
+  player: PlayerState
+}
+
 export class ApiError extends Error {
   constructor(readonly code: string) {
     super(code)
@@ -114,5 +124,15 @@ export const GameClient = {
     request<TalkOutcomeDto>('/api/talk', {
       method: 'POST',
       body: JSON.stringify({ speakerId }),
+    }),
+
+  /**
+   * 밟은 칸을 알린다. 목적지는 보내지 않는다 — 그 칸에서 어디로 가는지는
+   * 서버가 전환표에서 찾는다(MoveRequestSchema 문서).
+   */
+  move: (x: number, y: number) =>
+    request<MoveOutcomeDto>('/api/move', {
+      method: 'POST',
+      body: JSON.stringify({ x, y }),
     }),
 }

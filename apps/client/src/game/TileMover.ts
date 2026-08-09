@@ -4,6 +4,20 @@ interface TileMoverOptions {
   start: TilePos
   /** 그 칸에 설 수 있는가. 맵 밖·벽·노드가 모두 여기서 걸러진다. */
   isWalkable: (p: TilePos) => boolean
+  /**
+   * 한 걸음이 끝나 **새 칸에 올라선 순간** 불린다. `'stop'` 을 돌려주면 방향을
+   * 쥐고 있어도 그 자리에서 멈춘다.
+   *
+   * 방향만 바꾼 프레임에는 불리지 않는다 — 벽을 향해 누르고 있는 것은 도착이
+   * 아니다.
+   *
+   * **왜 밖에서 판단하지 못하고 이 자리가 필요한가:** 걸음이 끝나는 것과 다음
+   * 걸음이 시작되는 것은 아래 update() 안에서 연달아 일어난다. 그래서 씬이
+   * "칸이 바뀌었네"를 알아챌 때는 이미 다음 걸음이 시작된 뒤이고, 그때 입력을
+   * 잠가도 그 한 걸음은 끝까지 간다. 맵 전환에서 그것이 곧 "가장자리를 밟고도
+   * 한 칸 더 걸어 나간 뒤에 화면이 바뀐다" 였다.
+   */
+  onArrive?: (tile: TilePos) => 'stop' | void
 }
 
 /**
@@ -18,6 +32,7 @@ interface TileMoverOptions {
  */
 export class TileMover {
   private readonly isWalkable: (p: TilePos) => boolean
+  private readonly onArrive: ((tile: TilePos) => 'stop' | void) | undefined
   private current: TilePos
   private target: TilePos
   private elapsed = 0
@@ -27,6 +42,7 @@ export class TileMover {
 
   constructor(opts: TileMoverOptions) {
     this.isWalkable = opts.isWalkable
+    this.onArrive = opts.onArrive
     this.current = { ...opts.start }
     this.target = { ...opts.start }
   }
@@ -60,6 +76,9 @@ export class TileMover {
       this.current = { ...this.target }
       this.stepping = false
       this.elapsed = 0
+      // 다음 걸음을 잇기 **전에** 알린다. 이은 뒤에 알리면 듣는 쪽은 이미
+      // 시작된 걸음을 되돌릴 방법이 없다(onArrive 문서).
+      if (this.onArrive?.(this.tile) === 'stop') return
       if (dir) this.tryStep(dir, overflow)
       return
     }

@@ -334,6 +334,18 @@ export class PanelScene extends Phaser.Scene {
       this.unsubscribePlayer?.()
       this.unsubscribePlayer = null
       this.scrollList.destroy()
+      // ControlScene 이 touchSource 를 비우는 것과 **같은 이유**다. 씬을 다시
+      // 시작하면 create() 는 다시 돌지만 인스턴스는 그대로라, 여기서 놓지 않으면
+      // bind() 가 "두 번 불렸다"며 던진다. 맵을 넘을 때마다 WorldScene 이
+      // 재시작하므로 그건 드문 경우가 아니라 전환마다다. 게다가 그 예외는 씬
+      // 매니저의 작업 큐 안에서 터져서 **그 뒤 순서인 Dialogue 씬이 아예 시작되지
+      // 못했다** — 전환 뒤로는 말을 걸어도 대사창이 뜨지 않았다.
+      //
+      // 남겨 두는 것도 답이 아니다: 그 hub 는 이전 맵의 것이라, 패널이 잠그고
+      // 푸는 대상이 지금 걷고 있는 세계가 아니게 된다.
+      this.hub = null
+      this.control = null
+      this.open = null
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)

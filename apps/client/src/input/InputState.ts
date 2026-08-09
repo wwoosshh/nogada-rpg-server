@@ -39,9 +39,9 @@ const SOURCES: readonly InputSource[] = ['keyboard', 'touch']
  * hub 가 소스 이름을 아는 것과 같은 이유로 화면 이름도 안다: 이름이 없으면
  * "자기가 건 것만 자기가 푼다"를 표현할 방법이 없다.
  */
-export type WorldInputLockOwner = 'dialogue' | 'panel'
+export type WorldInputLockOwner = 'dialogue' | 'panel' | 'transition'
 
-const LOCK_OWNERS: readonly WorldInputLockOwner[] = ['dialogue', 'panel']
+const LOCK_OWNERS: readonly WorldInputLockOwner[] = ['dialogue', 'panel', 'transition']
 
 function noButtons(): Record<InputButton, boolean> {
   return { action: false, cancel: false, bag: false, craft: false }
@@ -99,7 +99,16 @@ export class InputHub {
    * 화면마다 "지금 세계를 잠가야 한다"고 말했는가. heldBySource 와 같은 구조이고
    * 이유도 같다 — 이것이 진실이고 아래 worldInputLocked 는 파생값이다.
    */
-  private readonly lockedBy: Record<WorldInputLockOwner, boolean> = { dialogue: false, panel: false }
+  private readonly lockedBy: Record<WorldInputLockOwner, boolean> = {
+    dialogue: false,
+    panel: false,
+    // 맵을 넘는 사이. 화면이 아니라 진행 중인 요청이 주인이지만 필요한 것은
+    // 같다 — 응답을 기다리는 동안 계속 걸으면 서버가 정한 도착 칸과 화면 위
+    // 위치가 어긋나고, 다음 프레임에 같은 전환 칸을 또 밟았다고 보낸다.
+    // 기존 주인 하나를 빌려 쓰지 않는 이유는 이 잠금 장치의 존재 이유
+    // 그것이다: 한 주인이 남이 건 잠금을 풀 수 없어야 한다.
+    transition: false,
+  }
 
   /**
    * 하나라도 잠가 두었으면 참이다. dir 과 action 만 이 값의 영향을 받는다 —

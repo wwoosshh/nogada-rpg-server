@@ -238,6 +238,14 @@ export class DialogueScene extends Phaser.Scene {
       this.scale.off('resize', this.handleResize, this)
       this.unsubscribeUtterance?.()
       this.unsubscribeUtterance = null
+      // PanelScene 의 같은 자리와 같은 이유다: 씬을 다시 시작하면 create() 는
+      // 다시 돌지만 인스턴스는 그대로라, 여기서 놓지 않으면 bind() 가 던진다.
+      // 맵을 넘을 때마다 그렇게 되고, 남은 hub 는 이전 맵의 것이다.
+      this.hub = null
+      this.control = null
+      // 열려 있던 대사를 접는 처리는 두지 않는다 — 대사창이 열려 있는 동안은
+      // 이동이 잠겨 있어서(setWorldInputLocked('dialogue')) 전환 칸을 밟을 수가
+      // 없고, 그 밖의 종료 경로는 게임 전체가 사라지는 길뿐이다.
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)

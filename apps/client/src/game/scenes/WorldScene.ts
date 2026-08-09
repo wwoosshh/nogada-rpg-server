@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import worldMap from '@nogada/data/maps/world.json' with { type: 'json' }
+import { START_MAP_ID } from '@nogada/data'
 import { frontTile, gameTimeAt, isAchieved, type Direction, type TilePos } from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
@@ -49,6 +49,16 @@ export class WorldScene extends Phaser.Scene {
   private panel!: PanelScene
   private dialogue!: DialogueScene
   private wallLayer!: Phaser.Tilemaps.TilemapLayer
+  /**
+   * 지금 그리고 있는 맵. `create()` 가 정하고 그 뒤로는 바뀌지 않는다 — 맵이
+   * 바뀐다는 것은 곧 씬을 다시 시작한다는 뜻이다.
+   *
+   * 스토어의 `player.location.mapId` 를 그때그때 읽지 않고 여기 붙잡아 두는
+   * 이유가 있다: 전환 응답이 도착하면 스토어의 맵 id 는 먼저 바뀌고 화면은
+   * 아직 이전 맵이다. 그 사이에 스토어를 읽으면 이전 맵 위에서 새 맵의 벽과
+   * 전환을 판정하게 된다.
+   */
+  private mapId = START_MAP_ID
   private mapWidth = 0
   private mapHeight = 0
   private readonly blocked = new Set<string>()
@@ -63,6 +73,13 @@ export class WorldScene extends Phaser.Scene {
    * 첫 번째가 두 번째에 덮인다(둘 다 서버에는 "말을 걸었다"로 남는다).
    */
   private talkPending = false
+  /**
+   * 전환 요청이 날아가 있는 동안 또 보내지 않는다 — gatherPending 과 같은
+   * 이유다. 세계 입력 잠금만으로는 부족하다: 잠금은 다음 프레임의 걸음을
+   * 막을 뿐, 이미 진행 중이던 한 걸음이 끝나면서 같은 칸을 다시 알리는 것은
+   * 막지 못한다.
+   */
+  private movePending = false
   /**
    * 아직 화면에 못 띄운 이정표 문구들.
    *
@@ -86,17 +103,45 @@ export class WorldScene extends Phaser.Scene {
       frameWidth: TILE,
       frameHeight: TILE,
     })
+
+    // 맵은 실행 중에 받는다. 정적 import 는 맵 수만큼 번들에 들어가서, 맵이
+    // 수십 장이 되면 한 장만 쓰는 첫 화면이 그 전부를 내려받고 기다린다.
+    // 어느 맵인지는 서버가 갖고 있는 위치가 정한다.
+    //
+    // 맵 id 가 한글이라 URL 로 쓰기 전에 인코딩한다 — 브라우저가 알아서 해
+    // 주기도 하지만, 그 자동 변환에 기대면 개발 서버의 미들웨어가 무엇을 받게
+    // 되는지가 브라우저마다 달라진다.
+    //
+    // 이미 캐시에 있는 키는 로더가 스스로 건너뛰므로, 왔던 맵으로 되돌아올 때
+    // 다시 내려받지 않는다.
+    const mapId = useGameStore.getState().player?.location.mapId ?? START_MAP_ID
+    this.load.tilemapTiledJSON(`map:${mapId}`, `maps/${encodeURIComponent(mapId)}.json`)
   }
 
   create(): void {
-    // 맵은 packages/data 가 소유한다. 서버가 노드 배치를 알아야 하기 때문이다.
-    // HTTP 로 받지 않고 번들에 들어오므로 Capacitor 에서 파일 경로 문제도 없다.
-    this.cache.tilemap.add('world', {
-      format: Phaser.Tilemaps.Formats.TILED_JSON,
-      data: worldMap,
-    })
+    // 씬을 다시 시작해도 인스턴스는 같은 것이 쓰인다. 선언과 함께 초기화한
+    // 필드는 그래서 이전 맵의 값을 그대로 들고 오므로, 새로 부팅한 것과 같은
+    // 자리에서 시작하도록 여기서 전부 비운다 — 하나라도 빠뜨리면 그 하나만
+    // 이전 맵의 기억을 갖는다.
+    //
+    // 벽과 상호작용 대상: 비우지 않으면 이전 맵의 노드·화자 칸이 새 맵에
+    // 보이지 않는 벽으로 남고, 그 앞에서 A 를 누르면 다른 맵의 노드를 캐려
+    // 든다(서버가 wrong_map 으로 거절하지만, 화면에는 아무 일도 안 일어난다).
+    this.blocked.clear()
+    this.byTile.clear()
+    // 이정표 큐: 트윈은 씬이 멈출 때 함께 사라져 onComplete 가 영영 오지
+    // 않는다. milestoneShowing 을 되돌리지 않으면 새 맵에서 이정표 문구가
+    // 큐에만 쌓이고 화면에는 하나도 안 뜬다.
+    this.milestoneQueue.length = 0
+    this.milestoneShowing = false
+    // 날아가 있던 요청의 응답은 이 씬이 이미 사라진 뒤에 온다. 참으로 남으면
+    // 새 맵에서 첫 채집·대화·전환이 통째로 무시된다.
+    this.gatherPending = false
+    this.talkPending = false
+    this.movePending = false
 
-    const map = this.make.tilemap({ key: 'world' })
+    this.mapId = useGameStore.getState().player?.location.mapId ?? START_MAP_ID
+    const map = this.make.tilemap({ key: `map:${this.mapId}` })
     // 첫 인자는 Tiled 안의 타일셋 이름, 둘째는 preload 에서 쓴 키다.
     const tileset = map.addTilesetImage('pipoya-basechip', 'pipoya-basechip')
     if (!tileset) throw new Error('타일셋을 찾을 수 없다: Tiled 의 타일셋 이름을 확인하라')
@@ -124,12 +169,28 @@ export class WorldScene extends Phaser.Scene {
       map.createLayer('overhead', tileset, 0, 0)?.setDepth(DEPTH.overhead)
     }
 
+    // 서 있던 자리가 맵 파일의 spawn 을 이긴다 — 새로고침해도, 맵을 넘어와도
+    // 서버가 아는 그 칸에 선다. 맵의 spawn 오브젝트는 그 위치가 아직 없거나
+    // (첫 접속) 다른 맵을 가리킬 때의 기본값이다.
+    const loc = useGameStore.getState().player?.location
     const spawn = map.findObject('spawn', (o) => o.name === 'player')
-    const startX = spawn?.x ?? TILE * 2
-    const startY = spawn?.y ?? TILE * 2
+    const startTile: TilePos =
+      loc && loc.mapId === this.mapId
+        ? { x: loc.x, y: loc.y }
+        : {
+            x: Math.floor((spawn?.x ?? TILE * 2) / TILE),
+            y: Math.floor((spawn?.y ?? TILE * 2) / TILE),
+          }
 
     this.createAnimations()
-    this.player = this.add.sprite(startX, startY, 'player', this.idleFrame('down'))
+    // 칸의 **중심**에 놓는다. update() 가 매 프레임 같은 식으로 다시 놓으므로
+    // 왼쪽 위 모서리에 놓으면 첫 프레임만 반 칸 어긋나 보인다.
+    this.player = this.add.sprite(
+      startTile.x * TILE + TILE / 2,
+      startTile.y * TILE + TILE / 2,
+      'player',
+      this.idleFrame('down'),
+    )
     this.player.setDepth(DEPTH.player)
 
     // 게임 좌표는 기기 픽셀이고 월드는 여전히 32px 타일이다. zoom 으로 그 차이를
@@ -150,6 +211,7 @@ export class WorldScene extends Phaser.Scene {
     // 판정하는 이유는, 노드 배치가 이미 데이터에 있어서 같은 사실을 두 곳에
     // 적을 필요가 없기 때문이다.
     for (const p of Object.values(useGameStore.getState().data.placements)) {
+      if (p.mapId !== this.mapId) continue
       this.blocked.add(`${p.x},${p.y}`)
       this.byTile.set(`${p.x},${p.y}`, {
         kind: 'node',
@@ -162,13 +224,18 @@ export class WorldScene extends Phaser.Scene {
     // 화자와 노드가 같은 칸에 놓이는 것은 빌드가 막으므로(validateSpeakerPlacements)
     // 여기서 byTile 이 서로를 덮어쓸 수 없다.
     for (const speaker of Object.values(useGameStore.getState().data.speakers)) {
+      if (speaker.mapId !== this.mapId) continue
       this.blocked.add(`${speaker.x},${speaker.y}`)
       this.byTile.set(`${speaker.x},${speaker.y}`, { kind: 'speaker', speakerId: speaker.id })
     }
 
     this.mover = new TileMover({
-      start: { x: Math.floor(startX / TILE), y: Math.floor(startY / TILE) },
+      start: startTile,
       isWalkable: (p) => this.isWalkable(p),
+      // 전환은 "칸에 올라선 순간"에 판정한다. update() 에서 칸이 바뀐 것을
+      // 보고 판정하면 이미 다음 걸음이 시작된 뒤라, 가장자리를 밟고도 한 칸
+      // 더 걸어 나간 뒤에 화면이 바뀐다(TileMover.onArrive 문서).
+      onArrive: (tile) => this.checkTransition(tile),
     })
 
     this.hub = new InputHub()
@@ -245,10 +312,22 @@ export class WorldScene extends Phaser.Scene {
     // 돌리는데 하나가 던지면 그 뒤 리스너(다음 씬의 구독)는 아예 실행되지 않아 글자
     // 표시가 조용히 멈춘다. 그래서 두 이벤트 모두에 같은 정리 함수를 걸고, 두 번
     // 불려도 안전하도록 가드한다.
+    // 이 정리는 이제 씬이 **끝날** 때만이 아니라 맵을 넘을 때마다 돈다.
+    // scene.restart() 가 SHUTDOWN 을 일으키기 때문이다. 그 뒤 create() 가 처음부터
+    // 다시 도므로 세 씬은 다시 launch 되고 구독도 다시 걸린다 — Phaser 의 씬
+    // 작업 큐가 [stop World, start World] 순서로 처리되고, stop 이 여기서 큐에
+    // 넣은 stop Control/Panel/Dialogue 가 start World 안의 launch 보다 앞서
+    // 들어가므로 "껐다가 켠다" 순서도 지켜진다.
     let cleanedUp = false
     const cleanup = (): void => {
       if (cleanedUp) return
       cleanedUp = true
+      // 남은 한쪽을 떼어 낸다. 이 함수는 두 이벤트에 걸려 있고 SHUTDOWN 은
+      // 재시작마다 오므로, 그냥 두면 재시작할 때마다 죽은 클로저가 DESTROY 에
+      // 하나씩 쌓인다. 가드가 있어 동작은 멀쩡하지만, 재시작 뒤가 새로 부팅한
+      // 것과 같은 상태여야 한다는 것이 이 자리의 규칙이다.
+      this.events.off(Phaser.Scenes.Events.SHUTDOWN, cleanup)
+      this.events.off(Phaser.Scenes.Events.DESTROY, cleanup)
       this.scene.stop('Control')
       this.scene.stop('Panel')
       this.scene.stop('Dialogue')
@@ -323,6 +402,58 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
+   * 방금 올라선 칸에 전환이 있으면 서버에 알리고, 그 자리에 멈춰 세운다.
+   *
+   * **"어디로 가고 싶다"가 아니라 "어느 칸을 밟았다"만 보낸다.** 목적지를
+   * 클라이언트가 고를 수 있게 하면 요청 하나로 아무 맵 아무 칸에나 설 수 있고,
+   * 그건 서버가 판정의 유일한 주인이라는 이 게임의 전제와 정면으로 어긋난다.
+   * 어디로 가는지는 서버가 전환표에서 찾아 응답의 `player.location` 으로 말한다.
+   *
+   * 전환이 있는지 **여기서도** 보는 이유는 판정이 아니라 통신량이다 — 걸음마다
+   * 서버에 묻지 않으려는 것이고, 판정 자체는 서버가 다시 한다.
+   *
+   * `'stop'` 을 돌려주는 것이 중요하다. 세계 입력 잠금은 **다음** 걸음을 막을
+   * 뿐이고, 이 걸음에 이어 시작되려는 걸음은 그것으로 막히지 않는다.
+   */
+  private checkTransition(here: TilePos): 'stop' | void {
+    if (this.movePending) return
+    const { player, data } = useGameStore.getState()
+    if (!player) return
+
+    const found = data.transitions.some(
+      (t) => t.fromMap === this.mapId && t.fromX === here.x && t.fromY === here.y,
+    )
+    if (!found) return
+
+    this.movePending = true
+    // 응답을 기다리는 동안 세계 입력을 잠근다. 잠그지 않으면 그 사이에 계속
+    // 걸어서, 서버가 정한 도착 칸과 플레이어가 보고 있던 자리가 어긋난 채로
+    // 맵이 바뀐다. 주인을 따로 두는 이유는 InputState 의 lockedBy 주석에 있다.
+    this.hub.setWorldInputLocked('transition', true)
+    void useGameStore
+      .getState()
+      .move(here.x, here.y)
+      .then(() => {
+        // 씬을 통째로 다시 시작한다. 맵 JSON·타일셋·벽·배치·화자가 전부 맵마다
+        // 다르므로, 바꿀 것을 하나씩 골라내는 것보다 create() 를 처음부터 다시
+        // 도는 편이 빠뜨릴 여지가 없다. 새 InputHub 가 만들어지므로 방금 건
+        // 잠금도 그때 함께 사라진다.
+        this.scene.restart()
+      })
+      .catch(() => {
+        // 서버가 거절했거나 닿지 못했다. 씬은 그대로 두고 잠금만 푼다 — 여기서
+        // 재시작하면 스토어의 위치는 아직 옛것이라 **마지막 전환 도착 칸**으로
+        // 되돌아가 순간이동한 것처럼 보인다.
+        this.hub.setWorldInputLocked('transition', false)
+      })
+      .finally(() => {
+        this.movePending = false
+      })
+
+    return 'stop'
+  }
+
+  /**
    * 그 대상에서 누르고 있는 것만으로 반복되는가.
    *
    * 숙련도 상수를 직접 비교하지 않는다 — 그 기술의 `repeat` 이정표를 실제로
@@ -358,6 +489,8 @@ export class WorldScene extends Phaser.Scene {
     this.dialogue.applyInput()
     if (!dialogueWasOpen) this.panel.applyInput()
 
+    // 전환 판정은 이 안에서 일어난다 — 걸음이 끝나는 그 순간에 mover 가
+    // checkTransition() 을 부른다(create() 의 onArrive).
     this.mover.update(delta, this.hub.state.dir)
 
     const px = this.mover.pixel
@@ -487,6 +620,7 @@ export class WorldScene extends Phaser.Scene {
     const { data } = useGameStore.getState()
 
     for (const placement of Object.values(data.placements)) {
+      if (placement.mapId !== this.mapId) continue
       const def = data.nodes[placement.nodeId]
       if (!def) {
         console.warn(`배치가 정의되지 않은 노드를 가리킨다: ${placement.instanceId} -> ${placement.nodeId}`)
@@ -512,14 +646,12 @@ export class WorldScene extends Phaser.Scene {
    * 같은 배치를 알아야 하기 때문이다(설계 문서 9장). 그래서 여기서는 맵
    * 오브젝트 레이어를 보지 않고 데이터만 본다. 좌표가 벽이거나 맵 밖이거나
    * 노드와 겹치는 경우는 빌드가 이미 막았다(validateSpeakerPlacements).
-   *
-   * 지금 맵이 하나뿐이라 `speaker.mapId` 를 보지 않는다 — 맵이 늘면 여기서
-   * 현재 맵 id 로 걸러야 한다(같은 문서).
    */
   private spawnSpeakers(): void {
     const { data } = useGameStore.getState()
 
     for (const speaker of Object.values(data.speakers)) {
+      if (speaker.mapId !== this.mapId) continue
       new SpeakerMarker({
         scene: this,
         x: speaker.x * TILE + TILE / 2,
@@ -533,6 +665,10 @@ export class WorldScene extends Phaser.Scene {
 
   private createAnimations(): void {
     for (const facing of Object.keys(WALK_ROW) as Direction[]) {
+      // 애니메이션은 씬이 아니라 게임 전체가 갖는다. 맵을 넘을 때마다 이
+      // create() 가 다시 도는데, 이미 있는 키를 다시 만들면 Phaser 가 조용히
+      // 무시하면서 콘솔에 경고만 남긴다 — 전환마다 네 줄씩이다.
+      if (this.anims.exists(`walk-${facing}`)) continue
       const start = WALK_ROW[facing] * 3
       this.anims.create({
         key: `walk-${facing}`,
