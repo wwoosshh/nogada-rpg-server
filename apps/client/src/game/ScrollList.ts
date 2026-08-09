@@ -1,5 +1,12 @@
 import Phaser from 'phaser'
 import { addText } from './gameText.js'
+import {
+  dragDistance,
+  groupAtPointer,
+  scrollAfterDrag,
+  type ListCamera,
+  type ScrollGroupBounds,
+} from './scrollListGeometry.js'
 
 export interface ScrollListLine {
   text: string
@@ -27,12 +34,6 @@ const ROW_GAP = 3
  */
 const PRESS_CANCEL_DISTANCE = 10
 
-interface PressGroup {
-  id: string
-  top: number
-  bottom: number
-}
-
 /**
  * 세로로 쌓이는 텍스트 줄을 마스크 + 드래그로 스크롤한다.
  *
@@ -47,14 +48,21 @@ interface PressGroup {
  * 포인터 이벤트(pointerdown/move/up)는 마우스와 터치를 Phaser 가 이미
  * 하나로 합쳐 준다 — TouchSource 의 문서와 같은 이유로, 이 클래스는 장치를
  * 구분하지 않는다.
+ *
+ * **이 클래스 안의 좌표는 전부 씬 좌표다**(viewX·viewY·viewW·viewH·scrollY·
+ * contentHeight·그룹 경계). Phaser 가 핸들러에 주는 `pointer.x`/`pointer.y` 만
+ * 캔버스 백킹스토어 픽셀이고, 그 둘을 잇는 계산은 전부 scrollListGeometry 에
+ * 있다 — 이 파일에서 두 좌표계가 섞이는 자리를 아예 없애기 위해서다. 한때
+ * `pointer.y` 를 씬 좌표인 viewY 와 그대로 뺐고, 기기 픽셀비 2인 화면에서
+ * 제작 레시피를 누르면 네 칸 아래가 눌리거나 아무것도 안 눌렸다.
  */
 export class ScrollList {
   private readonly container: Phaser.GameObjects.Container
   private readonly maskShape: Phaser.GameObjects.Graphics
   private readonly hitZone: Phaser.GameObjects.Zone
   private rows: Phaser.GameObjects.Text[] = []
-  /** buildRows() 가 채운다 — groupId 가 있는 줄들의 세로 범위. 화면 Y 로부터 "어느 그룹을 눌렀는가"를 답하는 데 쓴다(groupAt). */
-  private groups: PressGroup[] = []
+  /** buildRows() 가 채운다 — groupId 가 있는 줄들의 세로 범위. 포인터로부터 "어느 그룹을 눌렀는가"를 답하는 데 쓴다(groupAtPointer). */
+  private groups: ScrollGroupBounds[] = []
 
   private viewX = 0
   private viewY = 0
@@ -65,7 +73,15 @@ export class ScrollList {
 
   /** 드래그 중인 포인터의 id. null 이면 아무 손가락도 이 리스트를 쥐고 있지 않다. */
   private dragPointerId: number | null = null
-  private dragStartY = 0
+  /**
+   * 드래그를 시작한 지점의 **캔버스 픽셀** Y(`pointer.y` 그대로).
+   *
+   * 씬 좌표로 미리 옮겨 두지 않는다 — 옮기는 일은 scrollListGeometry 가 하고,
+   * 여기서는 원본을 그대로 들고 있다가 매번 같은 함수에 넘긴다. 한쪽만 옮겨
+   * 둔 채로 다른 쪽과 빼는 것이 정확히 이 버그의 모양이었으므로, 이 클래스
+   * 안에 두 좌표계가 섞여 있는 자리를 아예 만들지 않는다.
+   */
+  private dragStartPointerY = 0
   private dragStartScroll = 0
 
   /** 지금 손가락이 쥐고 있는 그룹. 드래그 임계값을 넘으면(스크롤로 확정되면) null 로 풀린다. */
@@ -134,7 +150,7 @@ export class ScrollList {
     this.groups = []
 
     let y = 0
-    let openGroup: PressGroup | null = null
+    let openGroup: ScrollGroupBounds | null = null
     const wrapWidth = Math.max(0, this.viewW - 8)
     for (const line of lines) {
       const text = addText(this.scene, 4, y, line.text, {
@@ -201,13 +217,17 @@ export class ScrollList {
     this.applyScroll()
   }
 
-  /** 화면 Y 좌표(포인터 좌표계)가 속한 그룹의 id. 그룹이 없는 자리(순수 표시 줄, 또는 내용 밖)면 null. */
-  private groupAt(screenY: number): string | null {
-    const contentY = screenY - this.viewY + this.scrollY
-    for (const g of this.groups) {
-      if (contentY >= g.top && contentY < g.bottom) return g.id
-    }
-    return null
+  /**
+   * 이 목록을 그리는 카메라. 포인터의 캔버스 픽셀을 씬 좌표로 되돌리는 데 쓴다.
+   *
+   * **"내 씬의" 카메라라는 것이 요점이다.** move·up 핸들러가 `scene.input` 에
+   * 붙어 있어(handlePointerDown 문서) 오브젝트 로컬 좌표를 받을 수 없으므로
+   * 어느 카메라로 되돌릴지를 골라야 하는데, `pointer.worldY` 는 포인터를
+   * 마지막으로 히트 테스트한 **아무 씬**의 카메라가 남긴 값이라 고를 수 없다
+   * (scrollListGeometry.toSceneY 문서). 여기서 한 번만 고른다.
+   */
+  private get camera(): ListCamera {
+    return this.scene.cameras.main
   }
 
   /** 이번 프레임에 새로 눌린 그룹. 한 번 읽으면 소비된다 — 다음 읽음부터는 새로 눌리기 전까지 null. */
@@ -271,7 +291,7 @@ export class ScrollList {
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (!this.container.visible) return
     this.dragPointerId = pointer.id
-    this.dragStartY = pointer.y
+    this.dragStartPointerY = pointer.y
     this.dragStartScroll = this.scrollY
 
     // 누른 자리에 그룹(예: 레시피 한 칸)이 있으면 "쥐었다"와 "새로 눌렸다"를
@@ -280,7 +300,10 @@ export class ScrollList {
     // 스크롤로 확정되면 handlePointerMove 가 heldGroupId 만 따로 풀어준다 —
     // tappedGroupId 는 건드리지 않으므로 짧은 탭이 곧바로 스크롤 제스처로
     // 이어져도(예: 탭 직후 약간의 흔들림) 최초 한 번의 시도는 살아남는다.
-    const group = this.groupAt(pointer.y)
+    const group = groupAtPointer(this.groups, pointer.y, this.camera, {
+      viewY: this.viewY,
+      scrollY: this.scrollY,
+    })
     this.heldGroupId = group
     this.tappedGroupId = group
 
@@ -303,20 +326,24 @@ export class ScrollList {
     if (!this.container.visible) return
     if (this.dragPointerId !== pointer.id) return
 
-    const dy = pointer.y - this.dragStartY
-
     // 스크롤로 확정되면(임계값을 넘는 이동) 쥐고 있던 그룹을 놓는다 — 한
     // 손가락 제스처가 "레시피를 누르고 있다"와 "목록을 스크롤한다"를 동시에
     // 뜻할 수는 없으므로 하나만 살아남아야 한다. 이미 풀렸으면(null) 매
-    // 프레임 다시 계산할 것도 없다.
-    if (this.heldGroupId !== null && Math.abs(dy) > PRESS_CANCEL_DISTANCE) {
-      this.heldGroupId = null
+    // 프레임 다시 계산할 것도 없다. 거리는 PRESS_CANCEL_DISTANCE 와 같은
+    // 씬 좌표로 재야 한다 — 예전처럼 캔버스 픽셀로 재면 기기 픽셀비 2인
+    // 화면에서 절반의 거리에 이미 임계값을 넘어, 레시피를 누르고 있으려던
+    // 손가락이 스크롤로 새어 나갔다.
+    if (this.heldGroupId !== null) {
+      const moved = dragDistance(this.dragStartPointerY, pointer.y, this.camera)
+      if (Math.abs(moved) > PRESS_CANCEL_DISTANCE) this.heldGroupId = null
     }
 
-    // 손가락이 위로(화면 y 감소) 갈수록 목록은 아래 내용을 보여줘야
-    // 하므로(스크롤 값 증가) 부호를 뒤집는다 — 흔한 "내용을 손가락으로
-    // 직접 미는" 스크롤 방향이다.
-    this.scrollY = this.dragStartScroll - dy
+    this.scrollY = scrollAfterDrag(
+      this.dragStartScroll,
+      this.dragStartPointerY,
+      pointer.y,
+      this.camera,
+    )
     this.clampScroll()
     this.applyScroll()
   }
