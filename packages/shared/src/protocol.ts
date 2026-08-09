@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { emptyDialogueHistory } from './dialogue.js'
 import { SKILL_IDS, type SkillId } from './types.js'
 
 export const ItemInstanceSchema = z.object({
@@ -46,7 +47,20 @@ export const PlayerStateSchema = z.object({
   equipped: z.record(z.string(), z.string()),
   nextActionAt: z.number(),
   celebrated: z.array(z.string()),
-  dialogueHistory: DialogueHistorySchema,
+  // 안쪽 lastTalkAt 과 **같은 이유로** 바깥 필드에도 기본값을 단다. 안쪽만
+  // 챙기고 바깥을 필수로 두면 그 배려가 닿는 세이브가 하나도 없다 —
+  // dialogueHistory 자체가 대화 태스크에서 생긴 필드라, 그 전에 저장된
+  // 플레이어는 이 키가 통째로 없어서 여기서 먼저 걸리고 readPlayers(store.ts)
+  // 가 플레이어를 통째로 버린다. 숙련도도, 인벤토리도, 강화한 도구도, 넘긴
+  // 이정표도 같이. 없는 이력은 "아직 아무와도 말해 본 적 없다"와 같은 뜻이라
+  // 마이그레이션 없이 그것이 맞는 답이다.
+  //
+  // 기본값을 리터럴이 아니라 emptyDialogueHistory 로 주는 이유가 둘이다: 빈
+  // 이력의 모양을 두 곳에 적지 않는 것이 하나이고(그 함수가 유일한 출처다),
+  // zod 가 파싱마다 그 함수를 다시 불러 **새 객체**를 만들게 하는 것이 다른
+  // 하나다 — 리터럴을 주면 세이브들이 같은 said 배열을 공유해서 한 플레이어가
+  // 들은 말이 다른 플레이어에게도 "이미 말했다"가 된다.
+  dialogueHistory: DialogueHistorySchema.default(emptyDialogueHistory),
 })
 
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })

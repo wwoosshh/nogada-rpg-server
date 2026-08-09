@@ -110,4 +110,57 @@ describe('PlayerStore', () => {
     writeFileSync(file, '{ 이건 JSON 이 아니다', 'utf8')
     expect(new PlayerStore(file).get('local').skills.mineral).toBe(0)
   })
+
+  it('대화 기능 이전에 저장된 세이브도 그대로 살아난다 — 숙련도도 인벤토리도 잃지 않는다', () => {
+    // dialogueHistory 는 대화 태스크에서 생긴 필드다. 그 전에 저장된 세이브에는
+    // 그 키가 아예 없는데, 스키마가 그걸 필수로 두면 readPlayers 가 플레이어를
+    // **통째로** 버린다 — 수십 시간짜리 숙련도도, 강화한 도구도, 넘긴 이정표도
+    // 같이. 형식이 진짜로 깨진 세이브(위 테스트)와 달리 이건 멀쩡한 세이브이고,
+    // 없는 이력은 "아직 아무와도 말해 본 적 없다"와 같은 뜻이라 마이그레이션
+    // 없이 그것이 맞는 답이다.
+    const legacy = {
+      id: 'local',
+      skills: { ice: 12345, wood: 0, mineral: 300, herb: 0, crafting: 700 },
+      stacks: { copper_ore: 42 },
+      instances: [{ instanceId: 'inst-1', itemId: 'copper_pickaxe', enhanceLevel: 3 }],
+      equipped: { mineral: 'inst-1' },
+      nextActionAt: 0,
+      celebrated: ['ice_10000'],
+      // dialogueHistory 가 없다 — 이 필드가 생기기 전의 세이브다.
+    }
+    writeFileSync(file, JSON.stringify({ local: legacy }), 'utf8')
+
+    const p = new PlayerStore(file).get('local')
+
+    expect(p.skills.ice).toBe(12345)
+    expect(p.stacks.copper_ore).toBe(42)
+    expect(p.instances).toEqual([{ instanceId: 'inst-1', itemId: 'copper_pickaxe', enhanceLevel: 3 }])
+    expect(p.celebrated).toEqual(['ice_10000'])
+    // 빈 이력으로 채워 준다 — 그래야 이 상태를 그대로 쓰는 대화 판정이 다시
+    // undefined 를 만나지 않는다.
+    expect(p.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
+  })
+
+  it('한 세이브의 빈 이력이 다른 세이브와 같은 객체가 아니다 — 한쪽의 대화가 다른 쪽에 새면 안 된다', () => {
+    // 기본값을 리터럴로 주면 zod 가 그 **한 객체**를 모든 파싱 결과에 물려
+    // 준다. 두 플레이어가 같은 said 배열을 공유하면 한쪽이 말한 것이 다른
+    // 쪽에서도 "이미 말했다"가 된다.
+    const legacy = (id: string) => ({
+      id,
+      skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      stacks: {},
+      instances: [],
+      equipped: {},
+      nextActionAt: 0,
+      celebrated: [],
+    })
+    writeFileSync(file, JSON.stringify({ a: legacy('a'), b: legacy('b') }), 'utf8')
+
+    const store = new PlayerStore(file)
+    const a = store.get('a')
+    a.dialogueHistory.said.push('노인.greet.abc')
+    store.save(a)
+
+    expect(store.get('b').dialogueHistory.said).toEqual([])
+  })
 })

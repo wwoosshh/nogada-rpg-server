@@ -45,4 +45,24 @@ describe('PlayerStateSchema', () => {
 
     expect(PlayerStateSchema.safeParse(save).success).toBe(false)
   })
+
+  // dialogueHistory 가 없는 세이브는 형식이 깨진 것이 아니라 **그 필드가 생기기
+  // 전의 것**이다. 거부하면 store.ts 의 readPlayers 가 플레이어를 통째로 버려
+  // 숙련도도 인벤토리도 같이 사라진다.
+  it('dialogueHistory 가 통째로 없는 옛 세이브를 빈 이력으로 받아들인다', () => {
+    const save = validSave()
+    delete save.dialogueHistory
+
+    const parsed = PlayerStateSchema.safeParse(save)
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
+  })
+
+  it('파싱할 때마다 새 빈 이력을 만든다 — 세이브 둘이 같은 배열을 공유하면 안 된다', () => {
+    const first = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())
+    const second = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())
+
+    first.dialogueHistory.said.push('노인.greet.abc')
+    expect(second.dialogueHistory.said).toEqual([])
+  })
 })
