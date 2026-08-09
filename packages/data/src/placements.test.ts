@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { NodeDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
+import { parseCsv } from './parse.js'
 import { parsePlacements, parseSpawn, parseTerrain } from './placements.js'
 import { parseTmx } from './tmx.js'
 
@@ -129,11 +130,19 @@ describe('parseTerrain', () => {
   it('실제 맵을 읽는다', () => {
     // 맵 JSON 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를
     // 직접 parseTmx 로 읽는다. build.ts 가 하는 것과 같은 경로다.
+    //
+    // **어느 맵인지는 등록부가 정한다.** 파일 이름과 칸 수를 여기 적어 두면
+    // 맵을 개명하거나 다시 그릴 때마다 parseTerrain 과 아무 상관 없는 이유로
+    // 이 테스트가 깨진다 — 채집장을 새로 그렸을 때 실제로 그랬다.
     const here = dirname(fileURLToPath(import.meta.url))
-    const mapJson = parseTmx(readFileSync(join(here, '..', 'maps', '얼음채집장.tmx'), 'utf8'))
+    const rows = parseCsv(readFileSync(join(here, '..', 'csv', 'maps.csv'), 'utf8'))
+    const file = rows[0]?.['file']
+    expect(file, 'maps.csv 에 맵이 하나도 없다').toBeDefined()
+
+    const mapJson = parseTmx(readFileSync(join(here, '..', 'maps', String(file)), 'utf8'))
     const t = parseTerrain(mapJson)
-    expect(t.width).toBe(30)
-    expect(t.height).toBe(30)
+    expect(t.width).toBe(mapJson.width)
+    expect(t.height).toBe(mapJson.height)
     expect(t.walls.size).toBeGreaterThan(0)
   })
 })

@@ -23,11 +23,25 @@ function buildTestApp() {
 
 type TestApp = ReturnType<typeof buildTestApp>
 
+/** 이 테스트가 말을 거는 화자. 대사 파일이 있는 실재 화자여야 한다. */
+const ELDER = '채집장노인'
+
 /** 채집 노드가 놓인 맵. 어느 맵인지는 데이터가 정한다 — 여기 이름을 적으면 맵을 개명할 때 갈라진다. */
 function fieldMapId(): string {
   const placement = loadGameData().placements['copper_vein-1']
   if (!placement) throw new Error('copper_vein-1 배치가 없다')
   return placement.mapId
+}
+
+/**
+ * 그 화자가 서 있는 맵. 노드가 놓인 맵과 **같다고 가정하지 않는다** —
+ * 개발용 시험장에는 온갖 노드가 섞여 있지만 화자는 없고, 화자는 자기 이름이
+ * 가리키는 실제 채집장에 서 있다. 여기도 데이터에서 뽑는다.
+ */
+function speakerMapId(speakerId: string): string {
+  const speaker = loadGameData().speakers[speakerId]
+  if (!speaker) throw new Error(`speakers.csv 에 ${speakerId} 가 없다`)
+  return speaker.mapId
 }
 
 /** 실제 전환표에서 두 맵을 잇는 줄. 좌표를 지어내면 CSV 가 바뀔 때 이 테스트가 거짓말을 한다. */
@@ -44,13 +58,18 @@ async function step(app: TestApp, t: TransitionDef): Promise<void> {
 }
 
 /**
- * 채집 노드와 화자가 있는 맵으로 걸어 넘어간다.
+ * 채집 노드가 있는 맵으로 걸어 넘어간다.
  *
- * 시작 맵은 마을이라 그 자리에는 캘 것도 말 걸 것도 없다. 채집·대화 라우트를
- * 시험하려면 먼저 채집장에 서야 하고, 그 걸음도 실제 전환표를 밟아서 간다.
+ * 시작 맵은 마을이라 그 자리에는 캘 것이 없다. 채집 라우트를 시험하려면 먼저
+ * 노드 앞에 서야 하고, 그 걸음도 실제 전환표를 밟아서 간다.
  */
 async function enterField(app: TestApp): Promise<void> {
   await step(app, transitionBetween(startLocation(loadGameData()).mapId, fieldMapId()))
+}
+
+/** 화자가 있는 맵으로 걸어 넘어간다. 대화 라우트는 같은 맵에 서 있어야 답한다. */
+async function enterSpeakerMap(app: TestApp): Promise<void> {
+  await step(app, transitionBetween(startLocation(loadGameData()).mapId, speakerMapId(ELDER)))
 }
 
 describe('GET /api/health', () => {
@@ -302,22 +321,21 @@ describe('POST /api/craft', () => {
 describe('POST /api/talk', () => {
   it('화자에게 말을 걸면 발화 전체가 온다', async () => {
     const app = buildTestApp()
-    await enterField(app)
+    await enterSpeakerMap(app)
     const data = loadGameData()
-    const SPEAKER = '채집장노인'
 
     // 어떤 규칙이 뽑힐지는 서버 난수라 이 테스트가 통제할 수 없다. 대신 응답의
     // 첫 줄로 실제 콘텐츠(loadGameData)에서 그 규칙을 되짚어, 그 규칙의 발화
     // 전체와 응답을 비교한다 — `lines.length > 0` 만 보면 서비스가 발화를
     // 한 줄로 잘라 보내도(칸 하나만 보내도) 이 테스트는 계속 통과한다.
     const talkAndAssertFullUtterance = async (): Promise<string[]> => {
-      const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: SPEAKER } })
+      const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
       expect(res.statusCode).toBe(200)
       const body = res.json() as { speaker: string; lines: string[] }
-      expect(body.speaker).toBe(SPEAKER)
+      expect(body.speaker).toBe(ELDER)
       expect(body.lines.length).toBeGreaterThan(0)
 
-      const rule = data.dialogue.find((r) => r.speaker === SPEAKER && r.lines[0] === body.lines[0])
+      const rule = data.dialogue.find((r) => r.speaker === ELDER && r.lines[0] === body.lines[0])
       expect(rule, `첫 줄 "${body.lines[0]}" 로 실제 콘텐츠에서 규칙을 찾지 못했다`).toBeDefined()
       expect(body.lines).toEqual(rule!.lines)
       return body.lines
@@ -339,9 +357,9 @@ describe('POST /api/talk', () => {
 
   it('대화 이력을 저장해서 다음 조회에 반영한다', async () => {
     const app = buildTestApp()
-    await enterField(app)
+    await enterSpeakerMap(app)
 
-    const talk = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    const talk = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     expect(talk.statusCode).toBe(200)
 
     const state = await app.inject({ method: 'GET', url: '/api/state' })
@@ -350,20 +368,20 @@ describe('POST /api/talk', () => {
     }
 
     // 저장하지 않으면 같은 인사가 매번 처음처럼 나오고 once 규칙은 영원히 한 번째다.
-    expect(saved.player.dialogueHistory.recent['채집장노인']).toHaveLength(1)
-    expect(saved.player.dialogueHistory.lastTalkAt['채집장노인']).toBeGreaterThan(0)
+    expect(saved.player.dialogueHistory.recent[ELDER]).toHaveLength(1)
+    expect(saved.player.dialogueHistory.lastTalkAt[ELDER]).toBeGreaterThan(0)
 
     await app.close()
   })
 
   it('대화는 행동 간격을 소비하지 않는다', async () => {
     const app = buildTestApp()
-    await enterField(app)
+    await enterSpeakerMap(app)
 
     // 서비스 단위 테스트가 같은 것을 보지만, 라우트가 나중에 채집처럼 간격을
     // 걸도록 "통일"되는 순간 그 단위 테스트는 아무것도 막지 못한다.
     const before = await app.inject({ method: 'GET', url: '/api/state' })
-    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     const after = await app.inject({ method: 'GET', url: '/api/state' })
 
     const nextActionAt = (res: typeof before) => (res.json() as { player: { nextActionAt: number } }).player.nextActionAt
@@ -374,11 +392,11 @@ describe('POST /api/talk', () => {
 
   it('연달아 말을 걸어도 거부하지 않는다', async () => {
     const app = buildTestApp()
-    await enterField(app)
+    await enterSpeakerMap(app)
 
     // 채집이라면 두 번째가 too_fast 다. 대화에는 간격이 없다.
-    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
-    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
 
     expect(res.statusCode).toBe(200)
 
@@ -457,18 +475,18 @@ describe('POST /api/move', () => {
 
   it('맵을 넘어간 뒤에는 이전 맵의 화자에게 말을 걸 수 없다', async () => {
     const app = buildTestApp()
-    await enterField(app)
+    await enterSpeakerMap(app)
     // 여기서는 말이 통한다 — 아래의 거절이 "원래 안 되는 것" 이 아니라 맵을
     // 넘어간 결과임을 못 박는다.
-    const inside = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    const inside = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     expect(inside.statusCode).toBe(200)
 
     // 서비스 단위 테스트가 같은 것을 보지만, 그 검사는 라우트가 위치를 실제로
     // 저장하고 다시 읽어 오지 않으면 게임에서는 아무 효과가 없다 — 여기서
     // 확인하는 것이 그 연결이다.
-    await step(app, transitionBetween(fieldMapId(), startLocation(loadGameData()).mapId))
+    await step(app, transitionBetween(speakerMapId(ELDER), startLocation(loadGameData()).mapId))
 
-    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ code: 'wrong_map' })
 
