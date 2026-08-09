@@ -143,9 +143,9 @@ export class WorldScene extends Phaser.Scene {
 
   preload(): void {
     // 맵이 어느 시트를 쓰는지는 아직 모른다 — 맵 JSON 은 바로 아래에서 이제야
-    // 큐에 들어가고, 그것을 읽는 것은 create() 다. 그래서 네 장을 다 올린다.
+    // 큐에 들어가고, 그것을 읽는 것은 create() 다. 그래서 다섯 장을 다 올린다.
     // 로더가 이미 캐시에 있는 키는 건너뛰므로 맵을 넘을 때 다시 받지 않고,
-    // 네 장 합쳐 약 560KB 다.
+    // 다섯 장 합쳐 약 590KB 다.
     for (const name of TILESET_NAMES) {
       this.load.image(name, `tilesets/${name}.png`)
     }

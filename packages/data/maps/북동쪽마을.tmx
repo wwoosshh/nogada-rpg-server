@@ -12,6 +12,9 @@
  <tileset firstgid="1065" name="pipoya-addwork" tilewidth="32" tileheight="32" tilecount="768" columns="12">
   <image source="../../../apps/client/public/tilesets/pipoya-addwork.png" width="384" height="2048"/>
  </tileset>
+ <tileset firstgid="1833" name="pipoya-water" tilewidth="32" tileheight="32" tilecount="96" columns="8">
+  <image source="../../../apps/client/public/tilesets/pipoya-water.png" width="256" height="384"/>
+ </tileset>
  <layer id="1" name="ground" width="75" height="20">
   <data encoding="csv">
 4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,

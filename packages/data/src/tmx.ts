@@ -93,12 +93,17 @@ export interface TiledMapJson {
  *
  * 순서는 맵의 `firstgid` 순서와 같게 둔다. 그 덕에 앞 세 장의 gid 는 원본
  * 시트의 타일 번호 + 1 로 그대로 이어진다(1..512, 513..1024, 1025..1064).
+ *
+ * `pipoya-water` 만 출처가 다르다 — 베이스칩에는 물이 없다. 이것은 팩의
+ * `[A]_type3` 오토타일 두 벌(깊은 바다·물가 파도)을 위아래로 이어 붙인
+ * 96 타일짜리 시트다. 맨 뒤에 두어 앞 네 장의 gid 를 한 칸도 건드리지 않는다.
  */
 export const TILESET_NAMES = [
   'pipoya-basechip',
   'pipoya-basechip-2',
   'pipoya-basechip-3',
   'pipoya-addwork',
+  'pipoya-water',
 ] as const
 
 export type TilesetName = (typeof TILESET_NAMES)[number]
@@ -213,7 +218,7 @@ export function parseTmx(xml: string): TiledMapJson {
 
   // 클라이언트가 못 들고 있는 그림을 요구하는 맵은 여기서 세운다 — 그 맵은
   // 브라우저에서 addTilesetImage 가 null 을 돌려주는 자리에서야 터진다.
-  // 타일셋이 넷이 된 지금 이 검사가 이름 한 개짜리 검사를 대신한다.
+  // 타일셋이 여럿이 된 지금 이 검사가 이름 한 개짜리 검사를 대신한다.
   const known: readonly string[] = TILESET_NAMES
   for (const ts of tilesets) {
     if (!known.includes(ts.name)) {

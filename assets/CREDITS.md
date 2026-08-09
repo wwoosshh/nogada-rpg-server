@@ -68,10 +68,14 @@ assets/licensed/
 │  │                              Tiled 에서 오토타일로 직접 못 씀
 │  ├─ [A]_type2/                  각 34개, 64x96 = 2x3 = 6 타일 — RPG Maker 축약 포맷
 │  ├─ [A]_type3/                  각 34개, **256x192 = 8x6 = 48 타일 — 완전히 펼친
-│  │                              blob 이라 Tiled 에서 그대로 쓸 수 있다.**
-│  │                              (예전 이 표는 셋 다 32x160 이라고 적어 두었다.
-│  │                              그 오기 때문에 물·물가·지형 경계 오토타일이
-│  │                              "Tiled 에서 못 쓴다" 로 잠겨 있었다.)
+│  │  │                           blob 이라 Tiled 에서 그대로 쓸 수 있다.**
+│  │  │                           (예전 이 표는 셋 다 32x160 이라고 적어 두었다.
+│  │  │                           그 오기 때문에 물·물가·지형 경계 오토타일이
+│  │  │                           "Tiled 에서 못 쓴다" 로 잠겨 있었다.)
+│  │  │                           물·폭포만 2048x192 인데, 그건 애니메이션
+│  │  │                           8프레임을 가로로 이어 붙였기 때문이다.
+│  │  └─ not_animation/           그 첫 프레임만 잘라 둔 것. 256x192.
+│  │                              `pipoya-water.png` 가 여기서 나온다
 │  └─ SampleMap/                  완성 .tmx + 외부 .tsx 예제
 ├─ PIPOYA FREE RPG Character Sprites 32x32/
 │  └─ Male/ Female/ Enemy/ Boss/ Animal/ Soldier/ Other/ Xmas/ ...
@@ -150,7 +154,7 @@ hammer_mithril:940
 ICONS
 ```
 
-타일셋은 **단순 복사가 아니라 네 장으로 잘라야 한다** (아래 참조). PowerShell 에서, 저장소 루트에서:
+타일셋은 **단순 복사가 아니라 다섯 장으로 잘라 잇는다** (아래 참조). PowerShell 에서, 저장소 루트에서:
 
 ```powershell
 Add-Type -AssemblyName System.Drawing
@@ -173,6 +177,35 @@ $img.Dispose()
 Copy-Item "assets\licensed\Unorganized Parts\Unorganized Parts\addwork.png" "$out\pipoya-addwork.png"
 ```
 
+물 시트는 자르는 것이 아니라 **오토타일 두 벌을 위아래로 잇는다.** 베이스칩에는 물이 없다.
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+$src = "assets\licensed\Pipoya RPG Tileset 32x32\Pipoya RPG Tileset 32x32\[A]_type3\not_animation"
+$out = "apps\client\public\tilesets"
+# -LiteralPath 가 필수다. 파일명의 [A] 는 Resolve-Path 에게 와일드카드로 읽힌다.
+$deep  = New-Object System.Drawing.Bitmap((Resolve-Path -LiteralPath "$src\[A]Water1_pipo.png").Path)
+$shore = New-Object System.Drawing.Bitmap((Resolve-Path -LiteralPath "$src\[A]Water7_pipo.png").Path)
+$sheet = New-Object System.Drawing.Bitmap(256, 384, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$g = [System.Drawing.Graphics]::FromImage($sheet)
+# SourceCopy 라야 화소가 그대로 옮겨진다. 기본값(SourceOver)은 알파를 곱했다 푸는데,
+# 이 두 시트는 48타일 중 47장이 반투명이라 그 오차가 물가 전체에 남는다.
+$g.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+$g.DrawImage($deep,  (New-Object System.Drawing.Rectangle(0,   0, 256, 192)), 0, 0, 256, 192, [System.Drawing.GraphicsUnit]::Pixel)
+$g.DrawImage($shore, (New-Object System.Drawing.Rectangle(0, 192, 256, 192)), 0, 0, 256, 192, [System.Drawing.GraphicsUnit]::Pixel)
+$g.Dispose()
+$sheet.Save((Join-Path (Get-Location) "$out\pipoya-water.png"), [System.Drawing.Imaging.ImageFormat]::Png)
+$sheet.Dispose(); $deep.Dispose(); $shore.Dispose()
+```
+
+ImageMagick 이라면 한 줄이다:
+
+```bash
+SRC="assets/licensed/Pipoya RPG Tileset 32x32/Pipoya RPG Tileset 32x32/[A]_type3/not_animation"
+magick "$SRC/[A]Water1_pipo.png" "$SRC/[A]Water7_pipo.png" -append \
+  apps/client/public/tilesets/pipoya-water.png
+```
+
 `Bitmap.Clone` 은 화소를 그대로 옮긴다. `Graphics.DrawImage` 를 쓰면 알파가 곱해졌다 풀리면서
 반투명 화소가 1/255 만큼 흔들린다 — 예전 이 문서의 방법이 그랬다.
 
@@ -189,7 +222,7 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 
 파일명 개명은 필수다. 원본 이름의 대괄호와 공백이 URL 인코딩 문제를 일으킨다.
 
-### 시트 네 장과 그 gid 구간
+### 시트 다섯 장과 그 gid 구간
 
 | 시트 | 원본 | 원본 행 | 크기 | 격자 | 타일 | gid |
 |---|---|---|---|---|---|---|
@@ -197,9 +230,45 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 | `pipoya-basechip-2.png` | 〃 | 64–127 | 256×2048 | 8열 × 64행 | 512 | 513 – 1024 |
 | `pipoya-basechip-3.png` | 〃 | 128–132 | 256×160 | 8열 × 5행 | 40 | 1025 – 1064 |
 | `pipoya-addwork.png` | `Unorganized Parts/addwork.png` | 전부 | 384×2048 | **12열** × 64행 | 768 | 1065 – 1832 |
+| `pipoya-water.png` | `[A]_type3/not_animation/` 두 장 | — | 256×384 | 8열 × 12행 | 96 | 1833 – 1928 |
 
 앞 세 장은 자른 순서대로 이어 붙였으므로 **gid = 원본 시트의 타일 번호 + 1** 이 시트 경계를 넘어
 그대로 성립한다. `addwork` 만 열 수가 12 라 별도 계산이다: `gid = 1065 + (행 × 12 + 열)`.
+
+`pipoya-water.png` 는 48타일짜리 blob 두 벌을 위아래로 이은 것이다.
+
+| 블록 | 원본 파일 | 피포야가 붙인 지형 이름 | 그림 | gid |
+|---|---|---|---|---|
+| 위 (인덱스 0–47) | `[A]Water1_pipo.png` | `water1` | 짙은 남색 깊은 물 + 이끼 낀 돌 둔덕 | 1833 – 1880 |
+| 아래 (인덱스 48–95) | `[A]Water7_pipo.png` | **`wave`** | 밝은 물 + **흰 물거품 물가** | 1881 – 1928 |
+
+지형 이름은 `SampleMap/[A]Water_pipo.tsx` 의 `<terraintypes>` 에서 온다. 파일 이름과 어긋나 있다 —
+그 시트는 type3 파일들을 **이름순**으로 이어 붙인 것이라 `[A]Water3_Cave1` 이 `water3`, `[A]Water3` 이
+`water4` 가 됐다. 화소를 맞대어 확인한 대응이지 추측이 아니다.
+
+**48타일 blob 은 인덱스가 곧 이웃 모양이다.** 인덱스 14(1행 6열)가 사방이 같은 종류인 한가운데,
+인덱스 47은 빈 칸이고 절대 쓰지 않는다. 나머지 45개가 모서리·변·안쪽모서리다.
+256가지 이웃 조합을 47개 인덱스로 접는 표는 `.superpowers/sdd/water-report.md` 에 있다.
+
+### 물을 어느 레이어에 두는가
+
+**두 시트 다 알파가 뚫린 오버레이다** — 48장 중 47장이 반투명이라 한 겹만 깔면 물가마다 배경이
+비친다. 그래서 물은 "칸마다 타일 하나" 가 아니라 겹이다.
+
+| 레이어 | 깊이 | 무엇이 들어가나 |
+|---|---|---|
+| `ground` | 0 | **불투명한 바닥.** 바다 밑은 모래, 호수 밑은 풀. 물 시트의 뚫린 가장자리가 비추는 것이 이것이다. 물에 닿는 뭍도 모래로 바꿔 해변을 만든다 |
+| `walls` | 2 | **물 자체.** `walls` 는 비어 있지 않으면 못 지나가는 칸이므로(`packages/data` 의 `parseTerrain`, 클라이언트의 `isWalkable`) 물을 여기 두면 그리기와 막기가 한 번에 된다. 물가 한 줄은 `wave` blob, 그 안쪽은 깊은 물 한가운데 타일(gid 1847) |
+| `decor` · `overhead` | 1 · 20 | 물은 안 쓴다. 비워 둔다 |
+
+**왜 `walls` 인가:** 물은 못 지나가야 하고, 이 프로젝트에서 못 지나가는 칸은 `walls` 의 비어 있지
+않은 칸 하나뿐이다. `decor` 에 그리면 예뻐도 걸어 들어가지고, `overhead` 는 플레이어 위에 그려진다.
+
+**왜 물가 한 줄만 `wave` 인가:** `[A]Water1` 의 테두리는 이끼 낀 돌 둔덕이다. 바다 한가운데 그으면
+걸어 다닐 수 있는 둔덕처럼 읽혀서 못 쓴다. 대신 물가 한 줄을 `wave`(흰 거품 + 밝은 얕은 물)로 두고
+그 안쪽을 깊은 물 한가운데 타일로 채우면, 모래 → 거품 → 얕은 물 → 깊은 물이 된다.
+반대로 **풀밭 속 호수에는 그 돌 둔덕이 정답이다** — 거품은 파도가 부서지는 곳에만 있다.
+그래서 월드맵의 호수만 `[A]Water1` blob 을 그대로 쓴다.
 
 이 순서와 `firstgid` 는 맵 열 장의 `.tmx` 에 그대로 적혀 있고, `packages/data` 의 `TILESET_NAMES` 가
 같은 순서를 갖는다. **셋 중 하나만 바꾸면 세계의 모든 타일이 조용히 밀린다** — 그래서 빌드가
@@ -241,7 +310,7 @@ cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
 
 **Tiled 에서 맵을 열 때 타일셋 이미지 경로:** 맵들은 타일셋을
 `apps/client/public/tilesets/pipoya-*.png` (위 "복원 방법" 참고)로 가리킨다. 그
-경로에 네 장을 모두 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
+경로에 다섯 장을 모두 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
 보인다** — 다만 이건 Tiled 편집 화면에만 해당하고, **게임 실행(빌드·테스트·클라이언트)에는
 영향이 없다.** 빌드도 클라이언트도 이 경로 문자열 자체를 읽지 않기 때문이다(클라이언트는
 `WorldScene.ts` 의 `preload()` 에 적힌 별도 키로 그림을 찾는다).
