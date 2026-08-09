@@ -53,6 +53,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
+    // 배치가 전부 world 에 있으므로 기본 플레이어도 world 에 세운다 — 그래야
+    // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.
+    location: { mapId: 'world', x: 0, y: 0 },
     ...overrides,
   }
 }
@@ -82,6 +85,15 @@ describe('performGather', () => {
     const b = performGather({ player: player(), data: d, instanceId: 'copper_vein-2', rng: alwaysSucceed, now: 0 })
     if (!a.ok || !b.ok) throw new Error('둘 다 성공해야 한다')
     expect(a.outcome.gained).toEqual(b.outcome.gained)
+  })
+
+  // 왜: 앞칸 판정은 클라이언트에만 있다. 서버가 어느 맵인지 모르면 다른 맵의
+  //     인스턴스 id 하나로 맵 너머의 노드를 캘 수 있다 — 맵이 하나뿐일 때는
+  //     존재하지 않던 구멍이라 기존 검사 어느 것도 이걸 막지 않는다.
+  it('다른 맵의 노드는 캘 수 없다', () => {
+    const p = player({ location: { mapId: '시험숲', x: 1, y: 1 } })
+    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+    expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
 
   it('없는 인스턴스는 unknown_node 로 거부한다', () => {

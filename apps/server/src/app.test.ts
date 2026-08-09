@@ -365,6 +365,81 @@ describe('POST /api/talk', () => {
   })
 })
 
+describe('POST /api/move', () => {
+  /** 실제로 출하되는 전환 첫 줄. 픽스처를 지어내면 CSV 가 바뀔 때 이 테스트가 거짓말을 한다. */
+  const first = () => {
+    const t = loadGameData().transitions[0]
+    if (!t) throw new Error('transitions.csv 에 전환이 하나도 없다')
+    return t
+  }
+
+  it('전환 칸을 밟았다고 하면 도착 맵·칸으로 옮기고 저장한다', async () => {
+    const app = buildTestApp()
+    const t = first()
+
+    const res = await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { player: { location: unknown } }).player.location).toEqual({
+      mapId: t.toMap,
+      x: t.toX,
+      y: t.toY,
+    })
+
+    // 저장하지 않으면 새로고침할 때마다 첫 맵으로 돌아간다 — 위치를 서버가 갖기로 한 이유다.
+    const state = await app.inject({ method: 'GET', url: '/api/state' })
+    expect((state.json() as { player: { location: { mapId: string } } }).player.location.mapId).toBe(t.toMap)
+
+    await app.close()
+  })
+
+  it('전환이 없는 칸은 400 no_transition 이다', async () => {
+    const app = buildTestApp()
+    // 요청은 목적지를 담지 않으므로, 전환이 없는 칸을 밟았다고 우겨도 갈 곳이 없다.
+    const res = await app.inject({ method: 'POST', url: '/api/move', payload: { x: 0, y: 0 } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'no_transition' })
+    await app.close()
+  })
+
+  it('x·y 가 없으면 400 이다', async () => {
+    const app = buildTestApp()
+    const res = await app.inject({ method: 'POST', url: '/api/move', payload: {} })
+    expect(res.statusCode).toBe(400)
+    await app.close()
+  })
+
+  it('맵을 넘어간 뒤에는 이전 맵의 화자에게 말을 걸 수 없다', async () => {
+    const app = buildTestApp()
+    const t = first()
+    // 서비스 단위 테스트가 같은 것을 보지만, 그 검사는 라우트가 위치를 실제로
+    // 저장하고 다시 읽어 오지 않으면 게임에서는 아무 효과가 없다 — 여기서
+    // 확인하는 것이 그 연결이다.
+    await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+
+    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '채집장노인' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'wrong_map' })
+
+    await app.close()
+  })
+
+  it('맵을 넘어간 뒤에는 이전 맵의 노드를 캘 수 없다', async () => {
+    const app = buildTestApp()
+    const t = first()
+    await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { instanceId: 'copper_vein-1' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'wrong_map' })
+
+    await app.close()
+  })
+})
+
 describe('GET /api/time', () => {
   it('서버 현재 시각을 반환한다', async () => {
     const app = buildTestApp()

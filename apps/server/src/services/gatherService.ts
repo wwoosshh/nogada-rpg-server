@@ -32,7 +32,7 @@ export interface GatherOutcome {
   player: PlayerState
 }
 
-export type GatherErrorCode = 'unknown_node' | 'cannot_gather' | 'too_fast'
+export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'cannot_gather' | 'too_fast'
 
 export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; code: GatherErrorCode }
 
@@ -57,13 +57,23 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   if (!node) return { ok: false, code: 'unknown_node' }
 
   const player = structuredClone(args.player)
+
+  // 맵이 여럿이 되면 요청만으로는 그 노드가 플레이어 앞칸에 있는지 알 수 없다.
+  // 앞칸 판정 자체는 클라이언트에 있고 서버는 걸음마다 위치를 받지 않지만,
+  // **맵이 다르면 앞칸일 수가 없다** — 그것만은 서버가 확실히 안다. 이 검사가
+  // 없으면 인스턴스 id 하나로 맵 너머의 노드를 캘 수 있다.
+  if (placement.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
+
   const proficiency = player.skills[node.skill]
   const toolTier = equippedToolTier(player, data, node.skill)
   const ctx = { proficiency, toolTier, node }
 
   if (!canGather(ctx)) return { ok: false, code: 'cannot_gather' }
 
-  // 검사 순서: 대상 존재 → 접근 자격 → 간격 → 난수.
+  // 검사 순서: 대상 존재 → 같은 맵 → 접근 자격 → 간격 → 난수.
+  //
+  // 맵 검사가 자격보다 앞인 이유는, 맵이 다르면 도구를 아무리 갖춰도 닿을 수
+  // 없기 때문이다 — cannot_gather 로 답하면 "도구가 모자라구나" 로 읽힌다.
   //
   // 간격 검사가 난수보다 앞인 이유는, 거부된 요청이 시드를 소비하면 연타로 판정
   // 결과를 흔들 수 있기 때문이다. 자격 검사보다 뒤인 이유는, 캘 수 없는 노드를

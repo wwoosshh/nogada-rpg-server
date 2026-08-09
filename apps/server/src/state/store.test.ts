@@ -141,6 +141,35 @@ describe('PlayerStore', () => {
     expect(p.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
   })
 
+  it('location 이 생기기 전의 세이브도 숙련도를 지킨 채 살아난다', () => {
+    // dialogueHistory 때와 똑같은 자리다. 필수 필드를 하나 더하면 readPlayers 가
+    // 그 키가 없는 세이브를 **통째로** 버린다 — 숙련도도 인벤토리도 이정표도
+    // 같이. 위치가 없는 세이브는 그저 이 필드가 생기기 전에 저장된 것이라,
+    // 시작 맵의 시작 칸으로 읽는 것이 마이그레이션 없이 맞는 답이다.
+    const legacy = {
+      id: 'local',
+      skills: { ice: 12345, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      stacks: {},
+      instances: [],
+      equipped: {},
+      nextActionAt: 0,
+      celebrated: [],
+      dialogueHistory: { said: [], recent: {}, lastTalkAt: {} },
+      // location 이 없다 — 이 필드가 생기기 전의 세이브다.
+    }
+    writeFileSync(file, JSON.stringify({ local: legacy }), 'utf8')
+
+    const p = new PlayerStore(file).get('local')
+
+    expect(p.skills.ice).toBe(12345)
+    expect(p.location.mapId).toBe('world')
+    // 기본값은 packages/shared 가 하드코딩한다 — 그 패키지는 packages/data 를
+    // import 할 수 없어서 START_MAP_ID 를 볼 수가 없다. 그러면 시작 맵을 아는
+    // 곳이 둘이 되므로, 둘이 갈라지는 순간을 여기서 잡는다: 옛 세이브가
+    // 떨어지는 자리와 새 플레이어가 시작하는 자리는 같아야 한다.
+    expect(p.location).toEqual(createInitialPlayer('drift-check').location)
+  })
+
   it('한 세이브의 빈 이력이 다른 세이브와 같은 객체가 아니다 — 한쪽의 대화가 다른 쪽에 새면 안 된다', () => {
     // 기본값을 리터럴로 주면 zod 가 그 **한 객체**를 모든 파싱 결과에 물려
     // 준다. 두 플레이어가 같은 said 배열을 공유하면 한쪽이 말한 것이 다른

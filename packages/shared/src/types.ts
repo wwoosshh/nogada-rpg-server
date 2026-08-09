@@ -39,6 +39,18 @@ export interface ItemInstance {
   enhanceLevel: number
 }
 
+/**
+ * 플레이어가 있는 곳.
+ *
+ * `x`·`y` 는 픽셀이 아니라 **타일 좌표**다 — NodePlacement·SpeakerDef 의 x·y 와
+ * 같은 값 공간이라 "이 노드가 내 맵에 있는가" 를 변환 없이 바로 비교할 수 있다.
+ */
+export interface PlayerLocation {
+  mapId: string
+  x: number
+  y: number
+}
+
 export interface PlayerState {
   id: string
   /**
@@ -76,6 +88,18 @@ export interface PlayerState {
    * recent 는 상대마다 최근 몇 개로 묶어 무한히 자라지 않게 한다.
    */
   dialogueHistory: DialogueHistory
+  /**
+   * 어느 맵 어느 칸에 있는가.
+   *
+   * 걸음마다 서버에 보내지 않는다 — 전투도 PvP 도 없어서 칸 단위 동기화가
+   * 필요 없고, 노가다 루프에 왕복 지연을 얹게 된다. 맵을 넘을 때만 갱신하며,
+   * 그때 도착 칸은 서버가 정한다(moveService).
+   *
+   * 그래서 맵 **안**의 x·y 는 마지막 전환 직후의 값이라 지금 서 있는 칸과
+   * 다를 수 있다. 판정에 쓰는 것은 mapId 뿐이고, x·y 는 새로고침했을 때
+   * 어디에 세울지에만 쓴다.
+   */
+  location: PlayerLocation
 }
 
 export interface ItemDef {

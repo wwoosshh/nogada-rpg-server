@@ -30,7 +30,7 @@ export interface TalkOutcome {
   player: PlayerState
 }
 
-export type TalkErrorCode = 'unknown_speaker' | 'nothing_to_say'
+export type TalkErrorCode = 'unknown_speaker' | 'wrong_map' | 'nothing_to_say'
 
 export type TalkResult = { ok: true; outcome: TalkOutcome } | { ok: false; code: TalkErrorCode }
 
@@ -53,9 +53,16 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
   // speakerId 는 클라이언트가 그대로 보낸 문자열이다. data.speakers[speakerId] 로
   // 바로 읽으면 "constructor" 같은 상속 키가 프로토타입 체인에서 값을 찾아
   // truthy 를 반환한다 — gatherService 가 placements 에서 막는 것과 같은 구멍이다.
-  if (!Object.hasOwn(data.speakers, speakerId)) return { ok: false, code: 'unknown_speaker' }
+  const speaker = Object.hasOwn(data.speakers, speakerId) ? data.speakers[speakerId] : undefined
+  if (!speaker) return { ok: false, code: 'unknown_speaker' }
 
   const player = structuredClone(args.player)
+
+  // 이것이 대화 스펙이 남긴 구멍이다. 앞칸 판정은 클라이언트에만 있어서, 서버가
+  // 어느 맵인지 모르면 화자 id 하나로 맵 너머의 화자와 대화가 열린다 — 그리고
+  // 그 대화가 said·recent 에까지 남아 다시 되돌릴 수도 없다. gatherService 와
+  // 같은 검사이고 같은 근거다: 맵이 다르면 앞칸일 수가 없다.
+  if (speaker.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
 
   // 사실을 먼저 모은다. 아래에서 이력을 갱신하므로, 순서가 바뀌면 이번 대화가
   // 이번 대화의 사실(talkedBefore·daysSinceLastTalk)을 바꿔 버린다 — 처음

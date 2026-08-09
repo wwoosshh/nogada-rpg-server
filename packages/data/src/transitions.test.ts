@@ -77,6 +77,22 @@ describe('validateTransitions', () => {
     expect(validateTransitions(d, terrains).join('\n')).toMatch(/도착 칸에 노드 ice-1 이 있다/)
   })
 
+  // 왜: 맵 안이어도 벽이면 결과는 맵 밖과 똑같다 — 아무도 그 칸에 설 수 없어
+  //     전환이 조용히 죽는다. 도착 칸만 검사하면 이런 데이터가 빌드를 통과하고,
+  //     플레이어가 그 가장자리까지 걸어가 보고서야 "왜 안 넘어가지" 가 된다.
+  //     이 계획이 처음 적어 둔 예시 좌표(world 15,0)가 정확히 그런 칸이었다.
+  it('출발 칸이 벽이면 막는다', () => {
+    const walled: Record<string, MapTerrain> = {
+      ...terrains,
+      world: { width: 20, height: 15, walls: new Set(['15,0']) },
+    }
+    // 도착 칸은 (15,13) 벽을 피해 (15,12) 로 옮긴다 — 도착 위반이 섞이면
+    // 이 테스트가 출발 검사 없이도 통과해 버린다.
+    const rows = [{ ...ROWS[0]!, toY: '12' }]
+    const violations = validateTransitions(data(parseTransitions(rows)), walled)
+    expect(violations.join('\n')).toMatch(/출발 칸 \(15, 0\) 이 벽이다/)
+  })
+
   // 왜: 출발 칸이 맵 밖이면 아무도 그 칸을 밟을 수 없어 전환이 통째로 죽는다.
   it('출발 칸이 맵 밖이면 막는다', () => {
     const rows = [{ ...ROWS[0]!, fromX: '20' }] // world 는 20 칸 폭이라 x 는 0~19 다

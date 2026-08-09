@@ -61,6 +61,14 @@ export function validateTransitions(
 
     if (t.fromX < 0 || t.fromY < 0 || t.fromX >= from.width || t.fromY >= from.height) {
       violations.push(`${at(t)}: 출발 칸이 맵 밖이다 — ${t.fromMap} 은 ${from.width}×${from.height} 칸이다`)
+    } else if (from.walls.has(`${t.fromX},${t.fromY}`)) {
+      // 맵 안이어도 벽이면 결과는 맵 밖과 같다 — 그 칸에 설 수 없으니 아무도
+      // 밟을 수 없고, 전환은 검증을 통과한 채 조용히 죽어 있는다. 도착 칸만
+      // 보던 시절엔 이 데이터가 그냥 통과했다. 실제로 이 계획의 첫 예시 좌표가
+      // 그런 칸이었고, 도착 칸 검사에 우연히 걸려서야 드러났다.
+      violations.push(
+        `${at(t)}: 출발 칸 (${t.fromX}, ${t.fromY}) 이 벽이다 — 아무도 그 칸에 설 수 없어 이 전환은 밟히지 않는다. ${t.fromMap} 의 빈 칸으로 옮긴다`,
+      )
     }
     if (t.toX < 0 || t.toY < 0 || t.toX >= to.width || t.toY >= to.height) {
       violations.push(`${at(t)}: 도착 칸 (${t.toX}, ${t.toY}) 이 맵 밖이다 — ${t.toMap} 은 ${to.width}×${to.height} 칸이다`)

@@ -21,6 +21,8 @@ function player(skills: Partial<PlayerState['skills']> = {}): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
+    // 이 판정들은 맵을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    location: { mapId: 'world', x: 0, y: 0 },
   }
 }
 

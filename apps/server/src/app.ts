@@ -4,6 +4,7 @@ import { loadGameData } from '@nogada/data'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerGatherRoutes } from './routes/gather.js'
+import { registerMoveRoutes } from './routes/move.js'
 import { registerStateRoutes } from './routes/state.js'
 import { registerTalkRoutes } from './routes/talk.js'
 import { registerTimeRoutes } from './routes/time.js'
@@ -44,6 +45,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerGatherRoutes(app, store, data)
   registerCraftRoutes(app, store, data)
   registerTalkRoutes(app, store, data)
+  registerMoveRoutes(app, store, data)
 
   return app
 }

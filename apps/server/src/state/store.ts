@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { loadGameData } from '@nogada/data'
+import { START_MAP_ID, loadGameData } from '@nogada/data'
 import {
   PlayerStateSchema,
   SKILL_IDS,
@@ -47,6 +47,10 @@ export function createInitialPlayer(id: string): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
+    // 시작 맵은 START_MAP_ID 가 유일한 출처다 — 도달 가능성 검증도 같은 상수에서
+    // 출발한다. 칸은 world.tmx 의 spawn 오브젝트가 가리키는 자리다. protocol.ts 의
+    // 옛 세이브 기본값과 같아야 하고, 그 일치는 store.test.ts 가 지킨다.
+    location: { mapId: START_MAP_ID, x: 15, y: 16 },
   }
 }
 

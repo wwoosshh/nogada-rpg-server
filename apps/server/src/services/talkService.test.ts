@@ -95,6 +95,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     dialogueHistory: emptyDialogueHistory(),
+    // 화자 둘 다 world 에 서 있으므로 기본 플레이어도 world 에 세운다 — 그래야
+    // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.
+    location: { mapId: 'world', x: 0, y: 0 },
     ...overrides,
   }
 }
@@ -117,6 +120,14 @@ function talk(p: PlayerState, over: { data?: GameData; speakerId?: string; rng?:
 describe('performTalk', () => {
   it('없는 화자는 unknown_speaker 로 거부한다', () => {
     expect(talk(player(), { speakerId: '유령' })).toEqual({ ok: false, code: 'unknown_speaker' })
+  })
+
+  // 왜: 이것이 대화 스펙이 남긴 구멍이다. 앞칸 판정은 클라이언트에만 있어서,
+  //     서버가 어느 맵인지 모르면 화자 id 하나만으로 맵 너머의 화자와 대화가
+  //     열린다 — 그리고 그 대화는 이력에까지 남는다.
+  it('다른 맵의 화자에게는 말을 걸 수 없다', () => {
+    const p = player({ location: { mapId: '시험숲', x: 1, y: 1 } })
+    expect(talk(p)).toEqual({ ok: false, code: 'wrong_map' })
   })
 
   it('상속된 키(constructor)를 화자로 보내도 unknown_speaker 다', () => {
