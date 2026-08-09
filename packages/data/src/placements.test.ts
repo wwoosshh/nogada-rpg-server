@@ -32,18 +32,18 @@ function obj(instanceId: string, nodeId: string, tx: number, ty: number): unknow
 
 describe('parsePlacements', () => {
   it('픽셀 좌표를 타일 좌표로 바꾼다', () => {
-    const r = parsePlacements(mapWith([obj('copper_vein-1', 'copper_vein', 13, 15)]), nodes)
+    const r = parsePlacements(mapWith([obj('copper_vein-1', 'copper_vein', 13, 15)]), nodes, 'world')
     expect(r['copper_vein-1']).toEqual({
-      instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 13, y: 15,
+      instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 13, y: 15,
     })
   })
 
   it('노드 오브젝트가 없는 맵도 정상이다', () => {
-    expect(parsePlacements(mapWith([]), nodes)).toEqual({})
+    expect(parsePlacements(mapWith([]), nodes, 'world')).toEqual({})
   })
 
   it('nodes 레이어가 아예 없어도 정상이다', () => {
-    expect(parsePlacements({ tilewidth: 32, tileheight: 32, layers: [] }, nodes)).toEqual({})
+    expect(parsePlacements({ tilewidth: 32, tileheight: 32, layers: [] }, nodes, 'world')).toEqual({})
   })
 
   it('instanceId 가 겹치면 던진다', () => {
@@ -52,17 +52,17 @@ describe('parsePlacements', () => {
       obj('dup', 'copper_vein', 1, 1),
       obj('dup', 'copper_vein', 2, 2),
     ])
-    expect(() => parsePlacements(m, nodes)).toThrow(/instanceId/)
+    expect(() => parsePlacements(m, nodes, 'world')).toThrow(/instanceId/)
   })
 
   it('instanceId 가 없으면 던진다', () => {
     const m = mapWith([{ x: 48, y: 48, properties: [{ name: 'nodeId', value: 'copper_vein' }] }])
-    expect(() => parsePlacements(m, nodes)).toThrow(/instanceId/)
+    expect(() => parsePlacements(m, nodes, 'world')).toThrow(/instanceId/)
   })
 
   it('없는 nodeId 를 가리키면 던진다', () => {
     const m = mapWith([obj('ghost-1', 'ghost_vein', 1, 1)])
-    expect(() => parsePlacements(m, nodes)).toThrow(/ghost_vein/)
+    expect(() => parsePlacements(m, nodes, 'world')).toThrow(/ghost_vein/)
   })
 
   it('두 노드가 같은 칸에 있으면 던진다', () => {
@@ -71,7 +71,8 @@ describe('parsePlacements', () => {
       obj('a', 'copper_vein', 4, 4),
       obj('b', 'copper_vein', 4, 4),
     ])
-    expect(() => parsePlacements(m, nodes)).toThrow(/같은 칸/)
+    // 어느 맵의 어느 칸인지까지 말해야 작가가 그 맵을 열 수 있다.
+    expect(() => parsePlacements(m, nodes, 'world')).toThrow(/맵 world 의 같은 칸/)
   })
 })
 

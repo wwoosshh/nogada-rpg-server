@@ -392,6 +392,16 @@ export function validateGameData(data: GameData): string[] {
     }
   }
 
+  // 왜: mapId 는 지금까지 파싱만 되고 아무도 읽지 않아서, 오타가 빌드를 통과하고
+  // 맵이 둘이 되는 순간 "NPC 가 사라졌다"로만 드러났다.
+  for (const speaker of Object.values(data.speakers)) {
+    if (!data.maps[speaker.mapId]) {
+      violations.push(
+        `speakers[${speaker.id}]: 없는 맵 "${speaker.mapId}" 에 놓였다 — maps.csv 의 id 중 하나여야 한다`,
+      )
+    }
+  }
+
   // 참조 무결성 검사는 여기까지다. 아래 도달 가능성 검사를 돌릴지 말지는
   // **이 시점의** 위반 수가 정한다 — 그 사이에 끼어 있는 대사 검사가 몇 건을
   // 더하든 도달 가능성 계산에는 영향이 없기 때문이다.
@@ -638,12 +648,16 @@ export function validateGameData(data: GameData): string[] {
  * validateGameData 와 나눠 둔 것은 정보가 하나 더 필요해서다 — 화자의 좌표는
  * speakers.csv 에 있지만 "그 칸이 벽인가·맵 안인가"는 맵 파일에만 있다.
  * GameData 에 맵 전체를 실어 나르는 대신, 맵에서 뽑은 최소한의 지형
- * (MapTerrain)을 인자로 받는다.
+ * (MapTerrain)을 맵별로 받는다.
  *
- * 지금 맵이 하나뿐이라 speaker.mapId 를 보지 않는다 — 맵이 늘면 호출부가
- * mapId 별로 지형을 골라 넘기게 된다(설계 문서 9장).
+ * 지형을 맵마다 따로 받는 이유는 화자마다 자기 맵의 벽·크기를 봐야 하기
+ * 때문이다. 노드 칸 색인(nodeAt)의 키에도 맵이 들어간다 — 안 넣으면 두 맵의
+ * 같은 좌표가 한 칸으로 뭉쳐, 다른 맵의 노드를 밟았다고 오탐한다.
  */
-export function validateSpeakerPlacements(data: GameData, terrain: MapTerrain): string[] {
+export function validateSpeakerPlacements(
+  data: GameData,
+  terrains: Record<string, MapTerrain>,
+): string[] {
   const violations: string[] = []
 
   // 노드가 놓인 칸. 노드도 화자도 "그 칸을 향하면 반응하는 것"이라, 한 칸에
@@ -651,12 +665,17 @@ export function validateSpeakerPlacements(data: GameData, terrain: MapTerrain): 
   // 겹치는 것을 막는 것과 같은 이유다.
   const nodeAt = new Map<string, string>()
   for (const placement of Object.values(data.placements)) {
-    nodeAt.set(`${placement.x},${placement.y}`, placement.instanceId)
+    nodeAt.set(`${placement.mapId}:${placement.x},${placement.y}`, placement.instanceId)
   }
 
   for (const speaker of Object.values(data.speakers)) {
+    const terrain = terrains[speaker.mapId]
+    // 없는 맵을 가리키는 것은 validateGameData 가 이미 잡았다. 여기서 또 말하면
+    // 같은 오타로 위반이 둘 생긴다.
+    if (!terrain) continue
+
     const { x, y } = speaker
-    const key = `${x},${y}`
+    const key = `${speaker.mapId}:${x},${y}`
 
     if (x < 0 || y < 0 || x >= terrain.width || y >= terrain.height) {
       violations.push(
@@ -665,7 +684,7 @@ export function validateSpeakerPlacements(data: GameData, terrain: MapTerrain): 
       continue // 맵 밖이면 벽인지 노드인지 따질 칸 자체가 없다
     }
 
-    if (terrain.walls.has(key)) {
+    if (terrain.walls.has(`${x},${y}`)) {
       violations.push(
         `speakers[${speaker.id}]: 벽 칸 (${x}, ${y}) 에 놓였다 — 벽 속에 서 있는 셈이다. speakers.csv 의 x·y 를 빈 칸으로 옮긴다`,
       )

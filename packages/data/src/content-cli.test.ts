@@ -27,7 +27,13 @@ import {
 const FIXED_NOW = Date.UTC(2026, 2, 1, 12, 0, 0)
 
 function emptyGameData(): GameData {
-  return { items: {}, nodes: {}, recipes: {}, placements: {}, milestones: [], speakers: {}, dialogue: [] }
+  return {
+    items: {}, nodes: {}, recipes: {},
+    // 화자 픽스처(testSpeaker)가 world 에 서 있다 — 등록부가 비어 있으면 "없는
+    // 맵에 놓였다" 위반이 하나 더 섞여, 이 파일이 보려는 대사 위반이 흐려진다.
+    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
+    placements: {}, milestones: [], speakers: {}, dialogue: [],
+  }
 }
 
 /** validate.test.ts 의 dRule 과 같은 모양 — 조건·사건만 바꿔 규칙을 짧게 만든다. */

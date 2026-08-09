@@ -126,6 +126,21 @@ export interface RecipeDef {
 }
 
 /**
+ * 맵 한 장. `file` 은 `packages/data/maps/` 안의 `.tmx` 이름이다.
+ *
+ * width·height 를 여기 싣는 이유는 검증과 서버가 "그 칸이 맵 안인가"를 물어야
+ * 하는데, 맵 파일 전체를 GameData 에 싣는 것은 낭비이기 때문이다 — 지형(벽)은
+ * 빌드 시점에만 필요하므로 GameData 로 넘어오지 않는다.
+ */
+export interface MapDef {
+  id: string
+  name: string
+  file: string
+  width: number
+  height: number
+}
+
+/**
  * 맵 위에 놓인 노드 하나. `nodeId` 는 종류이고 `instanceId` 가 그 칸이다.
  *
  * 같은 종류가 여러 칸에 있으므로 종류만으로는 어느 것인지 알 수 없다.
@@ -136,6 +151,8 @@ export interface RecipeDef {
 export interface NodePlacement {
   instanceId: string
   nodeId: string
+  /** 어느 맵의 칸인가. SpeakerDef.mapId 와 같은 값 공간이다. */
+  mapId: string
   x: number
   y: number
 }
@@ -168,6 +185,8 @@ export interface GameData {
   items: Record<string, ItemDef>
   nodes: Record<string, NodeDef>
   recipes: Record<string, RecipeDef>
+  /** 맵 등록부. 키는 mapId 다. */
+  maps: Record<string, MapDef>
   placements: Record<string, NodePlacement>
   /** 정의 순서를 유지한다 — nextMilestone 의 동점 처리가 이 순서를 쓴다 */
   milestones: MilestoneDef[]

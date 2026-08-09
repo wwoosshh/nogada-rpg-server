@@ -30,10 +30,12 @@ const data: GameData = {
     },
   },
   recipes: {},
+  // 채집 판정은 맵을 보지 않지만 배치가 자기 맵을 가리키므로, 등록부에 그 맵이 있어야 앞뒤가 맞는다.
+  maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
   placements: {
-    'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 3, y: 3 },
-    'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', x: 5, y: 3 },
-    'mithril_vein-1': { instanceId: 'mithril_vein-1', nodeId: 'mithril_vein', x: 7, y: 3 },
+    'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 3, y: 3 },
+    'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: 'world', x: 5, y: 3 },
+    'mithril_vein-1': { instanceId: 'mithril_vein-1', nodeId: 'mithril_vein', mapId: 'world', x: 7, y: 3 },
   },
   milestones: [],
   speakers: {},
@@ -72,7 +74,7 @@ describe('performGather', () => {
       ...data,
       placements: {
         ...data.placements,
-        'copper_vein-2': { instanceId: 'copper_vein-2', nodeId: 'copper_vein', x: 9, y: 3 },
+        'copper_vein-2': { instanceId: 'copper_vein-2', nodeId: 'copper_vein', mapId: 'world', x: 9, y: 3 },
       },
     }
     const a = performGather({ player: player(), data: d, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })

@@ -4,11 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DialogueRule, GameData, ItemDef, MilestoneDef, SpeakerDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import type { ParsedMaps } from './maps.js'
+import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import type { MapTerrain } from './placements.js'
-import { parsePlacements, parseTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
-import { parseTmx } from './tmx.js'
 import { parseDialogue } from './dialogueParse.js'
 import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
@@ -75,8 +75,12 @@ function baseData(): GameData {
         skillGainMin: 10, skillGainMax: 20,
       },
     },
+    // 화자(testSpeaker)와 배치가 가리키는 맵이 등록부에 있어야 한다 — 없으면
+    // "없는 맵에 놓였다" 위반이 하나 더 생겨, 이 픽스처를 재사용하는 여러
+    // .toEqual([]) 단언이 그것 때문에 깨진다.
+    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
     placements: {
-      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
+      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
     },
     milestones: [mineralRepeatMilestone],
     // 대화 검사 대상이 없는 픽스처다 — 화자·대사가 비어 있으면 "화자마다
@@ -162,9 +166,10 @@ function deadlockedTierData(): GameData {
         skillGainMin: 10, skillGainMax: 20,
       },
     },
+    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
     placements: {
-      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
-      'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', x: 1, y: 0 },
+      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
+      'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: 'world', x: 1, y: 0 },
     },
     milestones: [],
     speakers: {},
@@ -178,6 +183,24 @@ function readRealDialogue(dialogueDir: string): DialogueRule[] {
   return files.flatMap((f) => parseDialogue(readFileSync(join(dialogueDir, f), 'utf8'), f))
 }
 
+/**
+ * 실제로 출하되는 maps.csv 와 그것이 가리키는 `.tmx` 들. build.ts 와 같은 경로다.
+ *
+ * 맵 하나를 직접 읽던 시절과 달리 이제 정본은 maps.csv 다 — 여기서 목록을
+ * 건너뛰고 world.tmx 만 읽으면, 맵이 늘어도 테스트는 계속 한 장만 보게 된다.
+ */
+function loadRealMaps(): ParsedMaps {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const csvDir = join(here, '..', 'csv')
+  const mapsDir = join(here, '..', 'maps')
+  const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+  return parseMaps(
+    readRealCsv('maps.csv'),
+    (file) => readFileSync(join(mapsDir, file), 'utf8'),
+    parseNodes(readRealCsv('nodes.csv')),
+  )
+}
+
 /** 실제로 출하되는 CSV·맵·대사를 그대로 파싱한 GameData. 여러 describe 가 공유한다. */
 function loadRealGameData(): GameData {
   const here = dirname(fileURLToPath(import.meta.url))
@@ -185,14 +208,14 @@ function loadRealGameData(): GameData {
   const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
   const nodes = parseNodes(readRealCsv('nodes.csv'))
   const recipes = parseRecipes(readRealCsv('recipes.csv'))
-  // world.json 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를 직접 읽는다.
-  const mapJson: unknown = parseTmx(readFileSync(join(here, '..', 'maps', 'world.tmx'), 'utf8'))
+  const { maps, placements } = loadRealMaps()
 
   return {
     items: parseItems(readRealCsv('items.csv')),
     nodes,
     recipes,
-    placements: parsePlacements(mapJson, nodes),
+    maps,
+    placements,
     milestones: parseMilestones(readRealCsv('milestones.csv'), nodes, recipes),
     speakers: parseSpeakers(readRealCsv('speakers.csv')),
     dialogue: readRealDialogue(join(here, '..', 'dialogue')),
@@ -418,8 +441,9 @@ describe('validateGameData 의 조기 반환', () => {
           skillGainMin: 10, skillGainMax: 20,
         },
       },
+      maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
       placements: {
-        'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', x: 0, y: 0 },
+        'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
       },
       milestones: [mineralRepeatMilestone],
       speakers: {},
@@ -1196,7 +1220,9 @@ describe('validateSpeakerPlacements', () => {
   // 벽 속이나 맵 밖에 놓인 화자는 화면에 나오긴 해도 옆에 설 수 없어 말을
   // 걸 방법이 없다. 노드와 겹치면 그 칸에서 무엇이 반응할지 정해지지 않는다.
 
-  const terrain: MapTerrain = { width: 30, height: 30, walls: new Set(['5,5']) }
+  const terrains: Record<string, MapTerrain> = {
+    world: { width: 30, height: 30, walls: new Set(['5,5']) },
+  }
 
   function speakerAt(x: number, y: number): Record<string, SpeakerDef> {
     return { 노인: { ...testSpeaker, x, y } }
@@ -1206,7 +1232,7 @@ describe('validateSpeakerPlacements', () => {
     const data = baseData()
     data.speakers = speakerAt(30, 3)
     data.placements = {}
-    expect(validateSpeakerPlacements(data, terrain)).toContain(
+    expect(validateSpeakerPlacements(data, terrains)).toContain(
       'speakers[노인]: 맵 밖 칸 (30, 3) 에 놓였다 — 맵은 가로 30, 세로 30 칸이라 x 는 0~29, y 는 0~29 이다',
     )
   })
@@ -1215,7 +1241,7 @@ describe('validateSpeakerPlacements', () => {
     const data = baseData()
     data.speakers = speakerAt(5, 5)
     data.placements = {}
-    expect(validateSpeakerPlacements(data, terrain)).toContain(
+    expect(validateSpeakerPlacements(data, terrains)).toContain(
       'speakers[노인]: 벽 칸 (5, 5) 에 놓였다 — 벽 속에 서 있는 셈이다. speakers.csv 의 x·y 를 빈 칸으로 옮긴다',
     )
   })
@@ -1223,7 +1249,7 @@ describe('validateSpeakerPlacements', () => {
   it('노드와 같은 칸에 놓인 화자를 잡아낸다', () => {
     const data = baseData() // baseData 의 copper_vein-1 은 (0,0) 에 있다
     data.speakers = speakerAt(0, 0)
-    expect(validateSpeakerPlacements(data, terrain)).toContain(
+    expect(validateSpeakerPlacements(data, terrains)).toContain(
       'speakers[노인]: 노드 copper_vein-1 와 같은 칸에 있다: (0, 0) — 그 칸을 향했을 때 어느 쪽이 반응할지 정해지지 않는다',
     )
   })
@@ -1231,14 +1257,39 @@ describe('validateSpeakerPlacements', () => {
   it('빈 칸에 놓인 화자는 통과한다', () => {
     const data = baseData()
     data.speakers = speakerAt(10, 10)
-    expect(validateSpeakerPlacements(data, terrain)).toEqual([])
+    expect(validateSpeakerPlacements(data, terrains)).toEqual([])
+  })
+
+  it('다른 맵의 같은 좌표에 있는 노드는 겹침이 아니다', () => {
+    // 노드 칸 색인의 키에 맵이 없으면 두 맵의 (0,0) 이 한 칸으로 뭉쳐, 숲에
+    // 선 화자가 월드의 노드와 겹쳤다고 오탐된다 — 맵을 늘리는 순간 나타나는
+    // 종류의 거짓 위반이고, 작가는 자기 맵에는 아무것도 없는데 겹쳤다는
+    // 말을 듣게 된다.
+    const data = baseData()
+    data.maps = {
+      ...data.maps,
+      숲: { id: '숲', name: '숲', file: '숲.tmx', width: 20, height: 15 },
+    }
+    data.speakers = { 노인: { ...testSpeaker, mapId: '숲', x: 0, y: 0 } }
+    const withForest: Record<string, MapTerrain> = {
+      ...terrains,
+      숲: { width: 20, height: 15, walls: new Set() },
+    }
+    expect(validateSpeakerPlacements(data, withForest)).toEqual([])
+  })
+
+  it('없는 맵에 놓인 화자는 여기서 또 말하지 않는다 — validateGameData 가 이미 잡았다', () => {
+    // 오타 하나로 위반이 둘 나오면 작가는 두 군데를 고쳐야 하는 줄 안다.
+    const data = baseData()
+    data.speakers = { 노인: { ...testSpeaker, mapId: '오타맵' } }
+    expect(validateSpeakerPlacements(data, terrains)).toEqual([])
+    expect(validateGameData(data)).toContain(
+      'speakers[노인]: 없는 맵 "오타맵" 에 놓였다 — maps.csv 의 id 중 하나여야 한다',
+    )
   })
 
   it('실제로 출하되는 화자 배치는 통과한다', () => {
-    // world.json 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를 직접 읽는다.
-    const here = dirname(fileURLToPath(import.meta.url))
-    const mapJson: unknown = parseTmx(readFileSync(join(here, '..', 'maps', 'world.tmx'), 'utf8'))
-    expect(validateSpeakerPlacements(loadRealGameData(), parseTerrain(mapJson))).toEqual([])
+    expect(validateSpeakerPlacements(loadRealGameData(), loadRealMaps().terrains)).toEqual([])
   })
 })
 

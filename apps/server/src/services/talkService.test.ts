@@ -70,6 +70,8 @@ function gameData(dialogue: DialogueRule[]): GameData {
     items: {},
     nodes: {},
     recipes: {},
+    // 화자 둘 다 world 에 서 있다 — 등록부에 그 맵이 있어야 앞뒤가 맞는다.
+    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30 } },
     placements: {},
     milestones: [iceMilestone],
     speakers: {

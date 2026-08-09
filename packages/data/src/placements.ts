@@ -79,10 +79,16 @@ function propOf(obj: TiledObject, name: string): string | undefined {
  * 오브젝트는 타일 중심의 픽셀 좌표를 갖는다. 나누기로 타일 좌표를 얻는데,
  * 반올림이 아니라 내림을 쓴다 — 중심이 정확히 타일 안에 있으므로 내림이
  * 항상 그 타일을 준다.
+ *
+ * `mapId` 를 받는 것은 배치마다 "어느 맵의 칸인가"를 새기기 위해서다. 겹침
+ * 검사는 **이 맵 안에서만** 한다 — `occupied` 가 호출마다 새로 만들어지므로
+ * 그 자체로 맵별 검사다. 맵을 넘어선 instanceId 유일성은 parseMaps 의 몫이다:
+ * 서버는 instanceId 하나로 노드를 찾으므로(gatherService) 그쪽은 전역이어야 한다.
  */
 export function parsePlacements(
   mapJson: unknown,
   nodes: Record<string, NodeDef>,
+  mapId: string,
 ): Record<string, NodePlacement> {
   const map = mapJson as TiledMap
   const tileWidth = map.tilewidth ?? 0
@@ -118,11 +124,11 @@ export function parsePlacements(
     const key = `${x},${y}`
     const other = occupied.get(key)
     if (other) {
-      throw new Error(`${other} 와 ${instanceId} 이 같은 칸에 있다: (${x}, ${y})`)
+      throw new Error(`${other} 와 ${instanceId} 이 맵 ${mapId} 의 같은 칸에 있다: (${x}, ${y})`)
     }
     occupied.set(key, instanceId)
 
-    placements[instanceId] = { instanceId, nodeId, x, y }
+    placements[instanceId] = { instanceId, nodeId, mapId, x, y }
   }
 
   return placements

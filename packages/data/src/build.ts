@@ -3,8 +3,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
-import { parsePlacements, parseTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
 import { parseTmx } from './tmx.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
@@ -52,13 +52,19 @@ if (dialogueErrors.length > 0) fail(dialogueErrors)
 
 const nodes = parseNodes(readCsv('nodes.csv'))
 const recipes = parseRecipes(readCsv('recipes.csv'))
-const mapJson: unknown = parseTmx(readFileSync(join(mapsDir, 'world.tmx'), 'utf8'))
+
+const { maps, terrains, placements } = parseMaps(
+  readCsv('maps.csv'),
+  (file) => readFileSync(join(mapsDir, file), 'utf8'),
+  nodes,
+)
 
 const data: GameData = {
   items: parseItems(readCsv('items.csv')),
   nodes,
   recipes,
-  placements: parsePlacements(mapJson, nodes),
+  maps,
+  placements,
   milestones: parseMilestones(readCsv('milestones.csv'), nodes, recipes),
   speakers: parseSpeakers(readCsv('speakers.csv')),
   dialogue,
@@ -66,7 +72,7 @@ const data: GameData = {
 
 // 화자 배치 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 — 그래서
 // validateGameData 와 나뉘어 있고, 여기서 둘을 합쳐 한 번에 보고한다.
-const violations = [...validateGameData(data), ...validateSpeakerPlacements(data, parseTerrain(mapJson))]
+const violations = [...validateGameData(data), ...validateSpeakerPlacements(data, terrains)]
 if (violations.length > 0) fail(violations)
 
 mkdirSync(outDir, { recursive: true })
@@ -75,11 +81,15 @@ writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf
 // 클라이언트가 이 파일을 import 한다. gamedata.json 과 같은 생성 폴더에 둔다 —
 // 저장소에 커밋된 .json 을 두면 .tmx 와 어긋날 수 있고, 그것을 없애려고 이 단계를 만들었다.
 mkdirSync(join(outDir, 'maps'), { recursive: true })
-writeFileSync(join(outDir, 'maps', 'world.json'), JSON.stringify(mapJson), 'utf8')
+for (const map of Object.values(maps)) {
+  const json = parseTmx(readFileSync(join(mapsDir, map.file), 'utf8'))
+  writeFileSync(join(outDir, 'maps', `${map.id}.json`), JSON.stringify(json), 'utf8')
+}
 
 console.log(
   `데이터 빌드 완료 — 아이템 ${Object.keys(data.items).length}, ` +
     `노드 ${Object.keys(data.nodes).length}, 레시피 ${Object.keys(data.recipes).length}, ` +
+    `맵 ${Object.keys(data.maps).length}, ` +
     `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}, ` +
     `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}`,
 )
