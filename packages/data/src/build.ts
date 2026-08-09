@@ -6,6 +6,7 @@ import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMilestones } from './milestones.js'
 import { parsePlacements, parseTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
+import { parseTmx } from './tmx.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
 import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
@@ -51,7 +52,7 @@ if (dialogueErrors.length > 0) fail(dialogueErrors)
 
 const nodes = parseNodes(readCsv('nodes.csv'))
 const recipes = parseRecipes(readCsv('recipes.csv'))
-const mapJson: unknown = JSON.parse(readFileSync(join(mapsDir, 'world.json'), 'utf8'))
+const mapJson: unknown = parseTmx(readFileSync(join(mapsDir, 'world.tmx'), 'utf8'))
 
 const data: GameData = {
   items: parseItems(readCsv('items.csv')),
@@ -70,6 +71,11 @@ if (violations.length > 0) fail(violations)
 
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf8')
+
+// 클라이언트가 이 파일을 import 한다. gamedata.json 과 같은 생성 폴더에 둔다 —
+// 저장소에 커밋된 .json 을 두면 .tmx 와 어긋날 수 있고, 그것을 없애려고 이 단계를 만들었다.
+mkdirSync(join(outDir, 'maps'), { recursive: true })
+writeFileSync(join(outDir, 'maps', 'world.json'), JSON.stringify(mapJson), 'utf8')
 
 console.log(
   `데이터 빌드 완료 — 아이템 ${Object.keys(data.items).length}, ` +

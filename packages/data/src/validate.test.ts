@@ -8,6 +8,7 @@ import { parseMilestones } from './milestones.js'
 import type { MapTerrain } from './placements.js'
 import { parsePlacements, parseTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
+import { parseTmx } from './tmx.js'
 import { parseDialogue } from './dialogueParse.js'
 import { collectDialogueNotices, validateGameData, validateSpeakerPlacements } from './validate.js'
 
@@ -184,7 +185,8 @@ function loadRealGameData(): GameData {
   const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
   const nodes = parseNodes(readRealCsv('nodes.csv'))
   const recipes = parseRecipes(readRealCsv('recipes.csv'))
-  const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
+  // world.json 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를 직접 읽는다.
+  const mapJson: unknown = parseTmx(readFileSync(join(here, '..', 'maps', 'world.tmx'), 'utf8'))
 
   return {
     items: parseItems(readRealCsv('items.csv')),
@@ -1233,8 +1235,9 @@ describe('validateSpeakerPlacements', () => {
   })
 
   it('실제로 출하되는 화자 배치는 통과한다', () => {
+    // world.json 은 이제 생성물이라 저장소에 없다(Task 1) — 정본인 .tmx 를 직접 읽는다.
     const here = dirname(fileURLToPath(import.meta.url))
-    const mapJson: unknown = JSON.parse(readFileSync(join(here, '..', 'maps', 'world.json'), 'utf8'))
+    const mapJson: unknown = parseTmx(readFileSync(join(here, '..', 'maps', 'world.tmx'), 'utf8'))
     expect(validateSpeakerPlacements(loadRealGameData(), parseTerrain(mapJson))).toEqual([])
   })
 })

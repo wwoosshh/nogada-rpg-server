@@ -175,10 +175,19 @@ $bmp.Save("apps\client\public\tilesets\pipoya-basechip.png", [System.Drawing.Ima
 나중에 필요해지면 **별도 타일셋으로 추가한다** — Tiled 도 Phaser 도 맵당 여러 타일셋을 지원하며,
 큰 시트 하나보다 그쪽이 정석이다. 원본은 `assets/licensed/` 에 그대로 있으므로 잃는 것은 없다.
 
-타일셋 크기를 바꾸면 **맵 파일의 메타데이터도 함께 고쳐야 한다** — `world.tmx` 의 `tilecount`/`height`,
-`world.json` 의 `tilecount`/`imageheight`. 어긋나면 Phaser 가 잘못된 좌표를 계산한다.
+타일셋 크기를 바꾸면 **`world.tmx` 의 타일셋 메타데이터(`tilecount`/`height` 등)도 함께 고쳐야 한다.**
+어긋나면 Phaser 가 잘못된 좌표를 계산한다.
 
-> 반대로 **맵 파일(`packages/data/maps/world.json`)은 우리가 만든 저작물이므로 커밋한다.**
+> 반대로 **맵 파일(`packages/data/maps/*.tmx`)은 우리가 만든 저작물이므로 커밋한다.**
+> `world.json` 은 더 이상 커밋 대상이 아니다 — Task 1 부터 빌드가 `.tmx` 를 직접 읽어
+> `packages/data/src/generated/maps/` 에 만들어 내는 생성물이다(수동 Export 가 사라졌다).
+
+**Tiled 에서 맵을 열 때 타일셋 이미지 경로:** `world.tmx`(그리고 이후 맵들)는 타일셋을
+`apps/client/public/tilesets/pipoya-basechip.png` (위 "복원 방법" 참고)로 가리킨다. 그
+경로에 이미지를 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
+보인다** — 다만 이건 Tiled 편집 화면에만 해당하고, **게임 실행(빌드·테스트·클라이언트)에는
+영향이 없다.** 빌드도 클라이언트도 이 경로 문자열 자체를 읽지 않기 때문이다(클라이언트는
+`WorldScene.ts` 의 `preload()` 에 적힌 별도 키로 그림을 찾는다).
 
 ### 도구
 

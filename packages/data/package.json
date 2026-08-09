@@ -7,14 +7,15 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./maps/world.json": "./maps/world.json"
+    "./maps/*.json": "./src/generated/maps/*.json"
   },
   "scripts": {
     "build": "tsx src/build.ts",
     "content": "pnpm run build && tsx src/content-cli.ts"
   },
   "dependencies": {
-    "@nogada/shared": "workspace:*"
+    "@nogada/shared": "workspace:*",
+    "fast-xml-parser": "^5.10.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

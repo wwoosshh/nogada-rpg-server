@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="30" height="30" tilewidth="32" tileheight="32" infinite="0" nextlayerid="8" nextobjectid="15">
- <editorsettings>
-  <export target="world.json" format="json"/>
- </editorsettings>
  <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="512" columns="8">
-  <image source="../tilesets/pipoya-basechip.png" width="256" height="2048"/>
+  <image source="../../../apps/client/public/tilesets/pipoya-basechip.png" width="256" height="2048"/>
  </tileset>
  <layer id="1" name="ground" width="30" height="30">
   <data encoding="csv">
