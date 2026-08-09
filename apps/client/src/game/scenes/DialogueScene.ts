@@ -72,7 +72,7 @@ const CARET = '▼'
  * 화면 아래쪽 대사창. 설계 문서 §10 이 이 씬의 명세다.
  *
  * PanelScene 과 같은 자세를 따른다 — 별도 씬, 열려 있는 동안
- * `hub.setWorldInputLocked(true)`, 컨트롤러 숨김. 별도 씬인 이유도 같다:
+ * `hub.setWorldInputLocked('dialogue', true)`, 컨트롤러 숨김. 별도 씬인 이유도 같다:
  * WorldScene 의 카메라 스크롤과 낮밤 명암은 그 씬 안의 오브젝트에만 걸리므로,
  * 밖에 두면 화면에 고정되고 밤에도 어두워지지 않는다. 대사는 밤에 더 읽기
  * 어려워질 이유가 없는 글이다.
@@ -89,8 +89,15 @@ const CARET = '▼'
  * 에 있다(그 클래스 문서 참고). 이 씬은 그 상태 기계에 한 프레임의 입력을
  * 넘기고 결과를 그리기만 한다.
  *
- * `PhaserGame.ts` 의 씬 배열에서 맨 끝이다 — 무엇 위에도 그려져야 하고,
- * 대사창이 열리면 컨트롤러도 패널도 화면에 없으므로 가릴 것과 다툴 일이 없다.
+ * `PhaserGame.ts` 의 씬 배열에서 맨 끝이다 — 무엇 위에도 그려져야 한다.
+ *
+ * **패널과 동시에 열려 있을 수 있다.** 한때는 그럴 수 없다고 적어 두었지만
+ * (대사창은 앞칸 상호작용으로만 열리고 그 입력은 패널이 열려 있으면 잠겨 있다)
+ * 그건 캔버스 안의 입구만 센 것이었다 — 상단 바 톱니(React)는 언제나 눌린다.
+ * 그래서 세계 잠금과 컨트롤러 숨김은 이 씬이 혼자 정하지 않고 주인 이름을 붙여
+ * hub 에 말한다(render() 참고). 배열에서 맨 끝이라 겹칠 때 이 창이 패널 위에
+ * 그려지고, 그게 맞다 — 지금 대답을 기다리는 것은 이 창이다.
+ *
  * 배열의 두 번째 이후라 자동 시작하지 않는다 — WorldScene.create() 가 launch 한다.
  */
 export class DialogueScene extends Phaser.Scene {
@@ -327,10 +334,23 @@ export class DialogueScene extends Phaser.Scene {
       else this.tapZone.disableInteractive()
 
       // 열려 있는 동안 이동·행동을 막고 컨트롤러를 숨긴다 — 패널과 같은
-      // 자세다(PanelScene.setOpen). 둘은 동시에 열릴 수 없다: 대사창은 앞칸
-      // 상호작용으로만 열리는데 그 입력 자체가 패널이 열려 있으면 잠겨 있다.
-      this.hub?.setWorldInputLocked(open)
-      this.control?.setControllerVisible(!open)
+      // 자세다(PanelScene.setOpen).
+      //
+      // 잠금에 'dialogue' 라는 주인 이름을 붙여 거는 것이 핵심이다. 한때 이
+      // 자리는 참거짓 하나를 그대로 덮어썼고, 그래도 되는 줄 알았다 — 대사창과
+      // 패널은 동시에 열릴 수 없다고 봤기 때문이다. 그건 캔버스 안의 입구만 센
+      // 것이었다: 상단 바 톱니(React)는 대사창이 열려 있는 동안에도 계속 눌리고,
+      // 그러면 패널이 이 창 위로 열린다. 그 뒤 화면을 탭해 이 창만 닫으면
+      // 여기서 잠금을 통째로 풀어, 화면을 가득 덮은 패널 밑에서 세계가 다시
+      // 움직였다. 이제는 자기 칸만 비우므로 패널이 건 잠금은 그대로 남는다
+      // (InputHub.setWorldInputLocked 문서).
+      //
+      // 컨트롤러도 같은 이유로 `!open` 이 아니라 **hub 의 합**을 보고 정한다.
+      // 여기서 `!open` 을 쓰면 잠금만 고치고 컨트롤러는 그대로 두 주인을 갖는
+      // 셈이라, 패널이 아직 열려 있는데 그 위로 눌리지 않는 유령 버튼이 떠오른다.
+      const hub = this.hub
+      hub?.setWorldInputLocked('dialogue', open)
+      if (hub) this.control?.setControllerVisible(!hub.worldInputLocked)
     }
 
     if (!box) {

@@ -32,6 +32,17 @@ export type InputSource = 'keyboard' | 'touch'
 
 const SOURCES: readonly InputSource[] = ['keyboard', 'touch']
 
+/**
+ * 세계 입력을 잠글 수 있는 화면. 잠금을 **주인별로** 나눠 갖는 이유는
+ * setWorldInputLocked() 문서 참고.
+ *
+ * hub 가 소스 이름을 아는 것과 같은 이유로 화면 이름도 안다: 이름이 없으면
+ * "자기가 건 것만 자기가 푼다"를 표현할 방법이 없다.
+ */
+export type WorldInputLockOwner = 'dialogue' | 'panel'
+
+const LOCK_OWNERS: readonly WorldInputLockOwner[] = ['dialogue', 'panel']
+
 function noButtons(): Record<InputButton, boolean> {
   return { action: false, cancel: false, bag: false, craft: false }
 }
@@ -85,11 +96,25 @@ export class InputHub {
   private readonly held: Record<InputButton, boolean> = noButtons()
 
   /**
-   * 패널이 열려 있는 동안 참이다. dir 과 action 만 이 값의 영향을 받는다 —
+   * 화면마다 "지금 세계를 잠가야 한다"고 말했는가. heldBySource 와 같은 구조이고
+   * 이유도 같다 — 이것이 진실이고 아래 worldInputLocked 는 파생값이다.
+   */
+  private readonly lockedBy: Record<WorldInputLockOwner, boolean> = { dialogue: false, panel: false }
+
+  /**
+   * 하나라도 잠가 두었으면 참이다. dir 과 action 만 이 값의 영향을 받는다 —
    * cancel·bag·craft 까지 막으면 패널을 닫거나 바꿀 방법이 없어진다.
    * setWorldInputLocked() 의 문서를 참고.
+   *
+   * 밖으로 내주는 이유: 컨트롤러를 숨길지 말지가 정확히 이 값의 반대다
+   * (ControlScene.setControllerVisible). 그 판단을 화면마다 스스로 내리게 두면
+   * 잠금과 똑같은 "주인이 둘인 참거짓"이 하나 더 생긴다 — 대사창이 자기만
+   * 닫혔다고 컨트롤러를 도로 켜면, 패널이 아직 화면을 덮고 있는데 그 위에
+   * 눌리지 않는 버튼이 떠오른다.
    */
-  private worldInputLocked = false
+  get worldInputLocked(): boolean {
+    return LOCK_OWNERS.some((owner) => this.lockedBy[owner])
+  }
 
   get state(): Readonly<InputState> {
     return this.current
@@ -214,13 +239,34 @@ export class InputHub {
    * 통째로 숨으면서 TouchSource 가 자기 몫을 진짜로 놓기 때문이다
    * (ControlScene.setControllerVisible). 즉 이 완화가 실제로 달라지게 만드는
    * 것은 키가 물리적으로 계속 눌려 있는 키보드뿐이다.
+   *
+   * **잠금에는 주인이 여럿일 수 있다.** 예전에는 이 함수가 참거짓 하나를 그대로
+   * 덮어썼고, 대사창과 패널이 각자 그것을 적었다. 둘은 동시에 열릴 수 없다고
+   * 여겼지만 그건 캔버스 안의 입구만 센 것이다 — 상단 바 톱니(React)는 대사창이
+   * 열려 있는 동안에도 계속 눌리고, 그러면 패널이 대사창 위로 열린다. 그 뒤
+   * 화면을 탭해 대사창을 닫으면 대사창이 잠금을 false 로 적어, 화면을 가득 덮은
+   * 패널 밑에서 플레이어가 걷고 채집하게 됐다. 반대 순서로도 같은 일이 난다:
+   * A 를 눌러 대화를 요청한 뒤 응답이 오기 전에 톱니를 누르면, 그때는 대사창이
+   * 아직 열려 있지도 않아서 "톱니를 거절한다" 같은 문지기로는 막을 수 없다.
+   *
+   * 그래서 heldBySource 와 같은 답을 쓴다 — 주인마다 자기 칸을 갖고, 밖에서
+   * 읽는 값(worldInputLocked)은 그 칸들에서 파생된다. 자기 칸만 비우므로 남이
+   * 건 잠금에 손댈 수 없다.
+   *
+   * 횟수를 세지 않고 주인마다 참거짓을 두는 것도 일부러다. 씬은 자기 상태를
+   * 다시 그릴 때마다 이 함수를 부르므로(PanelScene.render 는 탭을 바꿀 때도
+   * 불린다), 횟수를 세면 그런 정상적인 반복 호출이 잠금을 영영 못 풀게 만든다.
    */
-  setWorldInputLocked(locked: boolean): void {
-    if (this.worldInputLocked === locked) return
-    this.worldInputLocked = locked
+  setWorldInputLocked(owner: WorldInputLockOwner, locked: boolean): void {
+    const was = this.worldInputLocked
+    this.lockedBy[owner] = locked
+
+    const now = this.worldInputLocked
+    if (now === was) return
+
     this.applyDir()
-    this.current.action = locked ? false : this.held.action
-    if (locked) this.current.actionPressed = false
+    this.current.action = now ? false : this.held.action
+    if (now) this.current.actionPressed = false
   }
 
   /**

@@ -146,7 +146,11 @@ interface TabButton {
  * 키보드 — ControlScene.setControllerVisible 문서 참고)이 대신한다. 그래서
  * 컨트롤러에게 자리를 비켜줄 필요 자체가 없어졌고, 자리를 비켜주는 대신
  * ControlScene.setControllerVisible() 로 통째로 숨긴다(setOpen·openMenuTab 이
- * 부른다).
+ * 둘 다 applyWorldLock() 을 지난다).
+ *
+ * **대사창과 동시에 열려 있을 수 있다.** 톱니는 대사창이 열려 있는 동안에도
+ * 눌리므로 이 패널이 그 위로 열린다 — 그래서 세계 잠금도 컨트롤러 숨김도 이
+ * 씬 혼자 정하지 않는다(applyWorldLock 참고).
  *
  * ControlScene 처럼 WorldScene 과 별도인 씬이다 — 이유도 같다. WorldScene 의
  * 카메라 스크롤과 낮밤 명암은 그 씬 안의 오브젝트에만 적용되므로, 별도 씬으로
@@ -397,9 +401,7 @@ export class PanelScene extends Phaser.Scene {
     // 탭과 달리, B 는 "무엇을 보러 왔는지"를 모르는 진입이라 고정된 시작점이 필요하다.
     if (next === 'menu') this.menuTab = 'skills'
     this.render()
-    this.hub?.setWorldInputLocked(this.open !== null)
-    // 컨트롤러 전체를 같이 여닫는다 — ControlScene.setControllerVisible 문서 참고.
-    this.control?.setControllerVisible(this.open === null)
+    this.applyWorldLock()
   }
 
   /**
@@ -413,8 +415,29 @@ export class PanelScene extends Phaser.Scene {
     this.open = 'menu'
     this.menuTab = tab
     this.render()
-    this.hub?.setWorldInputLocked(true)
-    this.control?.setControllerVisible(false)
+    this.applyWorldLock()
+  }
+
+  /**
+   * 지금 열림 상태를 세계 잠금과 컨트롤러에 반영한다. setOpen 과 openMenuTab
+   * 둘 다 여기를 지난다 — 두 입구가 각자 잠금을 적으면 언젠가 한쪽만 고쳐진다.
+   *
+   * 잠금에 'panel' 이라는 주인 이름을 붙여 건다. 이 씬과 대사창은 실제로 동시에
+   * 열릴 수 있다 — 톱니(React)는 대사창이 열려 있는 동안에도 계속 눌리고, 반대로
+   * A 로 대화를 요청해 놓고 응답이 오기 전에 톱니를 눌러도 둘이 겹친다. 주인
+   * 이름이 없던 시절에는 먼저 닫는 쪽이 잠금을 통째로 풀어, 이 패널이 화면을
+   * 덮고 있는데도 그 밑에서 세계가 움직였다(InputHub.setWorldInputLocked 문서).
+   *
+   * 컨트롤러도 이 패널의 열림 여부가 아니라 **hub 의 합**을 보고 정한다 —
+   * 이유는 같다. 여기서 `this.open === null` 을 쓰면 대사창이 아직 열려 있는데
+   * 컨트롤러가 그 위로 돌아온다.
+   */
+  private applyWorldLock(): void {
+    const hub = this.hub
+    if (!hub) return
+    hub.setWorldInputLocked('panel', this.open !== null)
+    // 컨트롤러 전체를 같이 여닫는다 — ControlScene.setControllerVisible 문서 참고.
+    this.control?.setControllerVisible(!hub.worldInputLocked)
   }
 
   /** 메뉴 안 탭 바를 눌렀을 때. 메뉴는 이미 열려 있으므로 open·잠금은 건드리지 않는다. */

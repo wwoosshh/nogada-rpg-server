@@ -9,6 +9,57 @@ import { InputHub } from './InputState.js'
  * 부른다.
  */
 
+/**
+ * 잠금에도 주인이 여럿일 수 있다 — heldBySource 와 정확히 같은 이야기다.
+ *
+ * 대사창과 패널은 각자 "지금 세계를 잠가야 한다"고 말할 수 있고, 실제로 둘 다
+ * 열려 있을 수 있다: 말을 거는 중에 상단 바 톱니(React)를 누르면 패널이 대사창
+ * 위로 열린다. 그 뒤 화면을 탭해 대사창을 닫으면, 잠금이 참거짓 하나였을 때는
+ * 대사창이 그것을 그냥 false 로 적어 **패널이 열려 있는데도** 세계가 풀렸다 —
+ * 플레이어는 화면을 가득 덮은 패널 밑에서 걷고 채집하게 됐다.
+ */
+describe('InputHub — 잠금의 주인은 여럿일 수 있다', () => {
+  it('대사창 위에 패널이 열려 있으면, 대사창을 닫아도 세계는 잠긴 채다', () => {
+    const hub = new InputHub()
+    hub.setDir('keyboard', 'up')
+    hub.setButton('keyboard', 'action', true)
+
+    hub.setWorldInputLocked('dialogue', true) // 말을 건다
+    hub.setWorldInputLocked('panel', true) // 톱니를 눌러 패널이 그 위로 열린다
+    hub.setWorldInputLocked('dialogue', false) // 화면을 탭해 대사창만 닫는다
+
+    expect(hub.worldInputLocked).toBe(true)
+    expect(hub.state.dir).toBe(null)
+    expect(hub.state.action).toBe(false)
+  })
+
+  it('마지막 주인이 놓아야 풀린다', () => {
+    const hub = new InputHub()
+    hub.setDir('keyboard', 'up')
+
+    hub.setWorldInputLocked('dialogue', true)
+    hub.setWorldInputLocked('panel', true)
+    hub.setWorldInputLocked('dialogue', false)
+    hub.setWorldInputLocked('panel', false)
+
+    expect(hub.worldInputLocked).toBe(false)
+    expect(hub.state.dir).toBe('up')
+  })
+
+  it('같은 주인이 두 번 잠가도 한 번 놓으면 풀린다 — 세는 것이 아니라 주인마다 참거짓이다', () => {
+    // 씬은 자기 상태를 다시 적을 때마다 이 함수를 부른다(PanelScene.render 는
+    // 탭을 바꿀 때도 불린다). 횟수를 세면 그런 정상적인 반복 호출이 잠금을
+    // 영영 못 풀게 만든다.
+    const hub = new InputHub()
+
+    hub.setWorldInputLocked('panel', true)
+    hub.setWorldInputLocked('panel', true)
+    hub.setWorldInputLocked('panel', false)
+
+    expect(hub.worldInputLocked).toBe(false)
+  })
+})
+
 describe('InputHub — 한 소스는 자기가 넣은 것만 도로 가져갈 수 있다', () => {
   it('키보드가 쥔 행동키는 터치 소스가 전부 놓아도 살아남는다 — 사라진 것은 화면의 버튼이지 물리 키가 아니다', () => {
     const hub = new InputHub()
@@ -91,9 +142,9 @@ describe('InputHub — 터치로 연 대화 뒤 다음 A 는 반드시 새 누�
     const hub = new InputHub()
 
     hub.setButton('touch', 'action', true) // A 를 눌러 말을 건다
-    hub.setWorldInputLocked(true) // 대사창이 열린다
+    hub.setWorldInputLocked('dialogue', true) // 대사창이 열린다
     hub.releaseAll('touch') // 컨트롤러가 손가락 밑에서 사라진다
-    hub.setWorldInputLocked(false) // 대사창을 닫는다
+    hub.setWorldInputLocked('dialogue', false) // 대사창을 닫는다
     hub.beginFrame()
 
     hub.setButton('touch', 'action', true) // 다시 진짜로 누른 A
@@ -115,11 +166,11 @@ describe('InputHub — 잠금은 지우는 것이 아니라 가리는 것이다'
     const hub = new InputHub()
     hub.setButton('keyboard', 'action', true)
 
-    hub.setWorldInputLocked(true)
+    hub.setWorldInputLocked('dialogue', true)
     expect(hub.state.action).toBe(false) // 잠긴 동안은 세계에 닿지 않는다
     expect(hub.isHeld('action')).toBe(true) // 물리적으로는 여전히 눌려 있다
 
-    hub.setWorldInputLocked(false)
+    hub.setWorldInputLocked('dialogue', false)
     expect(hub.state.action).toBe(true)
     expect(hub.state.actionPressed).toBe(false) // 새로 누른 것은 아니다
   })
@@ -127,10 +178,10 @@ describe('InputHub — 잠금은 지우는 것이 아니라 가리는 것이다'
   it('잠긴 사이에 키를 떼었으면 풀려도 눌린 상태가 아니다 — 되살리는 것은 지금 눌려 있는 것뿐이다', () => {
     const hub = new InputHub()
     hub.setButton('keyboard', 'action', true)
-    hub.setWorldInputLocked(true)
+    hub.setWorldInputLocked('dialogue', true)
 
     hub.setButton('keyboard', 'action', false)
-    hub.setWorldInputLocked(false)
+    hub.setWorldInputLocked('dialogue', false)
 
     expect(hub.state.action).toBe(false)
   })
@@ -139,9 +190,9 @@ describe('InputHub — 잠금은 지우는 것이 아니라 가리는 것이다'
     const hub = new InputHub()
     hub.setButton('touch', 'action', true)
 
-    hub.setWorldInputLocked(true)
+    hub.setWorldInputLocked('dialogue', true)
     hub.releaseAll('touch')
-    hub.setWorldInputLocked(false)
+    hub.setWorldInputLocked('dialogue', false)
 
     expect(hub.state.action).toBe(false)
   })
@@ -150,10 +201,10 @@ describe('InputHub — 잠금은 지우는 것이 아니라 가리는 것이다'
     const hub = new InputHub()
     hub.setDir('keyboard', 'up')
 
-    hub.setWorldInputLocked(true)
+    hub.setWorldInputLocked('dialogue', true)
     expect(hub.state.dir).toBe(null)
 
-    hub.setWorldInputLocked(false)
+    hub.setWorldInputLocked('dialogue', false)
     expect(hub.state.dir).toBe('up')
   })
 })
@@ -173,11 +224,11 @@ describe('InputHub — 대사창을 지나는 동안 쥐고 있던 행동키(실
 
     // 2. 말을 건다 → 대사창이 열리며 잠기고, 컨트롤러가 사라지며 터치 소스가
     //    자기가 쥔 것을 전부 놓는다(ControlScene.setControllerVisible).
-    hub.setWorldInputLocked(true)
+    hub.setWorldInputLocked('dialogue', true)
     hub.releaseAll('touch')
 
     // 3. 떼지 않은 채 닫는다.
-    hub.setWorldInputLocked(false)
+    hub.setWorldInputLocked('dialogue', false)
 
     // 4. 프레임이 몇 번 지나도(키보드는 아무 말도 하지 않는다) 그대로여야 한다.
     for (let i = 0; i < 7; i += 1) {

@@ -254,8 +254,15 @@ export class ControlScene extends Phaser.Scene {
   }
 
   /**
-   * 패널이 열리고 닫힐 때 PanelScene 이 부른다(PanelScene.setOpen·
-   * openMenuTab 참고).
+   * 패널이나 대사창이 열리고 닫힐 때 그 씬이 부른다(PanelScene.applyWorldLock·
+   * DialogueScene.render 참고).
+   *
+   * **부르는 쪽이 넘기는 것은 자기 열림 여부가 아니라 `!hub.worldInputLocked`
+   * 다.** 둘은 동시에 열려 있을 수 있어서(톱니로 패널을 대사창 위에 여는 경우
+   * — InputHub.setWorldInputLocked 문서), 각자 자기 상태만 보고 이 함수를 부르면
+   * 먼저 닫는 쪽이 아직 열려 있는 화면 위로 컨트롤러를 도로 켠다. 잠금과 이
+   * 숨김은 언제나 서로의 반대라, 진실을 한 곳(hub)에 두고 여기서는 받은 값을
+   * 그대로 그린다.
    *
    * 왜 숨기는가: 패널이 화면을 거의 다 쓰게 되면서(모바일 조작 설계 문서 §7,
    * PanelScene.ts 클래스 문서) 여덟 버튼 모두 어느 패널이 열려도 그 안에
