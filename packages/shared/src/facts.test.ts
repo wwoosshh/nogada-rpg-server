@@ -41,6 +41,15 @@ const iceNovice: MilestoneDef = {
   effect: { kind: 'title' },
 }
 
+const woodNovice: MilestoneDef = {
+  id: 'wood_1000',
+  metric: { kind: 'skill', skill: 'wood' },
+  threshold: 1000,
+  name: '나무에 익숙해지다',
+  announce: '나무에 익숙해졌다',
+  effect: { kind: 'title' },
+}
+
 describe('buildFacts', () => {
   it('세계 시각을 gameTimeAt 그대로 싣는다', () => {
     const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
@@ -76,10 +85,37 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ celebrated: ['wood_1000', 'ice_1000'] }),
-      milestones: [],
+      milestones: [woodNovice, iceNovice],
       nowMs: NOW,
     })
     expect(facts.justAchieved).toBe('ice_1000')
+  })
+
+  it('celebrated 끝의 id 가 지금 이정표 목록에 없으면 건너뛰고 그 앞의 실존 id 를 쓴다', () => {
+    // celebrated 는 append-only 라 milestones.csv 에서 이정표를 지운 뒤에도 그
+    // id 가 배열 끝에 그대로 남을 수 있다. 마지막 원소만 보면 지워진 이정표를
+    // 영원히 다시 보고하게 된다 — newlyAchieved 가 반대 방향(축하 이력엔 있지만
+    // 지금 데이터엔 없는 id 를 무시)으로 이미 세운 원칙, "이정표를 지운 뒤에도
+    // 옛 세이브가 그대로 살아 있어야 한다"를 여기서도 지켜야 한다.
+    const facts = buildFacts({
+      speaker: SPEAKER,
+      player: player({ celebrated: ['ice_1000', '존재하지않는이정표'] }),
+      milestones: [iceNovice],
+      nowMs: NOW,
+    })
+    expect(facts.justAchieved).toBe('ice_1000')
+  })
+
+  it('celebrated 전체가 지금 이정표 목록에 없으면 justAchieved 사실 자체가 없다', () => {
+    // 걸러내고 나면 남는 것이 없는 경계 — undefined 로 조용히 떨어져야지 예외를
+    // 던지거나 지워진 id 를 그대로 흘리면 안 된다.
+    const facts = buildFacts({
+      speaker: SPEAKER,
+      player: player({ celebrated: ['사라진1', '사라진2'] }),
+      milestones: [iceNovice],
+      nowMs: NOW,
+    })
+    expect(Object.hasOwn(facts, 'justAchieved')).toBe(false)
   })
 
   it('넘긴 것이 없으면 justAchieved 사실 자체가 없다', () => {

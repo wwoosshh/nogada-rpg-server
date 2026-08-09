@@ -60,7 +60,8 @@ export function buildFacts(sources: FactSources): Facts {
   const achieved = achievedIds(milestones, player)
   for (const def of milestones) facts[`milestone.${def.id}`] = achieved.has(def.id)
 
-  // justAchieved 는 가장 최근에 넘긴 이정표다 — `celebrated` 의 마지막 원소.
+  // justAchieved 는 celebrated 에서 "지금 이정표 목록에도 있는" 가장 최근
+  // 이정표다.
   //
   // **새 상태를 만들지 않는 것이 핵심이다.** celebrated 는 문턱을 넘는 그
   // 순간에만 append 되고(gatherService·craftService) 다시 정렬되지도 지워지지도
@@ -79,7 +80,15 @@ export function buildFacts(sources: FactSources): Facts {
   // 대가: 말을 걸기 전에 문턱을 둘 넘기면 마지막 하나만 언급된다. 둘 다
   // 말하려면 대기열이 필요하고 그건 저장·마이그레이션·비우는 시점이 따라붙는
   // 새 상태다 — 지금 콘텐츠가 얻는 것에 비해 비싸서 일부러 받아들인 대가다.
-  const justAchieved = player.celebrated.at(-1)
+  //
+  // celebrated 는 지우지 않는다(위 문단) — 그래서 milestones.csv 에서 이정표를
+  // 지운 뒤에도 그 id 가 배열 끝에 그대로 남을 수 있다. 마지막 원소만 보면
+  // 지워진 이정표를 영원히 다시 보고하게 된다. newlyAchieved 가 반대 방향(축하
+  // 이력엔 있지만 지금 데이터엔 없는 id 를 무시)으로 이미 세운 원칙 — "이정표를
+  // 지운 뒤에도 옛 세이브가 그대로 살아 있어야 한다" — 을 여기서도 지키려면,
+  // 지금 없는 id 를 걸러내고 나서 마지막을 찾아야 한다.
+  const milestoneIds = new Set(milestones.map((def) => def.id))
+  const justAchieved = player.celebrated.filter((id) => milestoneIds.has(id)).at(-1)
   if (justAchieved !== undefined) facts.justAchieved = justAchieved
 
   const { lastTalkAt, recent } = player.dialogueHistory
