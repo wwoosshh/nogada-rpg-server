@@ -43,6 +43,19 @@ describe('TileMover', () => {
     expect(mover.moving).toBe(true)
   })
 
+  // 왜: 맵을 넘어 도착했을 때 바라볼 방향은 씬이 정한다(전환의 facing, 없으면
+  //     들어온 방향). 여기가 언제나 'down' 으로 시작하면 그 계산이 첫
+  //     프레임에 곧바로 덮여 아무 효과가 없다 — 실제로 그랬다: 북쪽으로 걸어
+  //     나가 도착하면 남쪽을, 즉 방금 나온 전환을 마주 보고 서 있었다.
+  it('시작 방향을 받으면 그대로 바라본다', () => {
+    const mover = new TileMover({ start: { x: 0, y: 0 }, isWalkable: walkAnywhere(), facing: 'up' })
+    expect(mover.facing).toBe('up')
+  })
+
+  it('시작 방향을 안 주면 아래를 본다 — 첫 부팅의 기본 자세다', () => {
+    expect(new TileMover({ start: { x: 0, y: 0 }, isWalkable: walkAnywhere() }).facing).toBe('down')
+  })
+
   // 왜: 방향만 바꾼 것은 도착이 아니다. 벽을 보고 방향키를 누르고 있는 동안
   //     도착이 계속 불리면, 전환 칸에 서서 벽을 향해 누르는 것만으로 요청이
   //     프레임마다 날아간다.

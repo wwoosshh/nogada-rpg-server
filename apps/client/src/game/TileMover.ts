@@ -18,6 +18,14 @@ interface TileMoverOptions {
    * 한 칸 더 걸어 나간 뒤에 화면이 바뀐다" 였다.
    */
   onArrive?: (tile: TilePos) => 'stop' | void
+  /**
+   * 처음 바라보는 방향. 없으면 아래 — 첫 부팅의 기본 자세다.
+   *
+   * 맵을 넘어 도착했을 때 어느 쪽을 볼지는 씬이 정한다(전환의 facing, 없으면
+   * 들어온 방향). 여기가 언제나 'down' 으로 시작하면 그 계산이 첫 프레임에
+   * 곧바로 덮여 아무 효과가 없다.
+   */
+  facing?: Direction
 }
 
 /**
@@ -38,13 +46,14 @@ export class TileMover {
   private elapsed = 0
   private stepping = false
 
-  facing: Direction = 'down'
+  facing: Direction
 
   constructor(opts: TileMoverOptions) {
     this.isWalkable = opts.isWalkable
     this.onArrive = opts.onArrive
     this.current = { ...opts.start }
     this.target = { ...opts.start }
+    this.facing = opts.facing ?? 'down'
   }
 
   get tile(): TilePos {

@@ -1,10 +1,11 @@
 import Phaser from 'phaser'
-import { START_MAP_ID } from '@nogada/data'
-import { frontTile, gameTimeAt, isAchieved, type Direction, type TilePos } from '@nogada/shared'
+import { GROUND_LAYER, TILESET_NAME, WALLS_LAYER } from '@nogada/data'
+import { frontTile, gameTimeAt, isAchieved, type Direction, type PlayerState, type TilePos } from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
 import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
+import { arrivalFacing } from '../arrivalFacing.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
@@ -38,6 +39,18 @@ type Interactable =
   | { kind: 'node'; instanceId: string; nodeId: string }
   | { kind: 'speaker'; speakerId: string }
 
+/**
+ * 씬을 다시 시작할 때 이전 맵에서 넘겨주는 것.
+ *
+ * 전환의 `facing` 이 비어 있으면 "들어온 방향을 그대로 유지한다"(설계 문서 3.5)
+ * 인데, 씬을 통째로 다시 시작하면 그 방향을 알던 TileMover 가 함께 사라진다.
+ * Phaser 의 `scene.restart(data)` 가 `init(data)` 로 넘겨 주는 이 한 칸이 그
+ * 방향이 살아 건너오는 유일한 길이다.
+ */
+interface WorldSceneData {
+  enteredFacing?: Direction
+}
+
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite
   private dayNight!: DayNightOverlay
@@ -58,7 +71,12 @@ export class WorldScene extends Phaser.Scene {
    * 아직 이전 맵이다. 그 사이에 스토어를 읽으면 이전 맵 위에서 새 맵의 벽과
    * 전환을 판정하게 된다.
    */
-  private mapId = START_MAP_ID
+  private mapId = ''
+  /**
+   * 이 맵으로 걸어 들어온 방향. 전환의 `facing` 이 비어 있을 때 쓴다.
+   * 첫 부팅(새로고침)에는 물려받을 방향이 없으므로 기본 자세인 아래다.
+   */
+  private enteredFacing: Direction = 'down'
   private mapWidth = 0
   private mapHeight = 0
   private readonly blocked = new Set<string>()
@@ -96,8 +114,35 @@ export class WorldScene extends Phaser.Scene {
     super({ key: 'World' })
   }
 
+  /**
+   * 씬이 다시 시작될 때마다 preload 보다 먼저 불린다.
+   *
+   * 이전 맵에서 걸어 나온 방향은 여기서만 건너온다 — create() 시점에는 이전
+   * TileMover 가 이미 사라진 뒤다. 첫 부팅에는 `data` 가 비어 있고, 그때
+   * 물려받을 방향이 없는 것이 맞다.
+   */
+  init(data: WorldSceneData): void {
+    this.enteredFacing = data.enteredFacing ?? 'down'
+  }
+
+  /**
+   * 서버가 아는 플레이어. 게임은 `connection === 'online'` 이 된 뒤에만
+   * 만들어지므로(App.tsx) 여기 도달했다면 반드시 있다.
+   *
+   * 없을 때 조용히 시작 맵으로 넘어가지 않는 이유는 이 파일의 다른 필수값들
+   * (타일셋·ground·walls·Control 씬)과 같다: 조용한 대체값은 "게이트가 깨졌다"를
+   * "왜 여기서 시작하지"로 바꿔 놓는다.
+   */
+  private requirePlayer(): PlayerState {
+    const { player } = useGameStore.getState()
+    if (!player) {
+      throw new Error('플레이어 상태 없이 세계를 열 수 없다: App.tsx 의 연결 게이트를 확인하라')
+    }
+    return player
+  }
+
   preload(): void {
-    this.load.image('pipoya-basechip', 'tilesets/pipoya-basechip.png')
+    this.load.image(TILESET_NAME, `tilesets/${TILESET_NAME}.png`)
     // Pipoya 캐릭터 시트는 96x128 = 3열 x 4행, 프레임 32x32
     this.load.spritesheet('player', 'sprites/player.png', {
       frameWidth: TILE,
@@ -114,7 +159,11 @@ export class WorldScene extends Phaser.Scene {
     //
     // 이미 캐시에 있는 키는 로더가 스스로 건너뛰므로, 왔던 맵으로 되돌아올 때
     // 다시 내려받지 않는다.
-    const mapId = useGameStore.getState().player?.location.mapId ?? START_MAP_ID
+    //
+    // 그 맵이 실재하는지는 여기서 묻지 않는다 — 서버가 세이브를 읽는 자리에서
+    // 이미 보정했다(store.ts 의 resolvePlayerLocation). 여기서 또 물으면 같은
+    // 규칙이 두 곳에 생기고, 클라이언트가 서버와 다른 답을 낼 여지가 열린다.
+    const mapId = this.requirePlayer().location.mapId
     this.load.tilemapTiledJSON(`map:${mapId}`, `maps/${encodeURIComponent(mapId)}.json`)
   }
 
@@ -140,14 +189,16 @@ export class WorldScene extends Phaser.Scene {
     this.talkPending = false
     this.movePending = false
 
-    this.mapId = useGameStore.getState().player?.location.mapId ?? START_MAP_ID
+    const location = this.requirePlayer().location
+    this.mapId = location.mapId
     const map = this.make.tilemap({ key: `map:${this.mapId}` })
-    // 첫 인자는 Tiled 안의 타일셋 이름, 둘째는 preload 에서 쓴 키다.
-    const tileset = map.addTilesetImage('pipoya-basechip', 'pipoya-basechip')
+    // 첫 인자는 Tiled 안의 타일셋 이름, 둘째는 preload 에서 쓴 키다. 빌드가
+    // 맵마다 이 이름의 타일셋이 있는지 이미 봤다(packages/data 의 parseTmx).
+    const tileset = map.addTilesetImage(TILESET_NAME, TILESET_NAME)
     if (!tileset) throw new Error('타일셋을 찾을 수 없다: Tiled 의 타일셋 이름을 확인하라')
 
-    const ground = map.createLayer('ground', tileset, 0, 0)
-    if (!ground) throw new Error('ground 레이어를 찾을 수 없다')
+    const ground = map.createLayer(GROUND_LAYER, tileset, 0, 0)
+    if (!ground) throw new Error(`${GROUND_LAYER} 레이어를 찾을 수 없다`)
     ground.setDepth(DEPTH.ground)
 
     // decor 와 overhead 는 선택 레이어다. 장식이 없는 맵도 정상이므로 없어도 오류가 아니다.
@@ -160,8 +211,8 @@ export class WorldScene extends Phaser.Scene {
       map.createLayer('decor', tileset, 0, 0)?.setDepth(DEPTH.decor)
     }
 
-    const walls = map.createLayer('walls', tileset, 0, 0)
-    if (!walls) throw new Error('walls 레이어를 찾을 수 없다')
+    const walls = map.createLayer(WALLS_LAYER, tileset, 0, 0)
+    if (!walls) throw new Error(`${WALLS_LAYER} 레이어를 찾을 수 없다`)
     walls.setDepth(DEPTH.walls)
 
     // 플레이어보다 나중이 아니라 깊이로 위에 올린다. 생성 순서와 무관하게 동작한다.
@@ -169,18 +220,23 @@ export class WorldScene extends Phaser.Scene {
       map.createLayer('overhead', tileset, 0, 0)?.setDepth(DEPTH.overhead)
     }
 
-    // 서 있던 자리가 맵 파일의 spawn 을 이긴다 — 새로고침해도, 맵을 넘어와도
-    // 서버가 아는 그 칸에 선다. 맵의 spawn 오브젝트는 그 위치가 아직 없거나
-    // (첫 접속) 다른 맵을 가리킬 때의 기본값이다.
-    const loc = useGameStore.getState().player?.location
-    const spawn = map.findObject('spawn', (o) => o.name === 'player')
-    const startTile: TilePos =
-      loc && loc.mapId === this.mapId
-        ? { x: loc.x, y: loc.y }
-        : {
-            x: Math.floor((spawn?.x ?? TILE * 2) / TILE),
-            y: Math.floor((spawn?.y ?? TILE * 2) / TILE),
-          }
+    // 설 자리는 언제나 서버가 아는 칸이다. 맵 파일의 `spawn` 오브젝트를 여기서
+    // 보지 않는다 — 이 씬의 mapId 자체가 그 location 에서 나오므로 "다른 맵을
+    // 가리킬 때" 라는 분기는 참이 될 수 없었고, 그 조용한 대체값은 서버가 이미
+    // 보정하는 일(store.ts 의 resolvePlayerLocation)을 흉내 내면서 답만 달랐다.
+    // spawn 오브젝트는 이제 빌드가 읽어 MapDef.spawn 으로 싣고, 새 플레이어의
+    // 시작 칸과 세이브 복구 지점이 거기서 나온다.
+    const startTile: TilePos = { x: location.x, y: location.y }
+
+    // 어느 쪽을 보고 서는가. 전환표의 facing 이 정하고, 비어 있으면 걸어 들어온
+    // 방향을 그대로 유지한다(설계 문서 3.5). 이것이 없던 동안에는 북쪽으로 걸어
+    // 나가 도착해도 남쪽을 — 방금 나온 전환을 정면으로 — 보고 서 있었다.
+    const startFacing = arrivalFacing(
+      useGameStore.getState().data.transitions,
+      this.mapId,
+      startTile,
+      this.enteredFacing,
+    )
 
     this.createAnimations()
     // 칸의 **중심**에 놓는다. update() 가 매 프레임 같은 식으로 다시 놓으므로
@@ -189,7 +245,7 @@ export class WorldScene extends Phaser.Scene {
       startTile.x * TILE + TILE / 2,
       startTile.y * TILE + TILE / 2,
       'player',
-      this.idleFrame('down'),
+      this.idleFrame(startFacing),
     )
     this.player.setDepth(DEPTH.player)
 
@@ -231,6 +287,9 @@ export class WorldScene extends Phaser.Scene {
 
     this.mover = new TileMover({
       start: startTile,
+      // 스프라이트와 같은 방향으로 시작해야 한다 — 여기가 기본값 'down' 으로
+      // 남으면 update() 의 첫 프레임이 스프라이트를 곧바로 되돌려 놓는다.
+      facing: startFacing,
       isWalkable: (p) => this.isWalkable(p),
       // 전환은 "칸에 올라선 순간"에 판정한다. update() 에서 칸이 바뀐 것을
       // 보고 판정하면 이미 다음 걸음이 시작된 뒤라, 가장자리를 밟고도 한 칸
@@ -438,7 +497,11 @@ export class WorldScene extends Phaser.Scene {
         // 다르므로, 바꿀 것을 하나씩 골라내는 것보다 create() 를 처음부터 다시
         // 도는 편이 빠뜨릴 여지가 없다. 새 InputHub 가 만들어지므로 방금 건
         // 잠금도 그때 함께 사라진다.
-        this.scene.restart()
+        //
+        // 걸어 나온 방향을 함께 넘긴다. 전환의 facing 이 비어 있으면 그것을
+        // 그대로 유지해야 하는데(설계 문서 3.5), 이 mover 는 재시작과 함께
+        // 사라지므로 지금이 그 방향을 전할 수 있는 마지막 순간이다.
+        this.scene.restart({ enteredFacing: this.mover.facing } satisfies WorldSceneData)
       })
       .catch(() => {
         // 서버가 거절했거나 닿지 못했다. 씬은 그대로 두고 잠금만 푼다 — 여기서
