@@ -62,10 +62,16 @@ version:    Version 1.020
 ```
 assets/licensed/
 ├─ Pipoya RPG Tileset 32x32/
-│  ├─ [Base]BaseChip_pipo.png     256x4256 — 8x133 = 1,064 타일. ★ M1 은 이것만 사용
+│  ├─ [Base]BaseChip_pipo.png     256x4256 — 8x133 = 1,064 타일. 셋으로 나눠 전부 사용
 │  ├─ LightShadow_pipo.png        256x192  — 그림자 오버레이
-│  ├─ [A]_type1/2/3/              각 34개, 32x160 — RPG Maker 오토타일 포맷.
-│  │                              Tiled 에서 직접 못 씀. M1 미사용
+│  ├─ [A]_type1/                  각 34개, 32x160 = 1x5 — 애니메이션 프레임 5장.
+│  │                              Tiled 에서 오토타일로 직접 못 씀
+│  ├─ [A]_type2/                  각 34개, 64x96 = 2x3 = 6 타일 — RPG Maker 축약 포맷
+│  ├─ [A]_type3/                  각 34개, **256x192 = 8x6 = 48 타일 — 완전히 펼친
+│  │                              blob 이라 Tiled 에서 그대로 쓸 수 있다.**
+│  │                              (예전 이 표는 셋 다 32x160 이라고 적어 두었다.
+│  │                              그 오기 때문에 물·물가·지형 경계 오토타일이
+│  │                              "Tiled 에서 못 쓴다" 로 잠겨 있었다.)
 │  └─ SampleMap/                  완성 .tmx + 외부 .tsx 예제
 ├─ PIPOYA FREE RPG Character Sprites 32x32/
 │  └─ Male/ Female/ Enemy/ Boss/ Animal/ Soldier/ Other/ Xmas/ ...
@@ -144,24 +150,72 @@ hammer_mithril:940
 ICONS
 ```
 
-타일셋은 **단순 복사가 아니라 2048px 로 잘라야 한다** (아래 참조). PowerShell 에서:
+타일셋은 **단순 복사가 아니라 네 장으로 잘라야 한다** (아래 참조). PowerShell 에서, 저장소 루트에서:
 
 ```powershell
 Add-Type -AssemblyName System.Drawing
 $src = "assets\licensed\Pipoya RPG Tileset 32x32\Pipoya RPG Tileset 32x32\[Base]BaseChip_pipo.png"
-$img = [System.Drawing.Image]::FromFile((Resolve-Path $src))
-$bmp = New-Object System.Drawing.Bitmap(256, 2048, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
-$g.DrawImage($img, (New-Object System.Drawing.Rectangle(0,0,256,2048)),
-                   (New-Object System.Drawing.Rectangle(0,0,256,2048)), [System.Drawing.GraphicsUnit]::Pixel)
-$g.Dispose(); $img.Dispose()
-$bmp.Save("apps\client\public\tilesets\pipoya-basechip.png", [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+$out = "apps\client\public\tilesets"
+$img = New-Object System.Drawing.Bitmap((Resolve-Path $src))
+# 원본 256x4256 을 행 0-63 / 64-127 / 128-132 으로 나눈다. 높이는 전부 2048 이하여야 한다.
+foreach ($cut in @(
+    @{ n = 'pipoya-basechip';   y = 0;    h = 2048 },
+    @{ n = 'pipoya-basechip-2'; y = 2048; h = 2048 },
+    @{ n = 'pipoya-basechip-3'; y = 4096; h = 160  })) {
+  $rect = New-Object System.Drawing.Rectangle(0, $cut.y, 256, $cut.h)
+  $crop = $img.Clone($rect, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $crop.Save("$out\$($cut.n).png", [System.Drawing.Imaging.ImageFormat]::Png)
+  $crop.Dispose()
+}
+$img.Dispose()
+
+# addwork 은 이미 384x2048 이라 자를 것이 없다 — 이름만 바꿔 복사한다.
+Copy-Item "assets\licensed\Unorganized Parts\Unorganized Parts\addwork.png" "$out\pipoya-addwork.png"
+```
+
+`Bitmap.Clone` 은 화소를 그대로 옮긴다. `Graphics.DrawImage` 를 쓰면 알파가 곱해졌다 풀리면서
+반투명 화소가 1/255 만큼 흔들린다 — 예전 이 문서의 방법이 그랬다.
+
+ImageMagick 이 있다면 같은 것을 이렇게도 할 수 있다:
+
+```bash
+SRC="assets/licensed/Pipoya RPG Tileset 32x32/Pipoya RPG Tileset 32x32/[Base]BaseChip_pipo.png"
+magick "$SRC" -crop 256x2048+0+0    +repage apps/client/public/tilesets/pipoya-basechip.png
+magick "$SRC" -crop 256x2048+0+2048 +repage apps/client/public/tilesets/pipoya-basechip-2.png
+magick "$SRC" -crop 256x160+0+4096  +repage apps/client/public/tilesets/pipoya-basechip-3.png
+cp "assets/licensed/Unorganized Parts/Unorganized Parts/addwork.png" \
+   apps/client/public/tilesets/pipoya-addwork.png
 ```
 
 파일명 개명은 필수다. 원본 이름의 대괄호와 공백이 URL 인코딩 문제를 일으킨다.
 
-### ⚠️ 타일셋을 2048px 로 자르는 이유 — 모바일 WebGL 텍스처 한계
+### 시트 네 장과 그 gid 구간
+
+| 시트 | 원본 | 원본 행 | 크기 | 격자 | 타일 | gid |
+|---|---|---|---|---|---|---|
+| `pipoya-basechip.png` | `[Base]BaseChip_pipo.png` | 0–63 | 256×2048 | 8열 × 64행 | 512 | 1 – 512 |
+| `pipoya-basechip-2.png` | 〃 | 64–127 | 256×2048 | 8열 × 64행 | 512 | 513 – 1024 |
+| `pipoya-basechip-3.png` | 〃 | 128–132 | 256×160 | 8열 × 5행 | 40 | 1025 – 1064 |
+| `pipoya-addwork.png` | `Unorganized Parts/addwork.png` | 전부 | 384×2048 | **12열** × 64행 | 768 | 1065 – 1832 |
+
+앞 세 장은 자른 순서대로 이어 붙였으므로 **gid = 원본 시트의 타일 번호 + 1** 이 시트 경계를 넘어
+그대로 성립한다. `addwork` 만 열 수가 12 라 별도 계산이다: `gid = 1065 + (행 × 12 + 열)`.
+
+이 순서와 `firstgid` 는 맵 열 장의 `.tmx` 에 그대로 적혀 있고, `packages/data` 의 `TILESET_NAMES` 가
+같은 순서를 갖는다. **셋 중 하나만 바꾸면 세계의 모든 타일이 조용히 밀린다** — 그래서 빌드가
+`firstgid` 가 앞 시트의 타일 수를 잇는지 검사한다(`parseTmx`).
+
+무엇이 어디에 있는가(원본 행 기준):
+
+- 0–63 — 자연 지형·바닥·마을 길·벽·울타리·나무·바위. 예전엔 이것만 있었다.
+- 64–69 — 실내 바닥과 벽지, 계단.
+- **70–75 — 지붕 여덟 색과 그 박공·모서리.** 벽은 세울 수 있는데 지붕을 못 얹던 이유가 여기였다.
+- 76–110 — 실내 가구 전부: 침대 네 색, 부엌, 벽난로, 책장, 탁자, 소품.
+- 111–127 — 분수·음식·무기·상자 등 소품.
+- 128–132 — 상점 진열용 소품(갑옷·옷걸이·무기 거치대·방패·열쇠).
+- `addwork` — 큰 나무 4×4, 마른 나무, 노점, 걸개 간판, 묘비, 절벽면, 산봉우리.
+
+### ⚠️ 시트 높이를 2048px 이하로 유지하는 이유 — 모바일 WebGL 텍스처 한계
 
 원본 `[Base]BaseChip_pipo.png` 는 **256×4256** 이다. 안드로이드 WebView 의 WebGL `MAX_TEXTURE_SIZE` 는
 기기에 따라 다르며 검증에 쓴 에뮬레이터는 **4096** 이었다. 160px 초과라 텍스처 업로드가 실패하고
@@ -169,22 +223,25 @@ $bmp.Save("apps\client\public\tilesets\pipoya-basechip.png", [System.Drawing.Ima
 드러나지 않는다. Task 6(안드로이드 빌드)에서 발견했다.
 
 **2048px 를 고른 근거:** 저사양 안드로이드 상당수가 `MAX_TEXTURE_SIZE = 2048` 이라 가장 넓은 호환성을 준다.
-64행 × 8열 = **512 타일**이며, 자연 지형·마을·건축·벽까지 포함한다. 현재 맵은 타일 ID 170 까지만 쓴다.
 
-**아래에서 잘라내므로 위쪽 타일 ID 는 그대로 보존된다.** 잘린 부분(실내 가구, 소품, 분수·음식·무기 등)이
-나중에 필요해지면 **별도 타일셋으로 추가한다** — Tiled 도 Phaser 도 맵당 여러 타일셋을 지원하며,
-큰 시트 하나보다 그쪽이 정석이다. 원본은 `assets/licensed/` 에 그대로 있으므로 잃는 것은 없다.
+**한동안 첫 512 타일만 남기고 나머지를 버렸다.** 그 512 타일로는 지붕도 가구도 침대도 놓을 수 없었다 —
+타일셋 제작자 자신의 샘플 맵이 쓰는 basechip 타일 306종 중 114종(37%)이, 그 맵의 `building_up`
+레이어 62종 중에서는 49종(79%)이 잘려 나간 쪽에 있었다. 이제는 **버리지 않고 나눈다.** 자르는 자리를
+64행·128행 경계에 둔 덕에 첫 장의 타일 번호는 예전과 한 칸도 다르지 않고, 이미 그린 맵 열 장이
+그대로 남았다.
 
-타일셋 크기를 바꾸면 **`world.tmx` 의 타일셋 메타데이터(`tilecount`/`height` 등)도 함께 고쳐야 한다.**
-어긋나면 Phaser 가 잘못된 좌표를 계산한다.
+시트를 더하거나 크기를 바꾸면 **`.tmx` 의 타일셋 메타데이터(`tilecount`/`columns`/`width`/`height`)와
+`firstgid` 도 함께 고쳐야 하고**, `packages/data` 의 `TILESET_NAMES` 에 이름을 넣어야 한다. 빌드가
+둘을 다 검사한다 — 이름을 모르면 "클라이언트가 모르는 타일셋" 으로, `firstgid` 가 안 맞으면
+"앞 시트의 타일 수를 이어야 한다" 로 세운다.
 
 > 반대로 **맵 파일(`packages/data/maps/*.tmx`)은 우리가 만든 저작물이므로 커밋한다.**
 > `world.json` 은 더 이상 커밋 대상이 아니다 — Task 1 부터 빌드가 `.tmx` 를 직접 읽어
 > `packages/data/src/generated/maps/` 에 만들어 내는 생성물이다(수동 Export 가 사라졌다).
 
-**Tiled 에서 맵을 열 때 타일셋 이미지 경로:** `world.tmx`(그리고 이후 맵들)는 타일셋을
-`apps/client/public/tilesets/pipoya-basechip.png` (위 "복원 방법" 참고)로 가리킨다. 그
-경로에 이미지를 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
+**Tiled 에서 맵을 열 때 타일셋 이미지 경로:** 맵들은 타일셋을
+`apps/client/public/tilesets/pipoya-*.png` (위 "복원 방법" 참고)로 가리킨다. 그
+경로에 네 장을 모두 복원해 두지 않으면 **Tiled 에서 맵을 열었을 때 타일셋이 깨진 채로
 보인다** — 다만 이건 Tiled 편집 화면에만 해당하고, **게임 실행(빌드·테스트·클라이언트)에는
 영향이 없다.** 빌드도 클라이언트도 이 경로 문자열 자체를 읽지 않기 때문이다(클라이언트는
 `WorldScene.ts` 의 `preload()` 에 적힌 별도 키로 그림을 찾는다).
@@ -204,8 +261,22 @@ Tiled **프로젝트 파일은 선택 사항**이다. 맵 하나를 다루는 �
 
 | 팩 | 제작자 | 구매처 | 용도 |
 |---|---|---|---|
-| [Fantasy RPG Tileset Pack](https://finalbossblues.itch.io/fantasy-rpg-tileset-pack) | finalbossblues | **itch.io** | 본편 맵 타일셋 |
 | [Time Fantasy RPG Sprites 2 (Monsters)](https://finalbossblues.itch.io/time-fantasy-monsters) | finalbossblues | **itch.io** | 몬스터 |
+
+### ⚠️ Time Fantasy 계열 타일셋은 보충재가 아니라 **교체재**다
+
+[Fantasy RPG Tileset Pack](https://finalbossblues.itch.io/fantasy-rpg-tileset-pack)($15)을
+"본편 맵 타일셋" 으로, 즉 Pipoya 에 얹어 쓸 보충재로 적어 두었었다. **그럴 수 없다.**
+
+finalbossblues / Time Fantasy 계열의 타일 그림은 원래 **16×16 을 200% 확대한 것**이라
+32×32 칸 안의 실제 픽셀 밀도가 Pipoya 의 절반이다. 한 맵 안에 섞으면 같은 화면에서 픽셀
+크기가 두 배 차이 나서, 어느 쪽도 "일부러 그런 것" 으로 안 보이고 그냥 잘못 만든 화면이 된다.
+칸 크기가 같다는 것은 섞을 수 있다는 뜻이 아니다.
+
+그러므로 이 팩을 들이는 결정은 "타일을 더 산다" 가 아니라 **"맵 그림 전부를 갈아엎는다"** 이고,
+그러면 이미 그린 맵의 타일 id 가 전부 무의미해진다. M1 이후에 그런 결정을 내리더라도
+Pipoya 와 병행이 아니라 한쪽을 고르는 문제로 다뤄야 한다. 몬스터 스프라이트는 다르다 —
+캐릭터는 타일 격자에 얹히지 않아 밀도 차이가 훨씬 덜 드러난다.
 
 ## 검토했으나 보류
 
