@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { GROUND_LAYER, TILESET_NAME, WALLS_LAYER } from '@nogada/data'
+import { GROUND_LAYER, TILESET_NAMES, WALLS_LAYER } from '@nogada/data'
 import { frontTile, gameTimeAt, isAchieved, type Direction, type PlayerState, type TilePos } from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
@@ -142,7 +142,13 @@ export class WorldScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image(TILESET_NAME, `tilesets/${TILESET_NAME}.png`)
+    // 맵이 어느 시트를 쓰는지는 아직 모른다 — 맵 JSON 은 바로 아래에서 이제야
+    // 큐에 들어가고, 그것을 읽는 것은 create() 다. 그래서 네 장을 다 올린다.
+    // 로더가 이미 캐시에 있는 키는 건너뛰므로 맵을 넘을 때 다시 받지 않고,
+    // 네 장 합쳐 약 560KB 다.
+    for (const name of TILESET_NAMES) {
+      this.load.image(name, `tilesets/${name}.png`)
+    }
     // Pipoya 캐릭터 시트는 96x128 = 3열 x 4행, 프레임 32x32
     this.load.spritesheet('player', 'sprites/player.png', {
       frameWidth: TILE,
@@ -192,12 +198,31 @@ export class WorldScene extends Phaser.Scene {
     const location = this.requirePlayer().location
     this.mapId = location.mapId
     const map = this.make.tilemap({ key: `map:${this.mapId}` })
-    // 첫 인자는 Tiled 안의 타일셋 이름, 둘째는 preload 에서 쓴 키다. 빌드가
-    // 맵마다 이 이름의 타일셋이 있는지 이미 봤다(packages/data 의 parseTmx).
-    const tileset = map.addTilesetImage(TILESET_NAME, TILESET_NAME)
-    if (!tileset) throw new Error('타일셋을 찾을 수 없다: Tiled 의 타일셋 이름을 확인하라')
+    // 맵이 적어 온 타일셋을 그대로 붙인다 — 우리가 아는 목록을 도는 것이
+    // 아니라 맵을 따라간다. 맵이 세 장만 쓰면 세 장만 붙고, 그 순서와
+    // firstgid 는 맵이 정한 것 그대로다.
+    //
+    // 첫 인자는 Tiled 안의 타일셋 이름, 둘째는 preload 에서 쓴 키다. 둘이
+    // 같은 글자인 것이 TILESET_NAMES 를 양쪽이 함께 보는 이유다. 빌드가
+    // 맵마다 이 이름들이 우리가 아는 것인지 이미 봤다(packages/data 의 parseTmx).
+    //
+    // **모든 레이어에 이 배열을 통째로 넘긴다.** Phaser 는 레이어마다 시트별
+    // gid 구간표를 만들어 타일 하나하나가 자기 시트를 찾게 한다
+    // (`TilemapLayer.setTilesets`). 레이어에 한 장만 넘기면 그 레이어에서
+    // 다른 시트의 타일은 조용히 안 그려진다 — 지붕을 얹으려는 지금 그건
+    // 곧 "지붕만 안 보인다" 이다.
+    const tilesets = map.tilesets.map((ts) => {
+      const added = map.addTilesetImage(ts.name, ts.name)
+      if (!added) {
+        throw new Error(
+          `타일셋 "${ts.name}" 의 그림을 못 찾았다 — packages/data 의 TILESET_NAMES 와 ` +
+            `apps/client/public/tilesets/ 를 확인하라(복원 방법은 assets/CREDITS.md)`,
+        )
+      }
+      return added
+    })
 
-    const ground = map.createLayer(GROUND_LAYER, tileset, 0, 0)
+    const ground = map.createLayer(GROUND_LAYER, tilesets, 0, 0)
     if (!ground) throw new Error(`${GROUND_LAYER} 레이어를 찾을 수 없다`)
     ground.setDepth(DEPTH.ground)
 
@@ -208,16 +233,16 @@ export class WorldScene extends Phaser.Scene {
     const tileLayerNames = map.getTileLayerNames()
 
     if (tileLayerNames.includes('decor')) {
-      map.createLayer('decor', tileset, 0, 0)?.setDepth(DEPTH.decor)
+      map.createLayer('decor', tilesets, 0, 0)?.setDepth(DEPTH.decor)
     }
 
-    const walls = map.createLayer(WALLS_LAYER, tileset, 0, 0)
+    const walls = map.createLayer(WALLS_LAYER, tilesets, 0, 0)
     if (!walls) throw new Error(`${WALLS_LAYER} 레이어를 찾을 수 없다`)
     walls.setDepth(DEPTH.walls)
 
     // 플레이어보다 나중이 아니라 깊이로 위에 올린다. 생성 순서와 무관하게 동작한다.
     if (tileLayerNames.includes('overhead')) {
-      map.createLayer('overhead', tileset, 0, 0)?.setDepth(DEPTH.overhead)
+      map.createLayer('overhead', tilesets, 0, 0)?.setDepth(DEPTH.overhead)
     }
 
     // 설 자리는 언제나 서버가 아는 칸이다. 맵 파일의 `spawn` 오브젝트를 여기서

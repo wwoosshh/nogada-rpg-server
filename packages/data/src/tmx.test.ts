@@ -7,6 +7,9 @@ const SAMPLE = `<?xml version="1.0" encoding="UTF-8"?>
  <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="512" columns="8">
   <image source="../tilesets/pipoya-basechip.png" width="256" height="2048"/>
  </tileset>
+ <tileset firstgid="513" name="pipoya-basechip-2" tilewidth="32" tileheight="32" tilecount="512" columns="8">
+  <image source="../tilesets/pipoya-basechip-2.png" width="256" height="2048"/>
+ </tileset>
  <layer id="1" name="ground" width="3" height="2">
   <data encoding="csv">
 1,1,1,
@@ -96,7 +99,9 @@ describe('parseTmx — Phaser 가 실제로 읽는 칸', () => {
     expect(parseTmx(SAMPLE).orientation).toBe('orthogonal')
   })
 
-  it('타일셋을 옮긴다 — Phaser 가 GID 를 그림 조각으로 바꾸는 데 쓴다', () => {
+  // 왜: 시트 하나로는 지붕을 못 얹는다(원본의 52%가 잘려 있었다). 여러 장을
+  //     **전부** 옮기지 않으면 뒤 시트의 타일은 브라우저에서 조용히 안 그려진다.
+  it('타일셋을 여러 장 그대로 옮긴다 — Phaser 가 GID 를 그림 조각으로 바꾸는 데 쓴다', () => {
     expect(parseTmx(SAMPLE).tilesets).toEqual([
       {
         firstgid: 1,
@@ -104,6 +109,15 @@ describe('parseTmx — Phaser 가 실제로 읽는 칸', () => {
         tilewidth: 32,
         tileheight: 32,
         image: '../tilesets/pipoya-basechip.png',
+        imagewidth: 256,
+        imageheight: 2048,
+      },
+      {
+        firstgid: 513,
+        name: 'pipoya-basechip-2',
+        tilewidth: 32,
+        tileheight: 32,
+        image: '../tilesets/pipoya-basechip-2.png',
         imagewidth: 256,
         imageheight: 2048,
       },
@@ -123,16 +137,38 @@ describe('parseTmx — Phaser 가 실제로 읽는 칸', () => {
   //     "타일셋을 찾을 수 없다" 로 터진다 — 검은 화면이고, 맵을 그린 사람은
   //     자기가 무엇을 빠뜨렸는지 알 길이 없다.
   it('타일셋이 하나도 없으면 던진다', () => {
-    const xml = SAMPLE.replace(/ <tileset[\s\S]*?<\/tileset>\n/, '')
+    const xml = SAMPLE.replace(/ <tileset[\s\S]*?<\/tileset>\n <tileset[\s\S]*?<\/tileset>\n/, '')
+    expect(() => parseTmx(xml)).toThrow(/타일셋이 하나도 없다/)
     expect(() => parseTmx(xml)).toThrow(/pipoya-basechip/)
   })
 
   // 왜: 클라이언트는 타일셋을 **이름으로** 찾는다(addTilesetImage('pipoya-basechip')).
-  //     이름이 다르면 타일셋이 있어도 못 찾아 같은 자리에서 같은 검은 화면이 된다.
-  it('타일셋 이름이 다르면 던지고, 무엇이 들어 있는지 말한다', () => {
+  //     클라이언트가 안 들고 있는 이름을 쓰면 타일셋이 있어도 못 찾아 같은
+  //     자리에서 같은 검은 화면이 된다. 시트가 넷이 되어도 이 안전망은 그대로다.
+  it('클라이언트가 모르는 타일셋 이름을 쓰면 던지고, 쓸 수 있는 이름을 말한다', () => {
     const xml = SAMPLE.replace('name="pipoya-basechip"', 'name="basechip"')
-    expect(() => parseTmx(xml)).toThrow(/basechip/)
-    expect(() => parseTmx(xml)).toThrow(/pipoya-basechip/)
+    expect(() => parseTmx(xml)).toThrow(/모르는 타일셋 "basechip"/)
+    expect(() => parseTmx(xml)).toThrow(/pipoya-addwork/)
+  })
+
+  // 왜: firstgid 가 앞 시트의 타일 수를 안 이으면 아무것도 안 터지고 **세계의
+  //     모든 타일이 밀린다** — 바닥이 벽이 되고 벽이 지붕이 된다. 시트가 하나일
+  //     때는 있을 수 없던 실수라, 여러 장으로 나눈 지금 새로 필요해진 안전망이다.
+  it('두 번째 타일셋의 firstgid 가 앞 시트를 안 이으면 던진다', () => {
+    const xml = SAMPLE.replace('firstgid="513"', 'firstgid="512"')
+    expect(() => parseTmx(xml)).toThrow(/firstgid/)
+    expect(() => parseTmx(xml)).toThrow(/513/)
+  })
+
+  // 왜: 시트 크기를 줄여 놓고 firstgid 를 그대로 두는 것이 같은 어긋남의
+  //     다른 얼굴이다. 타일 수는 `tilecount` 가 아니라 그림 크기에서 센다 —
+  //     Phaser 도 그림에서 세기 때문이다(Tileset.updateTileData).
+  it('그림 크기가 tilecount 와 어긋나도 그림 쪽을 믿고 firstgid 를 따진다', () => {
+    const xml = SAMPLE.replace(
+      '<image source="../tilesets/pipoya-basechip.png" width="256" height="2048"/>',
+      '<image source="../tilesets/pipoya-basechip.png" width="256" height="160"/>',
+    )
+    expect(() => parseTmx(xml)).toThrow(/firstgid/)
   })
 
   // 왜: Tiled 의 Infinite 체크박스는 타일을 <data> 대신 <chunk> 안에 넣는다.

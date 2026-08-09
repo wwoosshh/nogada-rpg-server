@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
@@ -125,6 +125,16 @@ writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf
 // parseMaps 가 이미 파싱해 둔 것을 그대로 쓴다. 예전엔 여기서 같은 .tmx 를
 // 두 번째로 읽어 두 번째로 파싱했다 — 맵이 수십 장이 되면 그 낭비가 맵 수만큼이고,
 // 두 번 읽는 사이에 파일이 바뀌면 검증한 맵과 내보낸 맵이 달라질 수도 있다.
+//
+// **먼저 비운다.** 여기 쓰기만 하고 지우지 않던 동안, 이름을 바꾸거나 없앤 맵의
+// .json 이 계속 남았다 — 실제로 `world.json` 과 `시험숲.json` 이 그렇게 살아
+// 있었고, 프로덕션 빌드는 이 폴더를 통째로 dist/maps 로 복사하므로 없는 맵이
+// 배포물에까지 따라갔다. 생성 폴더의 내용은 언제나 지금의 maps.csv 와 .tmx 가
+// 정한 것이어야 한다.
+//
+// gamedata.json 은 이 폴더 밖(생성 폴더 바로 아래)이라 함께 지워지지 않는다 —
+// 그쪽은 매번 통째로 덮어써지므로 남을 것이 없다.
+rmSync(join(outDir, 'maps'), { recursive: true, force: true })
 mkdirSync(join(outDir, 'maps'), { recursive: true })
 for (const [id, json] of Object.entries(mapJson)) {
   writeFileSync(join(outDir, 'maps', `${id}.json`), JSON.stringify(json), 'utf8')

@@ -77,14 +77,31 @@ export interface TiledMapJson {
 }
 
 /**
- * 클라이언트가 타일셋을 찾는 이름. `addTilesetImage(TILESET_NAME, TILESET_NAME)`
- * 의 첫 인자가 Tiled 안의 타일셋 이름이라, 맵이 다른 이름을 쓰면 그 호출이
+ * 클라이언트가 그림으로 들고 있는 타일셋들. `addTilesetImage(이름, 이름)` 의
+ * 첫 인자가 Tiled 안의 타일셋 이름이라, 맵이 여기 없는 이름을 쓰면 그 호출이
  * null 을 돌려주고 WorldScene 이 그 자리에서 던진다 — 검은 화면이다.
  *
  * 그래서 빌드와 클라이언트가 **같은 글자**를 봐야 한다. 여기 한 곳에 두고
- * 양쪽이 가져다 쓴다.
+ * 양쪽이 가져다 쓴다 — 클라이언트는 preload 의 키로, 빌드는 맵이 요구하는
+ * 그림이 실제로 있는지 보는 잣대로.
+ *
+ * **왜 여러 장인가:** 원본 `[Base]BaseChip_pipo.png` 는 256×4256(1,064 타일)
+ * 인데, 저사양 안드로이드의 WebGL `MAX_TEXTURE_SIZE` 가 2048 이라 한 장으로는
+ * 못 올린다(assets/CREDITS.md). 예전엔 위 512 타일만 남기고 잘라 버려서 지붕·
+ * 실내 가구·침대가 통째로 없었다 — 벽은 세울 수 있는데 지붕을 못 얹었다.
+ * 이제 같은 원본을 512 + 512 + 40 으로 나눠 셋으로 들고, `addwork` 을 더한다.
+ *
+ * 순서는 맵의 `firstgid` 순서와 같게 둔다. 그 덕에 앞 세 장의 gid 는 원본
+ * 시트의 타일 번호 + 1 로 그대로 이어진다(1..512, 513..1024, 1025..1064).
  */
-export const TILESET_NAME = 'pipoya-basechip'
+export const TILESET_NAMES = [
+  'pipoya-basechip',
+  'pipoya-basechip-2',
+  'pipoya-basechip-3',
+  'pipoya-addwork',
+] as const
+
+export type TilesetName = (typeof TILESET_NAMES)[number]
 
 /** 하나뿐인 자식을 객체로 접는 XML 파서의 습성을 여기서 한 번에 편다. */
 function asArray<T>(value: T | T[] | undefined): T[] {
@@ -106,6 +123,20 @@ function toNumberOrDefault(value: unknown, fallback: number, what: string): numb
 /** Tiled 는 true(기본값)면 속성을 아예 안 쓰고, false 일 때만 "0" 을 적는다. */
 function tiledBool(value: unknown, fallback: boolean): boolean {
   return value === undefined ? fallback : value !== '0'
+}
+
+/**
+ * 시트 하나가 담는 타일 수. `<tileset>` 의 `tilecount` 를 믿지 않고 그림 크기에서
+ * 다시 센다 — Phaser 도 같은 계산을 한다(`Tileset.updateTileData`). 두 값이
+ * 어긋난 맵에서 Tiled 와 게임이 서로 다른 gid 를 쓰게 되는데, 그 어긋남을
+ * 잡으려는 것이 바로 아래의 firstgid 검사다.
+ */
+function tileCountOf(ts: TiledTilesetJson): number {
+  const margin = ts.margin ?? 0
+  const spacing = ts.spacing ?? 0
+  const columns = Math.floor((ts.imagewidth - margin * 2 + spacing) / (ts.tilewidth + spacing))
+  const rows = Math.floor((ts.imageheight - margin * 2 + spacing) / (ts.tileheight + spacing))
+  return Math.max(0, columns) * Math.max(0, rows)
 }
 
 /**
@@ -168,17 +199,49 @@ export function parseTmx(xml: string): TiledMapJson {
     return out
   })
 
-  // 타일셋이 없거나 이름이 다르면 예전에는 `tilesets: []` 이 조용히 나왔다.
-  // 그 맵은 빌드를 통과한 뒤 클라이언트의 addTilesetImage 가 null 을 돌려주는
-  // 자리에서야 터지고, 화면에는 아무것도 안 나온다 — 맵을 그린 사람이 스스로
-  // 원인을 짚을 수 없는 실패다. 그리는 시점에 말한다.
-  if (!tilesets.some((ts) => ts.name === TILESET_NAME)) {
-    const found = tilesets.map((ts) => `"${ts.name}"`).join(', ')
+  // 타일셋이 없으면 예전에는 `tilesets: []` 이 조용히 나왔다. 그 맵은 빌드를
+  // 통과한 뒤 클라이언트의 addTilesetImage 가 null 을 돌려주는 자리에서야
+  // 터지고, 화면에는 아무것도 안 나온다 — 맵을 그린 사람이 스스로 원인을
+  // 짚을 수 없는 실패다. 그리는 시점에 말한다.
+  if (tilesets.length === 0) {
     throw new Error(
-      `맵에 "${TILESET_NAME}" 타일셋이 없다${found ? ` (들어 있는 것: ${found})` : ''} — ` +
-        `Tiled 의 Map ▸ Add External Tileset 이 아니라, 타일셋 이름을 "${TILESET_NAME}" 으로 두고 ` +
+      `맵에 타일셋이 하나도 없다 — Tiled 의 Map ▸ Add External Tileset 이 아니라, ` +
+        `타일셋 이름을 ${TILESET_NAMES.map((n) => `"${n}"`).join(' · ')} 중 하나로 두고 ` +
         `Embed Tileset 으로 저장한다. 클라이언트가 이 이름으로 타일셋을 찾는다`,
     )
+  }
+
+  // 클라이언트가 못 들고 있는 그림을 요구하는 맵은 여기서 세운다 — 그 맵은
+  // 브라우저에서 addTilesetImage 가 null 을 돌려주는 자리에서야 터진다.
+  // 타일셋이 넷이 된 지금 이 검사가 이름 한 개짜리 검사를 대신한다.
+  const known: readonly string[] = TILESET_NAMES
+  for (const ts of tilesets) {
+    if (!known.includes(ts.name)) {
+      throw new Error(
+        `맵이 클라이언트가 모르는 타일셋 "${ts.name}" 을 쓴다 — ` +
+          `쓸 수 있는 것: ${TILESET_NAMES.join(', ')}. ` +
+          `새 시트를 더하려면 packages/data 의 TILESET_NAMES 에 이름을 넣고 ` +
+          `그 그림을 apps/client/public/tilesets/ 에 둔다(assets/CREDITS.md)`,
+      )
+    }
+  }
+
+  // firstgid 가 앞 시트들의 타일 수를 그대로 이어야 한다.
+  //
+  // 이 한 줄이 어긋나면 아무것도 터지지 않고 **세계의 모든 타일이 밀린다** —
+  // 바닥이 벽이 되고 벽이 지붕이 된다. 화면을 봐야만 알 수 있고, 열 장을 다
+  // 열어 보기 전에는 어느 맵이 밀렸는지도 모른다. 시트가 하나일 때는 있을 수
+  // 없던 실수라 이 검사도 없었다.
+  let expected = 1
+  for (const ts of tilesets) {
+    if (ts.firstgid !== expected) {
+      throw new Error(
+        `타일셋 "${ts.name}" 의 firstgid 가 ${ts.firstgid} 인데 ${expected} 여야 한다 — ` +
+          `앞 시트들의 타일 수를 이어야 맵의 타일이 밀리지 않는다. ` +
+          `Tiled 에서 타일셋을 지웠다 다시 넣으면 번호가 다시 매겨진다`,
+      )
+    }
+    expected += tileCountOf(ts)
   }
 
   const layers: TiledLayerJson[] = []
