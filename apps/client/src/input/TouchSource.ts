@@ -132,7 +132,7 @@ export class TouchSource {
         localY - shape.displayOriginY,
         PAD_DEAD_ZONE_RADIUS,
       )
-      this.hub.setDir(dir)
+      this.hub.setDir('touch', dir)
       onDirectionChange(dir)
     }
 
@@ -153,7 +153,7 @@ export class TouchSource {
 
     binding.release = (): void => {
       binding.heldBy = null
-      this.hub.setDir(null)
+      this.hub.setDir('touch', null)
       onDirectionChange(null)
     }
     shape.on('pointerup', binding.release)
@@ -173,14 +173,14 @@ export class TouchSource {
 
     shape.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       binding.heldBy = pointer.id
-      this.hub.setButton(button, true)
+      this.hub.setButton('touch', button, true)
       setVisual(true)
     })
 
     binding.release = (): void => {
       binding.heldBy = null
       setVisual(false)
-      this.hub.setButton(button, false)
+      this.hub.setButton('touch', button, false)
     }
     shape.on('pointerup', binding.release)
     shape.on('pointerout', binding.release)
@@ -206,12 +206,19 @@ export class TouchSource {
   /**
    * 이 소스가 쥐고 있던 입력을 전부 놓는다.
    *
-   * BLUR·HIDDEN(창이 포커스를 잃거나 앱이 백그라운드로 감)과 destroy() 에서 쓴다.
-   * 이 경우엔 화면의 모든 손가락이 함께 사라진 것과 같으므로, releasePointer 처럼
-   * 포인터를 가려낼 필요 없이 전부 놓는 게 맞다.
+   * BLUR·HIDDEN(창이 포커스를 잃거나 앱이 백그라운드로 감), destroy(), 그리고
+   * ControlScene.setControllerVisible(false) 에서 쓴다. 이 경우엔 화면의 모든
+   * 손가락이 함께 사라진 것과 같으므로, releasePointer 처럼 포인터를 가려낼
+   * 필요 없이 전부 놓는 게 맞다.
+   *
+   * **놓는 범위는 이 소스까지다.** hub 에 `'touch'` 를 넘기는 것이 그 뜻이다 —
+   * 사라진 것은 화면의 버튼이지 PC 개발자의 손가락 밑에 있는 물리 키가 아니다.
+   * 예전에는 인자 없는 hub.releaseAll() 이라 키보드가 누르고 있던 행동키까지
+   * 함께 놓았고, KeyboardSource 는 다시 말해 주지 않으므로(그 파일 문서) 대화를
+   * 마칠 때마다 쥐고 있던 A 가 죽었다.
    */
   releaseAll(): void {
-    this.hub.releaseAll()
+    this.hub.releaseAll('touch')
     for (const binding of this.bindings) binding.release()
   }
 

@@ -15,6 +15,14 @@ import type { InputButton, InputHub } from './InputState.js'
  * 드러나는 게 아니라 터치 입력 자체가 통째로 죽는다. 그래서 "내 마지막 읽음값과
  * 이번 읽음값이 다를 때"만 부른다: 안 눌린 채로 가만있으면 아예 아무것도 안 써서
  * 다른 소스가 쥔 값을 그대로 둔다.
+ *
+ * **그 대신 이 소스는 절대 다시 말해 주지 않는다.** 키를 누른 채로 가만히 있으면
+ * hub 에게 하는 말은 누른 그 한 번이 전부다. 그래서 누가 hub 에서 그 값을 지워
+ * 버리면 키는 눌린 채인데 hub 는 영영 false 다 — 실제로 대사창이 열릴 때
+ * TouchSource 의 릴리스가 그렇게 지웠고, 대화를 마칠 때마다 쥐고 있던 행동키가
+ * 죽었다. 지금은 hub 가 소스별로 몫을 따로 들고 있어(InputHub 클래스 문서) 남의
+ * 몫을 지울 수 없다. 즉 이 파일의 "바뀔 때만 쓴다"와 hub 의 "자기 몫만 지운다"는
+ * 한 쌍이고, 한쪽만 있으면 반드시 이 버그가 돌아온다.
  */
 export class KeyboardSource {
   private readonly keys: Record<string, Phaser.Input.Keyboard.Key>
@@ -50,7 +58,7 @@ export class KeyboardSource {
   update(): void {
     const dir = this.readDir()
     if (dir !== this.lastDir) {
-      this.hub.setDir(dir)
+      this.hub.setDir('keyboard', dir)
       this.lastDir = dir
     }
 
@@ -62,7 +70,7 @@ export class KeyboardSource {
 
   private updateButton(button: InputButton, down: boolean): void {
     if (down === this.lastButton[button]) return
-    this.hub.setButton(button, down)
+    this.hub.setButton('keyboard', button, down)
     this.lastButton[button] = down
   }
 
