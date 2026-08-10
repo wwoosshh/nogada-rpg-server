@@ -1,10 +1,18 @@
 import {
+  GAME_EPOCH_MS,
+  NPC_STEP_MS,
+  REAL_MS_PER_GAME_DAY,
+  REAL_MS_PER_GAME_MINUTE,
   RECENT_DIALOGUE_LIMIT,
   emptyDialogueHistory,
+  type BakedLeg,
   type DialogueRule,
   type GameData,
   type MilestoneDef,
+  type PlaceDef,
   type PlayerState,
+  type RouteStep,
+  type ScheduleDef,
 } from '@nogada/shared'
 import { loadGameData } from '@nogada/data'
 import { describe, expect, it } from 'vitest'
@@ -293,6 +301,150 @@ describe('performTalk', () => {
     const last = talk(player(), { rng: pickLast })
     if (!first.ok || !last.ok) throw new Error('둘 다 성공해야 한다')
     expect(first.outcome.lines).not.toEqual(last.outcome.lines)
+  })
+})
+
+/**
+ * 일과가 있는 화자는 speakers.csv 의 좌표에 있지 않다 — 자리는 시각이 정한다.
+ *
+ * 서버가 그 계산을 하지 않으면 밤에 자고 있는 사람과, 길 한복판을 지나가는
+ * 사람과 대화가 열린다. 화면에는 아무도 없는데.
+ */
+describe('performTalk — 일과가 있는 화자', () => {
+  const 마을 = '눈의마을'
+  const 채집장 = '얼음채집장'
+
+  function place(id: string, mapId: string, x: number, over: Partial<PlaceDef> = {}): PlaceDef {
+    return { id, mapId, x, y: 0, indoor: false, facing: null, ...over }
+  }
+
+  const 여관앞 = place('여관앞', 마을, 1, { facing: 'down' })
+  const 눈광장 = place('눈광장', 마을, 20)
+  const 여관안 = place('여관안', 마을, 2, { indoor: true })
+  const 초소 = place('초소', 채집장, 5)
+
+  /**
+   * 출발 지점에서 곧게 걷다가 도착 칸으로 들어서는 구간. 빌드가 굽는 것과 같은
+   * 규약이다 — 양 끝 칸을 다 담으므로 걸음 수는 `steps.length - 1` 이고, 마지막
+   * 걸음이 맵을 넘을 수 있다(문 칸).
+   */
+  function walkLeg(from: PlaceDef, to: PlaceDef, steps: number): BakedLeg {
+    const tiles: RouteStep[] = [{ mapId: from.mapId, x: from.x, y: 0 }]
+    for (let i = 1; i < steps; i++) tiles.push({ mapId: from.mapId, x: from.x + i, y: 0 })
+    tiles.push({ mapId: to.mapId, x: to.x, y: 0 })
+    return { fromPlace: from.id, toPlace: to.id, steps: tiles }
+  }
+
+  /** 06:00 여관 앞, 09:00 광장, 12:00 채집장 초소, 22:00 여관 안. */
+  const schedule: ScheduleDef = {
+    speakerId: '여관안주인',
+    entries: [
+      { arriveMinute: 6 * 60, placeIds: ['여관앞'] },
+      { arriveMinute: 9 * 60, placeIds: ['눈광장'] },
+      { arriveMinute: 12 * 60, placeIds: ['초소'] },
+      { arriveMinute: 22 * 60, placeIds: ['여관안'] },
+    ],
+  }
+
+  const 여관인사 = rule({ id: 'inn-greet', speaker: '여관안주인', event: 'greet', lines: ['어서 오세요.'] })
+  const base = gameData([greetA, 여관인사])
+  const scheduled: GameData = {
+    ...base,
+    maps: {
+      ...base.maps,
+      눈의마을: { id: 마을, name: '눈의 마을', file: '눈의마을.tmx', width: 40, height: 40, spawn: { x: 1, y: 1 } },
+    },
+    speakers: {
+      ...base.speakers,
+      여관안주인: { id: '여관안주인', name: '여관 안주인', kind: 'npc', mapId: 마을, x: 1, y: 0, sprite: 'npc_inn', facing: 'down' },
+    },
+    places: Object.fromEntries([여관앞, 눈광장, 여관안, 초소].map((p) => [p.id, p])),
+    schedules: { 여관안주인: schedule },
+    routes: [
+      walkLeg(여관앞, 눈광장, 10),
+      walkLeg(눈광장, 초소, 4),
+      walkLeg(초소, 여관안, 4),
+      walkLeg(여관안, 여관앞, 2),
+    ],
+  }
+
+  /** 게임 세계의 그 날 그 시각에 해당하는 실측 ms — 라우트가 넣어 주는 `now` 와 같은 축이다. */
+  const at = (hour: number, minute = 0): number =>
+    GAME_EPOCH_MS + 5 * REAL_MS_PER_GAME_DAY + (hour * 60 + minute) * REAL_MS_PER_GAME_MINUTE
+
+  function talkToInnkeeper(p: PlayerState, now: number) {
+    return performTalk({ player: p, data: scheduled, speakerId: '여관안주인', rng: pickFirst, now })
+  }
+
+  const inVillage = (): PlayerState => player({ location: { mapId: 마을, x: 0, y: 0 } })
+  const inQuarry = (): PlayerState => player({ location: { mapId: 채집장, x: 0, y: 0 } })
+
+  it('같은 맵에 서 있으면 대화가 열린다', () => {
+    const r = talkToInnkeeper(inVillage(), at(7))
+    if (!r.ok) throw new Error(`서 있는 시각인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.lines).toEqual(['어서 오세요.'])
+  })
+
+  // 왜: 실내로 사라진 사람은 맵에 없다. 그런데 화자 id 하나로 대화가 열리면
+  //     플레이어는 아무도 없는 문 앞에서 대사창을 본다.
+  it('실내에 있는 시각이면 not_here 다', () => {
+    expect(talkToInnkeeper(inVillage(), at(23))).toEqual({ ok: false, code: 'not_here' })
+  })
+
+  // 왜: 걷는 NPC 는 통과 장식이라 몸이 없다(설계 §1). 말이 걸리면 대화 도중에
+  //     걸어가 버리는 문제가 그대로 돌아온다.
+  it('걷는 중이면 not_here 다', () => {
+    // 09:00 도착 — 열 칸 앞에서 떠났으므로 그 직전은 길 위다.
+    expect(talkToInnkeeper(inVillage(), at(9) - 1)).toEqual({ ok: false, code: 'not_here' })
+  })
+
+  it('다른 맵에 서 있으면 wrong_map 이다 — 없는 것이 아니라 여기가 아니다', () => {
+    expect(talkToInnkeeper(inVillage(), at(13))).toEqual({ ok: false, code: 'wrong_map' })
+  })
+
+  it('그 다른 맵으로 따라가면 대화가 열린다', () => {
+    const r = talkToInnkeeper(inQuarry(), at(13))
+    if (!r.ok) throw new Error(`같은 맵인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.lines).toEqual(['어서 오세요.'])
+  })
+
+  // 왜: speakers.csv 의 좌표를 그대로 믿으면 이 사람은 영원히 눈의마을에 있다 —
+  //     일과가 그를 채집장으로 데려간 시각에도.
+  it('판정은 speakers.csv 좌표가 아니라 일과가 정한다', () => {
+    expect(scheduled.speakers['여관안주인']!.mapId).toBe(마을)
+    // 같은 맵(마을)에 선 플레이어가 막히고, 다른 맵(채집장)에 선 플레이어가 통한다.
+    expect(talkToInnkeeper(inVillage(), at(13)).ok).toBe(false)
+    expect(talkToInnkeeper(inQuarry(), at(13)).ok).toBe(true)
+  })
+
+  it('막힌 요청은 대화 이력을 건드리지 않는다', () => {
+    const p = inVillage()
+    talkToInnkeeper(p, at(23))
+    expect(p.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
+  })
+
+  it('도착 순간에는 이미 서 있다 — 걷기가 끝난 시각이다', () => {
+    const r = talkToInnkeeper(inVillage(), at(9))
+    if (!r.ok) throw new Error(`도착 시각인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.lines).toEqual(['어서 오세요.'])
+  })
+
+  it('출발 직전에는 아직 말을 걸 수 있다', () => {
+    const departure = at(9) - 10 * NPC_STEP_MS
+    expect(talkToInnkeeper(inVillage(), departure - 1).ok).toBe(true)
+    expect(talkToInnkeeper(inVillage(), departure)).toEqual({ ok: false, code: 'not_here' })
+  })
+
+  // 회귀: 일과가 없는 화자는 지금까지와 똑같다. 시각을 아무리 옮겨도 좌표가
+  //       판정이고, 밤이라고 사라지지 않는다.
+  it('일과가 없는 화자는 시각과 무관하게 좌표로 판정한다', () => {
+    const 노인곁 = player({ location: { mapId: 채집장, x: 0, y: 0 } })
+    for (const hour of [0, 7, 13, 23]) {
+      const r = performTalk({ player: 노인곁, data: scheduled, speakerId: '노인', rng: pickFirst, now: at(hour) })
+      if (!r.ok) throw new Error(`${hour}시에 ${r.code} 로 막혔다 — 일과 없는 화자는 늘 그 자리다`)
+    }
+    const 마을에서 = performTalk({ player: inVillage(), data: scheduled, speakerId: '노인', rng: pickFirst, now: at(7) })
+    expect(마을에서).toEqual({ ok: false, code: 'wrong_map' })
   })
 })
 

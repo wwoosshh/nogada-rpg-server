@@ -2,6 +2,7 @@ import {
   ONCE_EVENTS,
   RECENT_DIALOGUE_LIMIT,
   buildFacts,
+  npcStateAt,
   onceKey,
   selectDialogue,
   type GameData,
@@ -30,7 +31,12 @@ export interface TalkOutcome {
   player: PlayerState
 }
 
-export type TalkErrorCode = 'unknown_speaker' | 'wrong_map' | 'nothing_to_say'
+/**
+ * `not_here` 는 "맵에는 맞게 왔는데 그 사람이 지금 여기 없다" 다 — 실내로
+ * 들어갔거나 길 위를 걷는 중이다. `wrong_map` 과 나누는 이유는 플레이어가 할
+ * 일이 다르기 때문이다: 저쪽은 따라가면 되고, 이쪽은 기다리거나 다시 와야 한다.
+ */
+export type TalkErrorCode = 'unknown_speaker' | 'wrong_map' | 'not_here' | 'nothing_to_say'
 
 export type TalkResult = { ok: true; outcome: TalkOutcome } | { ok: false; code: TalkErrorCode }
 
@@ -58,11 +64,30 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
 
   const player = structuredClone(args.player)
 
-  // 이것이 대화 스펙이 남긴 구멍이다. 앞칸 판정은 클라이언트에만 있어서, 서버가
-  // 어느 맵인지 모르면 화자 id 하나로 맵 너머의 화자와 대화가 열린다 — 그리고
-  // 그 대화가 said·recent 에까지 남아 다시 되돌릴 수도 없다. gatherService 와
-  // 같은 검사이고 같은 근거다: 맵이 다르면 앞칸일 수가 없다.
-  if (speaker.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
+  // 일과가 있는 화자는 speakers.csv 의 좌표에 있지 않다 — 그 사람의 자리는
+  // 시각이 정한다(설계 §5). 위 speakerId 검사를 통과했으므로 이것은 실재하는
+  // 화자 id 지만, 그래도 hasOwn 으로 읽는다: "constructor" 같은 이름의 화자가
+  // 있으면 프로토타입 체인의 값이 일과 행세를 한다.
+  const schedule = Object.hasOwn(data.schedules, speakerId) ? data.schedules[speakerId] : undefined
+
+  if (schedule) {
+    // 시각은 라우트가 넣어 준 것을 그대로 쓴다. 여기서 Date.now() 를 다시 읽으면
+    // 판정에 쓰인 시각과 대화 이력에 적히는 시각이 갈라지고, 테스트는 시간을
+    // 고정할 방법을 잃는다.
+    const state = npcStateAt(schedule, data.places, data.routes, now)
+
+    // 걷는 중에는 몸이 없고(통과 장식), 실내면 맵에 없다 — 둘 다 "여기 없다"다.
+    // 맵 검사보다 먼저 보는 이유: 길 위의 NPC 는 어느 맵에 있든 말이 걸리지
+    // 않으므로, 맵이 맞다는 이유로 통과시키면 걷는 사람과 대화가 열린다.
+    if (state.activity !== 'standing') return { ok: false, code: 'not_here' }
+    if (state.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
+  } else if (speaker.mapId !== player.location.mapId) {
+    // 이것이 대화 스펙이 남긴 구멍이다. 앞칸 판정은 클라이언트에만 있어서, 서버가
+    // 어느 맵인지 모르면 화자 id 하나로 맵 너머의 화자와 대화가 열린다 — 그리고
+    // 그 대화가 said·recent 에까지 남아 다시 되돌릴 수도 없다. gatherService 와
+    // 같은 검사이고 같은 근거다: 맵이 다르면 앞칸일 수가 없다.
+    return { ok: false, code: 'wrong_map' }
+  }
 
   // 사실을 먼저 모은다. 아래에서 이력을 갱신하므로, 순서가 바뀌면 이번 대화가
   // 이번 대화의 사실(talkedBefore·daysSinceLastTalk)을 바꿔 버린다 — 처음
