@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="32" height="26" tilewidth="32" tileheight="32" infinite="0" nextlayerid="7" nextobjectid="14">
+<map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="32" height="26" tilewidth="32" tileheight="32" infinite="0" nextlayerid="8" nextobjectid="16">
  <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="512" columns="8">
   <image source="../../../apps/client/public/tilesets/pipoya-basechip.png" width="256" height="2048"/>
  </tileset>
@@ -222,6 +222,20 @@
    <properties>
     <property name="nodeId" value="ice_vein"/>
     <property name="instanceId" value="ice_vein-10"/>
+   </properties>
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="7" name="places">
+  <object id="14" name="초소" x="528" y="752">
+   <properties>
+    <property name="facing" value="down"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="15" name="심층광맥곁" x="144" y="80">
+   <properties>
+    <property name="facing" value="left"/>
    </properties>
    <point/>
   </object>
