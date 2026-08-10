@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="40" height="50" tilewidth="32" tileheight="32" infinite="0" nextlayerid="6" nextobjectid="2">
+<map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="40" height="50" tilewidth="32" tileheight="32" infinite="0" nextlayerid="7" nextobjectid="6">
  <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="512" columns="8">
   <image source="../../../apps/client/public/tilesets/pipoya-basechip.png" width="256" height="2048"/>
  </tileset>
@@ -236,6 +236,33 @@
  </layer>
  <objectgroup id="3" name="spawn">
   <object id="1" name="player" x="656" y="816">
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="6" name="places">
+  <object id="2" name="목재소앞" x="432" y="688">
+   <properties>
+    <property name="facing" value="up"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="3" name="통나무야적장" x="464" y="720">
+   <properties>
+    <property name="facing" value="left"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="4" name="벌목꾼집앞" x="592" y="1392">
+   <properties>
+    <property name="facing" value="right"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="5" name="벌목꾼집안" x="592" y="1424">
+   <properties>
+    <property name="indoor" type="bool" value="true"/>
+    <property name="facing" value="left"/>
+   </properties>
    <point/>
   </object>
  </objectgroup>

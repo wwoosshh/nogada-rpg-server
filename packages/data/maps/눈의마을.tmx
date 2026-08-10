@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="30" height="31" tilewidth="32" tileheight="32" infinite="0" nextlayerid="7" nextobjectid="5">
+<map version="1.10" tiledversion="1.12.2" orientation="orthogonal" renderorder="right-down" width="30" height="31" tilewidth="32" tileheight="32" infinite="0" nextlayerid="7" nextobjectid="9">
  <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32" tilecount="512" columns="8">
   <image source="../../../apps/client/public/tilesets/pipoya-basechip.png" width="256" height="2048"/>
  </tileset>
@@ -180,6 +180,31 @@
   <object id="4" name="눈광장" x="432" y="592">
    <properties>
     <property name="facing" value="left"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="5" name="아이집앞" x="368" y="240">
+   <properties>
+    <property name="facing" value="down"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="6" name="아이집안" x="400" y="240">
+   <properties>
+    <property name="indoor" type="bool" value="true"/>
+    <property name="facing" value="up"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="7" name="분수곁" x="400" y="688">
+   <properties>
+    <property name="facing" value="left"/>
+   </properties>
+   <point/>
+  </object>
+  <object id="8" name="눈골목" x="272" y="592">
+   <properties>
+    <property name="facing" value="down"/>
    </properties>
    <point/>
   </object>
