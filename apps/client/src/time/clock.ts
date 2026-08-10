@@ -1,5 +1,6 @@
 import { estimateServerNow, needsResync } from '@nogada/shared'
 import { GameClient, setServerTimeObserver } from '../api/GameClient.js'
+import { type SlewState, slewWorldTime } from './slew.js'
 
 interface Anchor {
   /** 앵커를 잡은 순간의 서버 시각 추정값 */
@@ -11,24 +12,30 @@ interface Anchor {
 let anchor: Anchor | null = null
 /** 진행 중인 동기화. 동시 호출자는 새 요청을 내지 않고 이것을 함께 기다린다. */
 let inFlight: Promise<boolean> | null = null
+/** 마지막으로 내놓은 세계 시각과 아직 갚지 못한 보정량. slew.ts 가 계산한다. */
+let slew: SlewState | null = null
 
 /**
  * 세계 시각.
  *
  * 앵커가 없으면 로컬 시계로 물러난다. 이건 **최초 동기화 전** 상태이지 오프라인
  * 모드가 아니다 — 서버에 닿지 못하면 접속 게이트가 게임 진입 자체를 막으므로,
- * 이 폴백값이 실제 플레이 중에 쓰이는 일은 없다.
+ * 이 폴백값이 실제 플레이 중에 쓰이는 일은 없다. 그 값은 기울이지 않는다:
+ * 첫 앵커가 잡히기 전에는 지킬 약속(이전에 내놓은 값)이 없다.
  *
  * 경과를 Date.now() 가 아니라 performance.now() 로 재는 이유는 세션 도중
  * 사용자가 기기 시계를 바꿔도 세계 시각이 튀지 않게 하기 위해서다.
  *
- * 단조 증가하지 않는다 — 재동기화가 앵커를 새 왕복 추정치로 통째로 갈아끼우므로,
- * 재동기 직후 값이 최대 재동기 임계값만큼 뒤로 튈 수 있다. 시간을 판정하는 로직은
- * 전부 서버 쪽에 있으므로 무해하다.
+ * **단조 증가한다.** 재동기화가 앵커를 새 왕복 추정치로 갈아끼우면 목표 시각이
+ * 최대 재동기 임계값(2초)만큼 과거로 옮겨 갈 수 있는데, 그대로 내놓지 않고
+ * 실측 1초당 200ms 씩 기울여 따라잡는다(slew.ts). NPC 위치가 이 시각의 순수
+ * 함수가 된 뒤로는 그 되감기가 화면에서 다섯 칸의 순간이동으로 보인다.
  */
 export function worldNow(): number {
   if (!anchor) return Date.now()
-  return anchor.serverMs + (performance.now() - anchor.perfMs)
+  const monotonicMs = performance.now()
+  slew = slewWorldTime(slew, anchor.serverMs + (monotonicMs - anchor.perfMs), monotonicMs)
+  return slew.worldMs
 }
 
 /**
@@ -120,7 +127,11 @@ export function startClockSync(): () => void {
  *
  * 진행 중인 동기화는 취소하지 않으므로, 리셋 직후 그 요청이 끝나면 앵커가 다시
  * 채워질 수 있다.
+ *
+ * 기울임 상태도 함께 버린다 — 안 그러면 리셋 전에 내놓은 값이 그대로 하한으로
+ * 남아, 새로 잡은 앵커가 과거를 가리킬 때 그 차이를 하염없이 갚게 된다.
  */
 export function resetClock(): void {
   anchor = null
+  slew = null
 }
