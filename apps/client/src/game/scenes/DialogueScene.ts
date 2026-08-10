@@ -129,6 +129,7 @@ export class DialogueScene extends Phaser.Scene {
   private closePending = false
 
   private unsubscribeUtterance: (() => void) | null = null
+  private unsubscribeNotice: (() => void) | null = null
   /** 지금 화면에 그려져 있는 상태 — 바뀔 때만 다시 그린다(render 참고). */
   private renderedOpen = false
   private renderedLine = ''
@@ -229,6 +230,14 @@ export class DialogueScene extends Phaser.Scene {
       this.beginUtterance(utterance.speaker, utterance.lines)
     })
 
+    // 화자가 없는 말도 같은 창이 받는다 — "지금 여기 없는 것 같다"(설계 §5).
+    // 채널이 둘인 이유는 gameStore 의 Notice 문서에 있다.
+    this.unsubscribeNotice = useGameStore.subscribe((state, prev) => {
+      const notice = state.notice
+      if (!notice || notice.seq === prev.notice?.seq) return
+      this.beginNotice(notice.text)
+    })
+
     // ControlScene 과 같은 이유로 SHUTDOWN·DESTROY 둘 다에 같은 정리를 걸고
     // 두 번째 호출은 가드로 무시한다 — ControlScene.create() 의 주석 참고.
     let cleanedUp = false
@@ -238,6 +247,8 @@ export class DialogueScene extends Phaser.Scene {
       this.scale.off('resize', this.handleResize, this)
       this.unsubscribeUtterance?.()
       this.unsubscribeUtterance = null
+      this.unsubscribeNotice?.()
+      this.unsubscribeNotice = null
       // PanelScene 의 같은 자리와 같은 이유다: 씬을 다시 시작하면 create() 는
       // 다시 돌지만 인스턴스는 그대로라, 여기서 놓지 않으면 bind() 가 던진다.
       // 맵을 넘을 때마다 그렇게 되고, 남은 hub 는 이전 맵의 것이다.
@@ -317,6 +328,22 @@ export class DialogueScene extends Phaser.Scene {
     const { data } = useGameStore.getState()
     const actionDown = this.hub?.isHeld('action') ?? false
     this.flow.begin(speakerName(data.speakers, speakerId), lines, actionDown)
+    this.render()
+  }
+
+  /**
+   * 화자 없는 한 줄을 띄운다 — 발화와 **같은 창, 같은 조작**이다.
+   *
+   * 이름칸을 비우는 것이 이 함수의 전부이고, 그것이 맞다: 이 글은 누군가 한 말이
+   * 아니라 플레이어가 그 자리에서 알아챈 것이다. 거기에 없는 사람의 이름을 적으면
+   * 그가 "지금 여기 없다"고 말한 꼴이 된다.
+   *
+   * 창의 높이는 그대로다 — 빈 이름칸도 한 줄의 높이를 차지하므로(Text 는 빈
+   * 글자에도 줄 높이를 준다) 안내가 뜰 때만 상자가 낮아졌다 높아지지 않는다.
+   */
+  private beginNotice(text: string): void {
+    const actionDown = this.hub?.isHeld('action') ?? false
+    this.flow.begin('', [text], actionDown)
     this.render()
   }
 

@@ -78,6 +78,33 @@ export interface Utterance {
 export type Connection = 'connecting' | 'online' | 'offline'
 
 /**
+ * 화자가 없는 말 — 대사창 자리에 뜨는 짧은 안내.
+ *
+ * 발화(Utterance)와 채널을 나눈 이유는 **말한 사람이 없기 때문이다.** 발화를
+ * 들은 WorldScene 은 그 화자를 플레이어 쪽으로 돌려세우는데(faceSpeakerToPlayer),
+ * 여기 오는 것은 애초에 그 자리에 없는 사람이라 돌려세울 몸이 없다. 같은 채널에
+ * 실으면 그 구독이 "누구인지 모를 화자"를 매번 골라내야 한다.
+ *
+ * seq 는 다른 채널들과 같은 이유다: 같은 문 앞에서 두 번 눌러 같은 글이 다시
+ * 나와도 구독자가 "이미 처리했다"로 착각해 무시하지 않는다.
+ */
+export interface Notice {
+  seq: number
+  text: string
+}
+
+/**
+ * 없는 사람에게 말을 걸었을 때 뜨는 글.
+ *
+ * 서버가 `not_here` 로 답하는 경우는 둘이다 — 실내로 들어갔거나(밤의 여관),
+ * 길 위를 걷는 중이다. 어느 쪽인지 말하지 않는 것이 맞다: 플레이어가 아는 것은
+ * "여기 없다" 까지이고, 어디 갔는지는 하루를 지켜봐서 알아내는 것이 이 시스템의
+ * 재미다. 화면에 보이는 사람에게 말을 걸었는데 이 글이 뜨는 일은 없다 —
+ * 걷는 사람은 앞칸 판정에 아예 오르지 않는다(npcScheduler 의 isTalkable).
+ */
+const NOT_HERE_NOTICE = '지금 여기 없는 것 같다.'
+
+/**
  * 상단 바 톱니(React)가 상세 메뉴(Phaser 씬)를 열어 달라는 요청.
  *
  * 톱니는 DOM 버튼이고 메뉴는 PanelScene 안의 Phaser 오브젝트라 직접 부를 수 없다 —
@@ -98,6 +125,7 @@ interface GameStore {
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
+  notice: Notice | null
   menuRequest: MenuRequest | null
   connect: () => Promise<void>
   gather: (instanceId: string) => Promise<void>
@@ -110,6 +138,7 @@ interface GameStore {
 let actionSeq = 0
 let milestoneSeq = 0
 let utteranceSeq = 0
+let noticeSeq = 0
 let menuRequestSeq = 0
 
 /** 서버와 말 자체를 못 한 경우에만 true. HTTP 4xx 는 서버가 살아있는 것이다. */
@@ -129,6 +158,7 @@ export const useGameStore = create<GameStore>((set) => ({
   lastAction: null,
   milestone: null,
   utterance: null,
+  notice: null,
   menuRequest: null,
 
   /**
@@ -222,11 +252,14 @@ export const useGameStore = create<GameStore>((set) => ({
   /**
    * 말을 건다. 대화 한 번이 요청 한 번이고, 발화 전체가 한 번에 온다.
    *
-   * 채집·제작과 달리 실패를 머리 위 글자로 알리지 않는다. 말을 건 결과가
-   * 거부되는 경우는 둘뿐인데(없는 화자·할 말 없음) 둘 다 플레이어의 조작
-   * 실수가 아니라 데이터나 콘텐츠의 구멍이라, 플레이어에게 보여 줄 말이 없다.
-   * 그럴 때 스토어는 아무것도 바꾸지 않는다 — 대사창은 열리지 않고 플레이어
-   * 상태도 그대로다.
+   * 실패 중 **하나만** 플레이어에게 보인다. 없는 화자·할 말 없음은 데이터나
+   * 콘텐츠의 구멍이라 보여 줄 말이 없지만, `not_here` 는 다르다 — 그건 세계가
+   * 제대로 돌아간 결과이고(그 사람은 지금 실내에 있거나 길 위에 있다) 플레이어의
+   * 조작도 옳았다. 아무 일도 안 일어나면 "여기 눌러도 되는 자리인가"부터
+   * 의심하게 되므로, 그 자리에 짧은 안내를 띄운다(설계 §5).
+   *
+   * 그 밖의 실패에는 스토어가 아무것도 바꾸지 않는다 — 대사창은 열리지 않고
+   * 플레이어 상태도 그대로다.
    */
   talk: async (speakerId) => {
     try {
@@ -237,6 +270,10 @@ export const useGameStore = create<GameStore>((set) => ({
       // 서버와 끊겼으면 대사창이 아니라 게이트가 할 일이다 — 채집과 같다.
       if (isNetworkFailure(err)) {
         set({ connection: 'offline' })
+        return
+      }
+      if (err instanceof ApiError && err.code === 'not_here') {
+        set({ notice: { seq: ++noticeSeq, text: NOT_HERE_NOTICE } })
         return
       }
       console.error(err)

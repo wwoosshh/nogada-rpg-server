@@ -22,6 +22,7 @@ import { FloatingTextGroup } from '../FloatingText.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { NpcSprite, SpeakerPoseChannel } from '../NpcSprite.js'
+import { NpcScheduler, schedulesForMap, speakersForMap, type NpcCommand } from '../npcScheduler.js'
 import { npcSprite, npcSpriteKey } from '../npcSprites.js'
 import { facingToward } from '../speakerFacing.js'
 import { TileMover } from '../TileMover.js'
@@ -44,10 +45,15 @@ const IDLE_TURN_MAX_MS = 8000
 
 /** 심심풀이로 방향을 바꾸는 화자 하나. 사물(간판)은 여기 들어오지 않는다. */
 interface IdleSpeaker {
-  tile: TilePos
   pose: SpeakerPoseChannel
   /** 다음에 방향을 바꿀 때까지 남은 시간. 세계가 잠긴 동안에는 줄지 않는다. */
   remainingMs: number
+  /**
+   * 지금 서 있는가. 걷는 중이거나 실내에 있는 사람의 방향은 스케줄러의 것이라
+   * 여기서 건드리면 걷다 말고 뒤를 돌아본다(설계 §6 의 facing 소유권).
+   * 일과가 없는 화자는 언제나 참이다.
+   */
+  standing: boolean
 }
 
 /**
@@ -111,8 +117,18 @@ export class WorldScene extends Phaser.Scene {
    * 생기면 서버가 보내는 자리 갱신이 같은 길로 들어온다(NpcSprite 의 문서).
    */
   private readonly speakerPoses = new Map<string, SpeakerPoseChannel>()
+  /**
+   * 이 맵의 화자 그림. 자리는 자세 통로가 옮기지만 **보이고 안 보이고**와 매
+   * 프레임의 걸음 보간은 그림 자신이 하므로, 그것을 부르려면 손에 쥐고 있어야 한다.
+   */
+  private readonly npcSprites = new Map<string, NpcSprite>()
   /** 그중 사람들. 사물은 방향이 없어 심심풀이도 없다. */
   private readonly idleSpeakers: IdleSpeaker[] = []
+  /**
+   * 일과가 있는 화자를 시각에 맞춰 이 맵 위에 놓는 것. 일과가 이 맵에 데려올 수
+   * 있는 사람이 하나도 없으면 null 이다 — 대부분의 맵이 그렇다.
+   */
+  private scheduler: NpcScheduler | null = null
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
@@ -207,14 +223,20 @@ export class WorldScene extends Phaser.Scene {
     // 화자 그림은 타일셋과 달리 **이 맵에 필요한 것만** 올린다. 타일셋은 여섯
     // 장에 610KB 라 다 올려도 되지만, 화자 시트는 마을마다 다른 사람들이라
     // 세계가 자라는 만큼 늘어난다 — 눈의 마을에 들어서면서 항구의 약초밭지기를
-    // 내려받을 이유가 없다. 어느 화자가 이 맵에 있는지는 이미 데이터에 있으므로
-    // (create() 의 blocked·byTile 이 같은 목록을 본다) 여기서 물을 곳이 따로 없다.
+    // 내려받을 이유가 없다.
+    //
+    // "이 맵에 필요한"의 뜻이 `speaker.mapId` 가 아닌 것이 중요하다(설계 §6).
+    // 일과가 있는 사람에게 그 칸은 더 이상 자리가 아니고, 하루 중 어디 있는지는
+    // 시각이 정한다 — **하루 중 한 번이라도 여기 올 수 있으면** 미리 싣는다.
+    // 지금 여기 있는 사람만 실으면, 광장에서 걸어 들어오는 사람이 문턱을 넘는
+    // 순간 그림이 없다. 그 판단은 speakersForMap 하나에 있고 spawnSpeakers 도
+    // 같은 것을 본다 — 둘이 갈라지면 시트는 있는데 사람이 없거나 그 반대가 된다.
     //
     // 이미 캐시에 있는 키는 로더가 스스로 건너뛰므로, 왔던 맵으로 되돌아올 때
     // 다시 내려받지 않는다 — 맵 JSON 과 같다.
     const loaded = new Set<string>()
-    for (const speaker of Object.values(useGameStore.getState().data.speakers)) {
-      if (speaker.mapId !== mapId || loaded.has(speaker.sprite)) continue
+    for (const speaker of speakersForMap(useGameStore.getState().data, mapId)) {
+      if (loaded.has(speaker.sprite)) continue
       loaded.add(speaker.sprite)
 
       // 모르는 이름이면 여기서 던진다(npcSprites.ts) — 맵이 안 뜨는 편이
@@ -247,7 +269,13 @@ export class WorldScene extends Phaser.Scene {
     // 그 채널에 자세를 밀어 넣으면 이미 사라진 컨테이너를 건드린다 — 그리고
     // 이 맵에 같은 id 의 화자가 없으면 말을 걸어도 아무도 안 돈다.
     this.speakerPoses.clear()
+    this.npcSprites.clear()
     this.idleSpeakers.length = 0
+    // 스케줄러도 새로 만든다. 남겨 두면 이전 맵 기준으로 계산한 "지난 처지"를
+    // 들고 있어서, 그 맵에서 서 있던 사람이 이 맵에서는 영영 나타나지 않는다
+    // (그쪽 기억으로는 이미 나타나 있다). 새로 만들면 첫 틱이 지금 시각의
+    // 자리를 통째로 다시 낸다 — 그것이 곧 "새로고침해도 제자리"다(설계 §9.1).
+    this.scheduler = null
     // 이정표 큐: 트윈은 씬이 멈출 때 함께 사라져 onComplete 가 영영 오지
     // 않는다. milestoneShowing 을 되돌리지 않으면 새 맵에서 이정표 문구가
     // 큐에만 쌓이고 화면에는 하나도 안 뜬다.
@@ -368,8 +396,13 @@ export class WorldScene extends Phaser.Scene {
     // 화자가 놓인 칸도 걸을 수 없다 — 노드와 같은 이유이고 같은 집합을 쓴다.
     // 화자와 노드가 같은 칸에 놓이는 것은 빌드가 막으므로(validateSpeakerPlacements)
     // 여기서 byTile 이 서로를 덮어쓸 수 없다.
+    //
+    // **일과가 있는 화자는 여기 없다.** 그 사람의 칸은 시각이 정하므로 지금
+    // 어디 있는지는 스케줄러의 첫 틱이 말해 주고(spawnSpeakers 아래), 그 뒤로도
+    // 서고 걷고 들어갈 때마다 그 틱이 이 두 집합을 고친다.
     for (const speaker of Object.values(useGameStore.getState().data.speakers)) {
       if (speaker.mapId !== this.mapId) continue
+      if (this.hasSchedule(speaker.id)) continue
       this.blocked.add(`${speaker.x},${speaker.y}`)
       this.byTile.set(`${speaker.x},${speaker.y}`, { kind: 'speaker', speakerId: speaker.id })
     }
@@ -391,6 +424,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.spawnNodes()
     this.spawnSpeakers()
+    this.startScheduler()
 
     // 스토어가 여전히 게임 상태의 단일 소유자다. 씬은 결과를 따로 보관하지
     // 않고 변화가 생길 때만 글자를 띄운다. update() 에서 폴링하면 같은
@@ -670,6 +704,14 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    // 일과는 세계 시각을 따르므로 **잠긴 동안에도 돈다.** 대사창을 열어 둔 채로
+    // 시간이 흐르면 사람은 걸어가야 맞다 — 여기서 멈추면 창을 닫는 순간 그
+    // 사람이 몇 칸을 순간이동한다.
+    if (this.scheduler) this.applyNpcCommands(this.scheduler.tick(worldNow()))
+    // 스케줄러가 말해 준 칸까지 걸어가는 것은 그림 자신이 한다(NpcSprite.update).
+    // 일과가 없는 화자는 목표가 늘 제자리라 아무 일도 일어나지 않는다.
+    for (const sprite of this.npcSprites.values()) sprite.update(delta)
+
     this.updateIdleFacing(delta)
 
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
@@ -804,20 +846,29 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** 이 화자의 자리를 시각이 정하는가. 정하면 blocked·byTile·자세의 주인이 스케줄러다. */
+  private hasSchedule(speakerId: string): boolean {
+    return Object.hasOwn(useGameStore.getState().data.schedules, speakerId)
+  }
+
   /**
-   * `data.speakers` 를 돌며 화자 마커를 놓는다. 노드 배치와 같은 방식이다 —
-   * 타일 좌표에 `* TILE + TILE / 2` 로 그 칸의 중심 픽셀을 얻는다.
+   * 이 맵의 화자 마커를 놓는다. 노드 배치와 같은 방식이다 — 타일 좌표에
+   * `* TILE + TILE / 2` 로 그 칸의 중심 픽셀을 얻는다.
    *
-   * 배치를 맵 파일(world.tmx)이 아니라 `speakers.csv` 가 갖는 이유는 서버도
-   * 같은 배치를 알아야 하기 때문이다(설계 문서 9장). 그래서 여기서는 맵
-   * 오브젝트 레이어를 보지 않고 데이터만 본다. 좌표가 벽이거나 맵 밖이거나
-   * 노드와 겹치는 경우는 빌드가 이미 막았다(validateSpeakerPlacements).
+   * 배치를 맵 파일이 아니라 `speakers.csv` 가 갖는 이유는 서버도 같은 배치를
+   * 알아야 하기 때문이다(설계 문서 9장). 좌표가 벽이거나 맵 밖이거나 노드와
+   * 겹치는 경우는 빌드가 이미 막았다(validateSpeakerPlacements).
+   *
+   * **일과가 있는 화자도 여기서 그림을 만들되 꺼 둔다.** 하루 중 이 맵에 올 수
+   * 있으면 지금 실내에 있든 다른 맵에 있든 그림은 미리 있어야 하고(그래야 문에서
+   * 나오는 순간 그릴 것이 있다), 지금 보이는지는 스케줄러의 첫 틱이 정한다.
+   * 어느 화자가 여기 속하는지는 프리로드와 **같은 함수**가 답한다.
    */
   private spawnSpeakers(): void {
     const { data } = useGameStore.getState()
 
-    for (const speaker of Object.values(data.speakers)) {
-      if (speaker.mapId !== this.mapId) continue
+    for (const speaker of speakersForMap(data, this.mapId)) {
+      const scheduled = this.hasSchedule(speaker.id)
 
       // 자리와 첫 자세는 데이터가 정한다. 그 뒤로 방향을 바꾸는 것은 이 채널
       // 하나뿐이고, 그래서 "지금 어느 쪽을 보고 있나"의 주인이 하나다.
@@ -827,22 +878,117 @@ export class WorldScene extends Phaser.Scene {
       })
       this.speakerPoses.set(speaker.id, pose)
 
-      new NpcSprite({
+      const sprite = new NpcSprite({
         scene: this,
         speakerId: speaker.id,
         label: speaker.name,
         sprite: speaker.sprite,
         pose,
       })
+      this.npcSprites.set(speaker.id, sprite)
+      // 일과가 있는 사람의 `speakers.csv` 좌표는 이제 자리가 아니라 그림의 첫
+      // 자세일 뿐이다. 첫 틱 전에 그 칸에 서 있는 모습을 한 프레임이라도 보이면
+      // 아무도 없어야 할 자리에 사람이 깜빡인다.
+      if (scheduled) sprite.setVisible(false)
 
       // 사물은 심심풀이로 돌지 않는다 — 안내판이 두리번거리면 그건 사람이다.
       if (npcSprite(speaker.sprite).kind !== 'char') continue
       this.idleSpeakers.push({
-        tile: { x: speaker.x, y: speaker.y },
         pose,
         remainingMs: this.nextIdleTurnMs(),
+        // 일과가 있는 사람이 지금 서 있는지는 첫 틱이 말해 준다.
+        standing: !scheduled,
       })
     }
+  }
+
+  /**
+   * 일과가 있는 화자를 시각 위에 올린다.
+   *
+   * 첫 틱을 여기서 바로 돌리는 것이 핵심이다 — 첫 update() 를 기다리면 한
+   * 프레임 동안 문 앞에 아무도 없고, 무엇보다 그 한 프레임에 blocked 가 비어
+   * 있어 서 있는 사람의 칸으로 걸어 들어갈 수 있다.
+   */
+  private startScheduler(): void {
+    const { data } = useGameStore.getState()
+    const schedules = schedulesForMap(data, this.mapId)
+    if (schedules.length === 0) return
+
+    this.scheduler = new NpcScheduler({
+      mapId: this.mapId,
+      schedules,
+      places: data.places,
+      routes: data.routes,
+    })
+    this.applyNpcCommands(this.scheduler.tick(worldNow()))
+  }
+
+  /**
+   * 스케줄러가 낸 명령을 화면과 판정에 옮긴다.
+   *
+   * 그림(보임·자세)은 자세 통로로 가고, 칸(막힘·앞칸 대화)은 `blocked`·`byTile`
+   * 로 함께 간다. 둘이 갈라지는 자리가 걷는 사람이다 — 보이지만 칸은 잡지
+   * 않는다. 실내는 그 반대다: 안 보이지만 문 칸은 잡는다(설계 §1·§9.3).
+   */
+  private applyNpcCommands(commands: readonly NpcCommand[]): void {
+    for (const command of commands) {
+      switch (command.kind) {
+        case 'spawn':
+          this.pushSpeakerPose(command.speakerId, command.tile, command.facing)
+          this.npcSprites.get(command.speakerId)?.setVisible(true)
+          this.setIdleStanding(command.speakerId, !command.walking)
+          break
+        case 'despawn':
+          this.npcSprites.get(command.speakerId)?.setVisible(false)
+          this.setIdleStanding(command.speakerId, false)
+          break
+        case 'move':
+          this.pushSpeakerPose(command.speakerId, command.tile, command.facing)
+          // 길 위에서는 심심풀이가 방향을 건드리지 않는다 — 걷는 동안의 방향은
+          // 스케줄러의 것이다(설계 §6).
+          this.setIdleStanding(command.speakerId, !command.walking)
+          break
+        case 'claim': {
+          const key = `${command.tile.x},${command.tile.y}`
+          this.byTile.set(key, { kind: 'speaker', speakerId: command.speakerId })
+          this.blocked.add(key)
+          break
+        }
+        case 'release': {
+          const key = `${command.tile.x},${command.tile.y}`
+          // 그 칸이 아직 이 사람의 것일 때만 지운다. 두 NPC 가 같은 지점에
+          // 겹쳐 서는 것은 빌드가 안내만 하고 막지는 않으므로(collectScheduleNotices),
+          // 남의 칸을 지워 벽이 사라지는 일이 없게 한다.
+          const holder = this.byTile.get(key)
+          if (holder?.kind !== 'speaker' || holder.speakerId !== command.speakerId) break
+          this.byTile.delete(key)
+          this.blocked.delete(key)
+          break
+        }
+        default: {
+          const exhaustive: never = command
+          throw new Error(`처리하지 않은 일과 명령: ${JSON.stringify(exhaustive)}`)
+        }
+      }
+    }
+  }
+
+  /**
+   * 자세 하나를 그 화자의 통로에 민다. `facing` 이 null 이면 지금 보고 있는
+   * 쪽을 그대로 둔다 — 지점이 방향을 적지 않았다는 것은 "여기서는 아무 쪽이나"
+   * 라는 뜻이고, 그 자리에서 아래를 보게 만들면 미세 동작이 방금 고른 방향이 지워진다.
+   */
+  private pushSpeakerPose(speakerId: string, tile: TilePos, facing: Direction | null): void {
+    const pose = this.speakerPoses.get(speakerId)
+    if (!pose) return
+    pose.set({ tile, facing: facing ?? pose.pose.facing })
+  }
+
+  private setIdleStanding(speakerId: string, standing: boolean): void {
+    const pose = this.speakerPoses.get(speakerId)
+    if (!pose) return
+    const idle = this.idleSpeakers.find((s) => s.pose === pose)
+    if (idle) idle.standing = standing
   }
 
   /** 다음에 고개를 돌릴 때까지의 시간. 화자마다 따로 뽑아 서로 어긋나게 둔다. */
@@ -864,22 +1010,29 @@ export class WorldScene extends Phaser.Scene {
    * 고개를 홱 돌리면 무시당한 것처럼 읽힌다 — 그리고 방금 말을 건 상대가
    * 바로 그 자리에 있으므로, 이 한 줄이 "말을 걸면 이쪽을 본다"를 대화가 끝난
    * 뒤에도 지켜 준다.
+   *
+   * **걷는 사람도 돌지 않는다.** 걷는 동안의 방향은 스케줄러가 소유한다(설계
+   * §6) — 여기서 함께 건드리면 길을 가다 말고 뒤를 돌아보며 옆으로 미끄러진다.
    */
   private updateIdleFacing(delta: number): void {
     if (this.hub.worldInputLocked) return
 
     for (const speaker of this.idleSpeakers) {
+      if (!speaker.standing) continue
       speaker.remainingMs -= delta
       if (speaker.remainingMs > 0) continue
       speaker.remainingMs = this.nextIdleTurnMs()
 
-      if (isAdjacentFacing(this.mover.tile, this.mover.facing, speaker.tile)) continue
+      // 자리의 주인은 자세 통로다 — 일과가 있는 사람의 칸은 시각에 따라 옮겨
+      // 다니므로, 처음 좌표를 따로 기억해 두면 그 사람은 옛 자리에서 두리번거린다.
+      const tile = speaker.pose.pose.tile
+      if (isAdjacentFacing(this.mover.tile, this.mover.facing, tile)) continue
 
       const current = speaker.pose.pose.facing
       const others = DIRECTIONS.filter((d) => d !== current)
       // 넷 중 지금 방향을 뺀 셋에서 고른다. 같은 방향이 나오면 그 차례는
       // 아무 일도 안 일어난 것과 같아서, 서 있는 시간만 들쭉날쭉해진다.
-      speaker.pose.set({ tile: speaker.tile, facing: Phaser.Math.RND.pick(others) })
+      speaker.pose.set({ tile, facing: Phaser.Math.RND.pick(others) })
     }
   }
 
