@@ -47,7 +47,7 @@ function dRule(overrides: Partial<DialogueRule> & Pick<DialogueRule, 'id' | 'eve
   }
 }
 
-const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'x' }
+const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'x', facing: 'down' }
 
 // 명령줄 인자 검사는 이정표·기술 id 가 실재하는지까지 본다(빌드와 같은 검사) —
 // 그래서 그 목록을 가진 실제 데이터가 필요하다.

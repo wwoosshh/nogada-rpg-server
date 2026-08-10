@@ -1,17 +1,29 @@
 import Phaser from 'phaser'
 import { GROUND_LAYER, TILESET_NAMES, WALLS_LAYER } from '@nogada/data'
-import { frontTile, gameTimeAt, isAchieved, type Direction, type PlayerState, type TilePos } from '@nogada/shared'
+import {
+  DIRECTIONS,
+  frontTile,
+  gameTimeAt,
+  isAchieved,
+  isAdjacentFacing,
+  type Direction,
+  type PlayerState,
+  type TilePos,
+} from '@nogada/shared'
 import { InputHub } from '../../input/InputState.js'
 import { KeyboardSource } from '../../input/KeyboardSource.js'
 import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { arrivalFacing } from '../arrivalFacing.js'
+import { idleFrame, walkFrames } from '../charSheet.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
-import { SpeakerMarker } from '../SpeakerMarker.js'
+import { NpcSprite, SpeakerPoseChannel } from '../NpcSprite.js'
+import { npcSprite, npcSpriteKey } from '../npcSprites.js'
+import { facingToward } from '../speakerFacing.js'
 import { TileMover } from '../TileMover.js'
 import { fixedToCamera, renderScale } from '../viewport.js'
 import { ControlScene } from './ControlScene.js'
@@ -21,10 +33,22 @@ import { PanelScene } from './PanelScene.js'
 const TILE = 32
 
 /**
- * Pipoya 32x32 캐릭터 시트는 3열 x 4행이다.
- * 행 순서는 아래·왼쪽·오른쪽·위이고, 가운데 열이 대기 자세다.
+ * 심심풀이로 방향을 바꾸는 간격. 사람이 가만히 서 있기만 하면 마을이 정지
+ * 화면처럼 보이고, 너무 자주 돌면 안절부절 못하는 것처럼 보인다.
+ *
+ * 화자마다 이 범위에서 **따로** 뽑으므로 처음부터 어긋나 있다 — 같은 값으로
+ * 시작해 같은 주기로 돌면 마을 사람 전부가 한 박자에 고개를 돌린다.
  */
-const WALK_ROW: Record<Direction, number> = { down: 0, left: 1, right: 2, up: 3 }
+const IDLE_TURN_MIN_MS = 3000
+const IDLE_TURN_MAX_MS = 8000
+
+/** 심심풀이로 방향을 바꾸는 화자 하나. 사물(간판)은 여기 들어오지 않는다. */
+interface IdleSpeaker {
+  tile: TilePos
+  pose: SpeakerPoseChannel
+  /** 다음에 방향을 바꿀 때까지 남은 시간. 세계가 잠긴 동안에는 줄지 않는다. */
+  remainingMs: number
+}
 
 /**
  * 앞칸에 있을 수 있는 것.
@@ -56,6 +80,7 @@ export class WorldScene extends Phaser.Scene {
   private dayNight!: DayNightOverlay
   private unsubscribeStore: (() => void) | null = null
   private unsubscribeMilestone: (() => void) | null = null
+  private unsubscribeUtterance: (() => void) | null = null
   private hub!: InputHub
   private keyboard!: KeyboardSource
   private mover!: TileMover
@@ -81,6 +106,13 @@ export class WorldScene extends Phaser.Scene {
   private mapHeight = 0
   private readonly blocked = new Set<string>()
   private readonly byTile = new Map<string, Interactable>()
+  /**
+   * 이 맵의 화자마다 자세를 밀어 넣는 통로. 지금은 방향만 지나다니지만, 일과표가
+   * 생기면 서버가 보내는 자리 갱신이 같은 길로 들어온다(NpcSprite 의 문서).
+   */
+  private readonly speakerPoses = new Map<string, SpeakerPoseChannel>()
+  /** 그중 사람들. 사물은 방향이 없어 심심풀이도 없다. */
+  private readonly idleSpeakers: IdleSpeaker[] = []
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
@@ -171,6 +203,33 @@ export class WorldScene extends Phaser.Scene {
     // 규칙이 두 곳에 생기고, 클라이언트가 서버와 다른 답을 낼 여지가 열린다.
     const mapId = this.requirePlayer().location.mapId
     this.load.tilemapTiledJSON(`map:${mapId}`, `maps/${encodeURIComponent(mapId)}.json`)
+
+    // 화자 그림은 타일셋과 달리 **이 맵에 필요한 것만** 올린다. 타일셋은 여섯
+    // 장에 610KB 라 다 올려도 되지만, 화자 시트는 마을마다 다른 사람들이라
+    // 세계가 자라는 만큼 늘어난다 — 눈의 마을에 들어서면서 항구의 약초밭지기를
+    // 내려받을 이유가 없다. 어느 화자가 이 맵에 있는지는 이미 데이터에 있으므로
+    // (create() 의 blocked·byTile 이 같은 목록을 본다) 여기서 물을 곳이 따로 없다.
+    //
+    // 이미 캐시에 있는 키는 로더가 스스로 건너뛰므로, 왔던 맵으로 되돌아올 때
+    // 다시 내려받지 않는다 — 맵 JSON 과 같다.
+    const loaded = new Set<string>()
+    for (const speaker of Object.values(useGameStore.getState().data.speakers)) {
+      if (speaker.mapId !== mapId || loaded.has(speaker.sprite)) continue
+      loaded.add(speaker.sprite)
+
+      // 모르는 이름이면 여기서 던진다(npcSprites.ts) — 맵이 안 뜨는 편이
+      // 그 화자만 조용히 사라지는 것보다 낫다.
+      const def = npcSprite(speaker.sprite)
+      const key = npcSpriteKey(speaker.sprite)
+      if (def.kind === 'char') {
+        this.load.spritesheet(key, `sprites/${def.file}`, {
+          frameWidth: TILE,
+          frameHeight: TILE,
+        })
+      } else {
+        this.load.image(key, `sprites/${def.file}`)
+      }
+    }
   }
 
   create(): void {
@@ -184,6 +243,11 @@ export class WorldScene extends Phaser.Scene {
     // 든다(서버가 wrong_map 으로 거절하지만, 화면에는 아무 일도 안 일어난다).
     this.blocked.clear()
     this.byTile.clear()
+    // 화자 통로도 같은 이유로 비운다. 남겨 두면 이전 맵의 채널이 살아 있고,
+    // 그 채널에 자세를 밀어 넣으면 이미 사라진 컨테이너를 건드린다 — 그리고
+    // 이 맵에 같은 id 의 화자가 없으면 말을 걸어도 아무도 안 돈다.
+    this.speakerPoses.clear()
+    this.idleSpeakers.length = 0
     // 이정표 큐: 트윈은 씬이 멈출 때 함께 사라져 onComplete 가 영영 오지
     // 않는다. milestoneShowing 을 되돌리지 않으면 새 맵에서 이정표 문구가
     // 큐에만 쌓이고 화면에는 하나도 안 뜬다.
@@ -270,7 +334,7 @@ export class WorldScene extends Phaser.Scene {
       startTile.x * TILE + TILE / 2,
       startTile.y * TILE + TILE / 2,
       'player',
-      this.idleFrame(startFacing),
+      idleFrame(startFacing),
     )
     this.player.setDepth(DEPTH.player)
 
@@ -349,6 +413,16 @@ export class WorldScene extends Phaser.Scene {
       this.enqueueMilestone(m.text)
     })
 
+    // 대사창(DialogueScene)도 같은 채널을 듣지만 하는 일이 다르다 — 저쪽은
+    // 말을 화면에 올리고 이쪽은 말한 사람을 돌려세운다. 한쪽이 다른 쪽에게
+    // 알려 주게 만들지 않는 이유는 그러면 두 씬이 서로를 가리키게 되기
+    // 때문이다. seq 비교는 다른 채널들과 같은 이유다(gameStore 의 Utterance 문서).
+    this.unsubscribeUtterance = useGameStore.subscribe((state, prev) => {
+      const utterance = state.utterance
+      if (!utterance || utterance.seq === prev.utterance?.seq) return
+      this.faceSpeakerToPlayer(utterance.speaker)
+    })
+
     this.dayNight = new DayNightOverlay(this)
 
     // 컨트롤러는 별도 씬이라 카메라 스크롤과 낮밤 명암의 영향을 받지 않는다.
@@ -422,6 +496,8 @@ export class WorldScene extends Phaser.Scene {
       this.unsubscribeStore = null
       this.unsubscribeMilestone?.()
       this.unsubscribeMilestone = null
+      this.unsubscribeUtterance?.()
+      this.unsubscribeUtterance = null
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)
@@ -594,6 +670,8 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
+    this.updateIdleFacing(delta)
+
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
 
     // beginFrame() 은 반드시 update() 의 맨 끝에 있어야 한다 — 위로 옮기고
@@ -740,46 +818,115 @@ export class WorldScene extends Phaser.Scene {
 
     for (const speaker of Object.values(data.speakers)) {
       if (speaker.mapId !== this.mapId) continue
-      new SpeakerMarker({
+
+      // 자리와 첫 자세는 데이터가 정한다. 그 뒤로 방향을 바꾸는 것은 이 채널
+      // 하나뿐이고, 그래서 "지금 어느 쪽을 보고 있나"의 주인이 하나다.
+      const pose = new SpeakerPoseChannel({
+        tile: { x: speaker.x, y: speaker.y },
+        facing: speaker.facing,
+      })
+      this.speakerPoses.set(speaker.id, pose)
+
+      new NpcSprite({
         scene: this,
-        x: speaker.x * TILE + TILE / 2,
-        y: speaker.y * TILE + TILE / 2,
         speakerId: speaker.id,
         label: speaker.name,
-        kind: speaker.kind,
+        sprite: speaker.sprite,
+        pose,
+      })
+
+      // 사물은 심심풀이로 돌지 않는다 — 안내판이 두리번거리면 그건 사람이다.
+      if (npcSprite(speaker.sprite).kind !== 'char') continue
+      this.idleSpeakers.push({
+        tile: { x: speaker.x, y: speaker.y },
+        pose,
+        remainingMs: this.nextIdleTurnMs(),
       })
     }
   }
 
+  /** 다음에 고개를 돌릴 때까지의 시간. 화자마다 따로 뽑아 서로 어긋나게 둔다. */
+  private nextIdleTurnMs(): number {
+    return Phaser.Math.Between(IDLE_TURN_MIN_MS, IDLE_TURN_MAX_MS)
+  }
+
+  /**
+   * 심심풀이로 고개를 돌린다. 판정에 쓰이지 않는 순수한 연출이라 클라이언트가
+   * 혼자 정하고 서버에 알리지 않는다 — 서버가 아는 것은 여전히 화자의 칸뿐이고,
+   * 대화도 앞칸 판정도 방향을 보지 않는다.
+   *
+   * **세계 입력이 잠긴 동안에는 멈춘다.** 대사창이나 패널이 열려 있는 동안 남은
+   * 시간을 줄이지 않으므로, 대화를 마치고 나오면 카운트다운이 이어진다. 이게
+   * 없으면 말을 걸어 이쪽을 보게 만든 상대가 대사창 뒤에서 고개를 돌려 버리고,
+   * 창을 닫는 순간 딴 데를 보고 있다.
+   *
+   * **플레이어가 앞칸에서 바라보고 있으면 돌지 않는다.** 눈이 마주친 사람이
+   * 고개를 홱 돌리면 무시당한 것처럼 읽힌다 — 그리고 방금 말을 건 상대가
+   * 바로 그 자리에 있으므로, 이 한 줄이 "말을 걸면 이쪽을 본다"를 대화가 끝난
+   * 뒤에도 지켜 준다.
+   */
+  private updateIdleFacing(delta: number): void {
+    if (this.hub.worldInputLocked) return
+
+    for (const speaker of this.idleSpeakers) {
+      speaker.remainingMs -= delta
+      if (speaker.remainingMs > 0) continue
+      speaker.remainingMs = this.nextIdleTurnMs()
+
+      if (isAdjacentFacing(this.mover.tile, this.mover.facing, speaker.tile)) continue
+
+      const current = speaker.pose.pose.facing
+      const others = DIRECTIONS.filter((d) => d !== current)
+      // 넷 중 지금 방향을 뺀 셋에서 고른다. 같은 방향이 나오면 그 차례는
+      // 아무 일도 안 일어난 것과 같아서, 서 있는 시간만 들쭉날쭉해진다.
+      speaker.pose.set({ tile: speaker.tile, facing: Phaser.Math.RND.pick(others) })
+    }
+  }
+
+  /**
+   * 말이 통한 화자를 플레이어 쪽으로 돌려세운다.
+   *
+   * 발화 채널을 듣는 것이 이 자리의 핵심이다. 요청을 보내는 곳(sendTalk)에서
+   * 돌리면 서버가 거절한 대화 — 없는 화자, 할 말 없음 — 에도 고개가 돌아가고,
+   * 그러면 화면이 서버가 하지 않은 판정을 한 셈이 된다. 발화가 도착했다는 것은
+   * 서버가 "이 화자가 이 말을 했다"고 정했다는 뜻이다.
+   *
+   * 돌아간 방향은 대화가 끝나도 그대로 남는다. 되돌리지 않는 것이 맞다 —
+   * 방금 이야기를 나눈 사람이 말을 마치자마자 등을 돌리면 그게 더 이상하다.
+   */
+  private faceSpeakerToPlayer(speakerId: string): void {
+    const pose = this.speakerPoses.get(speakerId)
+    if (!pose) return // 다른 맵의 화자다. 맵을 넘는 사이에 응답이 도착하면 그럴 수 있다.
+
+    const facing = facingToward(pose.pose.tile, this.mover.tile)
+    if (!facing) return
+    pose.set({ tile: pose.pose.tile, facing })
+
+    // 방금 돌아섰으니 심심풀이 시계도 처음부터 센다. 안 그러면 말을 거는
+    // 순간에 마침 시간이 다 된 화자가 돌아서자마자 딴 데를 본다.
+    const idle = this.idleSpeakers.find((s) => s.pose === pose)
+    if (idle) idle.remainingMs = this.nextIdleTurnMs()
+  }
+
   private createAnimations(): void {
-    for (const facing of Object.keys(WALK_ROW) as Direction[]) {
+    for (const facing of DIRECTIONS) {
       // 애니메이션은 씬이 아니라 게임 전체가 갖는다. 맵을 넘을 때마다 이
       // create() 가 다시 도는데, 이미 있는 키를 다시 만들면 Phaser 가 조용히
       // 무시하면서 콘솔에 경고만 남긴다 — 전환마다 네 줄씩이다.
       if (this.anims.exists(`walk-${facing}`)) continue
-      const start = WALK_ROW[facing] * 3
       this.anims.create({
         key: `walk-${facing}`,
-        // 한 걸음 → 대기 → 반대 걸음 → 대기. RPG Maker 계열 4프레임 순환이다.
-        frames: [start, start + 1, start + 2, start + 1].map((frame) => ({
-          key: 'player',
-          frame,
-        })),
+        frames: walkFrames(facing).map((frame) => ({ key: 'player', frame })),
         frameRate: 8,
         repeat: -1,
       })
     }
   }
 
-  /** 가운데 열이 대기 자세다. */
-  private idleFrame(facing: Direction): number {
-    return WALK_ROW[facing] * 3 + 1
-  }
-
   private updateAnimation(moving: boolean, facing: Direction): void {
     if (!moving) {
       this.player.anims.stop()
-      this.player.setFrame(this.idleFrame(facing))
+      this.player.setFrame(idleFrame(facing))
       return
     }
     this.player.anims.play(`walk-${facing}`, true)

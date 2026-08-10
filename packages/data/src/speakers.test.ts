@@ -20,7 +20,37 @@ describe('parseSpeakers', () => {
     const speakers = parseSpeakers([validRow()])
     expect(speakers.채집장노인).toEqual({
       id: '채집장노인', name: '채집장 노인', kind: 'npc', mapId: 'world', x: 16, y: 12, sprite: 'npc_elder',
+      facing: 'down',
     })
+  })
+
+  it('facing 칸이 아예 없는 CSV 도 읽는다 — 기본 자세는 아래다', () => {
+    // 선택 칸이라야 하는 이유: 이 칸이 생기기 전에 쓰인 행들이 그대로 살아
+    // 있어야 한다. 필수로 만들면 화자를 한 명 더할 때가 아니라 이 칸을 더하는
+    // 순간 이미 있던 모든 행을 고쳐야 한다.
+    const row = validRow()
+    expect('facing' in row).toBe(false)
+    expect(parseSpeakers([row]).채집장노인?.facing).toBe('down')
+  })
+
+  it('빈 facing 칸도 기본 자세로 읽는다', () => {
+    // 사물(간판)은 방향이 없어서 이 칸을 비워 둔다. 빈 칸을 "필수 항목이
+    // 비었다"로 거절하면 간판마다 의미 없는 방향을 적어 넣어야 한다.
+    expect(parseSpeakers([validRow({ facing: '' })]).채집장노인?.facing).toBe('down')
+  })
+
+  it('적어 준 facing 을 그대로 싣는다', () => {
+    // 이 값이 실제로 쓰이는 곳은 클라이언트의 첫 자세다. 여기서 조용히 기본값이
+    // 되면 "노인이 입구를 보고 선다"가 데이터에 적혀 있는데도 화면에서만 안 된다.
+    expect(parseSpeakers([validRow({ facing: 'left' })]).채집장노인?.facing).toBe('left')
+  })
+
+  it('알 수 없는 facing 값을 거부한다', () => {
+    // kind 와 같은 이유다 — 오타는 "그 화자만 엉뚱한 쪽을 본다"로 드러나는데,
+    // 방향은 눈에 잘 안 띄어서 그 상태로 한참 간다.
+    expect(() => parseSpeakers([validRow({ facing: '북' })])).toThrow(
+      'speakers.csv[채집장노인]: facing 은 up 또는 down 또는 left 또는 right 이어야 한다',
+    )
   })
 
   it('x·y 는 타일 좌표라 0 을 허용한다', () => {

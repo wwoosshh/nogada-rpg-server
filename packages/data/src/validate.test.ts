@@ -635,7 +635,7 @@ describe('validateGameData 의 이정표 검사', () => {
 // 나머지(아이템·노드·레시피·이정표)는 baseData() 가 이미 위반 0건을 보장하므로,
 // 대화 검사 하나만 격리해서 볼 수 있다.
 
-const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'npc' }
+const testSpeaker: SpeakerDef = { id: '노인', name: '노인', kind: 'npc', mapId: 'world', x: 0, y: 0, sprite: 'npc', facing: 'down' }
 
 /** 대화 검사 테스트용 DialogueRule 을 짧게 만든다. */
 function dRule(overrides: Partial<DialogueRule> & Pick<DialogueRule, 'id' | 'event' | 'conditions'>): DialogueRule {

@@ -155,6 +155,7 @@ describe('speakerName — 화자 id 를 화면에 보일 이름으로', () => {
       x: 16,
       y: 12,
       sprite: 'npc_elder',
+      facing: 'down',
     },
   }
 

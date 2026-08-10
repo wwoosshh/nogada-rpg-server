@@ -30,6 +30,19 @@ export function parseCsv(text: string): Row[] {
   })
 }
 
+/**
+ * 있으면 그 값, 없거나 비어 있으면 `undefined`.
+ *
+ * "없다"와 "비어 있다"를 같게 다루는 것이 핵심이다. 칸이 아예 없는 것은 그
+ * 칸이 생기기 전에 쓰인 CSV 이고, 비어 있는 것은 그 행에 해당 없다는 뜻이다 —
+ * 부르는 쪽이 하는 일(기본값을 쓴다)은 둘 다 같으므로 여기서 나눠 봐야
+ * 부르는 쪽마다 같은 분기를 다시 쓰게 될 뿐이다.
+ */
+export function optionalCell(row: Row, key: string): string | undefined {
+  const value = row[key]
+  return value === undefined || value === '' ? undefined : value
+}
+
 export function requireCell(row: Row, key: string, context: string): string {
   const value = row[key]
   if (value === undefined || value === '') {
