@@ -522,3 +522,60 @@ describe('performTalk — 출하 데이터의 이정표 대사', () => {
     expect(r.outcome.lines).not.toEqual(MILESTONE_LINES)
   })
 })
+
+/**
+ * 출하 데이터로 "서 있는 자리"가 대사까지 닿는지 지난다.
+ *
+ * 사슬이 길다: `.sched` → `npcStateAt` 이 고른 지점 → `NpcState.placeId` →
+ * 서버가 `buildFacts` 에 실어 주는 `place` 사실 → `.dlg` 의 `place=` 조건 →
+ * 선택된 발화. 그 다섯 고리 중 어디가 끊겨도 증상은 하나다 — **아무 일도
+ * 안 일어난다.** 폴백 인사가 대신 나오므로 오류도 로그도 없고, 작가는 자기
+ * 대사가 안 나오는 이유를 알 방법이 없다. 그래서 여기서만은 픽스처가 아니라
+ * 실제로 출하되는 파일로 확인한다(위 이정표 대사 블록과 같은 이유).
+ */
+describe('performTalk — 출하 데이터의 지점 대사', () => {
+  const shipped = loadGameData()
+  const INNKEEPER = '여관안주인'
+  /** 여관안주인.dlg 의 `@greet place=눈광장` 이 내는 한 칸. */
+  const PLAZA_LINE = ['장 보러 잠깐 나왔네. 여관은 비워 두면 안 되는데.']
+
+  /** 게임 세계 5일차 그 시각의 실측 ms — 라우트가 넣어 주는 `now` 와 같은 축이다. */
+  const at = (hour: number): number =>
+    GAME_EPOCH_MS + 5 * REAL_MS_PER_GAME_DAY + hour * 60 * REAL_MS_PER_GAME_MINUTE
+
+  /** 안주인이 사는 마을에 선 사람. 맵 이름은 데이터가 말한다 — 개명에 흔들리지 않는다. */
+  const inVillage = (): PlayerState =>
+    player({ location: { mapId: shipped.speakers[INNKEEPER]!.mapId, x: 0, y: 0 } })
+
+  function talkToInnkeeper(now: number) {
+    return performTalk({ player: inVillage(), data: shipped, speakerId: INNKEEPER, rng: pickFirst, now })
+  }
+
+  it('광장에 서 있는 시각에는 광장 대사가 나온다', () => {
+    // 여관안주인.sched: 09:00 눈광장 — 10시면 아직 그 자리다.
+    const r = talkToInnkeeper(at(10))
+    if (!r.ok) throw new Error(`광장에 서 있는 시각인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.lines).toEqual(PLAZA_LINE)
+  })
+
+  it('문 앞에 서 있는 시각에는 그 대사가 아니라 폴백이 나온다', () => {
+    // 06:00 여관앞 — 7시면 문 앞이다. 이 대조가 없으면 위 테스트는 "그 대사가
+    // 늘 나온다"(조건이 아예 안 걸렸을 때)로도 통과한다.
+    const r = talkToInnkeeper(at(7))
+    if (!r.ok) throw new Error(`문 앞에 서 있는 시각인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.lines).not.toEqual(PLAZA_LINE)
+    expect(r.outcome.lines.length).toBeGreaterThan(0)
+  })
+
+  it('일과가 없는 화자에게는 place 사실 자체가 없다', () => {
+    // 간판에게 place 를 건 대사는 없지만, 사실이 새면 place!=... 같은 조건이
+    // 언젠가 조용히 참이 된다. 그 화자의 모든 시각에 폴백만 나오는 것으로는
+    // 확인할 수 없어서, 공급자 쪽 단정은 packages/data 의 드리프트 테스트가
+    // 맡는다 — 여기서는 일과 없는 화자와의 대화가 여전히 열리는 것만 본다.
+    const SIGN = '얼음안내판'
+    const beside = player({ location: { mapId: shipped.speakers[SIGN]!.mapId, x: 0, y: 0 } })
+    const r = performTalk({ player: beside, data: shipped, speakerId: SIGN, rng: pickFirst, now: at(10) })
+    if (!r.ok) throw new Error(`일과 없는 화자인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.lines.length).toBeGreaterThan(0)
+  })
+})

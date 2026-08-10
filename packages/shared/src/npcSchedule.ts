@@ -48,6 +48,18 @@ export interface NpcState {
    */
   facing: Direction | null
   activity: NpcActivity
+  /**
+   * 지금 서 있는(또는 들어가 있는) 지점의 id. **걷는 중에는 null 이다** — 두
+   * 지점 사이의 길 위에는 이름이 없다.
+   *
+   * 칸으로 되찾을 수도 있다(한 칸에 지점은 하나뿐이라 validatePlaces 가
+   * 보장한다). 그러면 안 되는 이유는 걷는 NPC 다: 구운 경로는 출발·도착 지점
+   * 칸을 지나므로, 칸으로 찾으면 길 위의 사람이 한두 틱 동안 "그 지점에 있다"
+   * 고 보고된다. 여기서 함께 내면 그 애매함이 아예 생기지 않고, "지금 어느
+   * 지점인가"의 답이 이 함수 하나에서만 나온다 — 대화 사실 `place` 가 이
+   * 값을 그대로 쓴다(apps/server 의 talkService).
+   */
+  placeId: string | null
 }
 
 /** epoch 로부터 며칠째인가. 음수(=epoch 이전)도 그대로 돌려준다. */
@@ -199,6 +211,7 @@ function standingAt(place: PlaceDef): NpcState {
     tile: { x: place.x, y: place.y },
     facing: place.facing,
     activity: place.indoor ? 'indoor' : 'standing',
+    placeId: place.id,
   }
 }
 
@@ -252,5 +265,5 @@ export function npcStateAt(
     directionBetween(steps[stepIndex - 1], current) ??
     to.facing
 
-  return { mapId: current.mapId, tile: { x: current.x, y: current.y }, facing, activity: 'walking' }
+  return { mapId: current.mapId, tile: { x: current.x, y: current.y }, facing, activity: 'walking', placeId: null }
 }

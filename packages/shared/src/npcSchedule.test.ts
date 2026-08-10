@@ -74,7 +74,7 @@ describe('npcStateAt — 활성 줄 고르기', () => {
 
   it('도착 시각에는 그 줄의 지점에 서 있다', () => {
     const s = state(at(3, 6))
-    expect(s).toEqual({ mapId: 마을, tile: { x: 0, y: 0 }, facing: 'down', activity: 'standing' })
+    expect(s).toEqual({ mapId: 마을, tile: { x: 0, y: 0 }, facing: 'down', activity: 'standing', placeId: '여관앞' })
   })
 
   it('두 도착 사이에는 앞 줄의 지점에 그대로 서 있다', () => {
@@ -148,13 +148,23 @@ describe('npcStateAt — 출발과 도착의 경계', () => {
   // 왜: 도착 시각에 아직 길 위에 있으면 시간표가 거짓말이 된다("09:00 눈광장").
   it('도착 순간에는 걷기가 끝나고 지점에 서 있다', () => {
     const s = state(arrival)
-    expect(s).toEqual({ mapId: 마을, tile: { x: 10, y: 0 }, facing: 'up', activity: 'standing' })
+    expect(s).toEqual({ mapId: 마을, tile: { x: 10, y: 0 }, facing: 'up', activity: 'standing', placeId: '눈광장' })
   })
 
   it('도착 직전에는 마지막 한 칸을 남기고 걷는 중이다', () => {
     const s = state(arrival - 1)
     expect(s.activity).toBe('walking')
     expect(tileKey(s)).toBe(`${마을}:9,0`)
+  })
+
+  // 왜: 구운 경로의 첫 칸과 끝 칸은 출발·도착 지점의 칸 그 자체다. placeId 를
+  //     칸으로 되찾는 방식이었다면 출발 순간과 도착 직전에 걷는 사람이 "그
+  //     지점에 있다"고 보고됐을 것이고, 그 값이 대화 사실 place 로 나간다.
+  it('걷는 동안에는 어느 지점도 아니다 — 출발 칸에 서 있는 첫 순간까지도', () => {
+    expect(state(departure).placeId).toBeNull()
+    expect(state(arrival - 1).placeId).toBeNull()
+    expect(state(departure - 1).placeId).toBe('여관앞')
+    expect(state(arrival).placeId).toBe('눈광장')
   })
 })
 
@@ -242,7 +252,7 @@ describe('npcStateAt — 한 줄 일과', () => {
   it('종일 그 지점에 서 있다', () => {
     for (let minute = 0; minute < 24 * 60; minute += 7) {
       const s = npcStateAt(schedule, places, routes, at(4, 0, minute))
-      expect(s).toEqual({ mapId: 마을, tile: { x: 5, y: 0 }, facing: 'left', activity: 'standing' })
+      expect(s).toEqual({ mapId: 마을, tile: { x: 5, y: 0 }, facing: 'left', activity: 'standing', placeId: '초소' })
     }
   })
 })

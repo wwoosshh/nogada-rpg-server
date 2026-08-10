@@ -126,12 +126,14 @@ describe('diffPresence', () => {
 
 describe('presenceOnMap', () => {
   it('다른 맵에 있으면 활동이 무엇이든 이 맵에서는 없는 것이다', () => {
-    const state = { mapId: 채집장, tile: { x: 4, y: 2 }, facing: 'up' as const, activity: 'standing' as const }
+    // placeId 는 화면이 쓰지 않는다(대화 사실 place 의 출처다) — 그래도 NpcState
+    // 의 필드라 여기서도 채운다. 선택 필드로 두면 진짜로 빠진 자리를 못 잡는다.
+    const state = { mapId: 채집장, tile: { x: 4, y: 2 }, facing: 'up' as const, activity: 'standing' as const, placeId: '초소' }
     expect(presenceOnMap(state, 마을).stance).toBe('away')
   })
 
   it('같은 맵이면 활동과 자리를 그대로 옮긴다', () => {
-    const state = { mapId: 마을, tile: { x: 9, y: 14 }, facing: 'down' as const, activity: 'standing' as const }
+    const state = { mapId: 마을, tile: { x: 9, y: 14 }, facing: 'down' as const, activity: 'standing' as const, placeId: '여관앞' }
     expect(presenceOnMap(state, 마을)).toEqual({ stance: 'standing', tile: { x: 9, y: 14 }, facing: 'down' })
   })
 })

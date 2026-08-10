@@ -39,10 +39,26 @@ export interface FactSources {
   milestones: readonly MilestoneDef[]
   /** epoch ms. 세계 시각의 유일한 입력이다 — 이 함수는 시계를 직접 읽지 않는다. */
   nowMs: number
+  /**
+   * 화자가 지금 서 있는 지점의 id(`npcStateAt(...).placeId`). 일과가 없는
+   * 화자면 넘기지 않는다.
+   *
+   * 왜 여기서 계산하지 않는가: 이 함수는 `data.schedules`·`data.places`·
+   * `data.routes` 를 모르고, 알게 하면 사실 공급자가 세계 데이터 전체를 받는
+   * 함수가 된다. 그리고 그 계산은 서버가 이미 하고 있다 — 같은 요청 안에서
+   * "말을 걸 수 있는가"(not_here)를 판정하려고 `npcStateAt` 을 부른다. 두 번
+   * 부르면 두 답이 갈라질 수 있고, 그러면 "여기 없다"고 거절당한 자리의 대사가
+   * 나오는 일이 생긴다.
+   *
+   * 지금은 서 있을 때만 여기까지 온다(걷는 중·실내면 서버가 먼저 거절한다).
+   * 그래도 이 매개변수는 "서 있다"를 전제하지 않고 그냥 받은 것을 싣는다 —
+   * 무엇을 실을지 정하는 것은 부르는 쪽의 판정이다.
+   */
+  place?: string
 }
 
 export function buildFacts(sources: FactSources): Facts {
-  const { speaker, player, milestones, nowMs } = sources
+  const { speaker, player, milestones, nowMs, place } = sources
   const time = gameTimeAt(nowMs)
 
   const facts: Record<string, FactValue> = {
@@ -107,6 +123,13 @@ export function buildFacts(sources: FactSources): Facts {
   // 수 있고 recent 에는 시각이 없다. 옛 세이브처럼 시각을 모르면 이 사실은
   // 내지 않는다: 0 을 넣으면 "방금 말했다"가 되어 모른다고 하는 것보다 나쁘다.
   if (lastTalk !== undefined) facts.daysSinceLastTalk = gameDaysBetween(lastTalk, nowMs)
+
+  // place 는 daysSinceLastTalk 와 같은 자세다 — 모르면 넣지 않는다. 일과가 없는
+  // 화자에게 '' 나 '어디도아님' 같은 자리표시를 넣으면, 그 화자에게 place 를
+  // 건 조건이 "안 맞는다"가 아니라 "그런 자리와 비교됐다"가 되고, 조건을
+  // 부정으로 쓴 규칙(place!=여관앞)이 자리 개념이 없는 화자에게서 갑자기
+  // 참이 된다.
+  if (place !== undefined) facts.place = place
 
   return facts
 }

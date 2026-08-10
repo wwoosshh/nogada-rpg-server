@@ -260,11 +260,15 @@ describe('findFactSpec', () => {
     // justAchieved 는 buildFacts 가 PlayerState.celebrated 의 마지막 원소에서
     // 유도한다 — 인자로 받아 옮기는 것이 아니라 이미 저장된 상태에서 계산하므로,
     // 서버든 시뮬레이터든 buildFacts 를 부르기만 하면 값이 들어온다.
+    // place 는 유도가 아니라 인자로 온다 — 그 값은 플레이어 상태가 아니라 일과·
+    // 지점·구운 경로와 시각에서 나오고, 서버가 같은 요청 안에서 이미 계산한다
+    // (npcStateAt). 그래서 "공급자가 있다"의 뜻이 나머지와 조금 다르다: 일과가
+    // 있는 화자에게만, 그것도 지점에 서 있을 때만 실제로 값이 들어온다.
     expect(suppliedNames).toEqual([
-      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved',
+      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved', 'place',
     ])
     // 남은 여섯은 사정이 다르다 — 가리키는 값 자체를 만드는 스펙(날씨·호감도·
-    // 퀘스트·일과)이 아직 없어서, 유도할 상태조차 없다.
+    // 퀘스트)이 아직 없어서, 유도할 상태조차 없다.
     expect(unsuppliedNames).toEqual([
       'weather', 'affinity', 'quest.', 'story', 'activity', 'location',
     ])

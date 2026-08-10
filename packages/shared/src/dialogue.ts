@@ -135,9 +135,9 @@ export interface FactSpec {
  * 조건에 쓸 수 있는 사실 이름의 전체 목록.
  *
  * `season`·`hour`·`dayOfSeason`·`skill.*`·`milestone.*`·`talkedBefore`·
- * `daysSinceLastTalk`·`justAchieved` 는 지금 공급자가 있다(설계 문서 6.1).
+ * `daysSinceLastTalk`·`justAchieved`·`place` 는 지금 공급자가 있다(설계 문서 6.1).
  * `weather`·`affinity`·`quest.*`·`story`·`activity`·`location` 은 자리만
- * 만들어 뒀다(6.2) — 그 값을 만들 스펙(날씨·호감도·퀘스트·일과) 자체가 아직
+ * 만들어 뒀다(6.2) — 그 값을 만들 스펙(날씨·호감도·퀘스트) 자체가 아직
  * 없어서, 그 이름을 쓴 조건은 파싱은 되지만 절대 맞지 않는다.
  *
  * `speaker` 가 이 목록에 없는 것은 실수가 아니다 — selectDialogue 는 화자를
@@ -163,6 +163,13 @@ export const DECLARED_FACTS: readonly FactSpec[] = [
   // 더 할 것이 없다. 이정표 id 가 실재하는지는 이름 목록이 아니라 데이터를 봐야
   // 알 수 있어서 packages/data 의 검증이 따로 확인한다.
   { name: 'justAchieved', prefix: false, supplied: true, value: { kind: 'string' } },
+  // place 는 화자가 지금 서 있는 지점의 id 다. 공급자는 있지만 **모든 화자에게
+  // 들어오지는 않는다** — 일과(.sched)가 있고 그 지점에 서 있을 때만이다
+  // (buildFacts 의 FactSources.place, 서버가 npcStateAt 으로 구해 넣는다).
+  // 일과가 없는 화자(간판·고정 NPC)에게는 값이 없고, 없는 사실은 어떤
+  // 연산자로도 거짓이라 그런 화자에게 place 를 건 대사는 자연히 잠든다.
+  // 그게 옳다: 자리가 하나뿐인 사람에게 "어느 자리냐"는 물음은 뜻이 없다.
+  { name: 'place', prefix: false, supplied: true, value: { kind: 'string' } },
   // 아래 여섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
   { name: 'weather', prefix: false, supplied: false, value: { kind: 'unspecified' } },
   { name: 'affinity', prefix: false, supplied: false, value: { kind: 'unspecified' } },

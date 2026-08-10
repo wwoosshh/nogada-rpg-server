@@ -33,7 +33,7 @@ const NOW = 1_767_225_600_000 + 5 * 60 * 60 * 1000 // 게임 5일차 정오 언�
 /**
  * 실제 서버가 buildFacts 를 부르는 모양 그대로 부른다
  * (apps/server/src/services/talkService.ts 의 호출과 인자가 정확히 같다 —
- * speaker·player·milestones·nowMs 넷뿐이다).
+ * speaker·player·milestones·nowMs 넷에, 일과가 있는 화자일 때만 붙는 place 다).
  *
  * "선언된 사실을 공급자가 실제로 만드는가"를 반드시 이 모양으로만 물어야
  * 하는 이유가 리뷰 finding 1 이 지적한 결함 그 자체다: 예전 버전은 이 자리에서
@@ -42,15 +42,23 @@ const NOW = 1_767_225_600_000 + 5 * 60 * 60 * 1000 // 게임 5일차 정오 언�
  * 우겼다 — justAchieved 는 몇 달이고 supplied: true 로 선언된 채 아무도 채울
  * 수 없는 사실로 남아 있었다.
  *
- * 지금은 그 구멍이 관례가 아니라 타입으로 막혀 있다. FactSources 에는 저
- * 넷 말고 얹을 인자가 없다(justAchieved 는 인자가 아니라 player.celebrated
- * 에서 유도된다) — 그래서 이 헬퍼가 프로덕션과 다른 모양으로 부르려 해도
- * 컴파일이 먼저 막는다. 사실 하나가 공급자를 얻을 때 인자를 늘리는 대신
- * 상태에서 유도하기를 택하면, 이 검사가 우회 불가능해진다는 것이 그 선택의
- * 부수적인 이득이다.
+ * 지금은 그 구멍이 관례가 아니라 타입으로 막혀 있다. FactSources 에 있는 것은
+ * 저 넷과 place 뿐이고(justAchieved 는 인자가 아니라 player.celebrated 에서
+ * 유도된다) — 그래서 이 헬퍼가 프로덕션과 다른 모양으로 부르려 해도 컴파일이
+ * 먼저 막는다. 사실 하나가 공급자를 얻을 때 인자를 늘리는 대신 상태에서
+ * 유도하기를 택하면, 이 검사가 우회 불가능해진다는 것이 그 선택의 부수적인
+ * 이득이다.
+ *
+ * `place` 는 인자로 남을 수밖에 없는 쪽이다 — 그 값은 플레이어 상태가 아니라
+ * 세계 데이터(일과·지점·구운 경로)와 시각에서 나오고, 그 계산은 서버가 같은
+ * 요청 안에서 이미 한다(npcStateAt). 그래서 여기서 place 를 손으로 넣는 것은
+ * 위 finding 1 이 지적한 그 구멍처럼 보이지만 다르다: 그때는 **아무 프로덕션
+ * 호출도 그 인자를 넘기지 않았고**, 지금은 talkService 가 넘긴다. 그 절반
+ * (서버가 실제로 이 자리를 채우는가)은 talkService.test.ts 의
+ * "지점 대사" 검사가 지킨다 — talkedBeforeFacts 와 같은 분업이다.
  */
-function productionFacts(player: PlayerState, nowMs: number = NOW): Facts {
-  return buildFacts({ speaker: SPEAKER, player, milestones: data.milestones, nowMs })
+function productionFacts(player: PlayerState, nowMs: number = NOW, place?: string): Facts {
+  return buildFacts({ speaker: SPEAKER, player, milestones: data.milestones, nowMs, place })
 }
 
 function emptyPlayerFacts(): Facts {
@@ -94,9 +102,23 @@ function justAchievedFacts(): Facts {
   return productionFacts(player)
 }
 
+/**
+ * 일과가 있는 화자가 지점에 서 있을 때 — place 가 나오는 유일한 조건이다.
+ * 일과 없는 화자(간판)에게 말을 걸면 서버가 이 인자를 아예 넘기지 않는다.
+ *
+ * 지점 id 를 리터럴로 적지 않고 SPEAKER 의 일과에서 꺼낸다 — 그 지점 이름이
+ * 맵에서 사라지면 이 픽스처가 "그 자리에 서 있다"고 우기는 대신 여기서 먼저
+ * 깨져야 한다(justAchievedFacts 와 같은 이유).
+ */
+function standingAtPlaceFacts(): Facts {
+  const placeId = data.schedules[SPEAKER]?.entries[0]?.placeIds[0]
+  if (!placeId) throw new Error(`${SPEAKER} 에게 일과가 없다 — 이 화자를 고른 전제가 깨졌다`)
+  return productionFacts(emptyPlayer(), NOW, placeId)
+}
+
 /** 드리프트 검사가 보는 상태 전부. 사실 하나가 특정 상태에서만 나오면 그 상태를 여기 더한다. */
 function allProductionFacts(): Facts[] {
-  return [emptyPlayerFacts(), talkedBeforeFacts(), justAchievedFacts()]
+  return [emptyPlayerFacts(), talkedBeforeFacts(), justAchievedFacts(), standingAtPlaceFacts()]
 }
 
 describe('사실 공급자와 선언 목록', () => {

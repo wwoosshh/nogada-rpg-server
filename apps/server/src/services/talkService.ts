@@ -70,6 +70,13 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
   // 있으면 프로토타입 체인의 값이 일과 행세를 한다.
   const schedule = Object.hasOwn(data.schedules, speakerId) ? data.schedules[speakerId] : undefined
 
+  // 대화 사실 place — 일과가 있는 화자가 지금 서 있는 지점의 id 다. 아래에서
+  // npcStateAt 을 이미 부르므로 여기서 받아 두고, 그 한 번의 답이 판정(여기
+  // 있는가)과 사실(어디에 있는가) 둘 다를 정한다. 사실 공급자가 스스로 다시
+  // 계산하면 두 답이 갈라질 수 있고, 그러면 "지금 여기 없다"고 거절한 자리의
+  // 대사가 다른 경로로 나온다.
+  let place: string | undefined
+
   if (schedule) {
     // 시각은 라우트가 넣어 준 것을 그대로 쓴다. 여기서 Date.now() 를 다시 읽으면
     // 판정에 쓰인 시각과 대화 이력에 적히는 시각이 갈라지고, 테스트는 시간을
@@ -81,6 +88,11 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
     // 않으므로, 맵이 맞다는 이유로 통과시키면 걷는 사람과 대화가 열린다.
     if (state.activity !== 'standing') return { ok: false, code: 'not_here' }
     if (state.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
+
+    // standing 이면 지점 위이므로 placeId 가 있다. ?? undefined 는 그 불변식이
+    // 깨졌을 때 사실을 아예 안 내는 쪽을 고른 것이다 — 없는 사실은 조건이
+    // 거짓일 뿐이지만, 빈 문자열은 조건과 비교되는 값이 된다.
+    place = state.placeId ?? undefined
   } else if (speaker.mapId !== player.location.mapId) {
     // 이것이 대화 스펙이 남긴 구멍이다. 앞칸 판정은 클라이언트에만 있어서, 서버가
     // 어느 맵인지 모르면 화자 id 하나로 맵 너머의 화자와 대화가 열린다 — 그리고
@@ -92,7 +104,7 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
   // 사실을 먼저 모은다. 아래에서 이력을 갱신하므로, 순서가 바뀌면 이번 대화가
   // 이번 대화의 사실(talkedBefore·daysSinceLastTalk)을 바꿔 버린다 — 처음
   // 만난 사람에게 "또 왔군" 이 나온다.
-  const facts = buildFacts({ speaker: speakerId, player, milestones: data.milestones, nowMs: now })
+  const facts = buildFacts({ speaker: speakerId, player, milestones: data.milestones, nowMs: now, place })
 
   // 화자로 거르는 일은 selectDialogue 가 스스로 한다 — 여기서 미리 거르면
   // "걸러서 넘겨야 한다"는 관례가 하나 더 생긴다(dialogue.ts 참고).

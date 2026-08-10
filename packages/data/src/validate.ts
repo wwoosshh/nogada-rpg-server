@@ -26,7 +26,7 @@ export function conditionText(condition: Condition): string {
 }
 
 /**
- * 조건이나 시뮬레이터 인자가 **없는 이정표·기술**을 가리킬 때의 설명.
+ * 조건이나 시뮬레이터 인자가 **없는 이정표·기술·지점**을 가리킬 때의 설명.
  *
  * 이유와 허용 목록을 나눠 담는 것은 두 부르는 쪽이 쓸 곳이 달라서다 — 빌드
  * 위반 메시지는 이미 파일과 행을 앞에 달고 있어 `reason` 한 문장이면 되고,
@@ -39,7 +39,7 @@ export interface FactReferenceError {
 }
 
 /**
- * 사실 이름·값이 실재하는 이정표·기술을 가리키는지 본다. 맞으면 null.
+ * 사실 이름·값이 실재하는 이정표·기술·지점을 가리키는지 본다. 맞으면 null.
  *
  * 빌드(validateGameData)와 시뮬레이터(content-cli.ts)가 이 함수 하나를 함께
  * 쓴다. 나눠 구현하면 한쪽이 무르게 되는데, 무른 쪽이 하필 디버깅 도구면
@@ -70,6 +70,19 @@ export function factReferenceError(fact: string, value: FactValue, data: GameDat
     const id = fact.slice('skill.'.length)
     if ((SKILL_IDS as readonly string[]).includes(id)) return null
     return { reason: `존재하지 않는 기술 "${id}" 를 가리킨다`, allowed: `쓸 수 있는 기술: ${SKILL_IDS.join(', ')}` }
+  }
+
+  // place 도 justAchieved 처럼 **값**으로 무언가를 부른다 — 지점 id 다. 지점
+  // 이름은 맵 파일 안에 한국어로 적혀 있어서 오타가 나기 쉬운데, 안 막으면 그
+  // 조건은 어떤 시각에도 안 맞는 조용한 죽은 대사가 된다("place 라는 사실은
+  // 있다"까지는 맞으니 이름 검사도 통과한다).
+  if (fact === 'place') {
+    const id = String(value)
+    if (Object.hasOwn(data.places, id)) return null
+    return {
+      reason: `place 가 존재하지 않는 지점 "${id}" 를 가리킨다`,
+      allowed: '지점 id 는 맵 파일(maps/*.tmx)의 places 오브젝트 레이어에 찍힌 이름이어야 한다',
+    }
   }
 
   return null
