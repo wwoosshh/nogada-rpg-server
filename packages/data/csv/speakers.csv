@@ -1,3 +1,8 @@
 id,name,kind,mapId,x,y,sprite,facing
 채집장노인,채집장 노인,npc,얼음채집장,16,23,npc_elder,down
 얼음안내판,안내판,sign,얼음채집장,2,2,sign_wood,
+여관안주인,여관 안주인,npc,눈의마을,9,14,npc_innkeeper,down
+눈마을아이,마을 아이,npc,눈의마을,12,20,npc_child,left
+숲마을벌목꾼,벌목꾼,npc,숲의마을,14,22,npc_logger,left
+항구약초지기,약초밭 지기,npc,항구마을,24,34,npc_herbalist,down
+광산노인,광산 노인,npc,북동쪽마을,33,13,npc_miner,up

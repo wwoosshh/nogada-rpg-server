@@ -94,6 +94,15 @@ describe('parseSpeakers', () => {
     const here = dirname(fileURLToPath(import.meta.url))
     const rows = parseCsv(readFileSync(join(here, '..', 'csv', 'speakers.csv'), 'utf8'))
     const speakers = parseSpeakers(rows)
-    expect(Object.keys(speakers).sort()).toEqual(['얼음안내판', '채집장노인'])
+
+    // 화자 id 목록을 여기 베껴 적지 않는다. 예전엔 그랬는데, 마을에 사람이
+    // 늘 때마다 이 테스트가 깨졌다 — 그 실패는 "출하되는 데이터가 파싱되는가"에
+    // 대해 아무것도 말해 주지 않으면서 목록을 한 줄 늘리라고만 시킨다.
+    // 행 수와 정의 수가 같은지를 보면 조용히 사라진 행이 없다는 것까지 확인되고,
+    // 실제로 확인하고 싶었던 것도 그것이다.
+    expect(Object.keys(speakers)).toHaveLength(rows.length)
+    for (const row of rows) {
+      expect(speakers[row.id!]).toBeDefined()
+    }
   })
 })
