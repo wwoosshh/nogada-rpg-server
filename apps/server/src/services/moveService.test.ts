@@ -21,6 +21,7 @@ const data: GameData = {
   placements: {},
   milestones: [],
   speakers: {},
+  places: {}, schedules: {}, routes: [],
   dialogue: [],
 }
 

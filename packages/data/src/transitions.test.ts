@@ -26,6 +26,7 @@ const terrains: Record<string, MapTerrain> = {
 function data(transitions = parseTransitions(ROWS)): GameData {
   return {
     items: {}, nodes: {}, recipes: {}, milestones: [], speakers: {}, dialogue: [],
+    places: {}, schedules: {}, routes: [],
     maps: {
       [START_MAP_ID]: {
         id: START_MAP_ID, name: '시작 맵', file: 'start.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 },
@@ -128,7 +129,7 @@ describe('validateTransitions', () => {
     const mapsDir = join(here, '..', 'maps')
     const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
     const nodes = parseNodes(readRealCsv('nodes.csv'))
-    const { maps, terrains: realTerrains, placements } = parseMaps(
+    const { maps, terrains: realTerrains, placements, places } = parseMaps(
       readRealCsv('maps.csv'),
       (file) => readFileSync(join(mapsDir, file), 'utf8'),
       nodes,
@@ -142,6 +143,10 @@ describe('validateTransitions', () => {
       placements,
       milestones: [],
       speakers: parseSpeakers(readRealCsv('speakers.csv')),
+      // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
+      places,
+      schedules: {},
+      routes: [],
       dialogue: [],
     }
     expect(validateTransitions(real, realTerrains)).toEqual([])

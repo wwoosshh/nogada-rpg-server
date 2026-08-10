@@ -18,6 +18,16 @@ export const REAL_MS_PER_GAME_DAY = 60 * 60 * 1000
 
 export const GAME_MINUTES_PER_DAY = 24 * 60
 
+/**
+ * 게임 1분이 실제로 몇 ms 인가 (2500ms).
+ *
+ * 일과의 `HH:MM` 을 실측 시간 축 위로 옮기는 환산이다 — 빌드가 출발 시각을
+ * 역산할 때(routeBake)와 런타임이 NPC 위치를 보간할 때(npcStateAt)가 **같은**
+ * 환산을 써야 한다. 둘이 갈라지면 빌드가 "닿는다"고 통과시킨 시간표에서
+ * NPC 가 늦거나 순간이동한다.
+ */
+export const REAL_MS_PER_GAME_MINUTE = REAL_MS_PER_GAME_DAY / GAME_MINUTES_PER_DAY
+
 export const DAYS_PER_SEASON = 28
 
 export type Season = 'spring' | 'summer' | 'autumn' | 'winter'

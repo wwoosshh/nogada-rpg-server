@@ -34,6 +34,7 @@ function emptyGameData(): GameData {
     maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
     transitions: [],
     placements: {}, milestones: [], speakers: {}, dialogue: [],
+    places: {}, schedules: {}, routes: [],
   }
 }
 

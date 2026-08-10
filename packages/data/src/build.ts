@@ -8,6 +8,15 @@ import { parseMilestones } from './milestones.js'
 import { parseSpeakers } from './speakers.js'
 import { parseTransitions, validateTransitions } from './transitions.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
+import { validatePlaces } from './places.js'
+import { bakeRoutes } from './routeBake.js'
+import {
+  SCHEDULE_EXT,
+  collectScheduleNotices,
+  parseScheduleFiles,
+  validateSchedules,
+  type ScheduleSource,
+} from './schedule.js'
 import {
   collectDialogueNotices,
   validateGameData,
@@ -19,6 +28,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const csvDir = join(here, '..', 'csv')
 const mapsDir = join(here, '..', 'maps')
 const dialogueDir = join(here, '..', 'dialogue')
+const schedulesDir = join(here, '..', 'schedules')
 const outDir = join(here, 'generated')
 
 function readCsv(name: string) {
@@ -29,6 +39,18 @@ function readCsv(name: string) {
 function readDialogueSources(): DialogueSource[] {
   const files = readdirSync(dialogueDir).filter((f) => f.endsWith('.dlg'))
   return files.map((file) => ({ file, text: readFileSync(join(dialogueDir, file), 'utf8') }))
+}
+
+/**
+ * schedules/ 아래 모든 `.sched` 파일을 읽는다. 파일 하나 = 화자 하나다.
+ *
+ * 폴더가 없어도 빈 목록으로 넘어간다 — 일과를 사는 NPC 가 하나도 없는 것은
+ * 정상이고(오늘이 그렇다), 그 상태에서 빌드가 멈추면 안 된다.
+ */
+function readScheduleSources(): ScheduleSource[] {
+  if (!existsSync(schedulesDir)) return []
+  const files = readdirSync(schedulesDir).filter((f) => f.endsWith(SCHEDULE_EXT))
+  return files.map((file) => ({ file, text: readFileSync(join(schedulesDir, file), 'utf8') }))
 }
 
 /**
@@ -53,7 +75,8 @@ function fail(violations: readonly string[]): never {
 // — validate.ts 가 참조 위반이 있으면 도달 가능성 검사를 미루는 것과 같은
 // 저울이다.
 const { rules: dialogue, errors: dialogueErrors } = parseDialogueFiles(readDialogueSources())
-if (dialogueErrors.length > 0) fail(dialogueErrors)
+const { schedules, errors: scheduleErrors } = parseScheduleFiles(readScheduleSources())
+if (dialogueErrors.length > 0 || scheduleErrors.length > 0) fail([...dialogueErrors, ...scheduleErrors])
 
 const nodes = parseNodes(readCsv('nodes.csv'))
 const recipes = parseRecipes(readCsv('recipes.csv'))
@@ -92,7 +115,7 @@ function parseMapsOrFail(): ParsedMaps {
   }
 }
 
-const { maps, terrains, mapJson, placements } = parseMapsOrFail()
+const { maps, terrains, mapJson, placements, places } = parseMapsOrFail()
 
 const data: GameData = {
   items: parseItems(readCsv('items.csv')),
@@ -103,18 +126,32 @@ const data: GameData = {
   placements,
   milestones: parseMilestones(readCsv('milestones.csv'), nodes, recipes),
   speakers: parseSpeakers(readCsv('speakers.csv')),
+  places,
+  schedules,
+  // 길은 아래에서 굽는다 — 참조가 성립하는지부터 보고 나서다.
+  routes: [],
   dialogue,
 }
 
-// 화자 배치·시작 칸·전환 검사는 맵을 봐야 해서 GameData 만으로는 할 수 없다 —
-// 그래서 validateGameData 와 나뉘어 있고, 여기서 넷을 합쳐 한 번에 보고한다.
+// 화자 배치·시작 칸·전환·지점 검사는 맵을 봐야 해서 GameData 만으로는 할 수
+// 없다 — 그래서 validateGameData 와 나뉘어 있고, 여기서 합쳐 한 번에 보고한다.
 const violations = [
   ...validateGameData(data),
   ...validateSpeakerPlacements(data, terrains),
   ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
+  ...validatePlaces(data, terrains),
+  ...validateSchedules(data),
 ]
 if (violations.length > 0) fail(violations)
+
+// 길 굽기는 **검증이 끝난 뒤**다. 없는 지점을 가리키는 일과에 길찾기를 돌리면
+// "길이 없다" 는 그림자 위반만 잔뜩 나와, 진짜 원인 한 줄이 자기 결과들에
+// 파묻힌다 — validate.ts 가 참조 위반이 있으면 도달 가능성 계산을 미루는 것과
+// 같은 저울이다.
+const { routes, violations: routeViolations } = bakeRoutes(data, terrains)
+if (routeViolations.length > 0) fail(routeViolations)
+data.routes = routes
 
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf8')
@@ -146,13 +183,17 @@ console.log(
     `맵 ${Object.keys(data.maps).length}, ` +
     `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}, ` +
     `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}, ` +
-    `전환 ${data.transitions.length}`,
+    `전환 ${data.transitions.length}, ` +
+    `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
 )
 
 // 공급자가 없는 사실(weather 등)을 쓴 대사는 빌드를 막지 않는다 — 작가가
 // 미리 써 둔 것이지 오타가 아니기 때문이다(설계 문서 6.3). 대신 여기서
 // 안내로 알린다: 위반과 달리 이건 실패가 아니라 "아직은 안 나온다"는 정보다.
-const notices = collectDialogueNotices(data)
+//
+// 두 NPC 가 같은 시각 같은 지점에 서는 것도 같은 자리에서 알린다 — 겹쳐 서기는
+// 의도일 수 있어서 막지 않는다(설계 §3).
+const notices = [...collectDialogueNotices(data), ...collectScheduleNotices(data)]
 if (notices.length > 0) {
   console.log(`안내 — ${notices.length}건`)
   for (const n of notices) console.log(`  - ${n}`)

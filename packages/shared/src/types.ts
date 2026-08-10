@@ -250,6 +250,96 @@ export interface SpeakerDef {
   facing: Direction
 }
 
+/**
+ * NPC 가 일과 중에 서는 자리 하나. 맵의 `places` 오브젝트 레이어가 유일한 출처다.
+ *
+ * **왜 CSV 가 아닌가:** 시작 칸(`MapDef.spawn`)을 맵 파일로 옮긴 것과 같은
+ * 이유다 — 맵을 다시 그리면 지점이 눈에 보이는 곳에서 함께 움직인다. 좌표를
+ * 맵 밖에 적으면 맵 수정이 지점을 벽 속에 남기고, 빌드는 "벽"이라고만 말한다.
+ *
+ * `id` 는 맵을 넘어 전역으로 유일하다 — 일과(`.sched`)가 맵을 적지 않고 이름
+ * 하나로만 지점을 부르기 때문이다. 통근하는 NPC 의 일과에 맵을 적게 하면
+ * 같은 사실이 두 곳에 적히고, 지점이 다른 맵으로 옮겨 갈 때 갈라진다.
+ */
+export interface PlaceDef {
+  id: string
+  mapId: string
+  /** 타일 좌표. NodePlacement 의 x·y 와 같다. */
+  x: number
+  y: number
+  /**
+   * 실내 지점인가. 도착하면 맵에서 사라진다(밤에 여관 안으로 들어가는 것).
+   *
+   * 실내 맵이 생기면 이 지점만 그 맵으로 옮기면 된다 — 그때까지는 "그 문
+   * 칸에서 안으로 사라진다" 가 실내의 뜻이다.
+   */
+  indoor: boolean
+  /**
+   * 그 지점에 서 있을 때 바라보는 쪽. 없으면 걸어온 방향을 그대로 유지한다.
+   *
+   * SpeakerDef.facing 과 같은 성격이다 — 판정이 아니라 연출이고, 그 자리를
+   * 고른 사람이 데이터에 적는 것이다.
+   */
+  facing: Direction | null
+}
+
+/**
+ * 일과 한 줄 — 그 시각에 그 지점에 **도착해 있다**.
+ *
+ * 출발 시각은 적지 않는다. 빌드가 구운 경로의 길이로 역산한다(도착 −
+ * 걸음수 × NPC_STEP_MS). 작가가 "22:00 여관안" 을 읽고 "22시엔 여관에 있다"로
+ * 이해하는 것이 맞다 — 출발 의미론이면 지금 어디 있는지 알려고 다음 줄을
+ * 읽어야 한다.
+ */
+export interface ScheduleEntry {
+  /** 하루 중 도착 시각(분, 0~1439). `HH:MM` 을 분으로 편 것이다. */
+  arriveMinute: number
+  /**
+   * 변주 후보. 날짜 시드가 그중 하나를 고른다(`A | B`). 언제나 최소 하나다.
+   *
+   * 후보가 여럿이면 빌드는 **모든** 후보 조합의 길을 굽고 모든 조합이 시간
+   * 안에 닿는지 본다 — 어느 날 어느 후보가 뽑힐지 미리 알 수 없어서다.
+   */
+  placeIds: string[]
+}
+
+/**
+ * 화자 한 명의 하루. `schedules/<화자id>.sched` 파일 하나가 이것 하나다.
+ *
+ * 하루 단위로 반복한다. 마지막 줄의 지점에서 다음 날 첫 줄의 출발 시각까지
+ * 머문다 — 그 되감기 구간도 다른 줄과 똑같은 도착 규칙을 지켜야 한다.
+ */
+export interface ScheduleDef {
+  speakerId: string
+  /** 도착 시각 오름차순. 최소 한 줄이다 — 빈 일과는 빌드가 막는다. */
+  entries: ScheduleEntry[]
+}
+
+/** 구운 경로 위의 칸 하나. 맵을 넘는 구간에서 mapId 가 바뀐다. */
+export interface RouteStep {
+  mapId: string
+  x: number
+  y: number
+}
+
+/**
+ * 지점에서 지점까지 빌드가 구워 둔 길 하나.
+ *
+ * 런타임은 보간만 한다 — 길찾기를 실행 중에 돌리면 서버와 클라이언트가 각자
+ * 다른 최단 경로를 고를 수 있고(같은 길이의 길이 여럿이다), 그러면 NPC 가
+ * 두 화면에서 다른 골목으로 간다.
+ */
+export interface BakedLeg {
+  fromPlace: string
+  toPlace: string
+  /**
+   * 첫 칸이 출발 지점, 마지막 칸이 도착 지점이다. 걸음 수는 `steps.length - 1`
+   * 이라 같은 지점으로의 0길이 걸음(한 줄짜리 일과의 되감기)도 칸 하나로
+   * 표현된다 — 0 으로 나누지 않는다.
+   */
+  steps: RouteStep[]
+}
+
 export interface GameData {
   items: Record<string, ItemDef>
   nodes: Record<string, NodeDef>
@@ -262,6 +352,17 @@ export interface GameData {
   /** 정의 순서를 유지한다 — nextMilestone 의 동점 처리가 이 순서를 쓴다 */
   milestones: MilestoneDef[]
   speakers: Record<string, SpeakerDef>
+  /** 지점 등록부. 키는 지점 id 이고 맵을 넘어 유일하다. */
+  places: Record<string, PlaceDef>
+  /** 일과가 있는 화자만. 키는 화자 id 다 — `.sched` 가 없는 화자는 여기 없고 좌표에 고정이다. */
+  schedules: Record<string, ScheduleDef>
+  /**
+   * 빌드가 구운 길. 일과가 요구하는 모든 (지점→지점) 구간이 들어 있다.
+   *
+   * 배열인 것은 순서에 뜻이 있어서가 아니라 키가 둘(from·to)이라서다 —
+   * 런타임은 두 지점으로 찾는다.
+   */
+  routes: BakedLeg[]
   /**
    * 모든 화자의 모든 대사 규칙이 화자 구분 없이 한 배열에 담긴다.
    *

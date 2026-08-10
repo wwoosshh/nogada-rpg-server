@@ -96,6 +96,7 @@ function baseData(): GameData {
     // 조용히 통과하고, 이 파일의 나머지(도달 가능성 등) 테스트를 방해하지
     // 않는다.
     speakers: {},
+    places: {}, schedules: {}, routes: [],
     dialogue: [],
   }
 }
@@ -182,6 +183,7 @@ function deadlockedTierData(): GameData {
     },
     milestones: [],
     speakers: {},
+    places: {}, schedules: {}, routes: [],
     dialogue: [],
   }
 }
@@ -217,7 +219,7 @@ function loadRealGameData(): GameData {
   const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
   const nodes = parseNodes(readRealCsv('nodes.csv'))
   const recipes = parseRecipes(readRealCsv('recipes.csv'))
-  const { maps, placements } = loadRealMaps()
+  const { maps, placements, places } = loadRealMaps()
 
   return {
     items: parseItems(readRealCsv('items.csv')),
@@ -228,6 +230,10 @@ function loadRealGameData(): GameData {
     placements,
     milestones: parseMilestones(readRealCsv('milestones.csv'), nodes, recipes),
     speakers: parseSpeakers(readRealCsv('speakers.csv')),
+    // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
+    places,
+    schedules: {},
+    routes: [],
     dialogue: readRealDialogue(join(here, '..', 'dialogue')),
   }
 }
@@ -458,6 +464,7 @@ describe('validateGameData 의 조기 반환', () => {
       },
       milestones: [mineralRepeatMilestone],
       speakers: {},
+      places: {}, schedules: {}, routes: [],
       dialogue: [],
     }
 

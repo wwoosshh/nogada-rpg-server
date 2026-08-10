@@ -1,5 +1,6 @@
-import type { GameData, MapDef, NodeDef, NodePlacement, PlayerLocation } from '@nogada/shared'
+import type { GameData, MapDef, NodeDef, NodePlacement, PlaceDef, PlayerLocation } from '@nogada/shared'
 import { addUnique, requireCell } from './parse.js'
+import { parsePlaces } from './places.js'
 import { type MapTerrain, parsePlacements, parseSpawn, parseTerrain } from './placements.js'
 import { type TiledMapJson, parseTmx } from './tmx.js'
 
@@ -42,6 +43,11 @@ export interface ParsedMaps {
   mapJson: Record<string, TiledMapJson>
   /** 모든 맵의 배치를 합친 것. instanceId 는 맵을 넘어 유일하다. */
   placements: Record<string, NodePlacement>
+  /**
+   * 모든 맵의 지점을 합친 것. 지점 id 도 맵을 넘어 유일하다 — 일과(`.sched`)가
+   * 맵을 적지 않고 이름 하나로만 지점을 부르기 때문이다.
+   */
+  places: Record<string, PlaceDef>
 }
 
 /**
@@ -80,6 +86,7 @@ export function parseMaps(
   const terrains: Record<string, MapTerrain> = {}
   const mapJson: Record<string, TiledMapJson> = {}
   const placements: Record<string, NodePlacement> = {}
+  const places: Record<string, PlaceDef> = {}
 
   for (const row of rows) {
     const id = requireCell(row, 'id', 'maps.csv')
@@ -117,7 +124,21 @@ export function parseMaps(
       }
       placements[instanceId] = placement
     }
+
+    const ownPlaces = inMap(ctx, file, () => parsePlaces(json, id))
+    for (const [placeId, place] of Object.entries(ownPlaces)) {
+      // 지점 id 는 맵을 넘어 유일해야 한다 — 일과가 맵을 적지 않고 이름
+      // 하나로 부르므로, 두 맵에 같은 이름이 있으면 그 일과가 어느 마을의
+      // 자리를 뜻하는지 알 방법이 없다.
+      if (places[placeId]) {
+        throw new Error(
+          `maps.csv: 지점 "${placeId}" 가 여러 맵에 있다 (${places[placeId].mapId}, ${id}) — ` +
+            `일과는 맵을 적지 않고 이름만으로 지점을 부른다. 한쪽 이름을 바꾼다`,
+        )
+      }
+      places[placeId] = place
+    }
   }
 
-  return { maps, terrains, mapJson, placements }
+  return { maps, terrains, mapJson, placements, places }
 }

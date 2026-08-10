@@ -11,7 +11,8 @@ const NODES: Record<string, NodeDef> = {
 }
 
 /** 게임이 맵마다 요구하는 것을 다 갖춘 최소 맵 — 타일셋, ground·walls, spawn. */
-function map(instanceId: string): string {
+function map(instanceId: string, placeId?: string): string {
+  const places = placeId ? `<objectgroup name="places"><object name="${placeId}" x="32" y="32"/></objectgroup>` : ''
   return `<?xml version="1.0"?><map width="2" height="2" tilewidth="32" tileheight="32">
  <tileset firstgid="1" name="pipoya-basechip" tilewidth="32" tileheight="32">
   <image source="x.png" width="256" height="2048"/></tileset>
@@ -20,7 +21,7 @@ function map(instanceId: string): string {
  <objectgroup name="spawn"><object name="player" x="32" y="0"/></objectgroup>
  <objectgroup name="nodes"><object x="0" y="32">
   <properties><property name="nodeId" value="ice_vein"/><property name="instanceId" value="${instanceId}"/></properties>
- </object></objectgroup></map>`
+ </object></objectgroup>${places}</map>`
 }
 
 const MAP_A = map('ice-1')
@@ -94,6 +95,23 @@ describe('parseMaps', () => {
       { id: 'beta', name: '베타', file: 'a.tmx' },
     ]
     expect(() => parseMaps(rows, read, NODES)).toThrow(/ice-1/)
+  })
+
+  // 왜: 일과(.sched)는 맵을 적지 않고 지점 이름 하나로만 자리를 부른다 —
+  //     그러려면 모든 맵의 지점이 한 등록부에 모여 있어야 한다.
+  it('맵마다의 지점을 하나의 등록부로 모은다', () => {
+    const files: Record<string, string> = { 'a.tmx': map('ice-1', '여관앞'), 'b.tmx': map('ice-2', '초소') }
+    const { places } = parseMaps(ROWS, (f) => files[f] ?? '', NODES)
+    expect(Object.keys(places).sort()).toEqual(['여관앞', '초소'])
+    expect(places['여관앞']?.mapId).toBe('alpha')
+    expect(places['초소']?.mapId).toBe('beta')
+  })
+
+  // 왜: 두 맵에 같은 이름이 있으면, 그 이름을 부른 일과가 어느 마을의 자리를
+  //     뜻하는지 알 방법이 없다 — instanceId 가 전역으로 유일한 것과 같은 이유다.
+  it('같은 지점 이름이 두 맵에 있으면 막는다', () => {
+    const files: Record<string, string> = { 'a.tmx': map('ice-1', '광장'), 'b.tmx': map('ice-2', '광장') }
+    expect(() => parseMaps(ROWS, (f) => files[f] ?? '', NODES)).toThrow(/광장/)
   })
 
   // 왜: 지형은 맵마다 따로 있어야 화자 배치 검증이 맵을 골라 볼 수 있다.
