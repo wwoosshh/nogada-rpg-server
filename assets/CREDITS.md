@@ -134,6 +134,19 @@ mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/publ
 cp "assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32/Male/Male 01-1.png" \
    apps/client/public/sprites/player.png
 
+# 화자 스프라이트 — 아래 "화자 스프라이트 대장" 표와 같은 내용이다.
+CHR="assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32"
+while IFS=: read -r name src; do
+  cp "$CHR/$src.png" "apps/client/public/sprites/${name}.png"
+done <<'NPCS'
+npc_elder:Male/Male 07-1
+npc_innkeeper:Female/Female 19-1
+npc_child:Female/Female 20-1
+npc_logger:Male/Male 14-1
+npc_herbalist:Female/Female 17-1
+npc_miner:Male/Male 12-1
+NPCS
+
 # 아이템 아이콘 13종 — 위 매핑 표와 같은 내용이다.
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
@@ -154,6 +167,50 @@ hammer_iron:934
 hammer_mithril:940
 ICONS
 ```
+
+안내판(`kind=sign`)만 캐릭터 시트가 아니라 **타일셋에서 잘라 온다.** 마을들이 이미 세워 둔
+그 나무 이정표(basechip 타일 229 + 237, 세로로 붙은 1×2)를 그대로 32×64 한 장으로 뜬다 —
+사람이 아닌 화자를 사람 시트로 그리면 걸음 프레임도 방향도 없는데 있는 척하게 된다.
+`Bitmap.Clone` 을 쓰는 이유는 위 물 시트와 같다: 화소를 그대로 옮긴다.
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+$src = (Resolve-Path "apps\client\public\tilesets\pipoya-basechip.png").Path
+$img = New-Object System.Drawing.Bitmap($src)
+# 타일 229 = 28행 5열, 타일 237 = 29행 5열. 8열 시트라 x = 5*32, y = 28*32, 세로 두 칸.
+$rect = New-Object System.Drawing.Rectangle(160, 896, 32, 64)
+$crop = $img.Clone($rect, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$crop.Save((Join-Path (Get-Location) "apps\client\public\sprites\sign_wood.png"),
+           [System.Drawing.Imaging.ImageFormat]::Png)
+$crop.Dispose(); $img.Dispose()
+```
+
+ImageMagick 이라면 한 줄이다:
+
+```bash
+magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repage \
+  apps/client/public/sprites/sign_wood.png
+```
+
+### 화자 스프라이트 대장
+
+`csv/speakers.csv` 의 `sprite` 칸 → 파일 → 원본. 클라이언트가 아는 목록은
+`apps/client/src/game/npcSprites.ts` 이고, **모르는 id 를 만나면 그 자리에서 던진다** —
+그러니 이 표와 그 파일과 CSV 셋이 함께 움직인다.
+
+| sprite | 파일 | 원본 | 누구 | 왜 이 그림인가 |
+|---|---|---|---|---|
+| `npc_elder` | `npc_elder.png` | `Male/Male 07-1` | 채집장 노인 | 초록 두건 + 흰 수염. 32px 에서 실루엣만으로 노인이 읽히는 유일한 남자 시트다 |
+| `npc_innkeeper` | `npc_innkeeper.png` | `Female/Female 19-1` | 눈의 마을 여관 안주인 | 안경 쓴 백발 + 붉은 숄. 눈밭 위에서 붉은색이 유일하게 튄다 |
+| `npc_child` | `npc_child.png` | `Female/Female 20-1` | 눈의 마을 아이 | 양갈래 머리에 몸집이 작아 어른들과 한눈에 갈린다 |
+| `npc_logger` | `npc_logger.png` | `Male/Male 14-1` | 숲의 마을 벌목꾼 | 뻗친 머리 + 주황 상의. 숲의 초록 배경에서 사람이 배경에 묻히지 않는다 |
+| `npc_herbalist` | `npc_herbalist.png` | `Female/Female 17-1` | 항구 마을 약초밭지기 | 쪽진 머리 + 앞치마. 일하는 사람으로 읽히는 가장 수수한 시트 |
+| `npc_miner` | `npc_miner.png` | `Male/Male 12-1` | 북동쪽 마을 늙은 광부 | 벗어진 머리 + 회색 수염. 노인이되 두건 쓴 채집장 노인과 안 헷갈린다 |
+| `sign_wood` | `sign_wood.png` | basechip 타일 229+237 | 안내판 | 사람이 아니다 — 위 잘라내기 참고 |
+
+**플레이어(`Male 01-1`)와 겹치지 않게 고른 것이 이 여섯 장의 공통 조건이다.** 플레이어는 은빛
+갑옷에 파란 장식이라, 위 여섯은 전부 그 조합을 피한다. 한 화면에 나오지 않는 조합(예: 항구의
+약초밭지기와 눈의 마을 아이)은 서로 비슷해도 괜찮지만, 플레이어는 언제나 같은 화면에 있다.
 
 타일셋은 **단순 복사가 아니라 여섯 장으로 잘라 잇는다** (아래 참조). PowerShell 에서, 저장소 루트에서:
 
