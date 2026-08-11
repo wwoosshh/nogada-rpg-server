@@ -137,7 +137,12 @@ function buildCard(
     recipeId: recipe.id,
     name: recipe.output.count > 1 ? `${recipe.name} ×${recipe.output.count}` : recipe.name,
     icon: recipe.output.item,
-    ownedOutput: player.stacks[recipe.output.item] ?? 0,
+    // 왜: 도구는 인스턴스로 보관된다(craftService.ts — 강화 대상이라 스택이 아니라
+    // 개별 행) — stacks 만 읽으면 방금 만든 망치도 "보유 0"이라 말해 여분을
+    // 재료 낭비하며 또 만들게 유도한다. 6종 레시피 중 5종이 도구다.
+    ownedOutput:
+      (player.stacks[recipe.output.item] ?? 0) +
+      player.instances.filter((i) => i.itemId === recipe.output.item).length,
     state: !skillOpen ? 'locked' : materialsReady ? 'ready' : 'no_materials',
     chancePct: Math.round(calcCraftSuccess(ctx) * 100),
     proficiency: ctx.proficiency,

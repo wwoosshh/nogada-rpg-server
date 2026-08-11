@@ -48,7 +48,7 @@ export function TopBar(): JSX.Element {
         <span className="topbar__clock">
           {SEASON_LABELS[t.season]} {t.dayOfSeason}일 · {pad(t.hour)}:{pad(t.minute)}
         </span>
-        {mapName !== null && <span className="topbar__milestone">{mapName}</span>}
+        {mapName !== null && <span className="topbar__map">{mapName}</span>}
         {/*
           상세 메뉴(Phaser 의 PanelScene)를 설정 탭으로 여는 두 번째 입구다 — B 와
           같은 목적지를 가리킨다. 메뉴 자체는 React 가 아니라 Phaser 씬이라 여기서

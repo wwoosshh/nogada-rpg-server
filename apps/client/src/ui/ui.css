@@ -45,7 +45,7 @@
  * 이기 때문이다. min-width: 0 이 없으면 flex 아이템은 내용 크기 밑으로
  * 줄어들지 않아 overflow/ellipsis 가 아예 발동하지 않는다.
  */
-.topbar__milestone {
+.topbar__map {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;

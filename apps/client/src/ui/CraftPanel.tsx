@@ -43,6 +43,10 @@ function RowMark({ card }: { card: CraftCard }): JSX.Element {
   if (card.state === 'locked') {
     return (
       <span className="craft__row-req">
+        {/* 설계 §8-뒤: 잠긴 행은 🔒+요구치다. 자물쇠는 장식이라 aria-hidden —
+            잠김이라는 사실은 이미 숫자 앞 글리프가 아니라 이 span 자체가
+            읽는 사람에게 말한다(aria-label 없이도 화면낭독기는 다음 텍스트를 읽는다). */}
+        <span aria-hidden="true">🔒</span>
         {fmt(card.proficiency)}/{fmt(card.requiredSkill)}
       </span>
     )

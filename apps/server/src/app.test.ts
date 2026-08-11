@@ -523,20 +523,27 @@ describe('POST /api/talk', () => {
   })
 
   it('대화는 행동 간격을 소비하지 않는다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-    await enterSpeakerMap(me)
+    // 왜 withElderStanding: 이 시각을 고정하지 않으면 실행 시각이 채집장노인의
+    // 걷는 창(06:00→12:00, 12:00→15:00)에 걸릴 때마다 /api/talk 이 not_here 로
+    // 400 을 반환한다 — 그러면 이 불변식이 실제 대화가 아니라 빈 400 경로에서
+    // "통과"하는 착시가 생긴다(다른 4개 대화 테스트와 같은 이유, 88b6feb).
+    await withElderStanding(async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      await enterSpeakerMap(me)
 
-    // 서비스 단위 테스트가 같은 것을 보지만, 라우트가 나중에 채집처럼 간격을
-    // 걸도록 "통일"되는 순간 그 단위 테스트는 아무것도 막지 못한다.
-    const before = await me.inject({ method: 'GET', url: '/api/state' })
-    await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    const after = await me.inject({ method: 'GET', url: '/api/state' })
+      // 서비스 단위 테스트가 같은 것을 보지만, 라우트가 나중에 채집처럼 간격을
+      // 걸도록 "통일"되는 순간 그 단위 테스트는 아무것도 막지 못한다.
+      const before = await me.inject({ method: 'GET', url: '/api/state' })
+      const talk = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      expect(talk.statusCode).toBe(200)
+      const after = await me.inject({ method: 'GET', url: '/api/state' })
 
-    const nextActionAt = (res: typeof before) => (res.json() as { player: { nextActionAt: number } }).player.nextActionAt
-    expect(nextActionAt(after)).toBe(nextActionAt(before))
+      const nextActionAt = (res: typeof before) => (res.json() as { player: { nextActionAt: number } }).player.nextActionAt
+      expect(nextActionAt(after)).toBe(nextActionAt(before))
 
-    await app.close()
+      await app.close()
+    })
   })
 
   it('연달아 말을 걸어도 거부하지 않는다', async () => {

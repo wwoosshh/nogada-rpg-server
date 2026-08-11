@@ -95,6 +95,16 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
     expect(findCard(sections, 'copper_hammer').ownedOutput).toBe(0)
   })
 
+  // 왜: 도구는 stacks 가 아니라 instances 로 보관된다(craftService.ts) — 방금
+  // 만든 구리 망치를 stacks 에서만 세면 상세의 "보유"가 영원히 0 이라 재료를
+  // 낭비해 여분을 또 만들게 유도한다. 6종 레시피 중 5종이 도구라 이 결함의
+  // 파급이 크다.
+  it('도구 산출물은 instances 개수를 보유로 센다', () => {
+    const player = { ...playerWith(0), instances: [{ instanceId: 'i1', itemId: 'copper_hammer', enhanceLevel: 0 }] }
+    const sections = buildCraftCards(data, player, {})
+    expect(findCard(sections, 'copper_hammer').ownedOutput).toBe(1)
+  })
+
   // 왜: 재료 칩(아이콘+보유/필요, 충족 색)은 이 배열이 전부다 — 여기의 ok 가
   //     틀리면 색이 거짓말을 하고, item 이 틀리면 엉뚱한 그림이 걸린다.
   it('재료마다 아이템 id·이름·보유·필요·충족 여부를 대조한다', () => {

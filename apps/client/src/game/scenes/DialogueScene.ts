@@ -227,6 +227,11 @@ export class DialogueScene extends Phaser.Scene {
     this.unsubscribeUtterance = useGameStore.subscribe((state, prev) => {
       const utterance = state.utterance
       if (!utterance || utterance.seq === prev.utterance?.seq) return
+      // 왜: A 를 누른 뒤 서버 응답이 오기 전에 가방·제작 DOM 패널을 열면, 이
+      // 응답이 도착하는 순간 대사창이 그 패널 밑에 깔려 안 보이면서도 입력
+      // 잠금(setWorldInputLocked)만 걸어 모든 키를 삼킨다. 대사가 화면의 단독
+      // 소유자여야 하므로(§8-앞 6, single-owner) 여기서 DOM 패널을 밀어낸다.
+      useGameStore.getState().setOpenPanel(null)
       this.beginUtterance(utterance.speaker, utterance.lines)
     })
 

@@ -172,8 +172,8 @@ npc_miner:Male/Male 12-1
 NPCS
 
 # 아이템 아이콘 25종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 18종만 쓴다
-# (ore_mithril·ingot_mithril·plate_reinforced·pickaxe_reinforced·hammer_iron·
-# hammer_mithril 은 아직 쓰는 아이템이 없는 예비 배정).
+# (ore_mithril·ingot_iron·ingot_mithril·plate_reinforced·pickaxe_reinforced·
+# hammer_iron·hammer_mithril 은 아직 쓰는 아이템이 없는 예비 배정).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
