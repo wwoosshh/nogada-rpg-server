@@ -9,7 +9,12 @@ import pg from 'pg'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { JsonPersistence } from './jsonPersistence.js'
 import { createInitialPlayer } from './newCharacter.js'
-import { CharacterConflictError, CharacterStateError, type Persistence } from './persistence.js'
+import {
+  CharacterConflictError,
+  CharacterStateError,
+  type Persistence,
+  type StoredCharacter,
+} from './persistence.js'
 import { PostgresPersistence } from './postgresPersistence.js'
 
 /**
@@ -49,23 +54,38 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+/** 세이브 파일의 속. 원본을 심고 꺼내는 하네스만 이 모양을 안다. */
+interface RawSaveFile {
+  nextUserId: number
+  users: Record<string, { username: string; passwordHash: string }>
+  sessions: Record<string, { userId: string; expiresAt: number }>
+  characters: Record<string, unknown>
+  owners: Record<string, string>
+}
+
 const jsonHarness: Harness = {
   name: 'JSON 파일',
   open: () => JsonPersistence.open(join(dir, 'players.json')),
   async putRaw(id, raw) {
     const file = join(dir, 'players.json')
-    let all: Record<string, unknown> = {}
+    let save: RawSaveFile = { nextUserId: 1, users: {}, sessions: {}, characters: {}, owners: {} }
     try {
-      all = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+      save = JSON.parse(readFileSync(file, 'utf8')) as RawSaveFile
     } catch {
-      all = {}
+      // 아직 아무것도 저장되지 않았다 — 빈 저장소에 심는다.
     }
-    all[id] = raw
-    writeFileSync(file, JSON.stringify(all, null, 2), 'utf8')
+    // 주인 없는 캐릭터를 심지 않는다. Postgres 쪽은 FK 가 그것을 막으므로,
+    // 여기서도 같은 세계를 만들어 둬야 두 구현이 같은 것을 시험받는다.
+    const userId = String(save.nextUserId)
+    save.nextUserId += 1
+    save.users[userId] = { username: `원본-${id}`, passwordHash: 'x' }
+    save.characters[id] = raw
+    save.owners[id] = userId
+    writeFileSync(file, JSON.stringify(save, null, 2), 'utf8')
   },
   async getRaw(id) {
-    const all = JSON.parse(readFileSync(join(dir, 'players.json'), 'utf8')) as Record<string, unknown>
-    return all[id]
+    const save = JSON.parse(readFileSync(join(dir, 'players.json'), 'utf8')) as RawSaveFile
+    return save.characters[id]
   },
   cleanup: async () => undefined,
 }
@@ -84,10 +104,18 @@ const postgresHarness: Harness = {
   open: async () => PostgresPersistence.open(TEST_DATABASE_URL!),
   async putRaw(id, raw) {
     await withClient(async (client) => {
+      // 캐릭터에는 주인이 있어야 한다(FK + NOT NULL). 원본을 심는 것이 목적이지
+      // 계정을 시험하는 것이 아니므로 계정 하나를 함께 만든다.
+      const user = await client.query<{ id: string }>(
+        `INSERT INTO users (username, pw_hash) VALUES ($1, 'x')
+         ON CONFLICT (username) DO UPDATE SET pw_hash = EXCLUDED.pw_hash
+         RETURNING id::text AS id`,
+        [`원본-${id}`],
+      )
       await client.query(
-        `INSERT INTO characters (id, state) VALUES ($1, $2)
+        `INSERT INTO characters (id, user_id, state) VALUES ($1, $2, $3)
          ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state`,
-        [id, JSON.stringify(raw)],
+        [id, user.rows[0]!.id, JSON.stringify(raw)],
       )
     })
   },
@@ -101,8 +129,14 @@ const postgresHarness: Harness = {
     })
   },
   // 테스트마다 표를 비운다. 앞 테스트가 남긴 캐릭터가 "없는 캐릭터는 null" 을
-  // 조용히 거짓으로 만들면 안 된다.
-  cleanup: () => withClient(async (client) => void (await client.query('DELETE FROM characters'))),
+  // 조용히 거짓으로 만들면 안 된다. 계정을 지우면 캐릭터도 세션도 CASCADE 로
+  // 따라가지만, 무엇이 지워지는지 눈에 보이게 셋을 다 적는다.
+  cleanup: () =>
+    withClient(async (client) => {
+      await client.query('DELETE FROM sessions')
+      await client.query('DELETE FROM characters')
+      await client.query('DELETE FROM users')
+    }),
 }
 
 async function withClient<T>(use: (client: pg.Client) => Promise<T>): Promise<T> {
@@ -155,6 +189,20 @@ function contractSuite(harness: Harness): void {
     await harness.cleanup()
   })
 
+  /**
+   * 계정 하나와 그 사람의 캐릭터 하나.
+   *
+   * 캐릭터가 생기는 곳은 `createCharacter` 하나뿐이라(저장은 이미 있는 것을
+   * 고쳐 쓸 뿐이다) 저장을 시험하는 모든 테스트가 여기서 시작한다.
+   */
+  const born = async (id: string, player: PlayerState = newPlayer(id)): Promise<StoredCharacter> => {
+    const user = await store.createUser(`계정-${id}`, `해시-${id}`)
+    if (!user) throw new Error(`계정 "계정-${id}" 이 이미 있다`)
+    const created = await store.createCharacter(user.id, player)
+    if (!created) throw new Error(`캐릭터 "${id}" 를 만들지 못했다`)
+    return created
+  }
+
   // 왜: 예전 저장소는 없는 id 를 물으면 새 플레이어를 지어내 돌려줬다. 그러면
   //     오타 난 id 하나가 빈 캐릭터를 낳고, 그 캐릭터가 파일에 저장까지 된다.
   //     캐릭터가 생기는 곳은 캐릭터 생성 하나여야 한다.
@@ -166,7 +214,7 @@ function contractSuite(harness: Harness): void {
   it('저장한 것을 그대로 다시 읽는다', async () => {
     const player = newPlayer('나그네')
     player.stacks.copper_ore = 7
-    await store.saveCharacter(player)
+    await born('나그네', player)
 
     const loaded = await store.getCharacter('나그네')
     expect(loaded?.stacks.copper_ore).toBe(7)
@@ -174,7 +222,7 @@ function contractSuite(harness: Harness): void {
   })
 
   it('돌려준 상태를 밖에서 고쳐도 저장소 안이 오염되지 않는다', async () => {
-    await store.saveCharacter(newPlayer('나그네'))
+    await born('나그네')
 
     const first = await store.getCharacter('나그네')
     first!.stacks.copper_ore = 99
@@ -217,7 +265,7 @@ function contractSuite(harness: Harness): void {
   //     계약이다: 한쪽에만 있으면 DATABASE_URL 하나로 게임이 못 쓰게 된다.
   it('없어진 맵을 가리키는 세이브는 시작 자리로 돌아온다 — 숙련도는 그대로 두고', async () => {
     const stale = newPlayer('길잃은이')
-    await store.saveCharacter({
+    await born('길잃은이', {
       ...stale,
       skills: { ...stale.skills, ice: 12345 },
       stacks: { copper_ore: 42 },
@@ -261,7 +309,7 @@ function contractSuite(harness: Harness): void {
   //     같은 상태를 읽고 나중에 쓴 쪽이 먼저 쓴 쪽을 통째로 덮는다 — 오류 없이
   //     캔 광석과 오른 숙련도가 사라진다.
   it('지나간 판본으로 저장하면 충돌이다 — 남의 저장을 덮지 못한다', async () => {
-    await store.saveCharacter(newPlayer('경합'))
+    await born('경합')
 
     const mine = await store.readCharacter('경합')
     expect(mine).not.toBeNull()
@@ -278,7 +326,7 @@ function contractSuite(harness: Harness): void {
   })
 
   it('저장할 때마다 판본이 달라진다 — 같은 값이 두 번 나오면 지나간 판본이 통과한다', async () => {
-    const first = await store.saveCharacter(newPlayer('판본'))
+    const first = (await born('판본')).version
     const second = await store.saveCharacter(newPlayer('판본'), first)
 
     expect(second).not.toBe(first)
@@ -290,11 +338,21 @@ function contractSuite(harness: Harness): void {
     ).rejects.toBeInstanceOf(CharacterConflictError)
   })
 
+  // 왜: 예전에는 판본 없는 저장이 없는 행을 만들어 줬다. 그러면 캐릭터가 생기는
+  //     곳이 둘이 되고, 오타 난 키 하나가 주인(user_id) 없는 캐릭터를 낳는다 —
+  //     Postgres 에서는 그 행이 아예 들어가지도 못한다(NOT NULL).
+  it('판본을 걸지 않아도 없는 캐릭터는 만들지 않는다 — 만드는 곳은 생성 하나다', async () => {
+    await expect(store.saveCharacter(newPlayer('유령'))).rejects.toBeInstanceOf(
+      CharacterConflictError,
+    )
+    expect(await store.getCharacter('유령')).toBeNull()
+  })
+
   it('서로 다른 캐릭터는 서로에게 새지 않는다', async () => {
     const a = newPlayer('가')
     a.stacks.copper_ore = 1
-    await store.saveCharacter(a)
-    await store.saveCharacter(newPlayer('나'))
+    await born('가', a)
+    await born('나')
 
     expect((await store.getCharacter('나'))?.stacks).toEqual({})
     // 기본값을 리터럴로 주면 zod 가 그 한 객체를 모든 파싱 결과에 물려 준다 —
@@ -302,5 +360,165 @@ function contractSuite(harness: Harness): void {
     const one = await store.getCharacter('가')
     one!.dialogueHistory.said.push('노인.greet.abc')
     expect((await store.getCharacter('나'))?.dialogueHistory.said).toEqual([])
+  })
+
+  it('가입한 계정을 아이디로 다시 찾는다 — 해시는 손대지 않고 그대로', async () => {
+    const created = await store.createUser('노가다', '해시')
+
+    expect(created?.id).toBeTruthy()
+    expect(await store.findUser('노가다')).toEqual(created)
+  })
+
+  it('없는 아이디는 null 이다', async () => {
+    expect(await store.findUser('아무도아님')).toBeNull()
+  })
+
+  // 왜: "찾아보고 없으면 넣는다"로 쓰면 그 사이에 다른 가입이 끼어들어 둘 다
+  //     통과한다. 유일성은 쓰는 순간 판정되어야 하고(Postgres 는 23505, JSON
+  //     폴백은 직렬화한 쓰기 안의 같은 검사), 그 답이 두 구현에서 같아야
+  //     라우트가 한 가지 방법으로 409 를 낼 수 있다(설계 규범 6).
+  it('같은 아이디로 두 번 가입하면 두 번째는 null 이다 — 오류가 아니라 답이다', async () => {
+    await store.createUser('노가다', '해시')
+
+    expect(await store.createUser('노가다', '다른해시')).toBeNull()
+    // 먼저 가입한 사람의 비밀번호가 덮이지 않는다 — 덮이면 가입 요청 하나로
+    // 남의 계정을 빼앗을 수 있다.
+    expect((await store.findUser('노가다'))?.passwordHash).toBe('해시')
+  })
+
+  // 왜: 아이디를 정규화하는 것은 부르는 쪽의 일이다. 저장소가 또 다듬으면 규칙을
+  //     아는 곳이 둘이 되고, 그 둘이 갈라지는 날 아무도 자기 계정을 못 찾는다.
+  it('저장소는 받은 글자를 그대로 견준다 — 정규화는 부르는 쪽의 일이다', async () => {
+    await store.createUser('노가다', '해시')
+
+    expect(await store.findUser('노가다 ')).toBeNull()
+    expect(await store.findUser('노가다')).not.toBeNull()
+  })
+
+  it('연 세션을 표로 다시 찾는다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    const expiresAt = Date.now() + 1000
+
+    await store.createSession('토큰표', user!.id, expiresAt)
+
+    expect(await store.findSession('토큰표')).toEqual({ userId: user!.id, expiresAt })
+  })
+
+  it('없는 세션은 null 이다', async () => {
+    expect(await store.findSession('없는표')).toBeNull()
+  })
+
+  // 왜: 만료가 지난 세션을 저장소가 조용히 감추면, 그것을 지울 기회도 왜
+  //     로그아웃됐는지 말할 기회도 사라진다. 지났는지는 인증이 본다.
+  it('만료가 지난 세션도 그대로 돌려준다 — 지났는지는 부르는 쪽이 본다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    const past = Date.now() - 1000
+
+    await store.createSession('지난표', user!.id, past)
+
+    expect(await store.findSession('지난표')).toEqual({ userId: user!.id, expiresAt: past })
+  })
+
+  it('세션의 만료를 미룬다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    await store.createSession('토큰표', user!.id, Date.now() + 1000)
+
+    const later = Date.now() + 60_000
+    await store.extendSession('토큰표', later)
+
+    expect((await store.findSession('토큰표'))?.expiresAt).toBe(later)
+  })
+
+  // 왜: 방금 로그아웃한 사람의 요청이 연장에 닿을 수 있다. 그것이 세션을
+  //     되살리면 로그아웃이 거짓이 된다.
+  it('없는 세션을 연장해도 되살아나지 않는다', async () => {
+    await store.extendSession('없는표', Date.now() + 60_000)
+
+    expect(await store.findSession('없는표')).toBeNull()
+  })
+
+  it('세션을 닫으면 그 표는 없는 것이 된다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    await store.createSession('토큰표', user!.id, Date.now() + 1000)
+
+    await store.deleteSession('토큰표')
+
+    expect(await store.findSession('토큰표')).toBeNull()
+    // 로그아웃은 그 기기 하나를 닫는 것이지 계정을 지우는 것이 아니다.
+    expect(await store.findUser('노가다')).not.toBeNull()
+  })
+
+  it('없는 세션을 닫아도 오류가 아니다 — 결과는 어느 쪽이든 "없다"다', async () => {
+    await expect(store.deleteSession('없는표')).resolves.toBeUndefined()
+  })
+
+  // 왜: 이중 제출(버튼 두 번, 느린 네트워크에서의 재시도)이 캐릭터 둘을 만들지
+  //     못하게 하는 것은 코드의 순서가 아니라 제약이어야 한다. null 을 받은 쪽은
+  //     이미 있는 캐릭터를 돌려준다 — 그것이 사람이 기대하는 답이다(설계 규범 6).
+  it('한 계정은 캐릭터 하나다 — 두 번째 생성은 null 이고 먼저 것을 덮지 않는다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    const first = newPlayer('첫캐릭터')
+    first.stacks.copper_ore = 3
+    await store.createCharacter(user!.id, first)
+
+    expect(await store.createCharacter(user!.id, newPlayer('둘째캐릭터'))).toBeNull()
+    expect(await store.getCharacter('둘째캐릭터')).toBeNull()
+    expect((await store.getCharacter('첫캐릭터'))?.stacks.copper_ore).toBe(3)
+  })
+
+  it('같은 키의 캐릭터를 다시 만들면 null 이다 — 남의 진행도를 덮지 않는다', async () => {
+    const mine = newPlayer('한사람')
+    mine.skills.ice = 12345
+    await born('한사람', mine)
+
+    const other = await store.createUser('남', '해시')
+    expect(await store.createCharacter(other!.id, newPlayer('한사람'))).toBeNull()
+    expect((await store.getCharacter('한사람'))?.skills.ice).toBe(12345)
+  })
+
+  // 왜: 슬롯이 하나뿐이라 삭제가 없으면 잘못 고른 외형·마을이 영구히 갇힌다
+  //     (설계 규범 7). 그리고 지운 뒤 다시 만들 수 없으면 그건 삭제가 아니라
+  //     계정을 못 쓰게 만드는 것이다.
+  it('캐릭터를 지우면 계정은 남고, 그 계정으로 다시 만들 수 있다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    await store.createCharacter(user!.id, newPlayer('첫캐릭터'))
+
+    await store.deleteCharacter('첫캐릭터')
+
+    expect(await store.getCharacter('첫캐릭터')).toBeNull()
+    expect(await store.findUser('노가다')).not.toBeNull()
+    expect(await store.createCharacter(user!.id, newPlayer('다시만든캐릭터'))).not.toBeNull()
+  })
+
+  // 왜: 지운 자리에 같은 키로 다시 만들었는데 판본이 이어지면, 지워지기 전에
+  //     읽어 둔 판본으로 저장하는 요청이 통과한다 — 새 캐릭터가 옛 캐릭터의
+  //     상태로 덮인다.
+  it('지웠다 같은 키로 다시 만들면 옛 판본으로는 저장할 수 없다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    const before = await store.createCharacter(user!.id, newPlayer('한사람'))
+    await store.deleteCharacter('한사람')
+    await store.createCharacter(user!.id, newPlayer('한사람'))
+
+    await expect(
+      store.saveCharacter(newPlayer('한사람'), before!.version),
+    ).rejects.toBeInstanceOf(CharacterConflictError)
+  })
+
+  it('없는 캐릭터를 지워도 오류가 아니다', async () => {
+    await expect(store.deleteCharacter('없는사람')).resolves.toBeUndefined()
+  })
+
+  // 왜: 계정과 캐릭터는 서로 다른 저장소 칸이지만 하나의 사실이다 — 다시 열었을
+  //     때 그 둘이 함께 살아나지 않으면 서버를 재시작할 때마다 아무도 못 들어온다.
+  it('다시 열어도 계정·세션·캐릭터가 그대로 있다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    await store.createSession('토큰표', user!.id, Date.now() + 1000)
+    await store.createCharacter(user!.id, newPlayer('한사람'))
+
+    const reopened = await reopen()
+
+    expect((await reopened.findUser('노가다'))?.id).toBe(user!.id)
+    expect((await reopened.findSession('토큰표'))?.userId).toBe(user!.id)
+    expect(await reopened.getCharacter('한사람')).not.toBeNull()
   })
 }

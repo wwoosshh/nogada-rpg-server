@@ -108,10 +108,21 @@ async function ensureLocalCharacter(store: Persistence): Promise<void> {
     console.error(`${error.message} — 덮어쓰지 않고 그대로 둔다`)
     return
   }
-  await store.saveCharacter(
+
+  // 캐릭터에는 이제 주인이 있어야 한다(characters.user_id). 그래서 이 임시
+  // 관문도 계정을 하나 만든다 — **로그인할 수 없는 계정**이다: 비밀번호 해시
+  // 자리에 argon2 가 만들 수 없는 글자를 넣어 두어, 이 계정으로 들어오는 길이
+  // 없게 한다. 가입 라우트가 생기는 다음 커밋에서 이 함수가 통째로 사라진다.
+  const user =
+    (await store.createUser(LOCAL_PLAYER_ID, '로그인할 수 없는 계정')) ??
+    (await store.findUser(LOCAL_PLAYER_ID))
+  if (!user) throw new Error('개발용 계정을 만들지도 찾지도 못했다')
+
+  await store.createCharacter(
+    user.id,
     createInitialPlayer({
       id: LOCAL_PLAYER_ID,
-      // 고른 사람이 없으니 고른 것도 없다 — 가입 화면이 생기면 이 함수가 통째로 사라진다.
+      // 고른 사람이 없으니 고른 것도 없다 — 가입 화면이 생기면 함께 사라진다.
       name: '아무개',
       appearance: DEFAULT_APPEARANCE,
       village: START_MAP_ID,

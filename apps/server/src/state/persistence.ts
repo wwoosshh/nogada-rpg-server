@@ -23,6 +23,36 @@ export interface StoredCharacter {
 }
 
 /**
+ * 저장된 계정 하나.
+ *
+ * `username` 은 **정규화된 값**이다(NFC + trim + 소문자). 저장할 때와 찾을 때가
+ * 같은 함수를 지나야 유일성이 뜻을 갖는다 — 한쪽만 정규화하면 눈에 똑같은
+ * 아이디 둘이 서로 다른 계정이 된다(설계 규범 5). 정규화는 부르는 쪽의 일이고
+ * 저장소는 받은 글자를 그대로 견준다.
+ */
+export interface StoredUser {
+  /** 계정 키. Postgres 의 BIGSERIAL 을 문자열로 다룬다 — 자릿수가 JS 정수를 넘는다. */
+  id: string
+  username: string
+  /** argon2id 해시. 저장소는 이것을 들여다보지 않는다. */
+  passwordHash: string
+}
+
+/**
+ * 저장된 세션 하나. **키는 토큰이 아니라 `sha256(토큰)`** 이다(설계 규범 5) —
+ * 저장소는 그 사실을 알 필요가 없고, 그저 받은 표를 키로 쓴다.
+ *
+ * 만료를 저장소가 판정하지 **않는** 이유: "지났으면 없는 것"은 인증의 규칙이지
+ * 저장의 규칙이 아니다. 저장소가 조용히 감추면 만료된 세션을 지울 기회도,
+ * 왜 로그아웃됐는지 말할 기회도 사라진다.
+ */
+export interface StoredSession {
+  userId: string
+  /** epoch ms. 저장소가 무슨 타입으로 담든 오고 가는 것은 이 숫자다. */
+  expiresAt: number
+}
+
+/**
  * 저장된 상태를 읽을 수 없다.
  *
  * **행은 지우지 않는다.** 지금까지의 JSON 저장소는 형식이 맞지 않는 세이브를
@@ -56,12 +86,54 @@ export class CharacterConflictError extends Error {
 }
 
 export abstract class Persistence {
+  /**
+   * 계정을 만든다. 그 아이디가 이미 있으면 **null** — 오류가 아니다.
+   *
+   * "먼저 찾아보고 없으면 넣는다"로 쓰지 않는 이유: 찾기와 넣기 사이에 다른
+   * 가입이 끼어들면 둘 다 통과한다. 유일성은 저장소가 쓰는 그 순간에 판정해야
+   * 하고(Postgres 는 UNIQUE 위반 23505, JSON 폴백은 직렬화한 쓰기 안의 같은
+   * 검사), 부르는 쪽은 그 답을 409 로 옮긴다(설계 규범 6).
+   */
+  abstract createUser(username: string, passwordHash: string): Promise<StoredUser | null>
+
+  /** 아이디로 계정을 찾는다. 없으면 null — 부르는 쪽은 그래도 더미 해시를 검증한다. */
+  abstract findUser(username: string): Promise<StoredUser | null>
+
+  /** 세션을 연다. 키는 `sha256(토큰)` 이고 `expiresAt` 은 epoch ms 다. */
+  abstract createSession(tokenHash: string, userId: string, expiresAt: number): Promise<void>
+
+  /** 세션을 찾는다. **만료 판정은 하지 않는다** — 지났는지는 부르는 쪽이 본다. */
+  abstract findSession(tokenHash: string): Promise<StoredSession | null>
+
+  /** 세션의 만료를 미룬다. 없는 세션이면 아무 일도 하지 않는다. */
+  abstract extendSession(tokenHash: string, expiresAt: number): Promise<void>
+
+  /** 세션을 닫는다(로그아웃). 없어도 오류가 아니다 — 결과는 어느 쪽이든 "없다"다. */
+  abstract deleteSession(tokenHash: string): Promise<void>
+
+  /**
+   * 캐릭터를 **만든다** — 저장소에서 캐릭터가 생기는 유일한 곳이다.
+   *
+   * 이미 그 키의 캐릭터가 있거나 그 계정이 이미 캐릭터를 가졌으면 **null** 이다.
+   * createUser 와 같은 이유로 검사를 쓰기 안에 둔다: 이중 제출(버튼 두 번, 느린
+   * 네트워크에서의 재시도)이 캐릭터 둘을 만들지 못하게 하는 것은 코드의 순서가
+   * 아니라 제약이어야 한다. 부르는 쪽은 null 을 보면 기존 캐릭터를 돌려준다.
+   */
+  abstract createCharacter(userId: string, player: PlayerState): Promise<StoredCharacter | null>
+
+  /** 캐릭터를 지운다(설계 규범 7). 계정은 남는다 — 다시 만들 수 있어야 한다. */
+  abstract deleteCharacter(id: string): Promise<void>
+
   /** 캐릭터와 판본을 함께 읽는다. 없으면 null. */
   abstract readCharacter(id: string): Promise<StoredCharacter | null>
 
   /**
-   * 캐릭터를 쓴다. `expectedVersion` 을 주면 **그 판본일 때만** 쓰고, 아니면
-   * `CharacterConflictError` 를 던진다. 새 판본을 돌려준다.
+   * **이미 있는** 캐릭터를 고쳐 쓴다. `expectedVersion` 을 주면 그 판본일 때만
+   * 쓰고, 아니면 `CharacterConflictError` 를 던진다. 새 판본을 돌려준다.
+   *
+   * 없는 캐릭터에 쓰면 만들지 않고 충돌이다. 예전에는 여기서 지어냈는데, 그러면
+   * 캐릭터가 생기는 곳이 둘이 되고 오타 난 키 하나가 주인 없는 캐릭터를 낳는다 —
+   * 만드는 곳은 `createCharacter` 하나뿐이어야 한다.
    */
   abstract saveCharacter(
     player: PlayerState,

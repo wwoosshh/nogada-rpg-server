@@ -6,7 +6,13 @@ import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fas
 import { buildApp, type BuildAppOptions } from './app.js'
 import { LOCAL_PLAYER_ID } from './state/constants.js'
 import { JsonPersistence } from './state/jsonPersistence.js'
-import { Persistence, type CharacterVersion, type StoredCharacter } from './state/persistence.js'
+import {
+  Persistence,
+  type CharacterVersion,
+  type StoredCharacter,
+  type StoredSession,
+  type StoredUser,
+} from './state/persistence.js'
 
 /**
  * 서버 테스트가 **앱을 어떻게 세우고 누구로 요청하는가**를 정하는 한 곳.
@@ -48,7 +54,13 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<Fastif
   const dir = mkdtempSync(join(tmpdir(), 'nogada-'))
   const dataFile = join(dir, 'players.json')
   const { waitingStore, seedRawSave, ...appOptions } = options
-  if (seedRawSave) writeFileSync(dataFile, JSON.stringify(seedRawSave, null, 2), 'utf8')
+  if (seedRawSave) {
+    // 세이브 파일에는 이제 계정·세션·캐릭터가 함께 있다. 테스트가 심는 것은
+    // 캐릭터의 원본이므로, 파일의 나머지 칸은 여기서 채운다 — 그 모양을 테스트
+    // 본문마다 다시 적게 하면 파일 형식이 바뀔 때마다 전부 고쳐야 한다.
+    const save = { nextUserId: 1, users: {}, sessions: {}, characters: seedRawSave, owners: {} }
+    writeFileSync(dataFile, JSON.stringify(save, null, 2), 'utf8')
+  }
 
   const app = await buildApp({
     dataFile,
@@ -66,11 +78,18 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<Fastif
 
 const saveFiles = new WeakMap<FastifyInstance, string>()
 
-/** 이 앱의 세이브 파일에 **지금 실제로** 들어 있는 것. 행이 남았는지 보려면 파일을 봐야 한다. */
+/**
+ * 이 앱의 세이브 파일에 **지금 실제로** 들어 있는 캐릭터 원본들. 행이 남았는지
+ * 보려면 파일을 봐야 한다.
+ *
+ * 파일에는 계정·세션도 함께 들어 있지만 여기서는 캐릭터 칸만 꺼낸다 — 테스트가
+ * 묻는 것은 언제나 "그 캐릭터의 행이 어떻게 됐는가"다.
+ */
 export function rawSaveOf(app: FastifyInstance): Record<string, unknown> {
   const file = saveFiles.get(app)
   if (!file) throw new Error('buildTestApp 으로 세운 앱이 아니다')
-  return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+  const save = JSON.parse(readFileSync(file, 'utf8')) as { characters?: Record<string, unknown> }
+  return save.characters ?? {}
 }
 
 /**
@@ -96,6 +115,46 @@ class WaitingStore extends Persistence {
   async saveCharacter(player: PlayerState, expectedVersion?: CharacterVersion): Promise<CharacterVersion> {
     await WaitingStore.tick()
     return this.inner.saveCharacter(player, expectedVersion)
+  }
+
+  async createUser(username: string, passwordHash: string): Promise<StoredUser | null> {
+    await WaitingStore.tick()
+    return this.inner.createUser(username, passwordHash)
+  }
+
+  async findUser(username: string): Promise<StoredUser | null> {
+    await WaitingStore.tick()
+    return this.inner.findUser(username)
+  }
+
+  async createSession(tokenHash: string, userId: string, expiresAt: number): Promise<void> {
+    await WaitingStore.tick()
+    return this.inner.createSession(tokenHash, userId, expiresAt)
+  }
+
+  async findSession(tokenHash: string): Promise<StoredSession | null> {
+    await WaitingStore.tick()
+    return this.inner.findSession(tokenHash)
+  }
+
+  async extendSession(tokenHash: string, expiresAt: number): Promise<void> {
+    await WaitingStore.tick()
+    return this.inner.extendSession(tokenHash, expiresAt)
+  }
+
+  async deleteSession(tokenHash: string): Promise<void> {
+    await WaitingStore.tick()
+    return this.inner.deleteSession(tokenHash)
+  }
+
+  async createCharacter(userId: string, player: PlayerState): Promise<StoredCharacter | null> {
+    await WaitingStore.tick()
+    return this.inner.createCharacter(userId, player)
+  }
+
+  async deleteCharacter(id: string): Promise<void> {
+    await WaitingStore.tick()
+    return this.inner.deleteCharacter(id)
   }
 
   async close(): Promise<void> {
