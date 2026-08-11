@@ -1,6 +1,11 @@
 import { loadGameData, startLocation } from '@nogada/data'
-import { StateResponseSchema, type TransitionDef } from '@nogada/shared'
-import { describe, expect, it } from 'vitest'
+import {
+  GAME_EPOCH_MS,
+  REAL_MS_PER_GAME_MINUTE,
+  StateResponseSchema,
+  type TransitionDef,
+} from '@nogada/shared'
+import { describe, expect, it, vi } from 'vitest'
 import {
   asPlayer,
   buildTestApp,
@@ -69,6 +74,35 @@ async function withGitSha<T>(value: string | undefined, body: () => Promise<T>):
   } finally {
     if (before === undefined) delete process.env.GIT_SHA
     else process.env.GIT_SHA = before
+  }
+}
+
+/**
+ * 채집장노인이 확실히 "서 있는" 실측 시각 — 걷는 창을 피해 고른다.
+ *
+ * 채집장노인.sched: 06:00 초소 → 12:00 심층광맥곁 → 15:00 초소 → (다음 날) 06:00 초소.
+ * 마지막 줄(15:00)의 다음 줄은 다음 날 06:00 인데 지점이 같은 초소다 — 구운
+ * 걸음이 없어(npcStateAt 의 walkMs=0) 15:00 도착부터 다음 날 06:00 도착
+ * 직전까지 내내 서 있다. 그 구간 한복판(게임 시각 20:00, 다음 걸음 시작까지
+ * 게임 10시간 = 실측 25분 여유)을 고르면 06:00→12:00, 12:00→15:00 두 걷는
+ * 창을 확실히 피한다 — 걸음 수가 얼마든 몇 초~몇 분짜리 창이 이 여유를 넘지
+ * 않는다.
+ *
+ * 이 값 대신 실제 Date.now() 를 쓰면, 실행 시각이 이 걷는 창 중 하나에 걸릴
+ * 때마다 대화 라우트가 not_here 로 응답해 talk 관련 단정이 벽시계에 따라
+ * 흔들린다 — 아래에서 이 시각으로 서버 시계를 고정하는 이유다.
+ */
+function elderStandingMs(): number {
+  return GAME_EPOCH_MS + 20 * 60 * REAL_MS_PER_GAME_MINUTE
+}
+
+/** 서버 시계를 채집장노인이 서 있는 시각에 고정한다. 끝나면 실제 시계로 되돌린다. */
+async function withElderStanding<T>(body: () => Promise<T>): Promise<T> {
+  vi.setSystemTime(elderStandingMs())
+  try {
+    return await body()
+  } finally {
+    vi.useRealTimers()
   }
 }
 
@@ -428,60 +462,64 @@ describe('POST /api/craft', () => {
 
 describe('POST /api/talk', () => {
   it('화자에게 말을 걸면 발화 전체가 온다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-    await enterSpeakerMap(me)
-    const data = loadGameData()
+    await withElderStanding(async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      await enterSpeakerMap(me)
+      const data = loadGameData()
 
-    // 어떤 규칙이 뽑힐지는 서버 난수라 이 테스트가 통제할 수 없다. 대신 응답의
-    // 첫 줄로 실제 콘텐츠(loadGameData)에서 그 규칙을 되짚어, 그 규칙의 발화
-    // 전체와 응답을 비교한다 — `lines.length > 0` 만 보면 서비스가 발화를
-    // 한 줄로 잘라 보내도(칸 하나만 보내도) 이 테스트는 계속 통과한다.
-    const talkAndAssertFullUtterance = async (): Promise<string[]> => {
-      const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-      expect(res.statusCode).toBe(200)
-      const body = res.json() as { speaker: string; lines: string[] }
-      expect(body.speaker).toBe(ELDER)
-      expect(body.lines.length).toBeGreaterThan(0)
+      // 어떤 규칙이 뽑힐지는 서버 난수라 이 테스트가 통제할 수 없다. 대신 응답의
+      // 첫 줄로 실제 콘텐츠(loadGameData)에서 그 규칙을 되짚어, 그 규칙의 발화
+      // 전체와 응답을 비교한다 — `lines.length > 0` 만 보면 서비스가 발화를
+      // 한 줄로 잘라 보내도(칸 하나만 보내도) 이 테스트는 계속 통과한다.
+      const talkAndAssertFullUtterance = async (): Promise<string[]> => {
+        const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+        expect(res.statusCode).toBe(200)
+        const body = res.json() as { speaker: string; lines: string[] }
+        expect(body.speaker).toBe(ELDER)
+        expect(body.lines.length).toBeGreaterThan(0)
 
-      const rule = data.dialogue.find((r) => r.speaker === ELDER && r.lines[0] === body.lines[0])
-      expect(rule, `첫 줄 "${body.lines[0]}" 로 실제 콘텐츠에서 규칙을 찾지 못했다`).toBeDefined()
-      expect(body.lines).toEqual(rule!.lines)
-      return body.lines
-    }
+        const rule = data.dialogue.find((r) => r.speaker === ELDER && r.lines[0] === body.lines[0])
+        expect(rule, `첫 줄 "${body.lines[0]}" 로 실제 콘텐츠에서 규칙을 찾지 못했다`).toBeDefined()
+        expect(body.lines).toEqual(rule!.lines)
+        return body.lines
+      }
 
-    // 신규 플레이어에게 채집장노인의 무조건 @greet 후보는 정확히 둘이다 —
-    // 한 줄짜리("허어, 또 왔는가.")와 두 줄짜리("또 왔군." / "부지런하기도
-    // 하지."). 첫 콜은 서버 난수로 둘 중 하나가 나오고, 두 번째 콜은
-    // recent 제외로 나머지 하나가 결정적으로 나온다(dialogue.ts selectDialogue
-    // 의 "방금 말한 것 제외" 규칙) — 그래서 두 번을 부르면 두 줄짜리 발화를
-    // 반드시 한 번은 검증하게 되고, 발화를 자르는 변이를 이 테스트가 매번
-    // 잡을 수 있다.
-    const first = await talkAndAssertFullUtterance()
-    const second = await talkAndAssertFullUtterance()
-    expect(second).not.toEqual(first)
+      // 신규 플레이어에게 채집장노인의 무조건 @greet 후보는 정확히 둘이다 —
+      // 한 줄짜리("허어, 또 왔는가.")와 두 줄짜리("또 왔군." / "부지런하기도
+      // 하지."). 첫 콜은 서버 난수로 둘 중 하나가 나오고, 두 번째 콜은
+      // recent 제외로 나머지 하나가 결정적으로 나온다(dialogue.ts selectDialogue
+      // 의 "방금 말한 것 제외" 규칙) — 그래서 두 번을 부르면 두 줄짜리 발화를
+      // 반드시 한 번은 검증하게 되고, 발화를 자르는 변이를 이 테스트가 매번
+      // 잡을 수 있다.
+      const first = await talkAndAssertFullUtterance()
+      const second = await talkAndAssertFullUtterance()
+      expect(second).not.toEqual(first)
 
-    await app.close()
+      await app.close()
+    })
   })
 
   it('대화 이력을 저장해서 다음 조회에 반영한다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-    await enterSpeakerMap(me)
+    await withElderStanding(async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      await enterSpeakerMap(me)
 
-    const talk = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    expect(talk.statusCode).toBe(200)
+      const talk = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      expect(talk.statusCode).toBe(200)
 
-    const state = await me.inject({ method: 'GET', url: '/api/state' })
-    const saved = state.json() as {
-      player: { dialogueHistory: { recent: Record<string, string[]>; lastTalkAt: Record<string, number> } }
-    }
+      const state = await me.inject({ method: 'GET', url: '/api/state' })
+      const saved = state.json() as {
+        player: { dialogueHistory: { recent: Record<string, string[]>; lastTalkAt: Record<string, number> } }
+      }
 
-    // 저장하지 않으면 같은 인사가 매번 처음처럼 나오고 once 규칙은 영원히 한 번째다.
-    expect(saved.player.dialogueHistory.recent[ELDER]).toHaveLength(1)
-    expect(saved.player.dialogueHistory.lastTalkAt[ELDER]).toBeGreaterThan(0)
+      // 저장하지 않으면 같은 인사가 매번 처음처럼 나오고 once 규칙은 영원히 한 번째다.
+      expect(saved.player.dialogueHistory.recent[ELDER]).toHaveLength(1)
+      expect(saved.player.dialogueHistory.lastTalkAt[ELDER]).toBeGreaterThan(0)
 
-    await app.close()
+      await app.close()
+    })
   })
 
   it('대화는 행동 간격을 소비하지 않는다', async () => {
@@ -502,17 +540,19 @@ describe('POST /api/talk', () => {
   })
 
   it('연달아 말을 걸어도 거부하지 않는다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-    await enterSpeakerMap(me)
+    await withElderStanding(async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      await enterSpeakerMap(me)
 
-    // 채집이라면 두 번째가 too_fast 다. 대화에는 간격이 없다.
-    await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      // 채집이라면 두 번째가 too_fast 다. 대화에는 간격이 없다.
+      await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
 
-    expect(res.statusCode).toBe(200)
+      expect(res.statusCode).toBe(200)
 
-    await app.close()
+      await app.close()
+    })
   })
 
   it('없는 화자는 400 unknown_speaker 를 반환한다', async () => {
@@ -591,24 +631,26 @@ describe('POST /api/move', () => {
   })
 
   it('맵을 넘어간 뒤에는 이전 맵의 화자에게 말을 걸 수 없다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-    await enterSpeakerMap(me)
-    // 여기서는 말이 통한다 — 아래의 거절이 "원래 안 되는 것" 이 아니라 맵을
-    // 넘어간 결과임을 못 박는다.
-    const inside = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    expect(inside.statusCode).toBe(200)
+    await withElderStanding(async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      await enterSpeakerMap(me)
+      // 여기서는 말이 통한다 — 아래의 거절이 "원래 안 되는 것" 이 아니라 맵을
+      // 넘어간 결과임을 못 박는다.
+      const inside = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      expect(inside.statusCode).toBe(200)
 
-    // 서비스 단위 테스트가 같은 것을 보지만, 그 검사는 라우트가 위치를 실제로
-    // 저장하고 다시 읽어 오지 않으면 게임에서는 아무 효과가 없다 — 여기서
-    // 확인하는 것이 그 연결이다.
-    await step(me, transitionBetween(speakerMapId(ELDER), startLocation(loadGameData()).mapId))
+      // 서비스 단위 테스트가 같은 것을 보지만, 그 검사는 라우트가 위치를 실제로
+      // 저장하고 다시 읽어 오지 않으면 게임에서는 아무 효과가 없다 — 여기서
+      // 확인하는 것이 그 연결이다.
+      await step(me, transitionBetween(speakerMapId(ELDER), startLocation(loadGameData()).mapId))
 
-    const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    expect(res.statusCode).toBe(400)
-    expect(res.json()).toEqual({ code: 'wrong_map' })
+      const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toEqual({ code: 'wrong_map' })
 
-    await app.close()
+      await app.close()
+    })
   })
 
   it('맵을 넘어간 뒤에는 이전 맵의 노드를 캘 수 없다', async () => {
