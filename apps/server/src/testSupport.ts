@@ -54,6 +54,11 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<Fastif
   const app = await buildApp({
     ...appOptions,
     dataFile,
+    // 테스트는 조용하다. `NODE_ENV=test` 일 때 parseLogger 도 끄지만, 그것은
+    // vitest 가 그 변수를 놓아 준다는 가정 위에 서 있다 — 테스트가 시끄러워지는
+    // 조건이 실행 환경에 달려 있으면 안 되므로 여기서 한 번 더 못 박는다.
+    // 로그를 시험하는 테스트만 `logger` 를 직접 준다.
+    logger: appOptions.logger ?? false,
     persistence:
       appOptions.persistence ??
       (waitingStore ? new WaitingStore(await JsonPersistence.open(dataFile)) : undefined),

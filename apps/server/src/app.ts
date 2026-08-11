@@ -1,9 +1,9 @@
 import { join } from 'node:path'
 import cors from '@fastify/cors'
 import { loadGameData } from '@nogada/data'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { requireSession } from './auth/sessions.js'
-import { parseCorsOrigin, parseTrustProxy } from './config.js'
+import { parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerGatherRoutes } from './routes/gather.js'
@@ -24,6 +24,12 @@ export interface BuildAppOptions {
    * 나가서 진짜로 기다리는 저장소)를 앉혀 볼 수 있어야 동시성이 시험된다.
    */
   persistence?: Persistence
+  /**
+   * 로거를 통째로 주입한다. 기본은 `LOG_LEVEL`·`NODE_ENV` 가 정하지만
+   * (config.ts), 로그에 무엇이 남는지를 시험하려면 받아 볼 스트림이 필요하다 —
+   * 환경변수로는 스트림을 건넬 수 없다.
+   */
+  logger?: FastifyServerOptions['logger']
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -31,7 +37,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // 뒤에서 켜지 않으면 모든 요청이 프록시 IP 하나로 보이고, 프록시 없이 켜면
   // 아무나 헤더를 지어내 IP 인 척한다. 어느 쪽이든 레이트리미터가 무력해지므로
   // 배포 토폴로지가 정하게 두고, 기본은 끈 상태다(config.ts).
-  const app = Fastify({ logger: false, trustProxy: parseTrustProxy(process.env.TRUST_PROXY) })
+  //
+  // 로그는 오래 꺼져 있었다(`logger: false`). 그동안 미니PC 의 컨테이너 로그에
+  // 남는 것은 기동·마이그레이션·오류뿐이라, "그 요청이 서버까지 왔는가"를
+  // 물으려면 클라이언트가 받은 상태 코드를 되짚는 수밖에 없었다. 이제 그 줄이
+  // 남되, 자격증명은 지워진 채로 남는다(config.ts 의 LOG_REDACT_PATHS).
+  const app = Fastify({
+    logger: options.logger ?? parseLogger(process.env.LOG_LEVEL, process.env.NODE_ENV),
+    trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
+  })
   const data = loadGameData()
   const store = options.persistence ?? (await openStore(options.dataFile))
 
