@@ -1,9 +1,70 @@
-import type Phaser from 'phaser'
 import type { Direction } from '@nogada/shared'
 import type { InputButton, InputHub } from './InputState.js'
 
 /**
+ * keydown/keyup 에서 이 파일이 읽는 것만 추린 모양. 실제 KeyboardEvent 가
+ * 그대로 만족한다. 따로 이름을 둔 이유는 테스트다 — 테스트 환경에는 window 도
+ * jsdom 도 없어서(InputState.test.ts 첫 문단) KeyboardEvent 를 만들 수 없고,
+ * 대신 이 모양의 맨 객체를 만들어 keyDown()/keyUp() 에 직접 넣는다.
+ */
+export interface KeyEventLike {
+  code: string
+  target: unknown
+  preventDefault(): void
+}
+
+/** window 에서 이 파일이 쓰는 두 함수. 테스트가 가짜를 꽂기 위한 모양이다. */
+export interface KeyListenerTarget {
+  addEventListener(type: 'keydown' | 'keyup' | 'blur', listener: (e: KeyboardEvent) => void): void
+  removeEventListener(
+    type: 'keydown' | 'keyup' | 'blur',
+    listener: (e: KeyboardEvent) => void,
+  ): void
+}
+
+/**
+ * 이 소스가 다루는 키 전부(event.code). Phaser 시절의
+ * addKeys('UP,DOWN,LEFT,RIGHT,W,A,S,D,SPACE,J,ESC,K,I,C') 와 같은 목록이다.
+ */
+const HANDLED_CODES: ReadonlySet<string> = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'Space',
+  'KeyJ',
+  'Escape',
+  'KeyK',
+  'KeyI',
+  'KeyC',
+])
+
+/**
+ * 글자를 받는 요소인가. instanceof HTMLElement 를 쓰지 않는 이유는 테스트
+ * 환경에 DOM 이 없어서다 — 모양만 보고, 실제 요소는 이 모양을 만족한다.
+ */
+function isEditableTarget(target: unknown): boolean {
+  if (typeof target !== 'object' || target === null) return false
+  const el = target as { tagName?: unknown; isContentEditable?: unknown }
+  if (el.isContentEditable === true) return true
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
+}
+
+/**
  * PC 개발용 입력. 실기에는 키보드가 없다.
+ *
+ * **Phaser 의 키보드 플러그인이 아니라 window 에 직접 keydown/keyup 을 건다.**
+ * Phaser 는 포인터가 캔버스 위에 없으면(game.input.isOver === false) 키보드
+ * 이벤트 큐를 처리하지 않는다. 가방·제작 패널은 DOM(React, TopBar.tsx)으로
+ * 떠서 캔버스를 스크림째 덮으므로, 패널이 열려 있는 동안 포인터는 언제나 DOM
+ * 위다 — 그동안 Phaser 의 Key 객체는 갱신이 멎어 ESC·I·C·이동이 전부 죽고,
+ * 열어 둔 패널을 키보드로 닫을 수조차 없었다. window 의 keydown 은 그 상황에도
+ * 멀쩡히 온다(패널을 연 채 캡처 리스너로 확인). 그래서 눌림 상태를 event.code
+ * 로 직접 들고, 이 클래스는 Phaser 를 아예 모른다.
  *
  * 방향키와 WASD 를 둘 다 받는 이유는 개발 중 손이 어디 있든 쓰기 위해서다.
  * 여러 방향키가 동시에 눌리면 하나만 고른다 — 대각선이 없으므로 합칠 수 없다.
@@ -25,7 +86,8 @@ import type { InputButton, InputHub } from './InputState.js'
  * 한 쌍이고, 한쪽만 있으면 반드시 이 버그가 돌아온다.
  */
 export class KeyboardSource {
-  private readonly keys: Record<string, Phaser.Input.Keyboard.Key>
+  /** 지금 물리적으로 눌려 있는 키(event.code). Phaser 의 Key 객체를 대신한다. */
+  private readonly pressed = new Set<string>()
 
   private lastDir: Direction | null = null
   private readonly lastButton: Record<InputButton, boolean> = {
@@ -35,17 +97,62 @@ export class KeyboardSource {
     craft: false,
   }
 
+  /**
+   * hub 전체가 아니라 이 클래스가 부르는 두 함수만 받는다 — 테스트가 호출을
+   * 기록하는 가짜를 꽂아 "바뀔 때만 쓴다"를 확인하기 위해서다. target 의 기본값이
+   * window 인 것도 같은 사정이다(KeyListenerTarget 문서).
+   */
   constructor(
-    private readonly scene: Phaser.Scene,
-    private readonly hub: InputHub,
+    private readonly hub: Pick<InputHub, 'setDir' | 'setButton'>,
+    private readonly target: KeyListenerTarget = window,
   ) {
-    const kb = scene.input.keyboard
-    if (!kb) throw new Error('키보드 입력을 쓸 수 없다')
+    target.addEventListener('keydown', this.keyDown)
+    target.addEventListener('keyup', this.keyUp)
+    target.addEventListener('blur', this.windowBlur)
+  }
 
-    this.keys = kb.addKeys('UP,DOWN,LEFT,RIGHT,W,A,S,D,SPACE,J,ESC,K,I,C') as Record<
-      string,
-      Phaser.Input.Keyboard.Key
-    >
+  /**
+   * window keydown. 화살표 프로퍼티 공개 함수인 이유가 둘 다 여기 있다 —
+   * removeEventListener 가 같은 참조를 요구하고, 테스트가 이벤트 모양 객체로
+   * 직접 부른다(KeyEventLike 문서).
+   */
+  readonly keyDown = (e: KeyEventLike): void => {
+    if (!HANDLED_CODES.has(e.code)) return
+    // 글자를 치는 중이면 게임이 받지 않는다 — 캐릭터 삭제 대화상자
+    // (DeleteCharacterDialog)의 이름 입력이 게임 화면 위에 뜨는데, 거기서
+    // W 를 치는 것은 걷기가 아니고 I 를 치는 것은 가방 열기가 아니다.
+    if (isEditableTarget(e.target)) return
+    // Phaser 캡처가 하던 preventDefault 를 이어받는다: 방향키·스페이스가
+    // 화면을 스크롤하거나, 마지막에 클릭해 포커스가 남아 있는 DOM 버튼
+    // (상단 바 톱니 같은)을 스페이스가 다시 누르는 것을 막는다. 편집 필드
+    // 가드 **뒤**여야 한다 — 필드 안에서는 기본 동작(글자가 찍히는 것)이
+    // 그대로 일어나야 한다.
+    e.preventDefault()
+    // 꾹 누르면 브라우저가 repeat keydown 을 계속 보내지만, 이미 있는 값을
+    // 다시 넣는 것뿐이라 새 누름으로 보이지 않는다.
+    this.pressed.add(e.code)
+  }
+
+  /**
+   * window keyup. keydown 과 달리 편집 필드 가드가 **없다** — 일부러다.
+   * 밖에서 누른 키를 필드 안에서 떼는 일이 있는데(걷던 중 대화상자가 열려
+   * 포커스를 가져간 뒤에야 손을 뗀다), 그 keyup 마저 무시하면 그 키는 영영
+   * 눌린 채로 남는다. 반대 방향은 안전하다: 필드 안에서 누른 키는 애초에
+   * 기록된 적이 없어, 밖에서 떼면 지울 것 없는 delete 로 끝난다.
+   */
+  readonly keyUp = (e: KeyEventLike): void => {
+    this.pressed.delete(e.code)
+  }
+
+  /**
+   * window blur. 창이 포커스를 잃으면 keyup 은 다른 창으로 가므로, 쥐고 있던
+   * 키를 여기서 비우지 않으면 alt-tab 뒤에도 캐릭터가 혼자 걷는다. 예전에는
+   * Phaser 가 안에서 해 주던 일이고, Phaser 를 떠났으니 우리 몫이다. hub 에는
+   * 여기서 직접 쓰지 않는다 — 다음 update() 가 빈 상태를 읽고 "바뀔 때만
+   * 쓴다" 규칙 그대로 알아서 놓는다.
+   */
+  readonly windowBlur = (): void => {
+    this.pressed.clear()
   }
 
   /**
@@ -62,10 +169,10 @@ export class KeyboardSource {
       this.lastDir = dir
     }
 
-    this.updateButton('action', this.down('SPACE') || this.down('J'))
-    this.updateButton('cancel', this.down('ESC') || this.down('K'))
-    this.updateButton('bag', this.down('I'))
-    this.updateButton('craft', this.down('C'))
+    this.updateButton('action', this.isDown('Space', 'KeyJ'))
+    this.updateButton('cancel', this.isDown('Escape', 'KeyK'))
+    this.updateButton('bag', this.isDown('KeyI'))
+    this.updateButton('craft', this.isDown('KeyC'))
   }
 
   private updateButton(button: InputButton, down: boolean): void {
@@ -75,13 +182,13 @@ export class KeyboardSource {
   }
 
   destroy(): void {
-    for (const key of Object.values(this.keys)) {
-      this.scene.input.keyboard?.removeKey(key)
-    }
+    this.target.removeEventListener('keydown', this.keyDown)
+    this.target.removeEventListener('keyup', this.keyUp)
+    this.target.removeEventListener('blur', this.windowBlur)
   }
 
-  private down(name: string): boolean {
-    return this.keys[name]?.isDown ?? false
+  private isDown(...codes: readonly string[]): boolean {
+    return codes.some((code) => this.pressed.has(code))
   }
 
   /**
@@ -91,10 +198,10 @@ export class KeyboardSource {
    * 정하지 않으면 프레임마다 달라져서 캐릭터가 떨린다.
    */
   private readDir(): Direction | null {
-    if (this.down('UP') || this.down('W')) return 'up'
-    if (this.down('DOWN') || this.down('S')) return 'down'
-    if (this.down('LEFT') || this.down('A')) return 'left'
-    if (this.down('RIGHT') || this.down('D')) return 'right'
+    if (this.isDown('ArrowUp', 'KeyW')) return 'up'
+    if (this.isDown('ArrowDown', 'KeyS')) return 'down'
+    if (this.isDown('ArrowLeft', 'KeyA')) return 'left'
+    if (this.isDown('ArrowRight', 'KeyD')) return 'right'
     return null
   }
 }

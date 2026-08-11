@@ -438,7 +438,7 @@ export class WorldScene extends Phaser.Scene {
     })
 
     this.hub = new InputHub()
-    this.keyboard = new KeyboardSource(this, this.hub)
+    this.keyboard = new KeyboardSource(this.hub)
 
     this.spawnNodes()
     this.spawnSpeakers()
