@@ -1,9 +1,12 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { PlayerState } from '@nogada/shared'
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify'
-import { buildApp } from './app.js'
+import { buildApp, type BuildAppOptions } from './app.js'
 import { LOCAL_PLAYER_ID } from './state/constants.js'
+import { JsonPersistence } from './state/jsonPersistence.js'
+import { Persistence, type CharacterVersion, type StoredCharacter } from './state/persistence.js'
 
 /**
  * 서버 테스트가 **앱을 어떻게 세우고 누구로 요청하는가**를 정하는 한 곳.
@@ -20,17 +23,84 @@ import { LOCAL_PLAYER_ID } from './state/constants.js'
  * 테스트가 저장소 루트에 `.data/` 를 남기지 않게 하는 것이 원래 목적이었고,
  * 정리 시점을 앱 수명에 묶어 두면 테스트마다 뒷정리를 적을 필요가 없다.
  *
- * 지금은 기다릴 것이 없는데도 async 인 이유: 저장 계층이 비동기가 되고(A1)
- * 가입·로그인이 앞에 붙으면(A2) 이 함수는 반드시 비동기가 된다. 그때 호출부
- * 서른세 곳에 `await` 를 다시 뿌리지 않으려고 지금 한 번에 지불한다.
+ * async 인 이유: 저장 계층이 비동기라 `buildApp` 이 저장소를 여는 것을 기다린다.
+ * 가입·로그인이 앞에 붙는 날(A2)에도 바뀌는 것은 이 함수 안뿐이다.
  */
-export async function buildTestApp(): Promise<FastifyInstance> {
+export interface TestAppOptions extends BuildAppOptions {
+  /**
+   * 저장소를 **프로세스 밖에 있는 것처럼** 감싼다 — 호출마다 진짜로 한 턴 기다린다.
+   *
+   * 왜 필요한가: JSON 파일 저장소는 읽기가 메모리라 `읽기 → 판정 → 쓰기` 사이에
+   * 다른 요청이 끼어들 틈이 사실상 없다. 그 틈은 저장소가 Postgres 로 나가는
+   * 순간 열리는데, 그때 깨지는 것을 지금 잡을 수 없다면 동시성은 시험되지 않은
+   * 것이다. 기다리는 저장소를 앉혀 두면 그 틈이 매번 열린다.
+   */
+  waitingStore?: boolean
+  /**
+   * 앱을 세우기 전에 세이브 파일에 **그대로** 써 넣을 내용. 스키마를 통과하지
+   * 못하는 세이브 앞에서 서버가 무엇을 하는지 보려면 그런 세이브가 먼저 있어야
+   * 한다.
+   */
+  seedRawSave?: Record<string, unknown>
+}
+
+export async function buildTestApp(options: TestAppOptions = {}): Promise<FastifyInstance> {
   const dir = mkdtempSync(join(tmpdir(), 'nogada-'))
-  const app = buildApp({ dataFile: join(dir, 'players.json') })
+  const dataFile = join(dir, 'players.json')
+  const { waitingStore, seedRawSave, ...appOptions } = options
+  if (seedRawSave) writeFileSync(dataFile, JSON.stringify(seedRawSave, null, 2), 'utf8')
+
+  const app = await buildApp({
+    dataFile,
+    ...appOptions,
+    persistence:
+      appOptions.persistence ??
+      (waitingStore ? new WaitingStore(await JsonPersistence.open(dataFile)) : undefined),
+  })
   app.addHook('onClose', async () => {
     rmSync(dir, { recursive: true, force: true })
   })
+  saveFiles.set(app, dataFile)
   return app
+}
+
+const saveFiles = new WeakMap<FastifyInstance, string>()
+
+/** 이 앱의 세이브 파일에 **지금 실제로** 들어 있는 것. 행이 남았는지 보려면 파일을 봐야 한다. */
+export function rawSaveOf(app: FastifyInstance): Record<string, unknown> {
+  const file = saveFiles.get(app)
+  if (!file) throw new Error('buildTestApp 으로 세운 앱이 아니다')
+  return JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+}
+
+/**
+ * 진짜 저장소를 그대로 쓰되 매 호출 앞에 한 턴을 넣는다. 저장 규칙을 다시
+ * 구현하지 않는 것이 요점이다 — 흉내 낸 저장소는 계약에서 조용히 어긋난다.
+ */
+class WaitingStore extends Persistence {
+  constructor(private readonly inner: Persistence) {
+    super()
+  }
+
+  private static tick(): Promise<void> {
+    // setImmediate 는 마이크로태스크가 아니라 이벤트 루프의 한 바퀴다 — 그래야
+    // 다른 요청의 핸들러가 실제로 그 사이에 들어온다.
+    return new Promise((resolve) => setImmediate(resolve))
+  }
+
+  async readCharacter(id: string): Promise<StoredCharacter | null> {
+    await WaitingStore.tick()
+    return this.inner.readCharacter(id)
+  }
+
+  async saveCharacter(player: PlayerState, expectedVersion?: CharacterVersion): Promise<CharacterVersion> {
+    await WaitingStore.tick()
+    return this.inner.saveCharacter(player, expectedVersion)
+  }
+
+  async close(): Promise<void> {
+    return this.inner.close()
+  }
 }
 
 /** 테스트가 "이 사람으로" 요청을 보내는 손잡이. */

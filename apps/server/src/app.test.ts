@@ -1,7 +1,7 @@
 import { loadGameData, startLocation } from '@nogada/data'
 import { StateResponseSchema, type TransitionDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
-import { asPlayer, buildTestApp, type TestPlayer } from './testSupport.js'
+import { asPlayer, buildTestApp, rawSaveOf, type TestPlayer } from './testSupport.js'
 
 /** 이 테스트가 말을 거는 화자. 대사 파일이 있는 실재 화자여야 한다. */
 const ELDER = '채집장노인'
@@ -109,6 +109,26 @@ describe('GET /api/state', () => {
     await app.close()
   })
 
+  // 왜: 여기가 습관이 뒤집히는 자리다. 지금까지 서버는 형식이 맞지 않는 세이브를
+  //     조용히 버리고 새 플레이어를 만들어 줬다 — 개발용 세이브 하나뿐일 때는
+  //     편했지만, 남의 진행도에 대해서는 그것이 곧 삭제이고 되돌릴 수도 없다.
+  //     이제는 요청이 500 으로 끝나고 파일의 그 행은 손대지 않은 채 남는다.
+  //     400 이 아닌 이유: 요청은 멀쩡했고 잘못된 것은 우리가 가진 자료다.
+  it('읽을 수 없는 세이브는 500 이고, 그 행은 새 캐릭터로 갈아 치워지지 않는다', async () => {
+    // 예전 형식: 숙련도가 { level, xp } 객체였다.
+    const broken = { id: 'local', skills: { mining: { level: 3, xp: 10 } } }
+    const app = await buildTestApp({ seedRawSave: { local: broken } })
+    const me = await asPlayer(app)
+
+    const res = await me.inject({ method: 'GET', url: '/api/state' })
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({ code: 'character_unreadable' })
+    expect(rawSaveOf(app).local).toEqual(broken)
+
+    await app.close()
+  })
+
   it('다시 호출해도 같은 플레이어를 돌려준다', async () => {
     const app = await buildTestApp()
     const me = await asPlayer(app)
@@ -201,6 +221,44 @@ describe('POST /api/gather', () => {
 
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ code: 'too_fast' })
+
+    await app.close()
+  })
+
+  // 왜: 저장이 비동기가 된 순간 생긴 구멍이다. 두 요청이 **나란히** 들어오면
+  //     `읽기 → 판정 → 쓰기` 사이에 서로가 통째로 끼어들 수 있다 — 둘 다 같은
+  //     상태를 읽고, 둘 다 "간격이 지났다"고 판정하고, 나중에 쓴 쪽이 먼저 쓴
+  //     쪽의 결과를 덮는다. 오류는 하나도 나지 않고 광석 하나와 숙련도 한 줌만
+  //     조용히 사라진다. 위의 순차 테스트는 이것을 절대 잡지 못한다.
+  //
+  //     저장소를 일부러 기다리게 감싸는 이유: JSON 파일 저장소는 읽기가 메모리라
+  //     읽기와 쓰기 사이에 **진짜 대기가 없고**, 그래서 이 구멍이 우연히 닫혀
+  //     있다. 그 우연은 저장소가 프로세스 밖으로 나가는 순간(Postgres) 사라진다.
+  //     정합성을 스케줄러의 운에 맡기지 않으려면 기다리는 저장소를 앉혀 놓고
+  //     시험해야 한다. 판본을 견주는 저장(applyToCharacter)이 없으면 이 테스트는
+  //     200 을 둘 받고 실패한다.
+  it('동시에 들어온 두 채집 중 하나만 통과한다 — 나중 것이 먼저 것을 덮지 않는다', async () => {
+    const app = await buildTestApp({ waitingStore: true })
+    const me = await asPlayer(app)
+    await enterField(me)
+
+    const gather = () =>
+      me.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
+    const [first, second] = await Promise.all([gather(), gather()])
+
+    const codes = [first.statusCode, second.statusCode].sort()
+    expect(codes).toEqual([200, 400])
+    const rejected = first.statusCode === 400 ? first : second
+    expect(rejected.json()).toEqual({ code: 'too_fast' })
+
+    // 통과한 쪽의 결과가 저장에 남아 있어야 한다 — 덮어써졌다면 간격이 0 으로
+    // 돌아가 이 단정이 깨진다.
+    const accepted = first.statusCode === 200 ? first : second
+    const outcome = accepted.json() as { player: { nextActionAt: number } }
+    const state = await me.inject({ method: 'GET', url: '/api/state' })
+    expect((state.json() as { player: { nextActionAt: number } }).player.nextActionAt).toBe(
+      outcome.player.nextActionAt,
+    )
 
     await app.close()
   })
