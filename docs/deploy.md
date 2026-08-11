@@ -324,6 +324,8 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 | 앱(안드로이드)에서만 안 붙는다 | `CORS_ORIGIN` 에 `capacitor://localhost` 가 빠졌거나, 8장 뒤 APK 를 다시 안 깔았다. |
 | 시간이 이상하게 흐른다 | `x-server-now` 헤더가 막힌 것이다. 프록시를 직접 설정했다면 이 헤더가 지워지지 않는지 확인한다. |
 | 재부팅 뒤 서버가 없다 | Ubuntu: `docker compose ... ps` 로 확인(정책은 `unless-stopped` 라 `stop` 으로 내려 둔 것은 안 살아난다). 윈도: Docker Desktop 자동 시작. |
+| **로컬은 200 인데 다른 기기에서 연결 자체가 안 된다 (윈도)** | 실제 배포에서 겪은 순서대로: ① `netstat -ano \| findstr ":3000"` 에 `0.0.0.0:3000 LISTENING` 이 있는지 — 없으면 Docker Desktop 재시작. ② 있다면 십중팔구 **Windows 가 만든 Docker 차단 규칙**이다. 처음 포트를 열 때 뜨는 허용 창이 닫히면 `com.docker.backend.exe` 에 대한 **차단** 규칙이 생기고, 차단은 포트 허용 규칙보다 항상 이긴다. 관리자 PowerShell 에서 확인 후 제거: `Get-NetFirewallRule -Enabled True -Action Block \| Where-Object DisplayName -match "docker" \| Remove-NetFirewallRule`. ③ 포트 허용 규칙도 함께: `netsh advfirewall firewall add rule name="nogada-server-3000" dir=in action=allow protocol=TCP localport=3000`. |
+| 윈도에서 Docker 가 "Virtualization support not detected" | 작업 관리자 성능 탭에 가상화 **사용**이라고 나오는데도 그러면 BIOS 가 아니라 윈도 기능이다. 관리자 PowerShell: `dism /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart` + `featurename:VirtualMachinePlatform` + `bcdedit /set hypervisorlaunchtype auto` → 재부팅 → `wsl --update`. |
 | 디스크가 찼다 | `docker system prune -a` (볼륨은 건드리지 않는다) + `backups/` 의 오래된 덤프. |
 
 ---
