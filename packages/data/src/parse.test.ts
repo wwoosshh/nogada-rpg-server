@@ -77,6 +77,12 @@ describe('parseItems', () => {
     const row = { id: 'copper_ore', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '', icon: 'ore_copper' }
     expect(() => parseItems([row, row])).toThrow('items.csv: 중복된 id "copper_ore"')
   })
+
+  it('정수형 id 를 거부한다 — Record 키 순서가 JSON 왕복에서 깨진다', () => {
+    expect(() =>
+      parseItems([{ id: '2', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '', icon: 'ore_copper' }]),
+    ).toThrow('items.csv[2]: id "2" 는 숫자만으로 만들 수 없다 — 목록 순서가 깨진다')
+  })
 })
 
 describe('parseNodes', () => {
@@ -155,19 +161,20 @@ describe('parseRecipes', () => {
   it('재료 하나를 파싱한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
+        id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
         inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
         skillGainMin: '10', skillGainMax: '20',
       },
     ])
     expect(recipes.copper_ingot!.inputs).toEqual([{ item: 'copper_ore', count: 2 }])
     expect(recipes.copper_ingot!.output).toEqual({ item: 'copper_ingot', count: 1 })
+    expect(recipes.copper_ingot!.category).toBe('제련')
   })
 
   it('파이프로 구분된 여러 재료를 파싱한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'reinforced_plate', name: '강화 판금', skill: 'crafting', requiredSkill: '18', baseChance: '0.5',
+        id: 'reinforced_plate', name: '강화 판금', category: '도구', skill: 'crafting', requiredSkill: '18', baseChance: '0.5',
         inputs: 'copper_ingot:1|iron_ingot:1', outputItem: 'reinforced_plate', outputCount: '1',
         skillGainMin: '10', skillGainMax: '20',
       },
@@ -182,7 +189,7 @@ describe('parseRecipes', () => {
     expect(() =>
       parseRecipes([
         {
-          id: 'copper_ingot', name: '구리 주괴', skill: 'smithng', requiredSkill: '1', baseChance: '0.6',
+          id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'smithng', requiredSkill: '1', baseChance: '0.6',
           inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
         },
       ]),
@@ -191,17 +198,35 @@ describe('parseRecipes', () => {
 
   function validRecipeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
-      id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
+      id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: '1', baseChance: '0.6',
       inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
       skillGainMin: '10', skillGainMax: '20',
       ...overrides,
     }
   }
 
+  it('category 칸이 없으면 거부한다', () => {
+    const row = validRecipeRow()
+    delete row.category
+    expect(() => parseRecipes([row])).toThrow('recipes.csv[copper_ingot]: 필수 항목 "category" 가 비어 있다')
+  })
+
+  it('공백만 있는 category 셀을 거부한다 — trim 후에도 비어 있으면 안 된다', () => {
+    expect(() => parseRecipes([validRecipeRow({ category: ' ' })])).toThrow(
+      'recipes.csv[copper_ingot]: category 가 공백뿐이다 — 분류 이름을 채워야 한다',
+    )
+  })
+
+  it('정수형 id 를 거부한다 — Record 키 순서가 JSON 왕복에서 깨진다', () => {
+    expect(() => parseRecipes([validRecipeRow({ id: '2' })])).toThrow(
+      'recipes.csv[2]: id "2" 는 숫자만으로 만들 수 없다 — 목록 순서가 깨진다',
+    )
+  })
+
   it('requiredSkill 은 0 을 허용한다', () => {
     const recipes = parseRecipes([
       {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: '0',
+        id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: '0',
         baseChance: '0.6', inputs: 'copper_ore:2', outputItem: 'copper_ingot', outputCount: '1',
         skillGainMin: '10', skillGainMax: '20',
       },

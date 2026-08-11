@@ -151,6 +151,12 @@ export interface RecipeInput {
 export interface RecipeDef {
   id: string
   name: string
+  /**
+   * 제작 패널의 섹션 헤더. 카테고리 등장 순서는 recipes.csv 에서 그 카테고리가
+   * 처음 나타난 순서를 따른다(정렬하지 않는다) — 원작이 쓰던 "요구치를 숫자로
+   * 말하는 문" 배치가 CSV 저자의 손을 그대로 따라간다.
+   */
+  category: string
   skill: SkillId
   /** 이 레시피를 여는 데 필요한 조합 숙련도 */
   requiredSkill: number

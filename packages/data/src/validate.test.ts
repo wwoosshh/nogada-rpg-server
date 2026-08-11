@@ -71,12 +71,12 @@ function baseData(): GameData {
     },
     recipes: {
       copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+        id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
       copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
+        id: 'copper_pickaxe', name: '구리 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
@@ -155,22 +155,22 @@ function deadlockedTierData(): GameData {
     },
     recipes: {
       copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+        id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
         inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
       copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
+        id: 'copper_pickaxe', name: '구리 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
       iron_ingot: {
-        id: 'iron_ingot', name: '철 주괴', skill: 'crafting', requiredSkill: 10, baseChance: 0.5,
+        id: 'iron_ingot', name: '철 주괴', category: '제련', skill: 'crafting', requiredSkill: 10, baseChance: 0.5,
         inputs: [{ item: 'iron_ore', count: 2 }], output: { item: 'iron_ingot', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
       iron_pickaxe: {
-        id: 'iron_pickaxe', name: '철 곡괭이', skill: 'crafting', requiredSkill: 12, baseChance: 0.5,
+        id: 'iron_pickaxe', name: '철 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 12, baseChance: 0.5,
         inputs: [{ item: 'iron_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
@@ -447,12 +447,12 @@ describe('validateGameData 의 조기 반환', () => {
       },
       recipes: {
         copper_ingot: {
-          id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+          id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
           inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
           skillGainMin: 10, skillGainMax: 20,
         },
         renamed_pickaxe: {
-          id: 'renamed_pickaxe', name: '개명된 곡괭이', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
+          id: 'renamed_pickaxe', name: '개명된 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
           inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'renamed_pickaxe', count: 1 },
           skillGainMin: 10, skillGainMax: 20,
         },

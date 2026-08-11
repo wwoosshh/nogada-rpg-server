@@ -15,7 +15,7 @@ const nodes: Record<string, NodeDef> = {
 
 const recipes: Record<string, RecipeDef> = {
   copper_hammer: {
-    id: 'copper_hammer', name: '구리 망치', skill: 'crafting', requiredSkill: 200, baseChance: 0.55,
+    id: 'copper_hammer', name: '구리 망치', category: '도구', skill: 'crafting', requiredSkill: 200, baseChance: 0.55,
     inputs: [{ item: 'copper_ingot', count: 2 }], output: { item: 'copper_hammer', count: 1 },
     skillGainMin: 15, skillGainMax: 25,
   },

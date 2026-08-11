@@ -5,6 +5,7 @@ import { calcCraftSuccess, canCraft } from './craft.js'
 const copperIngot: RecipeDef = {
   id: 'copper_ingot',
   name: '구리 주괴',
+  category: '제련',
   skill: 'crafting',
   requiredSkill: 1,
   baseChance: 0.6,

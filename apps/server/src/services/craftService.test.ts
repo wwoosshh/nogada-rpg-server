@@ -18,12 +18,12 @@ const data: GameData = {
   nodes: {},
   recipes: {
     copper_ingot: {
-      id: 'copper_ingot', name: '구리 주괴', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+      id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
       inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
       skillGainMin: 10, skillGainMax: 20,
     },
     iron_pickaxe: {
-      id: 'iron_pickaxe', name: '철 곡괭이', skill: 'crafting', requiredSkill: 500, baseChance: 0.5,
+      id: 'iron_pickaxe', name: '철 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 500, baseChance: 0.5,
       inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
       skillGainMin: 20, skillGainMax: 35,
     },

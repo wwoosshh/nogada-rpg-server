@@ -102,11 +102,29 @@ export function addUnique<T>(out: Record<string, T>, id: string, def: T, csvFile
   out[id] = def
 }
 
+const INTEGER_ID_PATTERN = /^\d+$/
+
+/**
+ * id 가 숫자로만 되어 있으면 던진다.
+ *
+ * `Record<string, T>` 로 실리는 id 는 자바스크립트 엔진의 정수형 키 규칙에
+ * 걸린다 — "2", "10" 같은 순수 숫자 키는 삽입 순서를 무시하고 오름차순으로
+ * 재배열되어, JSON.stringify/parse 를 한 번만 왕복해도 CSV 선언 순서(카테고리
+ * 묶음 순서 등)가 조용히 깨진다. items.csv·recipes.csv 처럼 그 순서를
+ * 화면(가방·제작 카드)이 그대로 쓰는 CSV 에서만 검사한다.
+ */
+export function assertNotIntegerId(id: string, context: string): void {
+  if (INTEGER_ID_PATTERN.test(id)) {
+    throw new Error(`${context}: id "${id}" 는 숫자만으로 만들 수 없다 — 목록 순서가 깨진다`)
+  }
+}
+
 export function parseItems(rows: Row[]): Record<string, ItemDef> {
   const out: Record<string, ItemDef> = {}
   for (const row of rows) {
     const id = requireCell(row, 'id', 'items.csv')
     const ctx = `items.csv[${id}]`
+    assertNotIntegerId(id, ctx)
     const kind = requireCell(row, 'kind', ctx)
     if (kind !== 'material' && kind !== 'tool') {
       throw new Error(`${ctx}: kind 는 material 또는 tool 이어야 한다`)
@@ -157,14 +175,33 @@ function parseInputs(raw: string, context: string): RecipeInput[] {
   })
 }
 
+/**
+ * category 칸을 읽어 trim 하고, trim 후에도 빈 값이면 던진다.
+ *
+ * `requireCell` 은 `=== ''` 만 보므로 공백 한 칸짜리 셀(`" "`)이 그대로
+ * 통과해 제작 패널에 이름 없는 섹션 헤더가 뜨는 구멍이 있다 — 여기서 trim 한
+ * 뒤 다시 검사해 막는다. validate.ts 가 아니라 여기(parse.ts)에서 검사하는
+ * 이유는 validate 는 값을 변형하지 않는 계층이고, trim 은 값을 바꾸는
+ * 일이라 파싱 시점에 해야 하기 때문이다.
+ */
+function requireCategory(row: Row, context: string): string {
+  const trimmed = requireCell(row, 'category', context).trim()
+  if (trimmed === '') {
+    throw new Error(`${context}: category 가 공백뿐이다 — 분류 이름을 채워야 한다`)
+  }
+  return trimmed
+}
+
 export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
   const out: Record<string, RecipeDef> = {}
   for (const row of rows) {
     const id = requireCell(row, 'id', 'recipes.csv')
     const ctx = `recipes.csv[${id}]`
+    assertNotIntegerId(id, ctx)
     const def: RecipeDef = {
       id,
       name: requireCell(row, 'name', ctx),
+      category: requireCategory(row, ctx),
       skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
       requiredSkill: toInt(requireCell(row, 'requiredSkill', ctx), ctx, 'requiredSkill', 0),
       baseChance: toFloat(requireCell(row, 'baseChance', ctx), ctx, 'baseChance', 0.01, 1),

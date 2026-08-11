@@ -1,7 +1,7 @@
-id,name,skill,requiredSkill,baseChance,inputs,outputItem,outputCount,skillGainMin,skillGainMax
-copper_ingot,구리 주괴,crafting,0,0.6,copper_ore:2,copper_ingot,1,10,20
-copper_hammer,구리 망치,crafting,200,0.55,copper_ingot:2,copper_hammer,1,15,25
-iron_chisel,철 정,crafting,500,0.5,copper_ingot:3|ice_shard:5,iron_chisel,1,20,35
-iron_axe,철 도끼,crafting,500,0.5,copper_ingot:3|soft_log:5,iron_axe,1,20,35
-iron_pickaxe,철 곡괭이,crafting,500,0.5,copper_ingot:3|copper_ore:5,iron_pickaxe,1,20,35
-iron_sickle,철 낫,crafting,500,0.5,copper_ingot:3|common_herb:5,iron_sickle,1,20,35
+id,name,skill,requiredSkill,baseChance,inputs,outputItem,outputCount,skillGainMin,skillGainMax,category
+copper_ingot,구리 주괴,crafting,0,0.6,copper_ore:2,copper_ingot,1,10,20,제련
+copper_hammer,구리 망치,crafting,200,0.55,copper_ingot:2,copper_hammer,1,15,25,도구
+iron_chisel,철 정,crafting,500,0.5,copper_ingot:3|ice_shard:5,iron_chisel,1,20,35,도구
+iron_axe,철 도끼,crafting,500,0.5,copper_ingot:3|soft_log:5,iron_axe,1,20,35,도구
+iron_pickaxe,철 곡괭이,crafting,500,0.5,copper_ingot:3|copper_ore:5,iron_pickaxe,1,20,35,도구
+iron_sickle,철 낫,crafting,500,0.5,copper_ingot:3|common_herb:5,iron_sickle,1,20,35,도구
