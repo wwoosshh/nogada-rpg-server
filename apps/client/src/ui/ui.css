@@ -291,9 +291,61 @@
   color: var(--c-parchment-dim);
 }
 
+.btn--danger {
+  background: var(--c-danger);
+  border-color: var(--c-danger);
+  color: var(--c-parchment);
+}
+
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/*
+ * 게임 위에 뜨는 확인 창. 게이트 화면(.screen)과 달리 뒤에 세계가 남아 있으므로
+ * 반투명으로 덮되, 터치는 통과시키지 않는다 — 이 창이 떠 있는 동안 그 밑의
+ * 컨트롤러가 눌리면 지울지 말지 정하는 사이에 캐릭터가 걸어 다닌다.
+ *
+ * .overlay 가 pointer-events: none 이라 여기서 auto 로 되돌린다(그 규칙 참고).
+ */
+.modal {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  background: rgb(36 28 28 / 85%);
+  padding: var(--space-2);
+  z-index: 1;
+}
+
+.modal__box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 400px;
+  background: var(--c-panel);
+  border: 2px solid var(--c-danger);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
+
+.modal__title {
+  font-size: 15px;
+  color: var(--c-parchment);
+}
+
+.modal__buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.modal__buttons .btn {
+  flex: 1 1 0;
 }
 
 /*

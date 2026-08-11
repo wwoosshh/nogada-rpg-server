@@ -3,7 +3,7 @@ import type { InputHub } from '../../input/InputState.js'
 import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { buildCraftLines, canAffordCraft, craftRepeatUnlocked } from '../craftPanelContent.js'
-import { DIM_COLOR, LABEL_COLOR, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
+import { DIM_COLOR, LABEL_COLOR, SETTINGS_ACTION, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { ScrollList } from '../ScrollList.js'
 import { renderScale, viewSize } from '../viewport.js'
@@ -404,6 +404,7 @@ export class PanelScene extends Phaser.Scene {
 
     // 제작 패널 자체의 누름은 hub 를 거치지 않는다 — pollCraftPress 문서 참고.
     if (this.open === 'craft') this.pollCraftPress()
+    if (this.open === 'menu') this.pollMenuPress()
   }
 
   private setOpen(next: PanelId | null): void {
@@ -590,6 +591,28 @@ export class PanelScene extends Phaser.Scene {
 
     const held = this.scrollList.heldGroup()
     if (held) this.tryCraft(held)
+  }
+
+  /**
+   * 메뉴가 열려 있는 동안 매 프레임: 설정 탭의 누를 수 있는 줄을 확인한다.
+   *
+   * 제작과 달리 **쥐고 있는 것(heldGroup)은 보지 않는다.** 반복해서 좋은 일이
+   * 아니라 한 번만 일어나야 하는 일이고, 그중 하나는 캐릭터를 지우는 문이다 —
+   * 손가락을 얹고 있는 것만으로 계속 시도되면 안 된다.
+   *
+   * 여기서 하는 일은 요청을 남기는 것까지다. 실제 확인 창은 DOM 이 그린다
+   * (TopBar) — 이름을 타이핑해야 하는데, 그 입력을 Phaser 캔버스 위에 만들면
+   * 모바일 키보드·IME·한글 조합을 전부 직접 다시 만들게 된다.
+   */
+  private pollMenuPress(): void {
+    const tapped = this.scrollList.consumeTap()
+    if (!tapped) return
+    const store = useGameStore.getState()
+    if (tapped === SETTINGS_ACTION.logout) {
+      void store.logout()
+      return
+    }
+    if (tapped === SETTINGS_ACTION.deleteCharacter) store.askDeleteCharacter()
   }
 
   /**

@@ -11,3 +11,6 @@ export * from './speakers.js'
 export * from './dialogueParse.js'
 export * from './validate.js'
 export * from './load.js'
+// "빈 플레이어" 를 손으로 다시 적는 곳이 늘지 않게 내보낸다 — PlayerState 에
+// 필드가 늘 때 고칠 자리가 하나여야 한다(emptyPlayer.ts 문서).
+export * from './emptyPlayer.js'

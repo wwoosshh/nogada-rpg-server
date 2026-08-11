@@ -10,6 +10,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
+import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
 
 /** 게임 1분 = 현실 2.5초. 초 단위로 갱신해봐야 읽는 사람에게 의미가 없다. */
 const TICK_MS = 2500
@@ -58,27 +59,36 @@ export function TopBar(): JSX.Element {
   )
 
   return (
-    <div className="topbar">
-      <span className="topbar__clock">
-        {SEASON_LABELS[t.season]} {t.dayOfSeason}일 · {pad(t.hour)}:{pad(t.minute)}
-      </span>
-      {milestoneLine !== null && <span className="topbar__milestone">{milestoneLine}</span>}
+    <>
       {/*
-        상세 메뉴(Phaser 의 PanelScene)를 설정 탭으로 여는 두 번째 입구다 — B 와
-        같은 목적지를 가리킨다. 메뉴 자체는 React 가 아니라 Phaser 씬이라 여기서
-        직접 그리지 않는다(App.tsx 에 커밋되면 안 되는 개발용 훅이 있어 그 파일을
-        건드리지 않기로 했고, 그것이 메뉴를 Phaser 씬으로 만든 이유이기도 하다) —
-        대신 gameStore 의 openMenu() 로 요청만 남기고, PanelScene 이 그 요청을
-        구독해서 연다(gameStore.ts 의 MenuRequest 문서 참고).
+        캐릭터 삭제 확인 창. 여는 곳은 설정 탭(Phaser)이고 그리는 곳이 여기인
+        이유는 App.tsx 때문이다 — 게임 중에 그 파일이 그리는 DOM 은 이 상단
+        바뿐이라, 이름을 타이핑할 입력을 붙일 수 있는 자리도 여기뿐이다.
+        (App.tsx 를 건드리지 않는 이유는 아래 톱니 주석 참고.)
       */}
-      <button
-        type="button"
-        className="topbar__gear"
-        aria-label="설정"
-        onClick={() => useGameStore.getState().openMenu('settings')}
-      >
-        ⚙
-      </button>
-    </div>
+      <DeleteCharacterDialog />
+      <div className="topbar">
+        <span className="topbar__clock">
+          {SEASON_LABELS[t.season]} {t.dayOfSeason}일 · {pad(t.hour)}:{pad(t.minute)}
+        </span>
+        {milestoneLine !== null && <span className="topbar__milestone">{milestoneLine}</span>}
+        {/*
+          상세 메뉴(Phaser 의 PanelScene)를 설정 탭으로 여는 두 번째 입구다 — B 와
+          같은 목적지를 가리킨다. 메뉴 자체는 React 가 아니라 Phaser 씬이라 여기서
+          직접 그리지 않는다(App.tsx 에 커밋되면 안 되는 개발용 훅이 있어 그 파일을
+          건드리지 않기로 했고, 그것이 메뉴를 Phaser 씬으로 만든 이유이기도 하다) —
+          대신 gameStore 의 openMenu() 로 요청만 남기고, PanelScene 이 그 요청을
+          구독해서 연다(gameStore.ts 의 MenuRequest 문서 참고).
+        */}
+        <button
+          type="button"
+          className="topbar__gear"
+          aria-label="설정"
+          onClick={() => useGameStore.getState().openMenu('settings')}
+        >
+          ⚙
+        </button>
+      </div>
+    </>
   )
 }

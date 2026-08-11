@@ -175,18 +175,69 @@ const CREDITS: readonly { name: string; detail: string }[] = [
 ]
 
 /**
+ * 설정 탭에서 누를 수 있는 줄의 id.
+ *
+ * PanelScene 이 `ScrollList.consumeTap()` 으로 받아 스토어에 넘긴다 — 제작
+ * 패널의 레시피 줄과 같은 통로(`groupId`)를 쓴다. 여기 상수로 두는 이유는
+ * 문자열을 두 파일에 각각 적으면 한쪽 오타가 "눌러도 아무 일도 없는 줄"이
+ * 되기 때문이다. 그건 화면만 봐서는 고장인지 원래 그런 것인지 알 수 없다.
+ */
+export const SETTINGS_ACTION = {
+  logout: 'settings:logout',
+  deleteCharacter: 'settings:delete-character',
+} as const
+
+/**
  * 설정 탭의 내용.
  *
  * 조절할 수 있는 설정은 아직 없다 — 그 사실을 bag 과 같은 자세로 정직하게
- * 말하고, 대신 지금 확실히 보여줄 수 있는 것(만든 사람과 빌려 쓴 것)을 싣는다.
+ * 말하고, 대신 지금 확실히 보여줄 수 있는 것(누구로 놀고 있는지, 계정을 놓는
+ * 두 가지 방법, 만든 사람과 빌려 쓴 것)을 싣는다.
+ *
+ * **계정을 다루는 두 줄이 여기 있는 이유:** 상단 바에 버튼으로 두면 게임 중에
+ * 늘 눌릴 자리에 "지운다"가 놓인다. 톱니 → 설정은 이미 "지금 하던 것을 멈추고
+ * 들여다보는" 자리라, 되돌릴 수 없는 일이 있어야 할 곳이 있다면 여기다.
  */
-function buildSettingsLines(): ScrollListLine[] {
+function buildSettingsLines(_data: GameData, player: PlayerState): ScrollListLine[] {
   const lines: ScrollListLine[] = [
     { text: '노가다 RPG 팬메이드', color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE },
     {
       text: '서비스 종료한 「노가다 RPG」를 팬이 다시 만드는 프로젝트입니다. 원작의 리소스와 수치는 쓰지 않고 전부 새로 만듭니다.',
       color: DIM_COLOR,
       fontSize: ROW_DETAIL_FONT_SIZE,
+    },
+    { text: '', color: DIM_COLOR, fontSize: ROW_DETAIL_FONT_SIZE },
+    { text: '계정', color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE },
+    {
+      text: `  ${player.name} 으로 놀고 있습니다`,
+      color: DIM_COLOR,
+      fontSize: ROW_DETAIL_FONT_SIZE,
+    },
+    {
+      text: '· 로그아웃',
+      color: LABEL_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+      groupId: SETTINGS_ACTION.logout,
+    },
+    {
+      text: '  이 기기에서 나갑니다. 캐릭터는 그대로 남습니다',
+      color: DIM_COLOR,
+      fontSize: ROW_DETAIL_FONT_SIZE,
+      groupId: SETTINGS_ACTION.logout,
+    },
+    {
+      text: '· 캐릭터 삭제',
+      color: DANGER_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+      groupId: SETTINGS_ACTION.deleteCharacter,
+    },
+    {
+      // 되돌릴 수 없다는 것을 누르기 **전에** 말한다. 누른 뒤에 처음 듣는
+      // 경고는 이미 마음을 정한 사람에게 하는 확인일 뿐이다.
+      text: '  진행도가 사라집니다. 되돌릴 수 없습니다. 계정은 남습니다',
+      color: DIM_COLOR,
+      fontSize: ROW_DETAIL_FONT_SIZE,
+      groupId: SETTINGS_ACTION.deleteCharacter,
     },
     { text: '', color: DIM_COLOR, fontSize: ROW_DETAIL_FONT_SIZE },
     { text: '사용한 저작물', color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE },
