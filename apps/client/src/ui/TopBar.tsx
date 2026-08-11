@@ -3,51 +3,13 @@ import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
 import { BagPanel } from './BagPanel.js'
+import { CraftPanel } from './CraftPanel.js'
 import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
 
 /** 게임 1분 = 현실 2.5초. 초 단위로 갱신해봐야 읽는 사람에게 의미가 없다. */
 const TICK_MS = 2500
 
 const pad = (n: number): string => String(n).padStart(2, '0')
-
-/**
- * 제작 전면 패널의 자리 — 지금은 제목과 ✕ 뿐이다(실제 내용은 다음 태스크가
- * 채운다). 가방은 같은 자리를 쓰던 이 자리에서 벗어나 BagPanel.tsx 로
- * 옮겨갔다 — 이 함수는 이제 craft 전용이다.
- *
- * DeleteCharacterDialog 와 같은 이유로 여기(상단 바)에서 그린다 — App.tsx 는
- * 불가침이라, 게임 중에 React 가 그릴 수 있는 마운트 지점이 이 파일뿐이다.
- * 전면 오버레이(.panel)라 부모가 상단 바여도 화면 전체를 덮는다.
- *
- * **키보드 리스너를 두지 않는다.** I/C/ESC 는 전부 InputHub →
- * PanelScene.applyInput 이 라우팅한다(설계 §8-앞 7) — 여기에 리스너를 달면
- * 대사창 계약(대화 중 I/C 삼킴)이 두 곳으로 갈라진다. 이 컴포넌트는 openPanel
- * 을 구독해 그리고, ✕ 로 스토어 액션을 부르는 것이 전부다. 세계 잠금·컨트롤러
- * 숨김도 여기가 아니라 Phaser 쪽 구독(PanelScene.applyWorldLock)이 계산한다.
- */
-function PanelPlaceholder({ panel, title }: { panel: 'craft'; title: string }): JSX.Element | null {
-  const open = useGameStore((s) => s.openPanel === panel)
-  if (!open) return null
-
-  return (
-    <div className="panel">
-      <section className="panel__card">
-        <header className="panel__header">
-          <h2 className="panel__title">{title}</h2>
-          {/* 닫기는 ✕ 하나다 — 스크림 탭 닫기를 두지 않는 이유는 ui.css 의 .panel 주석 참고. */}
-          <button
-            type="button"
-            className="panel__close"
-            aria-label="닫기"
-            onClick={() => useGameStore.getState().setOpenPanel(null)}
-          >
-            ✕
-          </button>
-        </header>
-      </section>
-    </div>
-  )
-}
 
 export function TopBar(): JSX.Element {
   const [now, setNow] = useState(() => worldNow())
@@ -80,7 +42,7 @@ export function TopBar(): JSX.Element {
       */}
       {/* 삭제 확인 창이 패널보다 뒤(위)다 — 설정 탭에서 삭제를 여는 순간 패널 값은 이미 'menu' 라 겹칠 일은 없지만, DOM 순서로도 확인 창이 이긴다. */}
       <BagPanel />
-      <PanelPlaceholder panel="craft" title="제작" />
+      <CraftPanel />
       <DeleteCharacterDialog />
       <div className="topbar">
         <span className="topbar__clock">
