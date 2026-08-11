@@ -449,31 +449,96 @@
   color: var(--c-parchment-dim);
 }
 
-.bag__tools {
+/*
+ * 장비 슬롯 격자(설계 §8-뒤) — 기술 5칸이 SKILL_IDS 순서로 한 줄. "무엇을
+ * 차고 있는가"를 칸으로 보여주는 RPG 장비창 문법이다. 슬롯도 버튼이 아니다
+ * (보기 전용 v1, 설계 §8-앞 13) — 눌림·hover 를 주지 않는다.
+ */
+.bag__slots {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) 0 0;
+  list-style: none;
+}
+
+.bag__slot {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/*
+ * 슬롯 칸 — 48px(≥44 스펙, 32px 아이콘 + 여백). 패널보다 어두운 바닥
+ * (--c-ink) 위에 판 테두리(--c-panel-edge), 안쪽에 --c-ink 한 줄을 더 둘러
+ * 파인 칸처럼 보이게 한다 — .appearance__frame(외형 미리보기 창)과 같은
+ * 재질이라 화면 전체가 한 목소리를 낸다.
+ */
+.bag__slot-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: var(--c-ink);
+  border: 2px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 2px var(--c-ink-soft);
+}
+
+/* 빈 슬롯 — 점선 테두리, 파인 안감 없이 납작하게. "이 기술의 도구가 아직
+ * 없다"를 칸이 스스로 말한다(설계 §8-뒤: 빈 슬롯도 자리를 지킨다). */
+.bag__slot--empty .bag__slot-box {
+  border-style: dashed;
+  background: none;
+  box-shadow: none;
+}
+
+.bag__slot-label {
+  font-size: 12px;
+  color: var(--c-parchment);
+}
+
+.bag__slot--empty .bag__slot-label {
+  color: var(--c-parchment-dim);
+  opacity: 0.6;
+}
+
+/* 강화 +N — 슬롯 귀퉁이 뱃지. 오래 들여다보는 숫자라 16px 를 지킨다(설계 §8-앞 12). */
+.bag__slot-enhance {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 1px 1px 0 var(--c-ink);
+}
+
+/* 예비 도구(착용 안 된 인스턴스) — 슬롯 아래 컴팩트 칩 줄. 있을 때만 렌더된다. */
+.bag__spares {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/*
- * 도구 한 줄. 눌림·테두리 강조를 일부러 주지 않는다 — 이 행은 버튼이 아니다
- * (설계 §8-앞 13). 커서도 기본값 그대로 둔다.
- */
-.bag__tool {
-  display: flex;
+.bag__spare {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
+  gap: var(--space-1);
+  padding: 2px var(--space-2) 2px var(--space-1);
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
 }
 
-.bag__tool-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.bag__spare-name {
   font-size: 13px;
   color: var(--c-parchment);
 }
@@ -483,27 +548,6 @@
   font-size: 16px;
   color: var(--c-accent);
   font-variant-numeric: tabular-nums;
-}
-
-/*
- * 착용 배지 — 조용하게. 도구 4종이 시작부터 전부 착용 상태라 이 배지가
- * 화면 대부분을 차지하므로, 점·글자 크기를 작게 눌러 소음을 줄인다
- * (설계 §8-앞 13).
- */
-.bag__badge {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--c-accent);
-}
-
-.bag__badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--c-accent);
 }
 
 /* 재료 2열 그리드(설계 §5). */

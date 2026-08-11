@@ -1,3 +1,4 @@
+import { SKILL_IDS, SKILL_LABELS, type ItemInstance, type SkillId } from '@nogada/shared'
 import { useGameStore } from '../store/gameStore.js'
 import { ItemIcon } from './ItemIcon.js'
 
@@ -6,15 +7,15 @@ import { ItemIcon } from './ItemIcon.js'
  * React 가 그릴 수 있는 자리가 상단 바뿐이라는 사정은 TopBar.tsx 상단 주석과
  * DeleteCharacterDialog 의 것과 같다.
  *
- * **v1 은 보기 전용이다** — 도구를 탭해도 아무 일도 일어나지 않는다. 서버에
- * 수동 착용 API 가 없어서다(설계 §5). 그래서 행은 `<li>` 이지 `<button>` 이
- * 아니다: 누르면 반응할 것처럼 보이는 어포던스(hover·active·테두리 강조)를
- * 일부러 주지 않는다 — 죽은 버튼으로 읽히면 사용자가 눌러보고 실망한다
- * (설계 §8-앞 13).
+ * **장비는 슬롯 격자다** — 도구를 행 리스트로 찍었던 첫 구현은 "장비는
+ * 장비처럼 보여야 한다"는 사용자 지시로 기각됐다(설계 §8-뒤). 기술별 슬롯
+ * 5칸이 "무엇을 차고 있는가"를 칸으로 말하고, 착용 안 된 도구는 슬롯 아래
+ * 예비 줄로 물러난다. 재료는 리스트 유지 — 이건 사용자가 승인한 문법이다.
  *
- * **전체-빈 상태가 없다**: 신규 캐릭터도 시작 도구 4종을 들고 시작하므로
- * 도구 섹션이 비는 경우는 도달 불가능하다(설계 §8-앞 13) — 재료 섹션에만
- * 전용 빈 문구를 둔다.
+ * **v1 은 보기 전용이다** — 슬롯도 예비 칩도 눌러서 되는 일이 없다. 서버에
+ * 수동 착용 API 가 없어서다(설계 §5 훅). 그래서 어느 것도 `<button>` 이
+ * 아니고, 눌림·hover 어포던스를 일부러 주지 않는다(설계 §8-앞 13) —
+ * 죽은 버튼으로 읽히면 사용자가 눌러보고 실망한다.
  */
 export function BagPanel(): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === 'bag')
@@ -23,9 +24,23 @@ export function BagPanel(): JSX.Element | null {
 
   if (!open || player === null) return null
 
+  // 슬롯은 SKILL_IDS 선언 순서로 5칸 고정 — 빈 칸도 자리를 지킨다. "조합
+  // 도구가 아직 없다"는 사실은 점선 빈 슬롯이 말하는 정보지 숨길 결격이
+  // 아니다(원작의 "잠긴 것까지 보이는 목록방"과 같은 태도).
+  const slotOf = (skill: SkillId): ItemInstance | undefined => {
+    const instanceId = player.equipped[skill]
+    if (instanceId === undefined) return undefined
+    return player.instances.find((inst) => inst.instanceId === instanceId)
+  }
+
+  // 예비 도구 = 어느 기술 슬롯에도 착용되지 않은 인스턴스. instances 배열
+  // 순서(획득 순) 그대로 — 훑어보는 자리가 매번 바뀌면 안 된다.
+  const equippedIds = new Set(Object.values(player.equipped))
+  const spares = player.instances.filter((inst) => !equippedIds.has(inst.instanceId))
+
   // 재료는 items.csv 선언 순서(= data.items 의 키 순서)로 고정한다 — 제작
-  // 패널의 행이 흔들리면 안 되는 것과 같은 이유로, 가방도 훑어보는 자리가
-  // 매번 바뀌면 안 된다. 수량 0(스택에 키가 아예 없는 경우 포함)은 제외한다.
+  // 패널의 행이 흔들리면 안 되는 것과 같은 이유. 수량 0(스택에 키가 아예
+  // 없는 경우 포함)은 제외한다.
   const materials: { id: string; name: string; qty: number }[] = []
   for (const id of Object.keys(data.items)) {
     const def = data.items[id]
@@ -50,34 +65,44 @@ export function BagPanel(): JSX.Element | null {
           </button>
         </header>
         <div className="bag__body">
-          <h3 className="bag__section">도구</h3>
-          <ul className="bag__tools">
-            {player.instances.map((inst) => {
-              const def = data.items[inst.itemId]
-              const skill = def?.toolSkill
-              // 착용 여부는 이 도구의 기술(toolSkill)에 대해 equipped 가
-              // 가리키는 instanceId 가 바로 이 인스턴스인지로 판정한다 — 다른
-              // 기술 슬롯에 우연히 같은 instanceId 문자열이 있을 수는 없지만
-              // (id 는 전역 유일), skill 이 없는 아이템(현재는 없음)은 애초에
-              // 착용 대상이 아니므로 undefined 로 걸러진다.
-              const equipped = skill !== undefined && player.equipped[skill] === inst.instanceId
+          <h3 className="bag__section">장비</h3>
+          <ul className="bag__slots">
+            {SKILL_IDS.map((skill) => {
+              const inst = slotOf(skill)
               return (
-                <li key={inst.instanceId} className="bag__tool">
-                  <ItemIcon itemId={inst.itemId} />
-                  <span className="bag__tool-name">{def?.name ?? inst.itemId}</span>
-                  {inst.enhanceLevel > 0 && (
-                    <span className="bag__enhance">+{inst.enhanceLevel}</span>
-                  )}
-                  {equipped && (
-                    <span className="bag__badge">
-                      <span className="bag__badge-dot" />
-                      착용
-                    </span>
-                  )}
+                <li
+                  key={skill}
+                  className={inst === undefined ? 'bag__slot bag__slot--empty' : 'bag__slot'}
+                >
+                  <div className="bag__slot-box">
+                    {inst !== undefined && <ItemIcon itemId={inst.itemId} />}
+                    {inst !== undefined && inst.enhanceLevel > 0 && (
+                      <span className="bag__slot-enhance">+{inst.enhanceLevel}</span>
+                    )}
+                  </div>
+                  <span className="bag__slot-label">{SKILL_LABELS[skill]}</span>
                 </li>
               )
             })}
           </ul>
+          {spares.length > 0 && (
+            <>
+              <h3 className="bag__section">예비 도구</h3>
+              <ul className="bag__spares">
+                {spares.map((inst) => (
+                  <li key={inst.instanceId} className="bag__spare">
+                    <ItemIcon itemId={inst.itemId} />
+                    <span className="bag__spare-name">
+                      {data.items[inst.itemId]?.name ?? inst.itemId}
+                    </span>
+                    {inst.enhanceLevel > 0 && (
+                      <span className="bag__enhance">+{inst.enhanceLevel}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <h3 className="bag__section">재료</h3>
           {materials.length === 0 ? (
             <p className="bag__empty">아직 모은 재료가 없다.</p>
