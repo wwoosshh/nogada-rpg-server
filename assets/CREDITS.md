@@ -94,11 +94,11 @@ assets/licensed/
 ### 아이콘 번호 → `items.csv` 이름 매핑 (Task 11 에서 결정)
 
 아이콘 파일명이 `icon001.png` 형식이라 `items.csv` 의 `icon` 컬럼(`ore_copper` 등)과 직접 대응하지 않는다.
-**M1 은 수동 개명으로 간다** — 13종뿐이고, 어떤 그림이 어떤 아이템인지는 사람이 눈으로 골라야 한다.
+**수십 종까지는 수동 개명으로 간다** — 어떤 그림이 어떤 아이템인지는 사람이 눈으로 골라야 한다.
 
-M2 에서 아이템이 수백 종이 되면 이 방식은 무너지지만, 그때는 개명이 아니라 **설계 문서 4.5 의 「형태 × 재질 색상」
+아이템이 수백 종이 되는 시점에는 이 방식이 무너지므로, 그때는 개명이 아니라 **설계 문서 4.5 의 「형태 × 재질 색상」
 조합 생성**으로 넘어간다 — 곡괭이 실루엣 하나에 팔레트를 갈아끼워 재질 5종을 만드는 방식이라 애초에 아이콘 파일이
-수백 개로 늘지 않는다. 즉 지금의 수동 개명은 그 방식으로 가기 전까지의 임시 조치이고, 확장할 계획이 없다.
+수백 개로 늘지 않는다. 지금의 수동 개명은 그 전환점 전까지 쓰는 방식이다.
 
 아래 매핑은 `icons_8.13.20/fullcolor/individual_32x32/` 기준이다.
 
@@ -117,6 +117,18 @@ M2 에서 아이템이 수백 종이 되면 이 방식은 무너지지만, 그�
 | `hammer_copper` | icon933 | 망치 (붉은 머리) |
 | `hammer_iron` | icon934 | 망치 (회색 머리) |
 | `hammer_mithril` | icon940 | 망치 (청회색 머리) |
+| `shard_ice` | icon880 | 얼음 조각 |
+| `crystal_ice` | icon914 | 맑은 얼음 결정 |
+| `log_soft` | icon958 | 무른 통나무 |
+| `log_hard` | icon959 | 단단한 통나무 |
+| `herb_common` | icon288 | 흔한 약초 |
+| `herb_rare` | icon293 | 귀한 약초 |
+| `chisel_copper` | icon930 | 구리빛 정 |
+| `chisel_iron` | icon931 | 쇠빛 정 |
+| `axe_copper` | icon453 | 구리빛 도끼 |
+| `axe_iron` | icon452 | 쇠빛 도끼 |
+| `sickle_copper` | icon459 | 구리빛 낫 |
+| `sickle_iron` | icon935 | 쇠빛 낫 |
 
 재질별 색 구분은 팩에 있는 그림을 그대로 쓴 것이라 등급 간 대비가 약하다. 실제로 구분이 안 되면
 **아이콘을 더 찾기보다 M2 의 팔레트 스왑을 앞당기는 쪽이 맞다** — 같은 실루엣에 색만 다른 편이
@@ -159,7 +171,9 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 13종 — 위 매핑 표와 같은 내용이다.
+# 아이템 아이콘 25종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 18종만 쓴다
+# (ore_mithril·ingot_mithril·plate_reinforced·pickaxe_reinforced·hammer_iron·
+# hammer_mithril 은 아직 쓰는 아이템이 없는 예비 배정).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
@@ -177,6 +191,18 @@ pickaxe_iron:546
 hammer_copper:933
 hammer_iron:934
 hammer_mithril:940
+shard_ice:880
+crystal_ice:914
+log_soft:958
+log_hard:959
+herb_common:288
+herb_rare:293
+chisel_copper:930
+chisel_iron:931
+axe_copper:453
+axe_iron:452
+sickle_copper:459
+sickle_iron:935
 ICONS
 ```
 
