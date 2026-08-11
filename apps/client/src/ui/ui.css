@@ -426,6 +426,128 @@
 }
 
 /*
+ * 가방 패널의 스크롤 영역(BagPanel.tsx). .panel__card 는 .panel 이 flex
+ * stretch 로 준 실제 높이(뷰포트 - 상단바 - 여백)를 갖고 있으므로, 이 안에서
+ * flex: 1 1 auto + min-height: 0 을 주면 헤더는 고정된 채 본문만 넘칠 때
+ * overflow-y: auto 로 스크롤된다(.screen__panel 과 같은 수법).
+ */
+.bag__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/* 섹션 제목(도구/재료). 카드 제목(16px)보다 한 단 낮춘 13px. */
+.bag__section {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--c-parchment-dim);
+}
+
+.bag__tools {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * 도구 한 줄. 눌림·테두리 강조를 일부러 주지 않는다 — 이 행은 버튼이 아니다
+ * (설계 §8-앞 13). 커서도 기본값 그대로 둔다.
+ */
+.bag__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.bag__tool-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--c-parchment);
+}
+
+.bag__enhance {
+  flex: none;
+  font-size: 16px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 착용 배지 — 조용하게. 도구 4종이 시작부터 전부 착용 상태라 이 배지가
+ * 화면 대부분을 차지하므로, 점·글자 크기를 작게 눌러 소음을 줄인다
+ * (설계 §8-앞 13).
+ */
+.bag__badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--c-accent);
+}
+
+.bag__badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
+
+/* 재료 2열 그리드(설계 §5). */
+.bag__materials {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bag__material {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.bag__material-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--c-parchment);
+}
+
+/* 오래 들여다보는 숫자(수량) — 16px 격자를 지킨다(설계 §8-앞 12). */
+.bag__material-qty {
+  flex: none;
+  font-size: 16px;
+  color: var(--c-parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.bag__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+}
+
+/*
  * 캐릭터 생성 화면의 윗단 — 왼쪽에 외형 미리보기, 오른쪽에 이름.
  * 세로 375px 을 아끼려고 나란히 놓는다(마을 카드 넉 장이 아래에 와야 한다).
  */

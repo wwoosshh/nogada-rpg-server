@@ -2,6 +2,7 @@ import { gameTimeAt, SEASON_LABELS } from '@nogada/shared'
 import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
+import { BagPanel } from './BagPanel.js'
 import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
 
 /** 게임 1분 = 현실 2.5초. 초 단위로 갱신해봐야 읽는 사람에게 의미가 없다. */
@@ -10,9 +11,9 @@ const TICK_MS = 2500
 const pad = (n: number): string => String(n).padStart(2, '0')
 
 /**
- * 가방·제작 전면 패널의 자리 — 지금은 제목과 ✕ 뿐이다(실제 내용은 다음
- * 태스크가 채운다. 이 태스크의 산출물은 배선이다: 스토어의 openPanel 하나를
- * Phaser 와 DOM 이 같이 읽는 것).
+ * 제작 전면 패널의 자리 — 지금은 제목과 ✕ 뿐이다(실제 내용은 다음 태스크가
+ * 채운다). 가방은 같은 자리를 쓰던 이 자리에서 벗어나 BagPanel.tsx 로
+ * 옮겨갔다 — 이 함수는 이제 craft 전용이다.
  *
  * DeleteCharacterDialog 와 같은 이유로 여기(상단 바)에서 그린다 — App.tsx 는
  * 불가침이라, 게임 중에 React 가 그릴 수 있는 마운트 지점이 이 파일뿐이다.
@@ -24,7 +25,7 @@ const pad = (n: number): string => String(n).padStart(2, '0')
  * 을 구독해 그리고, ✕ 로 스토어 액션을 부르는 것이 전부다. 세계 잠금·컨트롤러
  * 숨김도 여기가 아니라 Phaser 쪽 구독(PanelScene.applyWorldLock)이 계산한다.
  */
-function PanelPlaceholder({ panel, title }: { panel: 'bag' | 'craft'; title: string }): JSX.Element | null {
+function PanelPlaceholder({ panel, title }: { panel: 'craft'; title: string }): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === panel)
   if (!open) return null
 
@@ -78,7 +79,7 @@ export function TopBar(): JSX.Element {
         (App.tsx 를 건드리지 않는 이유는 아래 톱니 주석 참고.)
       */}
       {/* 삭제 확인 창이 패널보다 뒤(위)다 — 설정 탭에서 삭제를 여는 순간 패널 값은 이미 'menu' 라 겹칠 일은 없지만, DOM 순서로도 확인 창이 이긴다. */}
-      <PanelPlaceholder panel="bag" title="가방" />
+      <BagPanel />
       <PanelPlaceholder panel="craft" title="제작" />
       <DeleteCharacterDialog />
       <div className="topbar">
