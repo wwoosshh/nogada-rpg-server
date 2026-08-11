@@ -88,6 +88,62 @@ characters (id BIGSERIAL PK, user_id FK UNIQUE, name TEXT, state JSONB, updated_
   직업 능력치(외형은 순수 외형) / 다른 플레이어 표시(presence) / Postgres 전환
   후 JSON 폴백 제거(당분간 공존).
 
+## 8-앞. 깨끗한 세션 평가 반영 (규범 — 위 절과 충돌하면 이 절이 이긴다)
+
+**자료 무결성**
+1. **Lost update 방지는 인터페이스 계약이다.** 비동기 전환으로 get→계산→save
+   사이에 다른 요청이 끼어들 수 있게 된다. Postgres: `UPDATE … WHERE user_id=$1
+   AND updated_at=$3` (0행이면 재시도/409). JSON 폴백: 캐릭터별 직렬화 큐.
+2. **`get` 은 없으면 null 이다.** 캐릭터 생성은 오직 `POST /api/me/character`.
+   상태 파싱 실패 = 500 + 행 보존 + 로그 (지금의 "조용히 버리고 새로 만들기"를
+   이 시점에 뒤집는다 — store.ts 주석이 예고한 그 순간이다).
+3. 읽기 계약에 `resolvePlayerLocation`(없어진 맵 복구) 포함 — 양쪽 구현 모두.
+4. `name`·`appearance` 는 state 가 원본, `characters.name` 칼럼은 저장 시 미러.
+   `PlayerState.id` 는 읽기 계층이 `characters.id` 로 도장 찍는다(불일치 봉쇄).
+   외형 id 는 불투명 id + 클라 매니페스트(스프라이트 금지 규칙의 명시적 탈출구)
+   — `APPEARANCES` ↔ 매니페스트 전수 대조 테스트 필수.
+
+**인증 세부**
+5. 세션에는 **`sha256(토큰)`** 을 저장(DB 유출 ≠ 세션 탈취). TTL 연장은 잔여
+   7일 미만일 때만(요청마다 쓰기 방지). 아이디는 NFC 정규화+trim+casefold 후
+   UNIQUE 비교. 비밀번호 최대 128자(argon2 CPU DoS 방지), argon2id 파라미터
+   고정, 라이브러리는 `@node-rs/argon2`(윈도 개발+리눅스 배포 양쪽 프리빌드).
+6. 로그인 실패는 단일 메시지 + 없는 계정에도 더미 해시 검증(타이밍 열거 방지).
+   가입의 아이디 중복 노출은 수용(명시). 레이트리밋은 IP당 + **계정당** 백오프,
+   맵 크기 유계. 중복 경합은 23505 로: 가입 409, 캐릭터 생성은 기존 반환
+   (이중 제출 자연 처리) — JSON 폴백은 직렬화 쓰기 안에서 같은 검사.
+   비밀번호 찾기 없음 = 잊으면 계정 사망, 수용(명시). localStorage 수용.
+7. `DELETE /api/me/character` (이름 타이핑 확인) 추가 — 슬롯 하나에 삭제가
+   없으면 잘못 만든 선택이 영구히 갇힌다.
+
+**배포 현실**
+8. **TLS 없이는 LAN 밖 금지.** `capacitor.config.ts` 의 "M4 에 https 전환·
+   allowMixedContent 제거" 약속이 이번에 이행된다. 리버스 프록시 TLS 종단,
+   Fastify `trustProxy` 는 실제 토폴로지에 맞춰 고정(잘못 켜면 리미터 무력화).
+9. compose: Postgres healthcheck + `depends_on: service_healthy`, 기동 시
+   `migrate up` 실행 주체 명시(엔트리포인트), 네임드 볼륨 + `pg_dump` 백업 한 줄,
+   SIGTERM 에 풀 드레인(onClose). CORS 허용 목록은 기존 `exposedHeaders:
+   ['x-server-now']`(시계 동기화!) 유지 + `capacitor://localhost`·`http://localhost`.
+
+**정직한 검증**
+10. §8.4 는 계약 스위트 하나를 두 구현에 매개변수화하되, Postgres 케이스는
+    `describe.skipIf(!TEST_DATABASE_URL)` — **완료 관문: 실제 Postgres 로 한 번
+    돌린 출력 첨부.** CI 없음을 인정하고 관문으로 대체한다.
+11. **첫 태스크는 기존 서버 테스트의 인증화다** — `app.test.ts` 33건 전부가
+    암묵 'local' 주입이라, 가입/로그인 헬퍼 + Bearer 를 먼저 깔아야 이후 작업이
+    그 위에 앉는다.
+
+**클라이언트 세부**
+12. 401 처리는 `GameClient.request()` 한 곳에서(토큰 폐기→타이틀). 부팅 호출에
+    `AbortSignal.timeout` (걸린 서버가 타이틀을 영원히 잡는 것 방지). 화면 상태
+    셋 구분: 토큰 없음 / 토큰 거부 / 서버 불통.
+13. 외형은 WorldScene 세 곳(preload·sprite·walk 애니메이션)에서 키가 하드코딩
+    — 맵 전환마다 재시작하므로 preload 전에 외형이 결정되어야 한다. 모든 외형
+    시트는 player.png 와 같은 96×128 3×4 규격임을 추출 시 검증.
+14. 마을→숙련도 대응은 카드에 하드코딩하지 않는다 — `maps.csv` 칼럼 또는 빌드
+    유도(transitions 로부터), 어긋나면 빌드 실패.
+15. 기존 `.data/players.json` 개발 세이브는 **이관하지 않고 폐기**(명시).
+
 ## 8. 성공 기준
 
 1. 새 기기에서: 타이틀 → 가입 → 캐릭터 생성(외형·마을 고름) → 고른 마을 스폰에서
