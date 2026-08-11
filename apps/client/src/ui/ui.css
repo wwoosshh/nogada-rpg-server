@@ -592,19 +592,34 @@
 }
 
 /*
- * 제작 패널(CraftPanel.tsx)의 스크롤 영역 — .bag__body 와 같은 수법이다.
- * 목록 가용 높이가 ~250px 뿐이라 카드 하나는 72px 을 넘지 않아야 한다
- * (설계 §8-앞 12): 쥔 카드와 다음 잠긴 카드(요구치 당근)가 한 화면에 같이
- * 보여야 반복이 무언가를 향한다.
+ * 제작 패널(CraftPanel.tsx) — 좌 목록 · 우 상세 · 제작 버튼(설계 §8-뒤).
+ * 행 전체가 버튼이던 카드 더미는 "게임에서 쓰이는 방식이 아니다"로 기각됐다.
+ * 왼쪽 목록 행은 선택만 하고, 실행은 상세 하단의 제작 버튼 하나다 — 선택과
+ * 실행이 분리된 고전 제작 화면 문법. 가로 812×375 라 좌우 분할이 자연스럽다.
  */
 .craft__body {
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/*
+ * 왼쪽(~40%): 레시피 목록. 세로 스크롤은 여기서만 일어난다 —
+ * touch-action: pan-y 가 계약이다(§8-앞 10): none 으로 잠그면 행 위에서
+ * 시작한 세로 스크롤이 죽는다. 행 탭은 click(= pointerup 뒤 판정)이라
+ * 스크롤이 개시되면 브라우저가 click 자체를 삼킨다 — 스크롤 중 선택이
+ * 튀지 않는 것은 그 기본 동작으로 충분하다.
+ */
+.craft__list {
+  flex: 2 1 0;
+  min-width: 0;
   overflow-y: auto;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: 0 var(--space-3) var(--space-3);
 }
 
 /* 카테고리 섹션 제목(제련/도구) — 가방 섹션 제목과 같은 단(13px). */
@@ -615,67 +630,52 @@
   color: var(--c-parchment-dim);
 }
 
-.craft__cards {
+.craft__rows {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 /*
- * 레시피 카드 — 가방 행과 달리 **이것은 버튼이다**(카드 전체 탭, 설계 §6).
- *
- * touch-action: pan-y 가 계약이다(§8-앞 10): none 으로 잠그면 카드 위에서
- * 시작한 세로 스크롤이 죽는다. pan-y 를 남기면 브라우저가 스크롤을 가져가는
- * 순간 pointercancel 이 오고, useCraftHold 가 그것으로 홀드를 놓는다 —
- * 10px 규칙과 별개로 브라우저 슬롭이 홀드를 끊을 수 있음을 수용한다.
+ * 목록 행 — 이것은 선택 버튼이다. 탭해도 제작되지 않는다(실행은 .craft__craft).
+ * 선택 표시는 hover 회색이 아니라 커서다: 접시 배경 + 강조 테두리 + ▶ 글리프
+ * (.craft__cursor)가 함께 움직인다 — 목록방 커서의 문법.
  */
-.craft__card {
+.craft__row {
   touch-action: pan-y;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: var(--c-ink);
-  border: 1px solid var(--c-panel-edge);
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: 40px;
+  padding: 2px var(--space-1);
+  background: none;
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: var(--space-1) var(--space-2);
-}
-
-/*
- * 눌림 어포던스는 테두리 하나만, 누르는 동안만이다 — 제작 결과(성공/실패)로
- * 무언가를 깜빡이지 않는다(§8-앞 3). 결과가 초당 여러 번 오는 화면에서
- * 피드백은 tally 와 보유 숫자가 오르는 것으로 충분하다.
- */
-.craft__card--ready {
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.craft__card--ready:active {
+.craft__row--on {
+  background: var(--c-ink-soft);
   border-color: var(--c-accent);
 }
 
-/*
- * 잠긴 카드의 흐림은 아이콘·이름·재료까지만이다(§8-앞 11). 상태 슬롯의
- * 요구치 숫자(.craft__req)는 이 목록에 없어서 풀 콘트라스트로 남는다 —
- * 주괴를 반복하는 동안 옆 카드에서 실시간으로 오르는 그 숫자가 당근이므로,
- * 카드에서 가장 밝은 것이 요구치 숫자여야 한다.
- */
-.craft__card--locked .icon,
-.craft__card--locked .craft__name,
-.craft__card--locked .craft__mats {
-  opacity: 0.4;
+/* 커서 글리프 자리 — 선택이 아니어도 폭을 잡아 두어 텍스트가 밀리지 않는다. */
+.craft__cursor {
+  flex: none;
+  width: 14px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--c-accent);
 }
 
-.craft__row1 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.craft__name {
-  flex: 0 1 auto;
+.craft__row-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
@@ -684,9 +684,112 @@
   color: var(--c-parchment);
 }
 
-/* 산출물 보유 수량 — 반복 200회 동안 시선이 쉴 숫자라 1행에 상주한다(§8-앞 4). */
-.craft__owned {
+/* 행 상태 표시 셋 — ✓(가능) / 점(재료 부족) / 요구치 숫자(잠김). */
+.craft__row-ok {
   flex: none;
+  font-size: 13px;
+  color: var(--c-success);
+}
+
+.craft__row-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--space-1);
+  border-radius: 2px;
+  background: var(--c-danger);
+}
+
+/*
+ * 잠긴 행의 요구치 — 컴팩트한 행에서도 숫자를 숨기지 않는다(원작의 "요구치를
+ * 숫자로 말하는 문"). 흐림 대상 밖 + 가장 밝은 색(§8-앞 11), 16px(§8-앞 12).
+ */
+.craft__row-req {
+  flex: none;
+  font-size: 16px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 잠긴 행의 흐림은 아이콘·이름까지만 — 요구치 숫자는 위 규칙으로 남는다. */
+.craft__row--locked .icon,
+.craft__row--locked .craft__row-name {
+  opacity: 0.4;
+}
+
+/* 오른쪽(~60%): 선택 레시피 상세. 왼쪽과의 사이에 분할선 하나. */
+.craft__detail {
+  flex: 3 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 2px solid var(--c-panel-edge);
+  padding-left: var(--space-3);
+}
+
+/* 상세의 정보부 — 넘치면 여기만 스크롤되고 제작 버튼은 하단에 남는다. */
+.craft__info {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+/*
+ * 잠긴 상세의 흐림은 아이콘·이름·재료까지만이다(§8-앞 11). 요구치 카운터
+ * (.craft__req)는 이 목록에 없어서 풀 콘트라스트로 남는다 — 주괴를 반복하는
+ * 동안 실시간으로 오르는 그 숫자가 당근이므로, 상세에서 가장 밝은 것이
+ * 요구치 숫자여야 한다.
+ */
+.craft__info--locked .craft__frame,
+.craft__info--locked .craft__detail-name,
+.craft__info--locked .craft__mats {
+  opacity: 0.4;
+}
+
+.craft__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/*
+ * 산출물 64px 아이콘의 틀 — 가방 장비 슬롯(.bag__slot-box)과 같은 재질(파인
+ * 칸)이라 두 패널이 한 목소리를 낸다. 64 는 원본 32 의 정수 배율이다.
+ */
+.craft__frame {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background: var(--c-ink);
+  border: 2px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 2px var(--c-ink-soft);
+}
+
+.craft__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.craft__detail-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--c-parchment);
+}
+
+/* 산출물 보유 수량 — 반복 200회 동안 시선이 쉴 숫자라 상세에 상주한다(§8-앞 4). */
+.craft__owned {
   white-space: nowrap;
   font-size: 12px;
   color: var(--c-parchment-dim);
@@ -699,62 +802,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/*
- * 1행 우측 고정 상태 슬롯. 성공률/재료 부족/요구치 중 하나가 상주하고,
- * 결과 순간의 점멸로 가려지지 않는다(§8-앞 3의 "고정 슬롯").
- */
-.craft__status {
-  flex: none;
-  margin-left: auto;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--c-parchment-dim);
-}
-
-.craft__status--missing {
-  font-size: 13px;
-  color: var(--c-danger);
-}
-
-.craft__chance {
-  font-size: 16px;
-  color: var(--c-parchment);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 잠긴 카드의 요구치 카운터 — 흐림 대상 밖 + 가장 밝은 색(§8-앞 11). */
-.craft__req {
-  font-size: 16px;
-  color: var(--c-accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.craft__row2 {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
+/* 재료 아이콘 칩(아이콘 + 보유/필요) — 충족·부족 색은 현행 색 규칙 그대로다. */
 .craft__mats {
-  flex: 1 1 auto;
-  min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  overflow: hidden;
-  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-/* 재료 칩 `이름 보유/필요` — 충족·부족 색은 현행 색 규칙 그대로다(설계 §6). */
 .craft__mat {
-  font-size: 12px;
-}
-
-.craft__mat--ok {
-  color: var(--c-success);
-}
-
-.craft__mat--missing {
-  color: var(--c-danger);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2) 2px var(--space-1);
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
 }
 
 .craft__mat-num {
@@ -762,14 +827,80 @@
   font-variant-numeric: tabular-nums;
 }
 
+.craft__mat--ok .craft__mat-num {
+  color: var(--c-success);
+}
+
+.craft__mat--missing .craft__mat-num {
+  color: var(--c-danger);
+}
+
 /*
- * 누적 카운터 `+N · 실패 M` — 이 숫자가 오르는 것이 제작 피드백의 전부다
- * (§8-앞 3). 성공분만 초록으로 들고, 실패는 조용히 둔다 — 실패는 이 게임에서
- * 경보가 아니라 일상이다(성공률 60% 화면에서 빨강이 매초 늘면 화면이 경고로
- * 덮인다).
+ * 고정 상태 슬롯 — 성공률 또는 요구치 중 하나가 상주하고, 결과 순간의 점멸로
+ * 가려지지 않는다(§8-앞 3의 "고정 슬롯"). 32 는 16 격자의 2배 — 상세의 헤드라인
+ * 숫자라 크게 둔다(§8-뒤 "성공률 크게").
+ */
+.craft__stat {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+}
+
+.craft__chance {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 잠긴 상세의 요구치 카운터 — 흐림 대상 밖 + 가장 밝은 색(§8-앞 11). */
+.craft__req {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 상세 하단 고정 발판 — 제작 버튼과 tally 슬롯. 스크롤 영역 밖이다. */
+.craft__actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+}
+
+/*
+ * 제작 버튼 — 이 화면의 주 행동이라 .btn--primary(인증 화면들의 주 버튼)를
+ * 그대로 입고, 손가락 최소 48px(ControlScene.MIN_BUTTON_DIAMETER)을 지킨다.
+ *
+ * touch-action: none 인 이유: 이 버튼은 스크롤 영역 밖의 고정 발판이라 pan 할
+ * 것이 없고, 홀드 반복(분 단위로 쥐는 핵심 동사)이 손가락 미세 떨림에 브라우저
+ * 팬으로 끊기면 안 된다. §8-앞 10 의 pan-y 계약은 스크롤 목록의 행에 대한
+ * 것이고(.craft__row 가 지킨다), 여기는 그 반대의 요구를 가진 자리다.
+ * 이동 10px 초과 취소는 useCraftHold 가 여전히 적용한다.
+ */
+.craft__craft {
+  min-height: 48px;
+  font-size: 16px;
+  touch-action: none;
+}
+
+/* 눌림 어포던스 — 쥐는 동안만의 테두리. 결과(성공/실패)로는 아무것도 깜빡이지 않는다(§8-앞 3). */
+.craft__craft:active:not(:disabled) {
+  border-color: var(--c-parchment);
+}
+
+/*
+ * 누적 카운터 `+N · 실패 M`의 고정 슬롯 — 이 숫자가 오르는 것이 제작 피드백의
+ * 전부다(§8-앞 3). 성공분만 초록으로 들고, 실패는 조용히 둔다 — 실패는 이
+ * 게임에서 경보가 아니라 일상이다(성공률 60% 화면에서 빨강이 매초 늘면 화면이
+ * 경고로 덮인다). min-height 는 잠긴 레시피(빈 슬롯)에서도 자리를 지킨다.
  */
 .craft__tally {
-  flex: none;
+  margin: 0;
+  min-height: 20px;
+  text-align: center;
   white-space: nowrap;
   font-size: 16px;
   color: var(--c-parchment-dim);

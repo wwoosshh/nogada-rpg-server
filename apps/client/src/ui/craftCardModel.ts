@@ -30,6 +30,8 @@ export interface CraftCardTally {
 }
 
 export interface CraftCardMaterial {
+  /** 재료 아이템 id — 상세 칸의 아이콘 칩이 ItemIcon 으로 그림을 찾는 열쇠. */
+  item: string
   name: string
   have: number
   need: number
@@ -81,6 +83,7 @@ function materialStatus(
   return recipe.inputs.map((input) => {
     const have = player.stacks[input.item] ?? 0
     return {
+      item: input.item,
       name: data.items[input.item]?.name ?? input.item,
       have,
       need: input.count,
@@ -174,4 +177,16 @@ export function buildCraftCards(
   }
 
   return sections
+}
+
+/**
+ * 패널이 열리는 순간의 기본 선택 — 첫 제작 가능(ready) 레시피, 없으면 그냥
+ * 첫 레시피(설계 §8-뒤). "지금 만들 수 있는 것"에 커서를 먼저 놓아야 열자마자
+ * 제작 버튼이 살아 있다 — 신규 캐릭터도 광석만 있으면 구리 주괴가 잡힌다.
+ * 순회는 목록과 같은 선언 순서라 "첫"의 의미가 화면과 어긋나지 않는다.
+ */
+export function defaultCraftSelection(sections: CraftCardSection[]): string | null {
+  const flat = sections.flatMap((s) => s.cards)
+  const ready = flat.find((c) => c.state === 'ready')
+  return ready?.recipeId ?? flat[0]?.recipeId ?? null
 }

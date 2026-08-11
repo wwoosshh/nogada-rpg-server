@@ -5,6 +5,7 @@ import {
   buildCraftCards,
   canAffordCraft,
   craftRepeatUnlocked,
+  defaultCraftSelection,
   type CraftCardSection,
 } from './craftCardModel.js'
 
@@ -94,12 +95,12 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
     expect(findCard(sections, 'copper_hammer').ownedOutput).toBe(0)
   })
 
-  // 왜: 재료 칩(이름 보유/필요, 충족 색)은 이 배열이 전부다 — 여기의 ok 가
-  //     틀리면 색이 거짓말을 한다.
-  it('재료마다 이름·보유·필요·충족 여부를 대조한다', () => {
+  // 왜: 재료 칩(아이콘+보유/필요, 충족 색)은 이 배열이 전부다 — 여기의 ok 가
+  //     틀리면 색이 거짓말을 하고, item 이 틀리면 엉뚱한 그림이 걸린다.
+  it('재료마다 아이템 id·이름·보유·필요·충족 여부를 대조한다', () => {
     const sections = buildCraftCards(data, playerWith(0, { copper_ore: 1 }), {})
     expect(findCard(sections, 'copper_ingot').materials).toEqual([
-      { name: '구리 원석', have: 1, need: 2, ok: false },
+      { item: 'copper_ore', name: '구리 원석', have: 1, need: 2, ok: false },
     ])
   })
 
@@ -132,6 +133,32 @@ describe('canAffordCraft — 보낼 값어치가 있는 요청인가', () => {
 
   it('없는 레시피는 false — 조용히 안 보낸다', () => {
     expect(canAffordCraft(data, emptyPlayer(), 'no_such_recipe')).toBe(false)
+  })
+})
+
+describe('defaultCraftSelection — 열리는 순간 커서가 놓이는 곳(§8-뒤)', () => {
+  // 왜: 좌 목록·우 상세 구조에서 "선택된 것"이 없으면 상세가 비고 제작 버튼이
+  //     죽는다. 열자마자 만들 수 있는 레시피에 커서가 가 있어야 한다.
+  it('첫 제작 가능(ready) 레시피를 고른다 — 선언 순서 기준', () => {
+    const sections = buildCraftCards(data, playerWith(0, { copper_ore: 2 }), {})
+    expect(defaultCraftSelection(sections)).toBe('copper_ingot')
+  })
+
+  // 왜: 주괴 재료는 없는데 망치 재료만 있는 플레이어라면 커서는 망치로 —
+  //     "첫 번째 행"이 아니라 "첫 번째 만들 수 있는 행"이다.
+  it('앞 레시피가 재료 부족이면 그 다음 ready 를 고른다', () => {
+    const sections = buildCraftCards(data, playerWith(200, { copper_ingot: 2 }), {})
+    expect(defaultCraftSelection(sections)).toBe('copper_hammer')
+  })
+
+  // 왜: 아무것도 못 만드는 신규 캐릭터도 상세가 비면 안 된다 — 첫 레시피를
+  //     보여주고 버튼만 잠근다.
+  it('ready 가 하나도 없으면 그냥 첫 레시피다', () => {
+    expect(defaultCraftSelection(buildCraftCards(data, emptyPlayer(), {}))).toBe('copper_ingot')
+  })
+
+  it('레시피가 아예 없으면 null — 조용히 빈 상세', () => {
+    expect(defaultCraftSelection([])).toBeNull()
   })
 })
 
