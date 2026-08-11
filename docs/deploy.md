@@ -9,10 +9,12 @@
 - 서버는 **한 대**다. 로그인 실패 백오프가 메모리에 살기 때문에(설계 §3) 서버를
   둘로 늘리면 그 표가 갈라진다. 늘려야 하는 날이 오면 그 표부터 옮겨야 한다.
 - 비밀번호 찾기가 없다. 계정을 잊으면 그 계정은 죽는다(설계 규범 6, 수용된 사실).
-- **저장소는 아직 GitHub 에 없다.** 그래서 아래 3장이 USB·scp 로 옮기는 이야기다.
-- 요청 로그는 꺼져 있다(`Fastify({ logger: false })`). 컨테이너 로그에 남는 것은
-  기동·마이그레이션·오류뿐이다. 어디까지 갔는지 보려면 클라이언트가 받은 상태
-  코드를 본다.
+- **저장소는 이제 GitHub 의 비공개 리포지토리에 있다.** 그래서 손으로 배포하는
+  길(3장의 USB·scp)과 자동으로 배포하는 길(13장)이 둘 다 있다. 처음 한 번은
+  어느 쪽으로든 사람이 세워야 하고, 그 뒤부터는 13장이 대신한다.
+- 요청 로그가 켜져 있다(컨테이너 기본 `LOG_LEVEL=info`). 요청 한 줄과 응답 한 줄이
+  남고, **자격증명은 `[가려짐]` 으로 덮인다** — Authorization 헤더·비밀번호·세션
+  토큰(`apps/server/src/config.ts`). 로그 보는 법은 14장, 회전 정책도 거기 있다.
 
 ---
 
@@ -61,13 +63,23 @@ WSL2 와 Compose 가 함께 온다. 아래 명령들은 PowerShell 이 아니라
 
 ---
 
-## 3. 저장소 가져오기 (아직 GitHub 에 없다)
+## 3. 저장소 가져오기
 
-개발 PC 에서 만들어 미니PC 로 옮긴다. **`node_modules` 는 절대 함께 옮기지 않는다** —
-윈도에서 깔린 네이티브 모듈(argon2)은 리눅스에서 안 돌고, 어차피 이미지가 안에서
-다시 깐다.
+**방법 0 — GitHub 에서 클론 (지금은 이쪽이다).** 비공개 리포지토리이므로 그
+계정으로 로그인된 상태여야 한다(`gh auth login` 이나 자격증명 관리자).
+**자동 배포(13장)를 쓸 것이라면 경로가 정해져 있다** — 워크플로가 이 폴더를 본다:
 
-**방법 A — git bundle (권장).** 파일 하나에 이력까지 들어가고, 나중에 새 bundle 로
+```powershell
+git clone https://github.com/wwoosshh/nogada-rpg-server.git C:\nogada-server\nogada-rpg-server
+cd C:\nogada-server\nogada-rpg-server
+```
+
+아래 둘은 **GitHub 에 닿을 수 없을 때**의 길이다(미니PC 가 인터넷에 없거나
+계정을 그 기계에 넣고 싶지 않을 때). 개발 PC 에서 만들어 옮긴다.
+**`node_modules` 는 절대 함께 옮기지 않는다** — 윈도에서 깔린 네이티브
+모듈(argon2)은 리눅스에서 안 돌고, 어차피 이미지가 안에서 다시 깐다.
+
+**방법 A — git bundle.** 파일 하나에 이력까지 들어가고, 나중에 새 bundle 로
 `git pull` 을 할 수 있다.
 
 ```bash
@@ -76,7 +88,7 @@ git bundle create nogada.bundle --all
 # USB 에 복사하거나 scp 로 보낸다
 scp nogada.bundle 사용자@192.168.0.10:~/
 # 미니PC 에서
-git clone -b master ~/nogada.bundle ~/nogada && cd ~/nogada
+git clone -b main ~/nogada.bundle ~/nogada && cd ~/nogada
 ```
 
 **방법 B — 지금 상태를 통째로.** git 이 없어도 되고, 대신 이력이 없다.
@@ -169,7 +181,8 @@ docker compose -f docker-compose.prod.yml down        # 컨테이너를 지운�
 캐릭터의 삭제다.
 
 **새 버전 배포**: 3장의 방법으로 소스를 갱신한 뒤 `up -d --build` 한 번이면 된다.
-스키마가 바뀌었다면 기동하면서 알아서 마이그레이션이 돈다.
+스키마가 바뀌었다면 기동하면서 알아서 마이그레이션이 돈다. **이 세 줄을 사람이
+치지 않게 하는 것이 13장이다** — 러너를 깔고 나면 `main` 에 올리는 것으로 끝난다.
 
 ---
 
@@ -327,6 +340,10 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 | **로컬은 200 인데 다른 기기에서 연결 자체가 안 된다 (윈도)** | 실제 배포에서 겪은 순서대로: ① `netstat -ano \| findstr ":3000"` 에 `0.0.0.0:3000 LISTENING` 이 있는지 — 없으면 Docker Desktop 재시작. ② 있다면 십중팔구 **Windows 가 만든 Docker 차단 규칙**이다. 처음 포트를 열 때 뜨는 허용 창이 닫히면 `com.docker.backend.exe` 에 대한 **차단** 규칙이 생기고, 차단은 포트 허용 규칙보다 항상 이긴다. 관리자 PowerShell 에서 확인 후 제거: `Get-NetFirewallRule -Enabled True -Action Block \| Where-Object DisplayName -match "docker" \| Remove-NetFirewallRule`. ③ 포트 허용 규칙도 함께: `netsh advfirewall firewall add rule name="nogada-server-3000" dir=in action=allow protocol=TCP localport=3000`. |
 | 윈도에서 Docker 가 "Virtualization support not detected" | 작업 관리자 성능 탭에 가상화 **사용**이라고 나오는데도 그러면 BIOS 가 아니라 윈도 기능이다. 관리자 PowerShell: `dism /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart` + `featurename:VirtualMachinePlatform` + `bcdedit /set hypervisorlaunchtype auto` → 재부팅 → `wsl --update`. |
 | 디스크가 찼다 | `docker system prune -a` (볼륨은 건드리지 않는다) + `backups/` 의 오래된 덤프. |
+| **배포 잡이 노랗게 대기만 하고 시작하지 않는다** | 라벨이거나 러너다(13-2). GitHub → Settings → Actions → Runners 에서 그 러너가 **Idle(초록)** 인지, 라벨에 `windows` 와 `mini-pc` 가 둘 다 붙어 있는지 본다. 하나라도 없으면 잡은 실패하지 않고 **영원히 기다린다** — 그래서 증상이 조용하다. 라벨은 러너 화면에서 나중에 더할 수 있다. |
+| 배포 잡이 `open //./pipe/docker_engine: The system cannot find the file specified` 로 죽는다 | 도커가 없는 것이 아니라 **러너 서비스 계정이 도커를 못 보는 것**이다(13-3). 서비스를 Docker Desktop 쓰는 사용자 계정으로 다시 깔고, 그 사용자가 로그인해 있는지 확인한다. |
+| 관리 화면(8081·8082)이 다른 기기에서 안 열린다 | **그게 맞다.** `127.0.0.1` 에만 묶여 있다(14장). RDP 나 Tailscale 로 미니PC 안에 들어가서 연다. |
+| CI 의 테스트가 로컬과 다르게 실패한다 | CI 에는 진짜 Postgres 가 붙어 있어 평소 건너뛰던 계약 스위트 29개가 **실제로 돈다**. 로컬에서 같게 보려면 `docker compose up -d` 뒤 `TEST_DATABASE_URL=postgres://nogada:nogada@localhost:5432/nogada pnpm test`. |
 
 ---
 
@@ -334,6 +351,225 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 
 - 서버 환경변수 전부: `apps/server/.env.example`
 - 배포 구성: `docker-compose.prod.yml` · 이미지: `apps/server/Dockerfile`
+- 자동 배포 정의: `.github/workflows/deploy.yml` (13장)
 - 백업/복원: `scripts/backup.sh`
 - 설계 근거: `docs/superpowers/specs/2026-08-10-account-character-design.md` §6, 규범 8·9
 - 에셋 복원 절차: `assets/CREDITS.md`
+
+---
+
+## 13. 자동 배포 (CI/CD)
+
+**하는 일:** `main` 에 커밋이 들어오면 GitHub 이 테스트를 돌리고, 통과하면
+미니PC 가 스스로 새 코드를 받아 컨테이너를 다시 세운다. 사람이 미니PC 앞에
+앉는 일은 없어진다. 정의는 `.github/workflows/deploy.yml` 한 파일이다.
+
+```
+main 에 push ─▶ verify (GitHub 이 빌려주는 리눅스)
+                 pnpm install / data:build / test / typecheck / 클라이언트 빌드
+                 + 진짜 Postgres 를 붙여 계약 스위트까지 (평소엔 건너뛰는 29개)
+                    │ 통과해야만
+                    ▼
+               deploy (미니PC 의 self-hosted 러너)
+                 git fetch + reset --hard origin/main
+                 docker compose -f docker-compose.prod.yml up -d --build
+                 /api/health 가 ok:true 를 줄 때까지 최대 90초 대기 → 아니면 실패
+                 docker compose ps 로 마무리
+```
+
+알아 둘 것 셋:
+
+- **미니PC 가 GitHub 에 붙는다.** 반대가 아니다. 러너가 이쪽에서 나가는 연결로
+  일감을 받아 오므로 공유기에 구멍을 낼 필요가 없다(9장의 Tailscale 과 같은 이치).
+- **`pull` 이 아니라 `reset --hard` 다.** 미니PC 에서 무언가 손으로 고쳐 본
+  흔적이 남아 있어도 배포가 서지 않게 하려는 것이다. 반대로 말하면 **미니PC 에서
+  직접 고친 것은 다음 배포에 사라진다** — 고칠 것이 있으면 개발 PC 에서 고쳐 올린다.
+  `git clean` 은 돌지 않으므로 `apps/server/.env` 는 안전하다.
+- **배포는 줄을 선다.** 두 배포가 겹치면 어느 코드가 올라갔는지 알 수 없어서,
+  앞 배포가 끝날 때까지 뒤 배포는 기다린다(취소되지 않는다).
+- PR 에서는 `verify` 만 돈다. 배포는 `main` 에 실제로 들어온 것만 나간다 —
+  그래서 검토 중인 가지가 미니PC 를 건드릴 일이 없다.
+
+### 13-1. 가지 이름을 `main` 으로 바꾼다
+
+워크플로는 `main` 만 본다. 지금 가지 이름이 `master` 라면 먼저 바꾼다.
+
+1. GitHub → 리포지토리 → **Settings → General → Default branch** → 연필 아이콘 →
+   `master` 를 `main` 으로 → **Rename branch**. (GitHub 이 열린 PR 을 알아서 옮긴다.)
+2. 개발 PC 에서:
+
+```bash
+git branch -m master main
+git fetch origin
+git branch -u origin/main main
+git remote set-head origin -a
+```
+
+3. 미니PC 에 이미 클론이 있다면 거기서도 같은 네 줄을 돌린다. 배포 잡이
+   `git fetch origin main` 부터 하므로 로컬 가지 이름 자체는 중요하지 않지만,
+   사람이 그 폴더에서 `git status` 를 볼 때 헷갈리지 않게 맞춰 둔다.
+
+### 13-2. 미니PC 에 러너를 깐다 (주인이 직접 하는 부분)
+
+여기는 **토큰이 오가는 자리라 사람이 손으로 한다.** 순서대로:
+
+1. 미니PC 에 저장소가 **`C:\nogada-server\nogada-rpg-server`** 에 클론되어 있고,
+   `apps\server\.env` 가 채워져 있고, 손으로 한 번 `up -d --build` 가 성공한
+   상태여야 한다(3·4·5장). 자동 배포는 이미 서 있는 것을 갈아 끼우는 일이지
+   처음 세우는 일이 아니다.
+2. GitHub → 리포지토리 → **Settings → Actions → Runners → New self-hosted runner**.
+3. 운영체제 **Windows**, 아키텍처 **x64** 를 고르면 그 화면이 명령 네댓 줄을
+   보여 준다. **그 화면의 명령을 그대로** 미니PC 의 PowerShell 에 붙여 넣는다
+   (토큰이 박혀 있어 여기 적을 수 없고, 그 토큰은 한 시간이면 만료된다).
+   푸는 위치는 `C:\actions-runner` 정도가 무난하다.
+4. `.\config.cmd` 가 몇 가지를 물어본다:
+   - `Enter the name of the runner group` → 그냥 엔터.
+   - `Enter the name of runner` → `nogada-minipc` 같은 이름.
+   - **`Enter any additional labels` → `windows,mini-pc` 를 입력한다.**
+     워크플로가 `runs-on: [self-hosted, windows, mini-pc]` 라, 이 라벨이 없으면
+     배포 잡은 **영원히 대기 상태로 남는다**(실패도 아니고 그냥 안 돈다).
+     `self-hosted` 는 자동으로 붙으므로 적지 않아도 된다.
+   - `Enter name of work folder` → 그냥 엔터.
+5. **서비스로 등록한다.** 관리자 PowerShell 에서:
+
+```powershell
+cd C:\actions-runner
+.\svc.cmd install "DESKTOP-XXXX\사용자이름"   # ← Docker Desktop 을 쓰는 그 계정
+.\svc.cmd start
+.\svc.cmd status
+```
+
+**`.\run.cmd` 로 띄우지 않는다.** 그것은 창을 닫으면 끝나는 방식이라, 재부팅
+뒤에 러너가 없고 배포는 조용히 대기만 한다. 계정을 왜 넘기는지는 바로 다음이다.
+
+### 13-3. Docker Desktop 을 쓰면 서비스 계정이 중요하다
+
+**이것 하나가 가장 흔한 실패다.** Docker Desktop 은 시스템 서비스가 아니라
+**로그인한 사용자 세션에서** 돈다. 도커에 말을 거는 파이프
+(`\\.\pipe\docker_engine`)의 접근 권한도 그 사용자와 `docker-users` 그룹에
+묶여 있다. 러너 서비스를 기본값(`NT AUTHORITY\NETWORK SERVICE`)으로 깔면,
+배포 잡의 `docker compose` 가 이런 말로 죽는다:
+
+```
+error during connect: ... open //./pipe/docker_engine: The system cannot find the file specified.
+```
+
+이 문장은 도커가 안 깔렸다고 말하는 것처럼 보이지만, 실제로는 **그 계정이
+도커를 못 보는 것**이다. 그래서:
+
+- `svc.cmd install` 에 **Docker Desktop 을 쓰는 그 사용자 계정**을 넘긴다
+  (위 명령의 `"DESKTOP-XXXX\사용자이름"`). 비밀번호를 물어보면 그 계정의
+  윈도 로그인 비밀번호다. 계정 이름은 `whoami` 로 확인한다.
+- 그 계정이 `docker-users` 로컬 그룹에 있어야 한다(Docker Desktop 설치 계정은
+  대개 이미 들어 있다). 확인: `net localgroup docker-users`.
+- **그 사용자가 로그인해 있어야 Docker Desktop 이 돈다.** 1장에서 이미 말한
+  두 가지를 여기서 다시 확인한다 — Docker Desktop 의 "Start Docker Desktop when
+  you sign in" 켜기, 그리고 윈도 자동 로그인. 재부팅 뒤 아무도 로그인하지
+  않으면 러너 서비스는 살아 있는데 도커만 없는 상태가 되고, 그때 배포는
+  위 파이프 오류로 실패한다.
+- 절전도 끈다. 잠든 미니PC 의 러너는 "오프라인"으로 보인다.
+
+깔고 나서 확인: GitHub → Settings → Actions → Runners 에 그 이름이
+**Idle(초록)** 으로 보이고 라벨에 `windows` 와 `mini-pc` 가 붙어 있으면 된다.
+
+### 13-4. 되돌리기
+
+배포가 나가고 나서 게임이 이상하면, 되돌리는 길이 둘이다.
+
+**빠른 길 — 미니PC 에서 직접 (몇 분).** GitHub 을 거치지 않으므로 가장 빠르다.
+다만 **다음 배포가 오면 다시 새 코드로 덮인다** — 응급 처치다.
+
+```powershell
+cd C:\nogada-server\nogada-rpg-server
+git log --oneline -10                  # 돌아갈 커밋을 고른다
+git reset --hard <이전 SHA>
+docker compose -f docker-compose.prod.yml up -d --build
+curl http://localhost:3000/api/health
+```
+
+**제대로 된 길 — main 에 되돌리는 커밋 (권장).** 저장소와 서버가 다시 같은
+것을 가리키게 되고, 자동 배포가 알아서 반영한다.
+
+```bash
+git revert <문제 커밋 SHA>      # 되돌리는 새 커밋을 만든다
+git push origin main            # → verify → deploy 가 다시 돈다
+```
+
+**`git push --force` 로 이력을 지우지 않는다.** 미니PC 는 `reset --hard` 로
+따라오므로 되기는 하지만, 그날 이후 아무도 무엇이 배포됐는지 되짚을 수 없다.
+
+**마이그레이션은 되돌아가지 않는다.** 코드를 되돌려도 이미 돈 스키마 변경은
+그대로 남는다(엔트리포인트는 `up` 만 돌린다). 스키마가 바뀐 배포를 되돌려야
+한다면 6장의 백업에서 복원하는 것이 정직한 길이고, 그래서 **스키마를 바꾸는
+배포 직전에는 `./scripts/backup.sh` 를 한 번 돌려 두는 것**이 규칙이다.
+
+---
+
+## 14. 관리 도구
+
+DB 를 들여다보는 화면(Adminer)과 로그를 보는 화면(Dozzle)을 프로필 하나로 켠다.
+
+```bash
+docker compose -f docker-compose.prod.yml --profile admin up -d
+```
+
+**둘 다 `127.0.0.1` 에만 열린다.** 관리 화면은 게임 포트처럼 열지 않는다 —
+LAN 의 다른 기계에서도, 포트 포워딩을 해 둔 공유기 밖에서도 보이지 않는다.
+보려면 **미니PC 앞에 앉거나, RDP 로 그 기계에 들어가거나, Tailscale 로
+그 기계에 붙어서**(9장) 그 안의 브라우저로 연다.
+
+| 무엇 | 주소 | 하는 일 |
+|---|---|---|
+| Adminer | http://127.0.0.1:8081 | DB 를 표로 보고 고친다 |
+| Dozzle | http://127.0.0.1:8082 | 컨테이너 로그를 브라우저에서 흐르는 대로 본다 |
+
+**Adminer 로그인** — 화면의 네 칸을 이렇게 채운다:
+
+| 칸 | 값 |
+|---|---|
+| 시스템 | PostgreSQL |
+| 서버 | `db` (미리 채워져 있다) |
+| 사용자 이름 | `.env` 의 `POSTGRES_USER` (예시 그대로면 `nogada`) |
+| 비밀번호 | `.env` 의 `POSTGRES_PASSWORD` |
+| 데이터베이스 | `.env` 의 `POSTGRES_DB` (예시 그대로면 `nogada`) |
+
+들어가면 `users` · `sessions` · `characters` · `pgmigrations` 넷이 보인다.
+**여기서 고친 것은 되돌릴 수 없다.** 캐릭터 상태는 `characters.state` 의 JSONB
+한 칸에 통째로 들었고(설계 §2), 손으로 고쳐 스키마를 깨면 그 캐릭터는 서버가
+읽지 못해 500 을 받는다. 만지기 전에 `./scripts/backup.sh`.
+
+**볼일이 끝나면 내린다 — 내릴 때도 `--profile admin` 을 붙인다:**
+
+```bash
+docker compose -f docker-compose.prod.yml --profile admin down
+```
+
+프로필을 빼면 `db` 와 `server` 만 내려가고 **관리 화면 둘은 그대로 서 있다.**
+게임을 내려놨으니 다 내려간 줄 알기 쉬운 자리다. 다만 이 둘에는 재시작 정책을
+걸지 않았으므로(`restart: 'no'`) 재부팅하면 어차피 사라진다 — 다른 서비스와
+일부러 다르게 해 둔 것이다.
+
+**터미널에서 로그 보기.** Dozzle 없이도 되는 일이고, 미니PC 에 SSH 로만
+들어갔을 때는 이쪽뿐이다:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f server        # 흐르는 대로 본다 (Ctrl+C 로 나온다)
+docker compose -f docker-compose.prod.yml logs --since 30m server   # 최근 30분만
+docker compose -f docker-compose.prod.yml logs --tail 100 db    # DB 의 마지막 100줄
+```
+
+남는 줄은 요청 하나에 둘이다 — 들어올 때 `incoming request`(method·url·ip),
+끝날 때 `request completed`(상태 코드·걸린 시간). 같은 `reqId` 로 묶인다.
+**자격증명은 남지 않는다**: Authorization 헤더·비밀번호·세션 토큰은 `[가려짐]`
+으로 덮인다. 조용하게/시끄럽게 하려면 `.env` 에 `LOG_LEVEL` 을 적고 서버를
+다시 띄운다(`warn` · `debug` · `off`, 기본은 `info`).
+
+**로그는 회전한다.** `db` 와 `server` 는 10MB 짜리 파일 5개까지만 쥐고
+(compose 의 `logging:`), 넘으면 오래된 것부터 버린다. 이것이 없으면 도커의 기본
+설정은 파일 하나를 한없이 키우고, 몇 달 뒤 미니PC 의 SSD 를 채우는 것은 게임
+자료가 아니라 그 파일이다. 바꿔 말하면 **며칠보다 오래된 로그는 없다** — 남겨야
+할 것이 있으면 그때그때 파일로 뽑아 둔다:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --no-color server > server-$(date +%F).log
+```
