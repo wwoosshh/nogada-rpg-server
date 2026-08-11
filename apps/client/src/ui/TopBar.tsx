@@ -9,6 +9,45 @@ const TICK_MS = 2500
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
+/**
+ * 가방·제작 전면 패널의 자리 — 지금은 제목과 ✕ 뿐이다(실제 내용은 다음
+ * 태스크가 채운다. 이 태스크의 산출물은 배선이다: 스토어의 openPanel 하나를
+ * Phaser 와 DOM 이 같이 읽는 것).
+ *
+ * DeleteCharacterDialog 와 같은 이유로 여기(상단 바)에서 그린다 — App.tsx 는
+ * 불가침이라, 게임 중에 React 가 그릴 수 있는 마운트 지점이 이 파일뿐이다.
+ * 전면 오버레이(.panel)라 부모가 상단 바여도 화면 전체를 덮는다.
+ *
+ * **키보드 리스너를 두지 않는다.** I/C/ESC 는 전부 InputHub →
+ * PanelScene.applyInput 이 라우팅한다(설계 §8-앞 7) — 여기에 리스너를 달면
+ * 대사창 계약(대화 중 I/C 삼킴)이 두 곳으로 갈라진다. 이 컴포넌트는 openPanel
+ * 을 구독해 그리고, ✕ 로 스토어 액션을 부르는 것이 전부다. 세계 잠금·컨트롤러
+ * 숨김도 여기가 아니라 Phaser 쪽 구독(PanelScene.applyWorldLock)이 계산한다.
+ */
+function PanelPlaceholder({ panel, title }: { panel: 'bag' | 'craft'; title: string }): JSX.Element | null {
+  const open = useGameStore((s) => s.openPanel === panel)
+  if (!open) return null
+
+  return (
+    <div className="panel">
+      <section className="panel__card">
+        <header className="panel__header">
+          <h2 className="panel__title">{title}</h2>
+          {/* 닫기는 ✕ 하나다 — 스크림 탭 닫기를 두지 않는 이유는 ui.css 의 .panel 주석 참고. */}
+          <button
+            type="button"
+            className="panel__close"
+            aria-label="닫기"
+            onClick={() => useGameStore.getState().setOpenPanel(null)}
+          >
+            ✕
+          </button>
+        </header>
+      </section>
+    </div>
+  )
+}
+
 export function TopBar(): JSX.Element {
   const [now, setNow] = useState(() => worldNow())
 
@@ -38,6 +77,9 @@ export function TopBar(): JSX.Element {
         바뿐이라, 이름을 타이핑할 입력을 붙일 수 있는 자리도 여기뿐이다.
         (App.tsx 를 건드리지 않는 이유는 아래 톱니 주석 참고.)
       */}
+      {/* 삭제 확인 창이 패널보다 뒤(위)다 — 설정 탭에서 삭제를 여는 순간 패널 값은 이미 'menu' 라 겹칠 일은 없지만, DOM 순서로도 확인 창이 이긴다. */}
+      <PanelPlaceholder panel="bag" title="가방" />
+      <PanelPlaceholder panel="craft" title="제작" />
       <DeleteCharacterDialog />
       <div className="topbar">
         <span className="topbar__clock">
@@ -50,7 +92,9 @@ export function TopBar(): JSX.Element {
           직접 그리지 않는다(App.tsx 에 커밋되면 안 되는 개발용 훅이 있어 그 파일을
           건드리지 않기로 했고, 그것이 메뉴를 Phaser 씬으로 만든 이유이기도 하다) —
           대신 gameStore 의 openMenu() 로 요청만 남기고, PanelScene 이 그 요청을
-          구독해서 연다(gameStore.ts 의 MenuRequest 문서 참고).
+          구독해서 연다(gameStore.ts 의 MenuRequest 문서 참고). openMenu 는
+          openPanel 을 'menu' 로 함께 덮으므로, 열려 있던 가방·제작(DOM) 패널은
+          그 교체 한 번으로 닫힌다.
         */}
         <button
           type="button"

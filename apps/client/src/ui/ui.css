@@ -349,6 +349,83 @@
 }
 
 /*
+ * 가방·제작 전면 패널(DOM — TopBar 가 마운트한다). Phaser 쪽 상세 메뉴
+ * (PanelScene)와 같은 자리 잡기다: 카드 윗변이 PanelScene.TOP_MARGIN(40px)과
+ * 같은 높이에 오고, 나머지 세 면은 같은 여백(16px)을 남긴다 — 어느 패널이
+ * 열려도 같은 상자가 있던 자리에 있는 것처럼 보이게.
+ *
+ * 스크림이 **상단 바는 덮지 않는다**(top: 34px — .topbar 실측 높이: 패딩
+ * 4px×2 + 톱니 min-height 24px + 테두리 2px). 톱니는 패널이 열려 있는 동안에도
+ * 눌려야 한다 — "톱니는 열린 패널을 닫고 메뉴를 연다"(설계 §8-앞 7)는 계약이
+ * 그 클릭을 요구한다. 스크림 값은 .modal 과 같다(--c-ink 의 반투명).
+ *
+ * 닫기는 ✕ 버튼만이다 — 스크림 탭 닫기를 두지 않는다. 목록을 드래그하던
+ * 손가락이 스크림에 흘렀을 때 패널이 닫혀버리는 오조작 때문이다(설계 계획 B5).
+ */
+.panel {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: auto;
+  display: flex;
+  justify-content: center;
+  background: rgb(36 28 28 / 85%);
+  /* 위 6px: 34 + 6 = 40 — PanelScene.TOP_MARGIN 과 같은 카드 윗변. */
+  padding: 6px 16px 16px;
+  z-index: 1;
+}
+
+.panel__card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  /* PanelScene.MAX_PANEL_WIDTH 와 같은 방어값 — 개발용 초광폭 창에서만 의미가 있다. */
+  max-width: 900px;
+  min-height: 0;
+  background: var(--c-panel);
+  border: 2px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+}
+
+.panel__header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: var(--space-3);
+}
+
+/* 제목은 16px — Neo둥근모의 16 격자(tokens.css 주석)에 맞는 크기다. */
+.panel__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--c-accent);
+}
+
+/* 손가락 최소 48px — ControlScene.MIN_BUTTON_DIAMETER 와 같은 스펙값. */
+.panel__close {
+  flex: none;
+  min-width: 48px;
+  min-height: 48px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--c-accent);
+  cursor: pointer;
+}
+
+.panel__close:active {
+  color: var(--c-parchment);
+}
+
+/*
  * 캐릭터 생성 화면의 윗단 — 왼쪽에 외형 미리보기, 오른쪽에 이름.
  * 세로 375px 을 아끼려고 나란히 놓는다(마을 카드 넉 장이 아래에 와야 한다).
  */
