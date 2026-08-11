@@ -95,9 +95,9 @@ interface MilestoneRow {
 /**
  * 못한 것을 남은 비율이 작은 순(= 진척 ratio 가 큰 순)으로 먼저, 달성한 것을 뒤에 둔다.
  *
- * `data.milestones` 자체는 절대 정렬하지 않는다 — `nextMilestone` 의 동점
- * 처리와 `every` 이정표의 순환 없음 검증이 그 정의 순서에 기댄다(milestones.ts,
- * packages/data/src/validate.ts). 여기서 만드는 것은 표시 전용 사본이다.
+ * `data.milestones` 자체는 절대 정렬하지 않는다 — 이 함수 자신의 동점 처리(안정
+ * 정렬이 원본 순서를 그대로 쓴다)와 `every` 이정표의 순환 없음 검증이 그 정의
+ * 순서에 기댄다(packages/data/src/validate.ts). 여기서 만드는 것은 표시 전용 사본이다.
  */
 function buildMilestoneRows(data: GameData, player: PlayerState): MilestoneRow[] {
   const achieved = achievedIds(data.milestones, player)

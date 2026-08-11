@@ -371,7 +371,7 @@ export interface GameData {
   /** 맵과 맵을 잇는 칸들. 순서에 의미는 없다. */
   transitions: TransitionDef[]
   placements: Record<string, NodePlacement>
-  /** 정의 순서를 유지한다 — nextMilestone 의 동점 처리가 이 순서를 쓴다 */
+  /** 정의 순서를 유지한다 — 이정표 탭이 동점 진척을 이 순서로 정렬한다(detailMenuTabs.ts) */
   milestones: MilestoneDef[]
   speakers: Record<string, SpeakerDef>
   /** 지점 등록부. 키는 지점 id 이고 맵을 넘어 유일하다. */

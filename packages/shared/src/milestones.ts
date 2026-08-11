@@ -68,15 +68,16 @@ export function isAchieved(
 }
 
 /**
- * 목록·상단 바가 쓰는 진척 비율. 0 에서 1 사이로 잘린다.
+ * 이정표 탭(목록)이 쓰는 진척 비율. 0 에서 1 사이로 잘린다.
  *
  * `every` 는 metricValue(달성 개수)를 threshold 로 나누지 않는다. 그렇게 하면
  * 이미 달성한 항목 하나가 비율을 개수 단위(1/2, 1/3 …)로 크게 밀어올려, 실제로는
  * 한참 남은 나머지 항목이 있는데도 "가깝다" 고 말하게 된다 — 둘 중 하나를 이미
  * 달성하고 나머지가 10% 남았을 때, 개수 비율은 0.5 를 보고하지만 진짜 병목은
- * 0.1 이다. nextMilestone 이 비율만 보고 고르므로, 그 병목의 정체가 다른 이정표
- * (여기서는 나머지 하나 그 자체)일 때 합산 쪽을 "다음" 으로 잘못 고르게 된다 —
- * 심지어 그 합산은 병목이 끝나기 전까지는 논리적으로 달성될 수도 없다.
+ * 0.1 이다. 이정표 탭은 이 비율로 못한 것을 정렬하므로(detailMenuTabs.ts 의
+ * buildMilestoneRows), 그 병목의 정체가 다른 이정표(여기서는 나머지 하나 그
+ * 자체)일 때 합산 쪽을 앞자리로 잘못 고르게 된다 — 심지어 그 합산은 병목이
+ * 끝나기 전까지는 논리적으로 달성될 수도 없다.
  *
  * 그래서 참조한 이정표들의 비율 중 threshold 번째로 큰 값을 쓴다. 전부를
  * 요구하는 지금 데이터(threshold === of.length)에서는 곧 최솟값이고, 가장 덜
@@ -129,26 +130,4 @@ export function newlyAchieved(
 ): MilestoneDef[] {
   const seen = new Set(celebrated)
   return all.filter((def) => !seen.has(def.id) && isAchieved(def, player, all))
-}
-
-/**
- * 상단 바에 띄울 하나. 가장 가까운 것이다.
- *
- * 비율이 같으면 정의 순서로 고른다 — 매 프레임 다른 것을 고르면 상단 바가 깜빡인다.
- */
-export function nextMilestone(
-  all: readonly MilestoneDef[],
-  player: PlayerState,
-): MilestoneDef | null {
-  let best: MilestoneDef | null = null
-  let bestRatio = -1
-  for (const def of all) {
-    if (isAchieved(def, player, all)) continue
-    const ratio = milestoneRatio(def, player, all)
-    if (ratio > bestRatio) {
-      best = def
-      bestRatio = ratio
-    }
-  }
-  return best
 }

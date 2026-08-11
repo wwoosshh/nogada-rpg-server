@@ -69,8 +69,8 @@ describe('parseMilestones — 정상 행', () => {
   })
 
   it('CSV 행 순서를 그대로 보존한다', () => {
-    // nextMilestone(packages/shared)이 동점일 때 이 배열의 순서로 정한다 — 파싱이
-    // id 순으로 정렬하거나 순서를 흩뜨리면 상단 바가 보여주는 "다음 이정표"가
+    // 이정표 탭(apps/client/src/game/detailMenuTabs.ts)이 동점 진척을 이 배열의
+    // 순서로 정렬한다 — 파싱이 id 순으로 정렬하거나 순서를 흩뜨리면 그 정렬이
     // 조용히 바뀐다. id 를 알파벳 순서와 반대로 둬서 우연히 통과하는 것을 막는다.
     const rows = [
       row({ id: 'z_first', metricArg: 'ice' }),

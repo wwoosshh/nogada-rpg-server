@@ -92,7 +92,8 @@ function toEffect(
 
 /**
  * milestones.csv 를 파싱한다. 정의 순서를 그대로 보존하는 배열을 돌려준다 —
- * nextMilestone(packages/shared)이 동점일 때 이 순서로 정하기 때문이다.
+ * 이정표 탭(apps/client/src/game/detailMenuTabs.ts 의 buildMilestoneRows)이
+ * 동점 진척을 이 순서로 정렬하기 때문이다.
  */
 export function parseMilestones(
   rows: Row[],

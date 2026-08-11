@@ -7,7 +7,6 @@ import {
   metricValue,
   milestoneRatio,
   newlyAchieved,
-  nextMilestone,
   type MilestoneDef,
 } from './milestones.js'
 
@@ -144,25 +143,5 @@ describe('newlyAchieved', () => {
     // 이정표를 지운 뒤에도 옛 세이브가 살아 있어야 한다.
     const fresh = newlyAchieved(all, player({ ice: 1000 }), ['사라진것'])
     expect(fresh.map((m) => m.id)).toEqual(['ice-1000'])
-  })
-})
-
-describe('nextMilestone', () => {
-  it('가장 가까운 것을 준다', () => {
-    // ice 900/1000 = 0.9, mineral 100/1000 = 0.1 → 얼음이 더 가깝다
-    const next = nextMilestone(all, player({ ice: 900, mineral: 100 }))
-    expect(next?.id).toBe('ice-1000')
-  })
-  it('이미 달성한 것은 고르지 않는다', () => {
-    const next = nextMilestone(all, player({ ice: 1000, mineral: 100 }))
-    expect(next?.id).toBe('mineral-1000')
-  })
-  it('전부 달성했으면 null 이다', () => {
-    expect(nextMilestone(all, player({ ice: 9999, mineral: 9999 }))).toBeNull()
-  })
-  it('같은 비율이면 순서가 흔들리지 않는다', () => {
-    // 매 프레임 다른 것을 보여주면 상단 바가 깜빡인다.
-    const p = player({ ice: 500, mineral: 500 })
-    expect(nextMilestone(all, p)?.id).toBe(nextMilestone(all, p)?.id)
   })
 })
