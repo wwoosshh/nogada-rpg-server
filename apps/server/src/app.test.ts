@@ -1,7 +1,14 @@
 import { loadGameData, startLocation } from '@nogada/data'
 import { StateResponseSchema, type TransitionDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
-import { asPlayer, buildTestApp, rawSaveOf, type TestPlayer } from './testSupport.js'
+import {
+  asPlayer,
+  buildTestApp,
+  rawSaveOf,
+  saveFileOf,
+  writeRawCharacter,
+  type TestPlayer,
+} from './testSupport.js'
 
 /** 이 테스트가 말을 거는 화자. 대사 파일이 있는 실재 화자여야 한다. */
 const ELDER = '채집장노인'
@@ -115,18 +122,28 @@ describe('GET /api/state', () => {
   //     이제는 요청이 500 으로 끝나고 파일의 그 행은 손대지 않은 채 남는다.
   //     400 이 아닌 이유: 요청은 멀쩡했고 잘못된 것은 우리가 가진 자료다.
   it('읽을 수 없는 세이브는 500 이고, 그 행은 새 캐릭터로 갈아 치워지지 않는다', async () => {
+    // 캐릭터 키를 이제 가입이 발급하므로, 깨진 행을 심으려면 먼저 진짜 사람이
+    // 있어야 한다 — 가입하고 캐릭터를 만든 뒤 그 행만 옛 형식으로 갈아 끼운다.
+    const before = await buildTestApp()
+    const me = await asPlayer(before)
+    const file = saveFileOf(before)
     // 예전 형식: 숙련도가 { level, xp } 객체였다.
-    const broken = { id: 'local', skills: { mining: { level: 3, xp: 10 } } }
-    const app = await buildTestApp({ seedRawSave: { local: broken } })
-    const me = await asPlayer(app)
+    const broken = { id: me.id, skills: { mining: { level: 3, xp: 10 } } }
+    writeRawCharacter(file, me.id, broken)
 
-    const res = await me.inject({ method: 'GET', url: '/api/state' })
+    // 같은 파일 위에 앱을 다시 세운다. 세션도 그 파일에 있으므로 같은 토큰으로
+    // 이어 앉는다 — 로그인한 사람이 자기 세이브를 여는 그 순간을 재현하는 것이다.
+    const app = await buildTestApp({ dataFile: file })
+    const resumed = await asPlayer(app, { resume: me })
+    const res = await resumed.inject({ method: 'GET', url: '/api/state' })
 
     expect(res.statusCode).toBe(500)
     expect(res.json()).toEqual({ code: 'character_unreadable' })
-    expect(rawSaveOf(app).local).toEqual(broken)
+    expect(rawSaveOf(app)[me.id]).toEqual(broken)
 
     await app.close()
+    // 임시 디렉터리를 지우는 것은 파일을 만든 쪽이다 — 나중에 닫는다.
+    await before.close()
   })
 
   it('다시 호출해도 같은 플레이어를 돌려준다', async () => {

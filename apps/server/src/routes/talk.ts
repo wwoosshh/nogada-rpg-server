@@ -2,8 +2,8 @@ import { randomInt } from 'node:crypto'
 import { TalkRequestSchema, createRng, type GameData } from '@nogada/shared'
 import type { FastifyInstance } from 'fastify'
 import { performTalk } from '../services/talkService.js'
+import { requireAccount } from '../auth/sessions.js'
 import { NO_CHARACTER, applyToCharacter } from '../state/applyToCharacter.js'
-import { LOCAL_PLAYER_ID } from '../state/constants.js'
 import type { Persistence } from '../state/persistence.js'
 
 export function registerTalkRoutes(app: FastifyInstance, store: Persistence, data: GameData): void {
@@ -14,7 +14,7 @@ export function registerTalkRoutes(app: FastifyInstance, store: Persistence, dat
     // 대화도 상태를 남긴다(said·recent·lastTalkAt). 저장하지 않으면 같은 인사가
     // 매번 처음처럼 나오고, once 규칙은 영원히 한 번째다 — 그래서 이것도 읽고
     // 판정하고 쓰는 한 덩어리다.
-    const result = await applyToCharacter(store, LOCAL_PLAYER_ID, (player) =>
+    const result = await applyToCharacter(store, requireAccount(request).characterId, (player) =>
       performTalk({
         player,
         data,

@@ -1,17 +1,17 @@
 import { join } from 'node:path'
 import cors from '@fastify/cors'
-import { START_MAP_ID, loadGameData } from '@nogada/data'
-import { DEFAULT_APPEARANCE } from '@nogada/shared'
+import { loadGameData } from '@nogada/data'
 import Fastify, { type FastifyInstance } from 'fastify'
+import { requireSession } from './auth/sessions.js'
+import { registerAuthRoutes } from './routes/auth.js'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerGatherRoutes } from './routes/gather.js'
+import { registerMeRoutes } from './routes/me.js'
 import { registerMoveRoutes } from './routes/move.js'
 import { registerStateRoutes } from './routes/state.js'
 import { registerTalkRoutes } from './routes/talk.js'
 import { registerTimeRoutes } from './routes/time.js'
-import { LOCAL_PLAYER_ID } from './state/constants.js'
 import { JsonPersistence } from './state/jsonPersistence.js'
-import { createInitialPlayer } from './state/newCharacter.js'
 import { CharacterStateError, type Persistence } from './state/persistence.js'
 import { PostgresPersistence } from './state/postgresPersistence.js'
 
@@ -64,14 +64,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     recipes: Object.keys(data.recipes).length,
   }))
 
+  // 인증 밖에 있는 것은 셋뿐이다: 서버가 살아 있는가(health), 지금 몇 시인가
+  // (time), 그리고 게임의 문(auth). 나머지는 전부 "누구인가"에 답해야 한다.
   registerTimeRoutes(app)
-  registerStateRoutes(app, store)
-  registerGatherRoutes(app, store, data)
-  registerCraftRoutes(app, store, data)
-  registerTalkRoutes(app, store, data)
-  registerMoveRoutes(app, store, data)
+  registerAuthRoutes(app, store)
 
-  await ensureLocalCharacter(store)
+  // **여기부터 세션이 필요하다.** 캡슐화된 자식 컨텍스트에 훅을 걸어 두면,
+  // 새 게임 라우트를 이 안에 등록하는 것만으로 인증이 따라온다 — 라우트마다
+  // 훅을 적게 하면 언젠가 하나를 잊고, 그 하나가 남의 캐릭터를 여는 문이 된다.
+  await app.register(async (guarded) => {
+    guarded.decorateRequest('account', null)
+    guarded.addHook('onRequest', requireSession(store))
+
+    registerMeRoutes(guarded, store, data)
+    registerStateRoutes(guarded, store)
+    registerGatherRoutes(guarded, store, data)
+    registerCraftRoutes(guarded, store, data)
+    registerTalkRoutes(guarded, store, data)
+    registerMoveRoutes(guarded, store, data)
+  })
 
   return app
 }
@@ -87,45 +98,4 @@ async function openStore(dataFile: string | undefined): Promise<Persistence> {
   const databaseUrl = process.env.DATABASE_URL
   if (databaseUrl) return PostgresPersistence.open(databaseUrl)
   return JsonPersistence.open(dataFile ?? join(process.cwd(), '.data', 'players.json'))
-}
-
-/**
- * **A2 에서 지운다.** 계정이 들어오기 전의 임시 관문이다.
- *
- * 저장소는 이제 없는 캐릭터를 지어내지 않는다 — 그 습관이 오타 하나로 빈
- * 캐릭터를 낳고, 형식이 안 맞는 세이브를 조용히 새것으로 갈아 치웠다. 그런데
- * 캐릭터를 만드는 곳(가입 → 캐릭터 생성)은 아직 없고 라우트는 여전히 'local'
- * 하나를 본다. 그래서 부팅 때 한 번, 여기서만 만든다. 가입이 생기면 이 함수와
- * LOCAL_PLAYER_ID 가 같이 사라진다.
- */
-async function ensureLocalCharacter(store: Persistence): Promise<void> {
-  try {
-    if (await store.getCharacter(LOCAL_PLAYER_ID)) return
-  } catch (error) {
-    if (!(error instanceof CharacterStateError)) throw error
-    // 읽을 수 없는 세이브를 새것으로 덮는 것이야말로 이 태스크가 뒤집은 습관이다.
-    // 서버는 뜨고, 그 캐릭터를 부르는 요청만 500 을 본다 — 행은 그대로 남는다.
-    console.error(`${error.message} — 덮어쓰지 않고 그대로 둔다`)
-    return
-  }
-
-  // 캐릭터에는 이제 주인이 있어야 한다(characters.user_id). 그래서 이 임시
-  // 관문도 계정을 하나 만든다 — **로그인할 수 없는 계정**이다: 비밀번호 해시
-  // 자리에 argon2 가 만들 수 없는 글자를 넣어 두어, 이 계정으로 들어오는 길이
-  // 없게 한다. 가입 라우트가 생기는 다음 커밋에서 이 함수가 통째로 사라진다.
-  const user =
-    (await store.createUser(LOCAL_PLAYER_ID, '로그인할 수 없는 계정')) ??
-    (await store.findUser(LOCAL_PLAYER_ID))
-  if (!user) throw new Error('개발용 계정을 만들지도 찾지도 못했다')
-
-  await store.createCharacter(
-    user.id,
-    createInitialPlayer({
-      id: LOCAL_PLAYER_ID,
-      // 고른 사람이 없으니 고른 것도 없다 — 가입 화면이 생기면 함께 사라진다.
-      name: '아무개',
-      appearance: DEFAULT_APPEARANCE,
-      village: START_MAP_ID,
-    }),
-  )
 }

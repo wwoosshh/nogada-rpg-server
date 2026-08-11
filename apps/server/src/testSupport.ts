@@ -1,10 +1,10 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { PlayerState } from '@nogada/shared'
+import { START_MAP_ID } from '@nogada/data'
+import { DEFAULT_APPEARANCE, type PlayerState } from '@nogada/shared'
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify'
 import { buildApp, type BuildAppOptions } from './app.js'
-import { LOCAL_PLAYER_ID } from './state/constants.js'
 import { JsonPersistence } from './state/jsonPersistence.js'
 import {
   Persistence,
@@ -17,20 +17,18 @@ import {
 /**
  * 서버 테스트가 **앱을 어떻게 세우고 누구로 요청하는가**를 정하는 한 곳.
  *
- * 왜 모으는가: 지금 라우트 테스트 전부가 `app.inject` 를 직접 불러 암묵적으로
- * 'local' 플레이어가 된다. 계정이 들어오면(A2) 모든 요청에 `Authorization:
- * Bearer` 가 필요해지는데, 그때 서른세 개의 테스트를 각각 고치면 같은 기계적
- * 수정을 서른세 번 하고 한 번 틀린다. 신원을 여기 한 곳에 두면 그날 바뀌는
- * 파일은 이 파일 하나다 — 테스트가 확인하는 게임 동작은 손대지 않는다.
+ * 왜 모으는가: 라우트 테스트 전부가 `app.inject` 를 직접 부르던 시절에는 모든
+ * 요청이 암묵적으로 'local' 플레이어였다. 계정이 들어오면서 모든 요청에
+ * `Authorization: Bearer` 가 필요해졌는데, 그때 서른세 개의 테스트를 각각
+ * 고쳤다면 같은 기계적 수정을 서른세 번 하고 한 번 틀렸을 것이다. 신원이 여기
+ * 한 곳에 있어서 그날 바뀐 파일은 이 파일 하나다 — 테스트가 확인하는 게임
+ * 동작은 한 줄도 손대지 않았다.
  */
 
 /**
  * 임시 세이브 파일 위에 앱을 세운다. 임시 디렉터리는 `app.close()` 가 지운다 —
  * 테스트가 저장소 루트에 `.data/` 를 남기지 않게 하는 것이 원래 목적이었고,
  * 정리 시점을 앱 수명에 묶어 두면 테스트마다 뒷정리를 적을 필요가 없다.
- *
- * async 인 이유: 저장 계층이 비동기라 `buildApp` 이 저장소를 여는 것을 기다린다.
- * 가입·로그인이 앞에 붙는 날(A2)에도 바뀌는 것은 이 함수 안뿐이다.
  */
 export interface TestAppOptions extends BuildAppOptions {
   /**
@@ -42,41 +40,54 @@ export interface TestAppOptions extends BuildAppOptions {
    * 것이다. 기다리는 저장소를 앉혀 두면 그 틈이 매번 열린다.
    */
   waitingStore?: boolean
-  /**
-   * 앱을 세우기 전에 세이브 파일에 **그대로** 써 넣을 내용. 스키마를 통과하지
-   * 못하는 세이브 앞에서 서버가 무엇을 하는지 보려면 그런 세이브가 먼저 있어야
-   * 한다.
-   */
-  seedRawSave?: Record<string, unknown>
 }
 
 export async function buildTestApp(options: TestAppOptions = {}): Promise<FastifyInstance> {
-  const dir = mkdtempSync(join(tmpdir(), 'nogada-'))
-  const dataFile = join(dir, 'players.json')
-  const { waitingStore, seedRawSave, ...appOptions } = options
-  if (seedRawSave) {
-    // 세이브 파일에는 이제 계정·세션·캐릭터가 함께 있다. 테스트가 심는 것은
-    // 캐릭터의 원본이므로, 파일의 나머지 칸은 여기서 채운다 — 그 모양을 테스트
-    // 본문마다 다시 적게 하면 파일 형식이 바뀔 때마다 전부 고쳐야 한다.
-    const save = { nextUserId: 1, users: {}, sessions: {}, characters: seedRawSave, owners: {} }
-    writeFileSync(dataFile, JSON.stringify(save, null, 2), 'utf8')
-  }
+  const { waitingStore, ...appOptions } = options
+  // 세이브 파일을 밖에서 주면 그 파일 위에 세운다 — **그리고 지우지 않는다.**
+  // 같은 파일 위에 앱을 다시 세우는 테스트가 있고(캐릭터 행을 손으로 갈아 끼운
+  // 뒤 다시 읽히는지 보는 테스트), 앱을 닫을 때마다 지우면 그것이 불가능하다.
+  const own = appOptions.dataFile === undefined
+  const dir = own ? mkdtempSync(join(tmpdir(), 'nogada-')) : undefined
+  const dataFile = appOptions.dataFile ?? join(dir!, 'players.json')
 
   const app = await buildApp({
-    dataFile,
     ...appOptions,
+    dataFile,
     persistence:
       appOptions.persistence ??
       (waitingStore ? new WaitingStore(await JsonPersistence.open(dataFile)) : undefined),
   })
-  app.addHook('onClose', async () => {
-    rmSync(dir, { recursive: true, force: true })
-  })
+  if (dir) {
+    app.addHook('onClose', async () => {
+      rmSync(dir, { recursive: true, force: true })
+    })
+  }
   saveFiles.set(app, dataFile)
   return app
 }
 
 const saveFiles = new WeakMap<FastifyInstance, string>()
+
+/** 이 앱이 쓰는 세이브 파일의 경로. 같은 파일 위에 앱을 다시 세울 때 쓴다. */
+export function saveFileOf(app: FastifyInstance): string {
+  const file = saveFiles.get(app)
+  if (!file) throw new Error('buildTestApp 으로 세운 앱이 아니다')
+  return file
+}
+
+/**
+ * 세이브 파일의 캐릭터 행 하나를 **그대로** 갈아 끼운다.
+ *
+ * 스키마를 통과하지 못하는 세이브 앞에서 서버가 무엇을 하는지 보려면 그런 행이
+ * 먼저 있어야 한다. 앱을 세우기 전에 심을 수 없는 이유는 캐릭터 키를 이제
+ * 가입이 발급하기 때문이다 — 누가 될지는 가입해 봐야 안다.
+ */
+export function writeRawCharacter(file: string, id: string, raw: unknown): void {
+  const save = JSON.parse(readFileSync(file, 'utf8')) as { characters: Record<string, unknown> }
+  save.characters[id] = raw
+  writeFileSync(file, JSON.stringify(save, null, 2), 'utf8')
+}
 
 /**
  * 이 앱의 세이브 파일에 **지금 실제로** 들어 있는 캐릭터 원본들. 행이 남았는지
@@ -167,22 +178,108 @@ export interface TestPlayer {
   /**
    * 이 플레이어의 캐릭터 id. 응답 안의 id 를 단정할 때 쓴다 — 글자로 'local' 을
    * 적어 두면 계정이 들어와 id 가 달라지는 날 그 단정이 조용히 거짓이 된다.
+   * 캐릭터를 만들지 않은 플레이어는 빈 문자열이다(아직 아무 행도 없다).
    */
   readonly id: string
+  /** 이 사람의 캐릭터 이름. 삭제 확인처럼 이름을 되짚는 요청이 쓴다. */
+  readonly name: string
+  /** 세션 토큰. 같은 사람으로 다른 앱에 다시 앉을 때 쓴다(`resume`). */
+  readonly token: string
   /** 이 플레이어로 보내는 요청. 신원을 싣는 방법은 이 안에서만 바뀐다. */
   inject(options: InjectOptions): Promise<LightMyRequestResponse>
 }
 
+export interface AsPlayerOptions {
+  /** 아이디를 지목한다. 생략하면 앱 안에서 겹치지 않는 것을 짓는다. */
+  username?: string
+  password?: string
+  name?: string
+  appearance?: string
+  /** 어느 마을에서 시작하는가. 생략하면 시작 맵이다 — 기존 테스트가 그 자리를 가정한다. */
+  village?: string
+  /** 계정만 열고 캐릭터는 만들지 않는다. "캐릭터 없는 사람"이 무엇을 보는지 시험할 때. */
+  withoutCharacter?: boolean
+  /**
+   * 이미 있는 사람으로 **다시 앉는다** — 가입하지 않고 그 토큰을 그대로 쓴다.
+   * 같은 세이브 파일 위에 앱을 다시 세운 뒤 "그 사람"으로 이어 물으려면 필요하다.
+   */
+  resume?: TestPlayer
+}
+
+/** 한 앱 안에서 아이디가 겹치지 않게 하는 번호. 겹치면 두 번째 가입이 409 다. */
+let accountSeq = 0
+
 /**
- * 요청을 보낼 플레이어를 얻는다.
+ * 요청을 보낼 플레이어를 얻는다 — **가입하고, 로그인하고, 캐릭터를 만든다.**
  *
- * 지금은 서버가 계정을 모르므로 모든 요청이 곧 `LOCAL_PLAYER_ID` 다 — 헤더 없이
- * 그냥 보낸다. A2 에서 이 함수가 가입·로그인을 수행하고 받은 토큰을 매 요청의
- * `Authorization` 헤더에 실으면, 테스트 본문은 한 줄도 바뀌지 않는다.
+ * 테스트 본문이 이 셋을 각자 적지 않는 것이 이 함수의 존재 이유다. 신원을 싣는
+ * 방법(`Authorization: Bearer`)도, 캐릭터가 어디서 시작하는지도 여기서만 정한다.
  */
-export async function asPlayer(app: FastifyInstance): Promise<TestPlayer> {
-  return {
-    id: LOCAL_PLAYER_ID,
-    inject: (options) => app.inject(options),
+export async function asPlayer(
+  app: FastifyInstance,
+  options: AsPlayerOptions = {},
+): Promise<TestPlayer> {
+  if (options.resume) {
+    const { id, name, token } = options.resume
+    return { id, name, token, inject: bearerInject(app, token) }
   }
+
+  accountSeq += 1
+  const username = options.username ?? `테스터${accountSeq}`
+  const password = options.password ?? 'nogada-password'
+  const name = options.name ?? '아무개'
+
+  const registered = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { username, password },
+  })
+  if (registered.statusCode !== 201) {
+    throw new Error(`가입하지 못했다: ${registered.statusCode} ${registered.body}`)
+  }
+
+  // 가입이 준 토큰을 그냥 쓰지 않고 한 번 더 로그인하는 이유: 테스트마다 로그인
+  // 경로가 실제로 열려 있는지 확인하게 된다. 가입만 통과하고 로그인이 깨진
+  // 서버는 새 사람만 받고 돌아온 사람은 못 받는 서버다.
+  const loggedIn = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { username, password },
+  })
+  if (loggedIn.statusCode !== 200) {
+    throw new Error(`로그인하지 못했다: ${loggedIn.statusCode} ${loggedIn.body}`)
+  }
+  const token = (loggedIn.json() as { token: string }).token
+  const inject = bearerInject(app, token)
+
+  if (options.withoutCharacter) return { id: '', name, token, inject }
+
+  const created = await inject({
+    method: 'POST',
+    url: '/api/me/character',
+    payload: {
+      name,
+      appearance: options.appearance ?? DEFAULT_APPEARANCE,
+      // 시작 맵을 기본으로 두는 이유: 기존 테스트들이 "새 플레이어는 시작 맵에
+      // 서 있다"를 딛고 서서 전환표를 밟는다(app.test.ts 의 enterField).
+      village: options.village ?? START_MAP_ID,
+    },
+  })
+  if (created.statusCode !== 201) {
+    throw new Error(`캐릭터를 만들지 못했다: ${created.statusCode} ${created.body}`)
+  }
+
+  return { id: (created.json() as { player: PlayerState }).player.id, name, token, inject }
+}
+
+function bearerInject(
+  app: FastifyInstance,
+  token: string,
+): (options: InjectOptions) => Promise<LightMyRequestResponse> {
+  return (options) =>
+    app.inject({
+      ...options,
+      // 테스트가 직접 준 헤더를 덮지 않는다 — 잘못된 토큰을 일부러 싣는 테스트가 있다.
+      headers: { authorization: `Bearer ${token}`, ...options.headers },
+    })
 }

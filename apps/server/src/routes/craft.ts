@@ -2,8 +2,8 @@ import { randomInt, randomUUID } from 'node:crypto'
 import { CraftRequestSchema, createRng, type GameData } from '@nogada/shared'
 import type { FastifyInstance } from 'fastify'
 import { performCraft } from '../services/craftService.js'
+import { requireAccount } from '../auth/sessions.js'
 import { NO_CHARACTER, applyToCharacter } from '../state/applyToCharacter.js'
-import { LOCAL_PLAYER_ID } from '../state/constants.js'
 import type { Persistence } from '../state/persistence.js'
 
 export function registerCraftRoutes(
@@ -15,7 +15,7 @@ export function registerCraftRoutes(
     const parsed = CraftRequestSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ code: 'bad_request' })
 
-    const result = await applyToCharacter(store, LOCAL_PLAYER_ID, (player) =>
+    const result = await applyToCharacter(store, requireAccount(request).characterId, (player) =>
       performCraft({
         player,
         data,
