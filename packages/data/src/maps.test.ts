@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { loadGameData } from './load.js'
-import { START_MAP_ID, WORLD_MAP_ID, parseMaps, startVillages } from './maps.js'
+import { START_MAP_ID, WORLD_MAP_ID, parseMaps, startVillages, villageField } from './maps.js'
 import type { GameData, NodeDef } from '@nogada/shared'
 
 const NODES: Record<string, NodeDef> = {
@@ -161,5 +161,63 @@ describe('startVillages', () => {
   it('월드맵에서 나가는 전환이 없으면 조용히 빈 목록을 주지 않고 말한다', () => {
     const empty = { maps: {}, transitions: [] } as unknown as GameData
     expect(() => startVillages(empty)).toThrow(WORLD_MAP_ID)
+  })
+})
+
+describe('villageField', () => {
+  // 왜: "시작 마을 = 첫 숙련도" 는 이 게임의 설계라 생성 화면이 말해야 하는데,
+  //     그 대응을 화면에 적으면 채집장의 노드를 갈아끼우는 날 화면만 옛말을 한다.
+  it('마을마다 대표 채집장과 그 기술이 하나로 정해진다', () => {
+    const data = loadGameData()
+    for (const village of startVillages(data)) {
+      const field = villageField(data, village.id)
+      // 채집장은 마을에서 바로 들어가는 맵이어야 한다 — 유도의 출발점이 전환표다.
+      const reachable = data.transitions.some(
+        (t) => t.fromMap === village.id && t.toMap === field.map.id,
+      )
+      expect(reachable).toBe(true)
+      // 그 맵의 노드가 전부 같은 기술이어야 "그 마을의 기술" 이라 부를 수 있다.
+      const skills = new Set(
+        Object.values(data.placements)
+          .filter((p) => p.mapId === field.map.id)
+          .map((p) => data.nodes[p.nodeId]!.skill),
+      )
+      expect([...skills]).toEqual([field.skill])
+    }
+  })
+
+  // 왜: 네 마을이 서로 다른 기술을 가리키는 것이 "마을을 고르는 것이 곧 첫
+  //     숙련도를 고르는 것" 이라는 설계 그 자체다. 둘이 겹치면 고르는 화면에서는
+  //     다른 마을인데 시작하는 자리가 같아진다.
+  it('마을마다 서로 다른 기술이다', () => {
+    const data = loadGameData()
+    const skills = startVillages(data).map((v) => villageField(data, v.id).skill)
+    expect(new Set(skills).size).toBe(skills.length)
+  })
+
+  // 왜: 개발용 시험장에는 네 기술이 섞여 있다. 그것을 "마을에서 들어가는 맵"
+  //     이라는 이유만으로 대표로 삼으면 눈의 마을이 광물 마을이 될 수도 있다.
+  it('여러 기술이 섞인 맵은 대표가 되지 않는다', () => {
+    const data = loadGameData()
+    // 눈의 마을은 얼음 채집장과 개발용 시험장 둘 다를 뒷문으로 갖고 있다.
+    expect(villageField(data, START_MAP_ID).skill).toBe('ice')
+  })
+
+  // 왜: 조용히 첫 번째를 고르면 채집장을 잇는 것을 잊은 마을이 남의 기술을
+  //     내걸고, 그 어긋남은 사람이 눈치챌 때까지 산다.
+  it('대표를 하나로 정할 수 없으면 던진다', () => {
+    const data = loadGameData()
+    // 얼음 채집장의 배치를 통째로 지우면 눈의 마을에는 후보가 없어진다.
+    const placements = Object.fromEntries(
+      Object.entries(data.placements).filter(([, p]) => p.mapId !== '얼음채집장'),
+    )
+    const broken = { ...data, placements } as GameData
+    expect(() => villageField(broken, START_MAP_ID)).toThrow(START_MAP_ID)
+  })
+
+  // 왜: 마을이 아닌 맵으로 물으면 답이 없다. 빈 값을 돌려주면 그 물음이 어디서
+  //     왔는지 모르는 채로 화면이 비어 나온다.
+  it('시작 마을이 아닌 맵으로 물으면 던진다', () => {
+    expect(() => villageField(loadGameData(), '얼음채집장')).toThrow('얼음채집장')
   })
 })

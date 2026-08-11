@@ -1,4 +1,4 @@
-import type { Condition, DialogueRule, FactValue, GameData, MilestoneDef } from '@nogada/shared'
+import type { Condition, DialogueRule, FactValue, GameData, MapDef, MilestoneDef } from '@nogada/shared'
 import {
   EVENT_ORDER,
   ONCE_EVENTS,
@@ -12,6 +12,7 @@ import {
   toolAppliesTo,
 } from '@nogada/shared'
 import { dialogueLocation } from './dialogueParse.js'
+import { startVillages, villageField } from './maps.js'
 import type { MapTerrain } from './placements.js'
 
 /**
@@ -808,4 +809,49 @@ export function collectDialogueNotices(data: GameData): string[] {
   return [...totalLinesByFact.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([fact, lineCount]) => `대사 ${lineCount}줄이 ${fact} 를 기다린다`)
+}
+
+/**
+ * 시작 마을마다 대표 채집장이 정확히 하나로 정해지는지 검사한다(설계 규범 14).
+ *
+ * 캐릭터 생성 화면은 "이 마을을 고르면 이 숙련도로 시작한다"를 말해야 하고,
+ * 그 대응을 화면에 적지 않고 세계의 생김새에서 유도한다(maps.ts 의
+ * `villageField`). 유도가 실패하는 순간은 정확히 둘이다 — 마을에 채집장을
+ * 이어 주는 것을 잊었거나, 한 마을이 두 개의 채집장을 갖게 되었거나.
+ * **둘 다 화면이 조용히 틀린 말을 하게 되는 자리라 빌드를 세운다.**
+ *
+ * validateGameData 와 나눠 두지 않고 여기 붙이지 않은 이유는 반대다: 이 검사는
+ * 전환표와 배치가 이미 온전할 때에만 뜻이 있는데, 그 둘의 위반은 다른
+ * 검사들이 이미 말한다. 그래서 이 검사는 던지는 유도를 잡아 문장으로 옮기는
+ * 얇은 겉면이고, 진짜 규칙은 `villageField` 안에 한 번만 적혀 있다.
+ */
+export function validateVillageFields(data: GameData): string[] {
+  const violations: string[] = []
+  const claimed = new Map<string, string>()
+
+  let villages: MapDef[]
+  try {
+    villages = startVillages(data)
+  } catch (err) {
+    return [`시작 마을 목록을 만들 수 없다: ${(err as Error).message}`]
+  }
+
+  for (const village of villages) {
+    try {
+      const field = villageField(data, village.id)
+      // 두 마을이 같은 채집장을 대표로 삼으면 "시작 마을 = 첫 숙련도" 가 둘로
+      // 갈라진다 — 고르는 화면에서는 서로 다른 마을인데 시작하는 자리는 같다.
+      const owner = claimed.get(field.map.id)
+      if (owner) {
+        violations.push(
+          `마을 "${village.id}" 와 "${owner}" 가 같은 채집장 "${field.map.id}" 를 대표로 삼는다`,
+        )
+      }
+      claimed.set(field.map.id, village.id)
+    } catch (err) {
+      violations.push((err as Error).message)
+    }
+  }
+
+  return violations
 }

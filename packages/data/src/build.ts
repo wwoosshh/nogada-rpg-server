@@ -22,6 +22,7 @@ import {
   validateGameData,
   validateMapSpawns,
   validateSpeakerPlacements,
+  validateVillageFields,
 } from './validate.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -142,6 +143,8 @@ const violations = [
   ...validateTransitions(data, terrains),
   ...validatePlaces(data, terrains),
   ...validateSchedules(data),
+  // 마을 → 대표 숙련도는 화면이 아니라 여기서 정해진다(설계 규범 14).
+  ...validateVillageFields(data),
 ]
 if (violations.length > 0) fail(violations)
 

@@ -1,4 +1,12 @@
-import type { GameData, MapDef, NodeDef, NodePlacement, PlaceDef, PlayerLocation } from '@nogada/shared'
+import type {
+  GameData,
+  MapDef,
+  NodeDef,
+  NodePlacement,
+  PlaceDef,
+  PlayerLocation,
+  SkillId,
+} from '@nogada/shared'
 import { addUnique, requireCell } from './parse.js'
 import { parsePlaces } from './places.js'
 import { type MapTerrain, parsePlacements, parseSpawn, parseTerrain } from './placements.js'
@@ -70,6 +78,69 @@ export function startVillages(data: GameData): MapDef[] {
     )
   }
   return villages
+}
+
+/** 마을 하나가 데리고 있는 채집장과, 그 채집장이 가르치는 기술. */
+export interface VillageField {
+  map: MapDef
+  skill: SkillId
+}
+
+/**
+ * 마을 → 대표 숙련도. **어디에도 적혀 있지 않고 세계의 생김새에서 나온다**(설계 규범 14).
+ *
+ * "시작 마을 = 첫 숙련도" 는 이 게임의 설계이므로 캐릭터 생성 화면이 그것을
+ * 말해야 하는데, 그 대응을 카드에 적어 두면 마을을 하나 더 그리거나 채집장의
+ * 노드를 갈아끼우는 날 화면만 옛말을 한다 — 시작 칸 좌표를 세 곳에 박아 뒀던
+ * 것과 같은 종류의 중복이다.
+ *
+ * 유도의 규칙은 셋이다:
+ * 1. 마을에서 나가는 전환 중 월드맵과 다른 마을을 뺀 것이 후보다.
+ * 2. 후보 중 **노드가 놓여 있고 그 노드가 전부 한 기술인** 맵이 채집장이다.
+ *    개발용 시험장은 네 기술이 섞여 있어 여기서 저절로 걸러진다 — "여러 기술을
+ *    한 맵에 두면 그 맵은 어느 마을의 정체성도 아니다" 가 규칙 자체다.
+ * 3. 그런 맵이 정확히 하나여야 한다. 없거나 둘이면 던진다.
+ *
+ * 던지는 이유: 조용히 첫 번째를 고르면 마을 둘이 같은 답을 내는 날에도 화면은
+ * 멀쩡해 보이고, 그 어긋남은 사람이 "왜 항구 마을이 얼음이지" 하고 눈치챌
+ * 때까지 산다. 빌드가 이것을 검사한다(validate.ts 의 validateVillageFields).
+ */
+export function villageField(data: GameData, villageId: string): VillageField {
+  const villages = new Set(startVillages(data).map((map) => map.id))
+  if (!villages.has(villageId)) throw new Error(`"${villageId}" 은 시작 마을이 아니다`)
+
+  const found: VillageField[] = []
+  const seen = new Set<string>()
+
+  for (const transition of data.transitions) {
+    if (transition.fromMap !== villageId) continue
+    const toMap = transition.toMap
+    if (toMap === WORLD_MAP_ID || villages.has(toMap) || seen.has(toMap)) continue
+    seen.add(toMap)
+
+    const map = data.maps[toMap]
+    if (!map) throw new Error(`전환표가 가리키는 맵 "${toMap}" 이 등록부에 없다`)
+
+    const skills = new Set<SkillId>()
+    for (const placement of Object.values(data.placements)) {
+      if (placement.mapId !== toMap) continue
+      const node = data.nodes[placement.nodeId]
+      // 빌드가 이미 막았다(validateGameData 의 배치 검사) — 여기 닿았다면 데이터가 어긋난 것이다.
+      if (!node) throw new Error(`배치가 가리키는 노드 "${placement.nodeId}" 가 등록부에 없다`)
+      skills.add(node.skill)
+    }
+
+    if (skills.size === 1) found.push({ map, skill: [...skills][0]! })
+  }
+
+  if (found.length !== 1) {
+    const names = found.map((f) => f.map.id).join(', ') || '없음'
+    throw new Error(
+      `마을 "${villageId}" 의 대표 채집장을 하나로 정할 수 없다 (후보: ${names}) — ` +
+        `마을에서 바로 들어가는 맵 중 한 가지 기술의 노드만 놓인 맵이 정확히 하나여야 한다`,
+    )
+  }
+  return found[0]!
 }
 
 export interface ParsedMaps {

@@ -3,6 +3,7 @@ import {
   calcCraftSuccess,
   calcGatherChance,
   equippedToolTier,
+  type CreateCharacterRequest,
   type GameData,
   type MilestoneDef,
   type PlayerState,
@@ -13,13 +14,20 @@ import {
   ApiError,
   GameClient,
   NETWORK_ERROR,
+  setUnauthorizedObserver,
   type CraftOutcomeDto,
   type GatherOutcomeDto,
   type MoveOutcomeDto,
   type TalkOutcomeDto,
 } from '../api/GameClient.js'
+import { clearToken, readToken, writeToken } from '../api/sessionToken.js'
 import type { DetailMenuTab } from '../game/detailMenuTabs.js'
 import { syncClock } from '../time/clock.js'
+import {
+  describeServerError,
+  SERVER_UNREACHABLE,
+  type MessageOverrides,
+} from '../ui/serverMessages.js'
 
 /**
  * 캐릭터 머리 위에 띄울 행동 결과.
@@ -69,13 +77,37 @@ export interface Utterance {
 }
 
 /**
- * 서버 연결 상태.
+ * 게임 화면을 띄워도 되는가.
  *
  * 이 게임은 모든 판정을 서버가 한다. 서버에 닿지 못하면 채집도 제작도 불가능하므로
  * 반쯤 동작하는 화면을 보여주는 대신 진입 자체를 막는다. 오프라인 플레이(설계 문서
  * 3.4 의 인프로세스 서버)는 게임 구조가 자리잡은 뒤에 별도로 만든다.
+ *
+ * 계정이 생긴 뒤로 이 값은 **`boot` 에서 파생된다**(`gate()` 참고) —
+ * `'online'` 은 정확히 `boot === 'playing'` 이다. App.tsx 가 보는 창이 이 필드
+ * 하나뿐이라, 둘을 따로 적으면 언젠가 게이트가 사라진 채로 세계가 열린다.
  */
 export type Connection = 'connecting' | 'online' | 'offline'
+
+/**
+ * 게임에 들어가기까지의 국면 — 화면 하나에 하나씩 대응한다(설계 §5).
+ *
+ * `'unreachable'` 을 따로 두는 것이 규범 12 의 요구다: **토큰 없음 / 토큰 거부 /
+ * 서버 불통은 서로 다른 화면이어야 한다.** 앞의 둘은 `'title'` 에서 `session` 이
+ * 가르고(각각 "시작" 과 "만료되었습니다"), 서버에 말 자체를 못 건 경우만
+ * 이 국면으로 온다 — 그 셋을 한 화면에 뭉치면 "다시 시도" 를 눌러야 하는
+ * 상황과 "로그인해야 하는" 상황이 구별되지 않는다.
+ */
+export type BootPhase = 'checking' | 'title' | 'auth' | 'creating' | 'playing' | 'unreachable'
+
+/**
+ * 저장된 토큰이 지금 무엇인가.
+ *
+ * - `'none'` — 토큰이 없다. 처음 켠 기기이거나 로그아웃했다.
+ * - `'rejected'` — 토큰이 있었지만 서버가 거절했다(만료·로그아웃된 세션).
+ * - `'ready'` — 서버가 받아들였다. 타이틀이 "이어서 하기" 를 내놓을 수 있다.
+ */
+export type SessionState = 'none' | 'rejected' | 'ready'
 
 /**
  * 화자가 없는 말 — 대사창 자리에 뜨는 짧은 안내.
@@ -122,18 +154,38 @@ interface GameStore {
   data: GameData
   player: PlayerState | null
   connection: Connection
+  boot: BootPhase
+  session: SessionState
+  /** 게임 앞 화면들이 띄울 실패 한 줄. 화면마다 문구를 짓지 않고 여기 하나만 읽는다. */
+  gateError: string | null
+  /** 게임 앞 화면이 서버의 답을 기다리는 중. 버튼을 잠그고 두 번 눌리는 것을 막는다. */
+  gateBusy: boolean
+  /** 캐릭터 삭제 확인 창이 떠 있는가. 설정 탭(Phaser)이 열고 DOM 이 그린다. */
+  confirmingDelete: boolean
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
   notice: Notice | null
   menuRequest: MenuRequest | null
   connect: () => Promise<void>
+  showAuth: () => void
+  showTitle: () => void
+  authenticate: (mode: AuthMode, username: string, password: string) => Promise<void>
+  resume: () => Promise<void>
+  createCharacter: (req: CreateCharacterRequest) => Promise<void>
+  logout: () => Promise<void>
+  askDeleteCharacter: () => void
+  cancelDeleteCharacter: () => void
+  deleteCharacter: (confirmName: string) => Promise<void>
   gather: (instanceId: string) => Promise<void>
   craft: (recipeId: string) => Promise<void>
   talk: (speakerId: string) => Promise<void>
   move: (x: number, y: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
 }
+
+/** 가입인가 로그인인가. 화면 하나가 둘을 오가므로(설계 §5) 값으로 받는다. */
+export type AuthMode = 'login' | 'register'
 
 let actionSeq = 0
 let milestoneSeq = 0
@@ -147,14 +199,33 @@ function isNetworkFailure(err: unknown): boolean {
 }
 
 /**
+ * 국면 하나를 그 국면이 뜻하는 연결 상태와 **함께** 낸다.
+ *
+ * App.tsx 는 `connection` 만 보고 세계를 띄울지 정한다(그 파일은 불가침이다).
+ * 두 값을 호출자마다 따로 적으면 언젠가 한쪽만 바뀌고, 그 한 번이 캐릭터도
+ * 없는 상태에서 WorldScene 이 열리는 것이거나 게임 중에 게이트가 화면을
+ * 덮는 것이 된다.
+ */
+function gate(boot: BootPhase): { boot: BootPhase; connection: Connection } {
+  if (boot === 'playing') return { boot, connection: 'online' }
+  if (boot === 'checking') return { boot, connection: 'connecting' }
+  return { boot, connection: 'offline' }
+}
+
+/**
  * 게임 상태의 단일 소유자.
  * Phaser 씬과 React 컴포넌트 둘 다 이 스토어만 읽고 쓴다.
  * 어느 쪽도 플레이어 상태 사본을 따로 들고 있지 않다.
  */
-export const useGameStore = create<GameStore>((set) => ({
+export const useGameStore = create<GameStore>((set, get) => ({
   data: loadGameData(),
   player: null,
   connection: 'connecting',
+  boot: 'checking',
+  session: 'none',
+  gateError: null,
+  gateBusy: false,
+  confirmingDelete: false,
   lastAction: null,
   milestone: null,
   utterance: null,
@@ -162,26 +233,123 @@ export const useGameStore = create<GameStore>((set) => ({
   menuRequest: null,
 
   /**
-   * 게임 진입 조건. 서버 시계를 맞추고 플레이어 상태를 받아온다.
+   * 부팅 — 시계를 맞추고, 저장된 토큰이 아직 유효한지 서버에 한 번 묻는다.
    *
-   * 둘 중 하나라도 실패하면 offline 으로 두고 게이트가 진입을 막는다. 다시 시도
-   * 버튼도 이 함수를 부르므로, 최초 접속과 재연결이 같은 경로를 탄다.
+   * 세 갈래로 끝난다(설계 규범 12): 토큰이 없으면 타이틀, 있는데 거절당하면
+   * 타이틀 + 만료 안내(401 관찰자가 옮긴다), 서버에 말 자체를 못 걸면 불통 화면.
+   * "다시 시도" 도 이 함수를 부르므로 최초 부팅과 재시도가 같은 길을 탄다.
    */
   connect: async () => {
-    set({ connection: 'connecting' })
+    set({ ...gate('checking'), gateError: null })
 
+    // 시계가 먼저다. 세계 시각 없이 들어가면 행동 간격 판정이 로컬 시계로
+    // 흘러가고, 그건 서버가 전부 거절하는 화면이 된다.
     if (!(await syncClock())) {
-      set({ connection: 'offline' })
+      set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
+      return
+    }
+
+    if (!readToken()) {
+      set({ ...gate('title'), session: 'none', player: null })
       return
     }
 
     try {
-      const { player } = await GameClient.getState()
-      set({ player, connection: 'online' })
+      const { character } = await GameClient.me()
+      // **놀던 사람이 잠깐 끊겼다 돌아온 것이면 타이틀을 거치지 않는다.** 게임
+      // 중의 통신 실패도 이 함수로 돌아오는데, 그때마다 타이틀을 보여주면
+      // 지하철에서 한 칸 지날 때마다 게임 밖으로 튕겨 나간다.
+      if (character && get().player) {
+        set({ player: character, ...gate('playing'), session: 'ready', gateError: null })
+        return
+      }
+      set({ ...gate('title'), session: 'ready', gateError: null })
     } catch (err) {
-      set({ connection: 'offline' })
-      console.error(err)
+      // 401 이면 관찰자가 이미 타이틀로 옮겨 놓았다 — 여기서 덮으면 "만료됐다"가
+      // "서버에 연결할 수 없다"로 바뀌어, 사람이 할 수 있는 일(다시 로그인)을
+      // 할 수 없는 일(서버를 켜기)로 잘못 안내한다.
+      if (get().boot !== 'checking') return
+      set({ ...gate('unreachable'), gateError: describeServerError(err) })
     }
+  },
+
+  showAuth: () => set({ ...gate('auth'), gateError: null }),
+
+  /** 로그인 화면에서 뒤로. 만료 안내는 이미 읽었으므로 지운다. */
+  showTitle: () => set({ ...gate('title'), gateError: null }),
+
+  /**
+   * 가입 또는 로그인. 성공하면 토큰을 저장하고 곧바로 이어서 하기와 같은 길을 탄다.
+   *
+   * 가입 직후 로그인 화면으로 되돌리지 않는 것은 서버와 같은 결정이다
+   * (routes/auth.ts) — 방금 적은 것을 다시 적게 할 이유가 없다.
+   */
+  authenticate: async (mode, username, password) => {
+    await runGateStep(set, AUTH_MESSAGES, async () => {
+      const { token } =
+        mode === 'register'
+          ? await GameClient.register(username, password)
+          : await GameClient.login(username, password)
+      writeToken(token)
+      await loadCharacterOrCreate(set)
+    })
+  },
+
+  /** 이어서 하기 — 토큰은 이미 유효하다고 확인됐다(connect). 캐릭터만 확인한다. */
+  resume: async () => {
+    await runGateStep(set, {}, () => loadCharacterOrCreate(set))
+  },
+
+  createCharacter: async (req) => {
+    await runGateStep(set, CREATE_MESSAGES, async () => {
+      const { player } = await GameClient.createCharacter(req)
+      set({ player, ...gate('playing'), session: 'ready' })
+    })
+  },
+
+  /**
+   * 로그아웃 — 서버의 세션 행을 지우고 이 기기의 토큰도 버린다.
+   *
+   * 서버 쪽이 실패해도 토큰은 버린다. 남겨 두면 "로그아웃했는데 아직 로그인
+   * 상태" 라는, 사용자가 고칠 방법이 없는 상태가 된다 — 죽지 않은 세션은
+   * 만료로 저절로 닫히지만, 버리지 않은 토큰은 스스로 사라지지 않는다.
+   */
+  logout: async () => {
+    set({ gateBusy: true, gateError: null })
+    try {
+      await GameClient.logout()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      clearToken()
+      set({
+        ...gate('title'),
+        session: 'none',
+        player: null,
+        confirmingDelete: false,
+        gateBusy: false,
+        gateError: null,
+      })
+    }
+  },
+
+  askDeleteCharacter: () => set({ confirmingDelete: true, gateError: null }),
+  cancelDeleteCharacter: () => set({ confirmingDelete: false, gateError: null }),
+
+  /**
+   * 캐릭터를 지운다. **계정은 남는다** — 잘못 고른 외형·마을 때문에 계정까지
+   * 버리게 하지 않는다(서버 routes/me.ts).
+   */
+  deleteCharacter: async (confirmName) => {
+    await runGateStep(set, DELETE_MESSAGES, async () => {
+      await GameClient.deleteCharacter(confirmName)
+      set({
+        ...gate('title'),
+        session: 'ready',
+        player: null,
+        confirmingDelete: false,
+      })
+    })
   },
 
   gather: async (instanceId) => {
@@ -209,7 +377,7 @@ export const useGameStore = create<GameStore>((set) => ({
       if (err instanceof ApiError && err.code === 'too_fast') return
       // 서버와 끊겼으면 머리 위 글자로 알릴 게 아니라 게이트로 내보낸다.
       if (isNetworkFailure(err)) {
-        set({ connection: 'offline' })
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
         return
       }
       pushAction(set, describeError(err), 'bad')
@@ -241,7 +409,7 @@ export const useGameStore = create<GameStore>((set) => ({
     } catch (err) {
       if (err instanceof ApiError && err.code === 'too_fast') return
       if (isNetworkFailure(err)) {
-        set({ connection: 'offline' })
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
         return
       }
       pushAction(set, describeError(err), 'bad')
@@ -269,7 +437,7 @@ export const useGameStore = create<GameStore>((set) => ({
     } catch (err) {
       // 서버와 끊겼으면 대사창이 아니라 게이트가 할 일이다 — 채집과 같다.
       if (isNetworkFailure(err)) {
-        set({ connection: 'offline' })
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
         return
       }
       if (err instanceof ApiError && err.code === 'not_here') {
@@ -298,7 +466,7 @@ export const useGameStore = create<GameStore>((set) => ({
       applyPlayer(set, outcome.player)
     } catch (err) {
       // 서버와 끊겼으면 세계를 다시 그릴 게 아니라 게이트가 할 일이다 — 채집과 같다.
-      if (isNetworkFailure(err)) set({ connection: 'offline' })
+      if (isNetworkFailure(err)) set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
       else console.error(err)
       throw err
     }
@@ -310,6 +478,77 @@ export const useGameStore = create<GameStore>((set) => ({
 }))
 
 type SetFn = (partial: Partial<GameStore>) => void
+
+/**
+ * **세션이 죽었다.** GameClient.request() 가 401 을 보면 여기로 온다.
+ *
+ * 토큰은 이미 버려졌다(그 파일). 여기서 하는 일은 화면을 옮기는 것뿐이다 —
+ * 그리고 그 화면은 "토큰이 없는" 타이틀과 달라야 한다: 방금까지 로그인된
+ * 상태였던 사람에게 아무 설명 없이 시작 화면을 내밀면, 자기 진행도가 사라진
+ * 줄 안다.
+ */
+setUnauthorizedObserver(() => {
+  useGameStore.setState({
+    ...gate('title'),
+    session: 'rejected',
+    player: null,
+    confirmingDelete: false,
+    gateBusy: false,
+    gateError: '로그인이 만료되었습니다. 다시 로그인해 주세요.',
+  })
+})
+
+/** 가입·로그인 화면에서만 뜻이 달라지는 코드들. 나머지는 공통표가 답한다. */
+const AUTH_MESSAGES: MessageOverrides = {
+  bad_request: '아이디는 3~16자의 영문·숫자·한글, 비밀번호는 8자 이상이어야 합니다.',
+}
+
+const CREATE_MESSAGES: MessageOverrides = {
+  bad_request: '이름은 2~12자여야 하고, 외형과 마을을 골라야 합니다.',
+}
+
+const DELETE_MESSAGES: MessageOverrides = {
+  bad_request: '캐릭터 이름을 적어 주세요.',
+}
+
+/**
+ * 게임 앞 화면에서 일어나는 서버 왕복 하나를 감싼다.
+ *
+ * 세 가지를 매번 같은 순서로 한다: 이전 실패를 지우고, 버튼을 잠그고, 실패는
+ * 한 줄로 옮겨 담는다. 화면마다 이 셋을 적으면 언젠가 한 화면이 잠금을
+ * 빼먹고, 그 화면은 버튼을 두 번 누르면 요청이 두 번 나간다.
+ */
+async function runGateStep(
+  set: SetFn,
+  messages: MessageOverrides,
+  step: () => Promise<void>,
+): Promise<void> {
+  set({ gateBusy: true, gateError: null })
+  try {
+    await step()
+  } catch (err) {
+    set({ gateError: describeServerError(err, messages) })
+    console.error(err)
+  } finally {
+    set({ gateBusy: false })
+  }
+}
+
+/**
+ * 로그인이 끝난 뒤의 갈림길 — 캐릭터가 있으면 들어가고, 없으면 만들러 간다.
+ *
+ * 가입·로그인·이어서 하기 셋이 같은 이 길을 탄다. 갈라 두면 "가입 직후에만
+ * 캐릭터 생성으로 간다" 같은 규칙이 생기고, 그러면 캐릭터를 지운 사람이
+ * 로그인해서 갈 곳이 없어진다.
+ */
+async function loadCharacterOrCreate(set: SetFn): Promise<void> {
+  const { character } = await GameClient.me()
+  if (character) {
+    set({ player: character, ...gate('playing'), session: 'ready' })
+    return
+  }
+  set({ ...gate('creating'), session: 'ready', player: null })
+}
 
 function pushAction(
   set: SetFn,

@@ -140,3 +140,199 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/*
+ * 게임에 들어가기 전의 화면들 — 타이틀·로그인/가입·캐릭터 생성.
+ *
+ * 기준은 가로 화면 812x375 다. 세로가 375px 뿐이라 세로 여백을 넉넉히 두면
+ * 버튼이 화면 밖으로 밀린다. 그래서 이 화면들은 세로로 스크롤될 수 있게 두고
+ * (overflow-y: auto), 상자 자체의 여백은 --space-2 를 기본으로 쓴다.
+ */
+.screen {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  background: var(--c-ink);
+  padding: var(--space-2);
+  /* 가로 화면에서 노치·펀치홀을 피한다 — 상단 바와 같은 규칙이다. */
+  padding-left: max(var(--space-2), env(safe-area-inset-left));
+  padding-right: max(var(--space-2), env(safe-area-inset-right));
+}
+
+.screen__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 560px;
+  background: var(--c-panel);
+  border: 2px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+}
+
+/* 입력이 둘뿐인 화면(타이틀·로그인)은 좁게 둔다 — 가로로 벌어진 입력 칸은 누르기 어렵다. */
+.screen__panel--narrow {
+  max-width: 320px;
+}
+
+.screen__title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 400;
+  text-align: center;
+  color: var(--c-parchment);
+}
+
+.screen__title--small {
+  font-size: 16px;
+}
+
+.screen__sub {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--c-parchment-dim);
+}
+
+.screen__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--c-parchment-dim);
+}
+
+.screen__error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--c-danger);
+}
+
+.screen__tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.screen__tab {
+  flex: 1 1 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--c-panel-edge);
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+  cursor: pointer;
+}
+
+.screen__tab--on {
+  color: var(--c-accent);
+  border-bottom-color: var(--c-accent);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.field__label {
+  font-size: 11px;
+  color: var(--c-parchment-dim);
+}
+
+/*
+ * global.css 가 문서 전체의 선택을 끄는데(길게 눌렀을 때 확대 메뉴가 뜨지
+ * 않게 한다), 입력 칸에서는 그것이 곧 "적은 것을 고쳐 지울 수 없다" 가 된다.
+ * 여기서만 되돌린다.
+ */
+.field__input {
+  -webkit-user-select: text;
+  user-select: text;
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  font: inherit;
+  font-size: 14px;
+  color: var(--c-parchment);
+}
+
+.field__input:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+
+.btn {
+  background: var(--c-panel-edge);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  font: inherit;
+  font-size: 14px;
+  color: var(--c-parchment);
+  cursor: pointer;
+}
+
+.btn--primary {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-ink);
+}
+
+.btn--ghost {
+  background: none;
+  font-size: 12px;
+  color: var(--c-parchment-dim);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 마을 카드 넷. 가로 화면이라 한 줄에 넷이 들어간다 — 세로 375px 을 카드가 먹지 않는다. */
+.villages {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-1);
+}
+
+.village {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-1);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.village--on {
+  border-color: var(--c-accent);
+  background: var(--c-ink-soft);
+}
+
+.village__name {
+  font-size: 13px;
+  color: var(--c-parchment);
+}
+
+.village__skill {
+  font-size: 12px;
+  color: var(--c-accent);
+}
+
+.village__field {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--c-parchment-dim);
+}
