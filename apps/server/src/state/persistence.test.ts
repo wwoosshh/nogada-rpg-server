@@ -1,12 +1,16 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadGameData, startLocation } from '@nogada/data'
 import type { PlayerState } from '@nogada/shared'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { runner } from 'node-pg-migrate'
+import pg from 'pg'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { JsonPersistence } from './jsonPersistence.js'
 import { createInitialPlayer } from './newCharacter.js'
 import { CharacterConflictError, CharacterStateError, type Persistence } from './persistence.js'
+import { PostgresPersistence } from './postgresPersistence.js'
 
 /**
  * 계약 스위트 — **구현마다 다시 쓰지 않는다.**
@@ -59,9 +63,71 @@ const jsonHarness: Harness = {
   cleanup: async () => undefined,
 }
 
-const harnesses: Harness[] = [jsonHarness]
+/**
+ * 진짜 Postgres 를 가리켰을 때만 돈다.
+ *
+ * CI 가 없으므로 이 스위트가 저절로 돌 일은 없다 — 대신 **완료 관문**으로
+ * 대신한다(설계 규범 10): 태스크를 끝내기 전에 `docker compose up` 한 뒤 한 번
+ * 돌려 출력을 보고한다. 건너뛰는 것을 통과로 세지 않으려고 이름에 남긴다.
+ */
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL
 
-describe.each(harnesses)('Persistence 계약 — $name', (harness) => {
+const postgresHarness: Harness = {
+  name: 'PostgreSQL',
+  open: async () => PostgresPersistence.open(TEST_DATABASE_URL!),
+  async putRaw(id, raw) {
+    await withClient(async (client) => {
+      await client.query(
+        `INSERT INTO characters (id, state) VALUES ($1, $2)
+         ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state`,
+        [id, JSON.stringify(raw)],
+      )
+    })
+  },
+  async getRaw(id) {
+    return withClient(async (client) => {
+      const result = await client.query<{ state: unknown }>(
+        'SELECT state FROM characters WHERE id = $1',
+        [id],
+      )
+      return result.rows[0]?.state
+    })
+  },
+  // 테스트마다 표를 비운다. 앞 테스트가 남긴 캐릭터가 "없는 캐릭터는 null" 을
+  // 조용히 거짓으로 만들면 안 된다.
+  cleanup: () => withClient(async (client) => void (await client.query('DELETE FROM characters'))),
+}
+
+async function withClient<T>(use: (client: pg.Client) => Promise<T>): Promise<T> {
+  const client = new pg.Client({ connectionString: TEST_DATABASE_URL })
+  await client.connect()
+  try {
+    return await use(client)
+  } finally {
+    await client.end()
+  }
+}
+
+describe('Persistence 계약 — JSON 파일', () => {
+  contractSuite(jsonHarness)
+})
+
+describe.skipIf(!TEST_DATABASE_URL)('Persistence 계약 — PostgreSQL', () => {
+  // 표가 없으면 첫 질의부터 죽는다. 스키마의 출처는 마이그레이션 파일 하나여야
+  // 하므로 테스트가 CREATE TABLE 을 다시 적지 않고 그것을 돌린다.
+  beforeAll(async () => {
+    await runner({
+      databaseUrl: TEST_DATABASE_URL!,
+      dir: fileURLToPath(new URL('../../migrations', import.meta.url)),
+      migrationsTable: 'pgmigrations',
+      direction: 'up',
+    })
+  })
+
+  contractSuite(postgresHarness)
+})
+
+function contractSuite(harness: Harness): void {
   let store: Persistence
   /** 연 것은 모두 닫는다 — Postgres 는 열 때마다 풀이 하나씩 생긴다. */
   let opened: Persistence[]
@@ -227,4 +293,4 @@ describe.each(harnesses)('Persistence 계약 — $name', (harness) => {
     one!.dialogueHistory.said.push('노인.greet.abc')
     expect((await store.getCharacter('나'))?.dialogueHistory.said).toEqual([])
   })
-})
+}

@@ -12,6 +12,7 @@ import { LOCAL_PLAYER_ID } from './state/constants.js'
 import { JsonPersistence } from './state/jsonPersistence.js'
 import { createInitialPlayer } from './state/newCharacter.js'
 import { CharacterStateError, type Persistence } from './state/persistence.js'
+import { PostgresPersistence } from './state/postgresPersistence.js'
 
 export interface BuildAppOptions {
   /** 테스트에서 임시 파일을 쓰기 위해 주입한다. */
@@ -26,9 +27,7 @@ export interface BuildAppOptions {
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   const data = loadGameData()
-  const store =
-    options.persistence ??
-    (await JsonPersistence.open(options.dataFile ?? join(process.cwd(), '.data', 'players.json')))
+  const store = options.persistence ?? (await openStore(options.dataFile))
 
   // 개발 중 클라이언트(Vite dev server)와 오리진이 다르므로 허용한다.
   // x-server-now 는 커스텀 헤더라 명시하지 않으면 브라우저가 읽지 못한다.
@@ -74,6 +73,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await ensureLocalCharacter(store)
 
   return app
+}
+
+/**
+ * `DATABASE_URL` 이 저장소를 고른다 — 있으면 Postgres, 없으면 JSON 파일.
+ *
+ * 폴백을 남겨 두는 이유는 개발이 docker 없이도 돌아야 하기 때문이다(설계 §2).
+ * 같은 계약 스위트가 양쪽에서 통과하므로, 어느 쪽으로 개발했든 다른 쪽에서
+ * 처음 보는 동작이 나오지 않는다.
+ */
+async function openStore(dataFile: string | undefined): Promise<Persistence> {
+  const databaseUrl = process.env.DATABASE_URL
+  if (databaseUrl) return PostgresPersistence.open(databaseUrl)
+  return JsonPersistence.open(dataFile ?? join(process.cwd(), '.data', 'players.json'))
 }
 
 /**
