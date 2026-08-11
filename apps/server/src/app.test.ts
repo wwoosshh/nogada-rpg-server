@@ -59,28 +59,64 @@ async function enterSpeakerMap(me: TestPlayer): Promise<void> {
   await step(me, transitionBetween(startLocation(loadGameData()).mapId, speakerMapId(ELDER)))
 }
 
+/** GIT_SHA 를 잠깐 갈아 끼운다. 끝나면 원래대로 — 다음 테스트가 이 값을 물려받으면 안 된다. */
+async function withGitSha<T>(value: string | undefined, body: () => Promise<T>): Promise<T> {
+  const before = process.env.GIT_SHA
+  if (value === undefined) delete process.env.GIT_SHA
+  else process.env.GIT_SHA = value
+  try {
+    return await body()
+  } finally {
+    if (before === undefined) delete process.env.GIT_SHA
+    else process.env.GIT_SHA = before
+  }
+}
+
 describe('GET /api/health', () => {
   it('200 과 데이터 개수를 반환한다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-    const res = await me.inject({ method: 'GET', url: '/api/health' })
+    await withGitSha(undefined, async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      const res = await me.inject({ method: 'GET', url: '/api/health' })
 
-    // 밸런스 CSV 를 정당하게 고칠 때마다 이 패키지의 무관한 테스트가 깨지는 것을
-    // 막기 위해 하드코딩된 개수 대신 loadGameData() 에서 기대값을 뽑는다.
-    // 그래도 라우트가 실제 개수 보고를 멈추면(예: 필드를 하드코딩하거나 뒤바꾸면)
-    // 여전히 실패해야 하므로, 데이터가 최소한 비어 있지 않다는 것도 함께 확인한다.
-    const data = loadGameData()
-    const itemCount = Object.keys(data.items).length
-    const nodeCount = Object.keys(data.nodes).length
-    const recipeCount = Object.keys(data.recipes).length
-    expect(itemCount).toBeGreaterThan(0)
-    expect(nodeCount).toBeGreaterThan(0)
-    expect(recipeCount).toBeGreaterThan(0)
+      // 밸런스 CSV 를 정당하게 고칠 때마다 이 패키지의 무관한 테스트가 깨지는 것을
+      // 막기 위해 하드코딩된 개수 대신 loadGameData() 에서 기대값을 뽑는다.
+      // 그래도 라우트가 실제 개수 보고를 멈추면(예: 필드를 하드코딩하거나 뒤바꾸면)
+      // 여전히 실패해야 하므로, 데이터가 최소한 비어 있지 않다는 것도 함께 확인한다.
+      const data = loadGameData()
+      const itemCount = Object.keys(data.items).length
+      const nodeCount = Object.keys(data.nodes).length
+      const recipeCount = Object.keys(data.recipes).length
+      expect(itemCount).toBeGreaterThan(0)
+      expect(nodeCount).toBeGreaterThan(0)
+      expect(recipeCount).toBeGreaterThan(0)
 
-    expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ ok: true, items: itemCount, nodes: nodeCount, recipes: recipeCount })
+      expect(res.statusCode).toBe(200)
+      // GIT_SHA 가 없는 채로(로컬 개발, `docker build` 없이 tsx 로 바로 띄운 경우)
+      // 'dev' 를 돌려준다 — 배포된 서버와 구분하기 위해서다.
+      expect(res.json()).toEqual({
+        ok: true,
+        items: itemCount,
+        nodes: nodeCount,
+        recipes: recipeCount,
+        sha: 'dev',
+      })
 
-    await app.close()
+      await app.close()
+    })
+  })
+
+  it('GIT_SHA 환경변수가 있으면 그 값을 sha 로 돌려준다', async () => {
+    await withGitSha('abc1234', async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+      const res = await me.inject({ method: 'GET', url: '/api/health' })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json().sha).toBe('abc1234')
+
+      await app.close()
+    })
   })
 
   it('없는 경로는 404 를 반환한다', async () => {

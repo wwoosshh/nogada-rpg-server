@@ -160,7 +160,10 @@ jobs:
 
       - name: 컨테이너 다시 세우기
         working-directory: C:\nogada-server\nogada-rpg-server
+        # GIT_SHA 를 이미지에 새겨 넣는다 — /api/health 가 그것을 돌려주어야
+        # 미니PC 에 실제로 도는 코드가 이 배포가 맞는지 원격에서 확인할 수 있다.
         run: |
+          $env:GIT_SHA = (git rev-parse HEAD)
           docker compose -f docker-compose.prod.yml up -d --build
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
@@ -180,7 +183,7 @@ jobs:
               $res = Invoke-RestMethod -Uri 'http://localhost:3000/api/health' -TimeoutSec 5
               if ($res.ok -eq $true) {
                 $ok = $true
-                Write-Host "건강함: items=$($res.items) nodes=$($res.nodes) recipes=$($res.recipes)"
+                Write-Host "건강함: items=$($res.items) nodes=$($res.nodes) recipes=$($res.recipes) sha=$($res.sha)"
                 break
               }
               $last = ($res | ConvertTo-Json -Compress)

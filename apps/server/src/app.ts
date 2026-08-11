@@ -97,6 +97,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       items: Object.keys(data.items).length,
       nodes: Object.keys(data.nodes).length,
       recipes: Object.keys(data.recipes).length,
+      // 배포된 서버가 자기 커밋을 말할 수 있어야 원격에서 배포를 검증한다.
+      // Dockerfile 이 GIT_SHA 를 이미지에 새겨 넣고(ENV), 로컬에서 tsx 로
+      // 바로 띄운 서버에는 그 변수가 없으므로 'dev' 로 구분한다.
+      sha: process.env.GIT_SHA ?? 'dev',
     }
   })
 

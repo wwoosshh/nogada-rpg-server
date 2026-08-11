@@ -52,6 +52,13 @@ RUN pnpm data:build
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production PORT=3000
 
+# 배포된 서버가 자기 커밋을 말할 수 있어야 원격에서 배포를 검증한다.
+# `.git` 은 빌드 문맥에서 빠져 있으므로(.dockerignore) 이미지가 스스로 물을 수
+# 없다 — 빌드하는 쪽(docker-compose.prod.yml)이 값을 넣어 준다. 기본값
+# `unknown` 은 이 인자 없이 손으로 빌드했을 때를 표시한다.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 # 빌드 단계에서 만든 것만 옮긴다. pnpm 자체와 전역 스토어(중복된 패키지 사본)는
 # 여기 오지 않는다. `node` 사용자(uid 1000)는 base 이미지에 이미 있다 —
 # 루트로 도는 서버는 컨테이너를 벗어나는 사고의 첫 단추다.
