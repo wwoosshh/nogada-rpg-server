@@ -1,0 +1,10 @@
+# 셸 스크립트는 윈도 작업 PC 에서도 LF 로 둔다.
+#
+# 이 리포지토리는 `core.autocrlf=true` 인 윈도에서 개발되지만, 이 스크립트들이
+# 실제로 실행되는 곳은 리눅스 컨테이너와 미니PC 다. 체크아웃하면서 CRLF 가
+# 붙으면 `#!/bin/sh` 뒤에 보이지 않는 \r 이 따라붙어 "no such file or
+# directory" 나 "set: illegal option" 으로 죽는데, 그 오류는 원인을 전혀
+# 가리키지 않는다 — 눈에 보이지 않는 글자 하나짜리 사고라 규칙으로 막는다.
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf

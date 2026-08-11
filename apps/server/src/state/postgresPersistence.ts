@@ -163,4 +163,13 @@ export class PostgresPersistence extends Persistence {
     // SIGTERM 에 풀을 드레인한다 — 컨테이너가 멈출 때 쓰다 만 연결을 남기지 않는다.
     await this.pool.end()
   }
+
+  /**
+   * 연결 하나를 실제로 빌려서 묻는다. `SELECT 1` 이면 충분하다 — 확인하려는
+   * 것은 "DB 가 지금 대답하는가"이지 스키마가 아니다(스키마가 틀렸다면 그건
+   * 마이그레이션의 실패이고, 그쪽은 서버가 뜨기도 전에 엔트리포인트에서 멈춘다).
+   */
+  async ping(): Promise<void> {
+    await this.pool.query('SELECT 1')
+  }
 }

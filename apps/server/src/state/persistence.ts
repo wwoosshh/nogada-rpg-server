@@ -144,6 +144,17 @@ export abstract class Persistence {
   abstract close(): Promise<void>
 
   /**
+   * 저장소가 지금 대답하는가 — `GET /api/health` 가 묻고, 컨테이너의
+   * HEALTHCHECK 가 그 답을 본다.
+   *
+   * 기본은 아무것도 묻지 않는다. 파일 저장소에는 물어볼 상대가 없어서(열려
+   * 있으면 그만이다) 여기서 실패할 수 있는 것은 프로세스 밖으로 나가는 구현뿐이고,
+   * 그래서 추상 메서드가 아니라 기본 구현이다 — 새 저장소가 생길 때마다 "할 일
+   * 없음"을 다시 적게 하지 않는다.
+   */
+  async ping(): Promise<void> {}
+
+  /**
    * 판본이 필요 없는 읽기 — 그냥 보여 주기만 할 때(GET /api/state).
    *
    * **없으면 null 이다.** 예전 저장소는 없는 id 를 물으면 새 플레이어를 지어내

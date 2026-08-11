@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import { loadGameData } from '@nogada/data'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { requireSession } from './auth/sessions.js'
+import { parseCorsOrigin, parseTrustProxy } from './config.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerGatherRoutes } from './routes/gather.js'
@@ -26,13 +27,22 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false })
+  // trustProxy 는 요청마다 `request.ip` 가 무엇인지를 정한다 — 리버스 프록시
+  // 뒤에서 켜지 않으면 모든 요청이 프록시 IP 하나로 보이고, 프록시 없이 켜면
+  // 아무나 헤더를 지어내 IP 인 척한다. 어느 쪽이든 레이트리미터가 무력해지므로
+  // 배포 토폴로지가 정하게 두고, 기본은 끈 상태다(config.ts).
+  const app = Fastify({ logger: false, trustProxy: parseTrustProxy(process.env.TRUST_PROXY) })
   const data = loadGameData()
   const store = options.persistence ?? (await openStore(options.dataFile))
 
   // 개발 중 클라이언트(Vite dev server)와 오리진이 다르므로 허용한다.
+  // 배포에서는 `CORS_ORIGIN` 이 목록을 좁힌다 — 안드로이드 빌드의
+  // `capacitor://localhost` 까지 포함해야 앱에서 붙는다(.env.example).
   // x-server-now 는 커스텀 헤더라 명시하지 않으면 브라우저가 읽지 못한다.
-  app.register(cors, { origin: true, exposedHeaders: ['x-server-now'] })
+  app.register(cors, {
+    origin: parseCorsOrigin(process.env.CORS_ORIGIN),
+    exposedHeaders: ['x-server-now'],
+  })
 
   // 모든 응답에 서버 시각을 싣는다. 클라이언트가 채집·제작할 때마다 공짜로
   // 드리프트를 확인할 수 있어, 따로 동기화 요청을 보낼 필요가 줄어든다.
@@ -57,12 +67,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return reply.send(error)
   })
 
-  app.get('/api/health', () => ({
-    ok: true,
-    items: Object.keys(data.items).length,
-    nodes: Object.keys(data.nodes).length,
-    recipes: Object.keys(data.recipes).length,
-  }))
+  // 컨테이너의 HEALTHCHECK 가 두드리는 문이다. 프로세스가 살아 있다는 것만으로
+  // 초록불을 켜면, DB 가 끊긴 서버가 "건강함"을 달고 서서 모든 요청에 500 을
+  // 돌려주는 상태가 밖에서는 정상으로 보인다 — 그래서 저장소에 한 번 묻는다.
+  app.get('/api/health', async (_request, reply) => {
+    try {
+      await store.ping()
+    } catch (error) {
+      console.error(error)
+      return reply.code(503).send({ ok: false, code: 'store_unreachable' })
+    }
+
+    return {
+      ok: true,
+      items: Object.keys(data.items).length,
+      nodes: Object.keys(data.nodes).length,
+      recipes: Object.keys(data.recipes).length,
+    }
+  })
 
   // 인증 밖에 있는 것은 셋뿐이다: 서버가 살아 있는가(health), 지금 몇 시인가
   // (time), 그리고 게임의 문(auth). 나머지는 전부 "누구인가"에 답해야 한다.

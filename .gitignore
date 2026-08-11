@@ -23,6 +23,10 @@ assets/licensed/
 .env.*
 !.env.example
 
+# pg_dump 산출물 (scripts/backup.sh). 남의 계정 해시와 진행도가 통째로 들었다 —
+# 저장소에 올릴 것이 아니라 다른 기계로 옮길 것이다.
+backups/
+
 # Vite / 번들러 캐시
 .vite/
 .turbo/
