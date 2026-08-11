@@ -150,6 +150,25 @@ export interface MenuRequest {
   tab: DetailMenuTab
 }
 
+/**
+ * 지금 열려 있는 전면 패널 — 열림 상태의 유일한 주인이다(설계 §8-앞 6).
+ *
+ * 값이 하나라서 상호배제는 공짜다: 가방을 연 채 메뉴를 열면 이전 값이 덮이며
+ * 닫힌다. `bag`·`craft` 는 DOM(React, TopBar 가 마운트)이 그리고 `menu` 는
+ * Phaser(PanelScene)가 그린다 — 그리는 쪽이 둘이어도 읽는 값은 이것 하나다.
+ *
+ * 입력 라우팅(I/C/ESC)은 여기가 아니라 PanelScene.applyInput 이 한다. DOM 에
+ * 키보드 리스너를 두지 않는 이유는 대사창 계약(대화 중 I/C 삼킴) 때문이다 —
+ * 그 계약은 WorldScene 이 applyInput 을 부르지 않는 것 한 곳으로 지켜진다.
+ */
+export type OpenPanel = 'bag' | 'craft' | 'menu' | null
+
+/** 레시피 하나의 이번-열림 누적 성적. 제작 카드가 `+N · 실패 M` 로 보여준다(설계 §8-앞 3). */
+export interface CraftTallyEntry {
+  success: number
+  fail: number
+}
+
 interface GameStore {
   data: GameData
   player: PlayerState | null
@@ -162,6 +181,14 @@ interface GameStore {
   gateBusy: boolean
   /** 캐릭터 삭제 확인 창이 떠 있는가. 설정 탭(Phaser)이 열고 DOM 이 그린다. */
   confirmingDelete: boolean
+  /** 지금 열려 있는 전면 패널. 규칙은 OpenPanel 타입 문서에 있다. */
+  openPanel: OpenPanel
+  /**
+   * 제작 패널이 열려 있는 동안의 레시피별 누적 성공/실패(설계 §8-앞 3).
+   * 결과가 초당 여러 번 오는 화면이라 점멸 대신 쌓이는 숫자를 쓴다 —
+   * 제작 패널이 열리는 순간 리셋된다(setOpenPanel).
+   */
+  craftTally: Record<string, CraftTallyEntry>
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
@@ -182,6 +209,7 @@ interface GameStore {
   talk: (speakerId: string) => Promise<void>
   move: (x: number, y: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
+  setOpenPanel: (panel: OpenPanel) => void
 }
 
 /** 가입인가 로그인인가. 화면 하나가 둘을 오가므로(설계 §5) 값으로 받는다. */
@@ -205,11 +233,17 @@ function isNetworkFailure(err: unknown): boolean {
  * 두 값을 호출자마다 따로 적으면 언젠가 한쪽만 바뀌고, 그 한 번이 캐릭터도
  * 없는 상태에서 WorldScene 이 열리는 것이거나 게임 중에 게이트가 화면을
  * 덮는 것이 된다.
+ *
+ * **국면이 움직이면 열려 있던 패널도 함께 닫는다**(설계 §8-앞 9). 로그아웃·
+ * 401·연결 게이트 이탈이 전부 이 함수를 지나므로 여기 한 곳이면 빠짐이 없다 —
+ * 호출자마다 따로 적으면 언젠가 한 곳이 빼먹고, 그 한 번이 "재접속 후 새 hub
+ * 는 안 잠겼는데 DOM 패널만 열려 있는" 화면이 된다(confirmingDelete 와 같은
+ * 이유이지만, 그쪽은 여는 곳이 설정 탭 하나뿐이라 리셋도 그 옆에 둘 수 있었다).
  */
-function gate(boot: BootPhase): { boot: BootPhase; connection: Connection } {
-  if (boot === 'playing') return { boot, connection: 'online' }
-  if (boot === 'checking') return { boot, connection: 'connecting' }
-  return { boot, connection: 'offline' }
+function gate(boot: BootPhase): { boot: BootPhase; connection: Connection; openPanel: null } {
+  if (boot === 'playing') return { boot, connection: 'online', openPanel: null }
+  if (boot === 'checking') return { boot, connection: 'connecting', openPanel: null }
+  return { boot, connection: 'offline', openPanel: null }
 }
 
 /**
@@ -226,6 +260,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gateError: null,
   gateBusy: false,
   confirmingDelete: false,
+  openPanel: null,
+  craftTally: {},
   lastAction: null,
   milestone: null,
   utterance: null,
@@ -390,6 +426,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const outcome: CraftOutcomeDto = await GameClient.craft(recipeId)
       applyPlayer(set, outcome.player)
       pushMilestones(set, outcome.achieved)
+      bumpCraftTally(set, recipeId, outcome.success)
 
       if (outcome.success && outcome.produced) {
         const name = labelOf(useGameStore.getState().data, outcome.produced.item)
@@ -474,7 +511,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // 톱니 클릭 자체는 게임 상태가 아니지만, App.tsx 를 건드리지 않고 React ->
   // Phaser 로 "메뉴를 열어라"를 전달할 통로가 이 스토어뿐이라 여기 둔다.
-  openMenu: (tab) => set({ menuRequest: { seq: ++menuRequestSeq, tab } }),
+  // openPanel 을 'menu' 로 함께 덮는다 — 열려 있던 가방·제작(DOM) 패널은 그
+  // 교체 한 번으로 닫힌다. 두 번째 입구의 계약은 "누르면 거기 도착한다"다.
+  openMenu: (tab) => set({ menuRequest: { seq: ++menuRequestSeq, tab }, openPanel: 'menu' }),
+
+  /**
+   * 전면 패널 하나를 열거나(값) 전부 닫는다(null). 규칙은 OpenPanel 문서 참고.
+   *
+   * 같은 값이면 무시한다 — 이미 열린 제작 패널에 '열기'가 또 왔을 때 아래
+   * tally 리셋이 진행 중인 누적을 지우면 안 된다. 다른 값이면 교체 한 번이
+   * 곧 상호배제다.
+   */
+  setOpenPanel: (panel) => {
+    if (panel === get().openPanel) return
+    // 제작 패널이 열리는 순간 누적 카운터를 0 에서 시작한다(설계 §8-앞 3) —
+    // 이 숫자는 "이번에 열어 둔 동안"의 성적이다.
+    if (panel === 'craft') set({ openPanel: panel, craftTally: {} })
+    else set({ openPanel: panel })
+  },
 }))
 
 type SetFn = (partial: Partial<GameStore>) => void
@@ -562,6 +616,27 @@ function pushAction(
 
 function applyPlayer(set: SetFn, next: PlayerState): void {
   set({ player: next })
+}
+
+/**
+ * 제작 결과 하나를 누적 카운터에 더한다(설계 §8-앞 3·5).
+ *
+ * craft 액션이 여기까지 책임지는 이유: 현행 craft 는 `Promise<void>` 라 결과를
+ * 삼키는데, 반환값을 바꾸는 대신 스토어가 스스로 tally 를 갱신하면 카드(React)는
+ * 구독만 하면 된다. 성공 여부는 서버 응답의 `outcome.success` 그대로다 —
+ * 거부(too_fast 등)와 통신 실패는 여기 오지 않으므로 세지 않는다.
+ */
+function bumpCraftTally(set: SetFn, recipeId: string, success: boolean): void {
+  const tally = useGameStore.getState().craftTally
+  const prev = tally[recipeId] ?? { success: 0, fail: 0 }
+  set({
+    craftTally: {
+      ...tally,
+      [recipeId]: success
+        ? { success: prev.success + 1, fail: prev.fail }
+        : { success: prev.success, fail: prev.fail + 1 },
+    },
+  })
 }
 
 /**
