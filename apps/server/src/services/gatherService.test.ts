@@ -47,6 +47,9 @@ const data: GameData = {
 function player(overrides: Partial<PlayerState> = {}): PlayerState {
   return {
     id: 'local',
+    // 이름·외형은 이 스위트가 보는 판정에 쓰이지 않는다 — 모양을 맞추는 값이다.
+    name: '아무개',
+    appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
     instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],

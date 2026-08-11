@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import cors from '@fastify/cors'
-import { loadGameData } from '@nogada/data'
+import { START_MAP_ID, loadGameData } from '@nogada/data'
+import { DEFAULT_APPEARANCE } from '@nogada/shared'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerGatherRoutes } from './routes/gather.js'
@@ -107,5 +108,13 @@ async function ensureLocalCharacter(store: Persistence): Promise<void> {
     console.error(`${error.message} — 덮어쓰지 않고 그대로 둔다`)
     return
   }
-  await store.saveCharacter(createInitialPlayer(LOCAL_PLAYER_ID))
+  await store.saveCharacter(
+    createInitialPlayer({
+      id: LOCAL_PLAYER_ID,
+      // 고른 사람이 없으니 고른 것도 없다 — 가입 화면이 생기면 이 함수가 통째로 사라진다.
+      name: '아무개',
+      appearance: DEFAULT_APPEARANCE,
+      village: START_MAP_ID,
+    }),
+  )
 }

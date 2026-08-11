@@ -31,6 +31,47 @@ export function startLocation(data: GameData): PlayerLocation {
   return { mapId: START_MAP_ID, x: map.spawn.x, y: map.spawn.y }
 }
 
+/**
+ * 바깥 세계 — 마을과 마을 사이를 잇는 맵.
+ *
+ * `START_MAP_ID` 와 같은 성격의 상수다: 등록부의 어떤 행이 특별한가를 이름
+ * 하나로 가리키고, 그 행이 사라지면 아래 유도가 빈 목록을 내며 즉시 말한다.
+ */
+export const WORLD_MAP_ID = '월드맵'
+
+/**
+ * 캐릭터를 만들 때 고를 수 있는 시작 마을 — **월드맵에서 바로 들어가는 맵이
+ * 마을이다.**
+ *
+ * 왜 목록을 어디에도 적지 않는가: 마을 이름을 코드에 적으면 마을을 하나 더
+ * 그리는 날 그 목록이 따라오지 않는다(시작 칸 좌표를 세 곳에 박아 뒀던 것과
+ * 같은 종류의 숫자다). 세계의 생김새가 이미 그 사실을 알고 있다 — 마을은
+ * 월드맵에서 들어가고, 채집장은 마을에서 들어가고, 개발용 시험장은 마을
+ * 뒷문이다. 전환표를 보면 셋이 저절로 갈린다.
+ *
+ * 순서는 전환표에 적힌 순서다 — 작가가 적은 순서가 곧 화면에 놓이는 순서다.
+ */
+export function startVillages(data: GameData): MapDef[] {
+  const villages: MapDef[] = []
+  const seen = new Set<string>()
+
+  for (const transition of data.transitions) {
+    if (transition.fromMap !== WORLD_MAP_ID || seen.has(transition.toMap)) continue
+    const map = data.maps[transition.toMap]
+    // 빌드가 이미 막았다(validateTransitions) — 여기 닿았다면 데이터가 어긋난 것이다.
+    if (!map) throw new Error(`전환표가 가리키는 맵 "${transition.toMap}" 이 등록부에 없다`)
+    seen.add(transition.toMap)
+    villages.push(map)
+  }
+
+  if (villages.length === 0) {
+    throw new Error(
+      `"${WORLD_MAP_ID}" 에서 나가는 전환이 하나도 없다 — 고를 수 있는 시작 마을이 없다`,
+    )
+  }
+  return villages
+}
+
 export interface ParsedMaps {
   maps: Record<string, MapDef>
   /** 맵별 지형. 빌드 시점의 검증에만 쓰고 GameData 로 넘기지 않는다. */

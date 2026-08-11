@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { loadGameData, startLocation } from '@nogada/data'
-import type { PlayerState } from '@nogada/shared'
+import { START_MAP_ID, loadGameData, startLocation } from '@nogada/data'
+import { DEFAULT_APPEARANCE, type PlayerState } from '@nogada/shared'
 import { runner } from 'node-pg-migrate'
 import pg from 'pg'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -20,6 +20,13 @@ import { PostgresPersistence } from './postgresPersistence.js'
  * 빼고 개발하다 넣고 배포하는 순간, 여기서 걸리지 않은 차이가 남의 세이브에서
  * 드러난다.
  */
+
+/**
+ * 저장할 캐릭터 하나. 이 스위트가 보는 것은 저장소의 계약이지 캐릭터 생성이
+ * 아니라서, 사람이 고르는 것(이름·외형·마을)은 여기서 한 번만 정한다.
+ */
+const newPlayer = (id: string): PlayerState =>
+  createInitialPlayer({ id, name: '아무개', appearance: DEFAULT_APPEARANCE, village: START_MAP_ID })
 
 /** 한 구현을 계약 스위트에 앉히는 데 필요한 것. 원본 주입은 "읽을 수 없는 행"을 만들기 위한 것이다. */
 interface Harness {
@@ -157,7 +164,7 @@ function contractSuite(harness: Harness): void {
   })
 
   it('저장한 것을 그대로 다시 읽는다', async () => {
-    const player = createInitialPlayer('나그네')
+    const player = newPlayer('나그네')
     player.stacks.copper_ore = 7
     await store.saveCharacter(player)
 
@@ -167,7 +174,7 @@ function contractSuite(harness: Harness): void {
   })
 
   it('돌려준 상태를 밖에서 고쳐도 저장소 안이 오염되지 않는다', async () => {
-    await store.saveCharacter(createInitialPlayer('나그네'))
+    await store.saveCharacter(newPlayer('나그네'))
 
     const first = await store.getCharacter('나그네')
     first!.stacks.copper_ore = 99
@@ -198,6 +205,9 @@ function contractSuite(harness: Harness): void {
     expect(loaded?.celebrated).toEqual(['ice_10000'])
     expect(loaded?.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
     expect(loaded?.location).toEqual(startLocation(loadGameData()))
+    // 이름·외형도 나중에 생긴 필드다 — 기본값이 저장 계층까지 닿지 않으면
+    // 그 세이브는 "형식 오류" 하나로 통째로 읽히지 않는다.
+    expect(loaded?.appearance).toBe(DEFAULT_APPEARANCE)
   })
 
   // 왜: 콘텐츠는 계속 바뀌는데 세이브는 남는다. maps.csv 에서 맵을 지우거나
@@ -206,7 +216,7 @@ function contractSuite(harness: Harness): void {
   //     게임 안에서 빠져나올 방법이 없다. 보정은 **구현 양쪽 모두**의 읽기
   //     계약이다: 한쪽에만 있으면 DATABASE_URL 하나로 게임이 못 쓰게 된다.
   it('없어진 맵을 가리키는 세이브는 시작 자리로 돌아온다 — 숙련도는 그대로 두고', async () => {
-    const stale = createInitialPlayer('길잃은이')
+    const stale = newPlayer('길잃은이')
     await store.saveCharacter({
       ...stale,
       skills: { ...stale.skills, ice: 12345 },
@@ -225,7 +235,7 @@ function contractSuite(harness: Harness): void {
   // 왜: 상태 안의 id 와 행의 키가 갈라지면 "누구의 상태인가"에 답이 둘이 된다.
   //     그 상태를 그대로 저장하면 다음 쓰기가 엉뚱한 행으로 간다.
   it('id 는 행의 키가 도장 찍는다 — 상태 안의 id 를 믿지 않는다', async () => {
-    const player: PlayerState = { ...createInitialPlayer('진짜키'), id: '남의id' }
+    const player: PlayerState = { ...newPlayer('진짜키'), id: '남의id' }
     await harness.putRaw('진짜키', player)
 
     const reopened = await reopen()
@@ -251,7 +261,7 @@ function contractSuite(harness: Harness): void {
   //     같은 상태를 읽고 나중에 쓴 쪽이 먼저 쓴 쪽을 통째로 덮는다 — 오류 없이
   //     캔 광석과 오른 숙련도가 사라진다.
   it('지나간 판본으로 저장하면 충돌이다 — 남의 저장을 덮지 못한다', async () => {
-    await store.saveCharacter(createInitialPlayer('경합'))
+    await store.saveCharacter(newPlayer('경합'))
 
     const mine = await store.readCharacter('경합')
     expect(mine).not.toBeNull()
@@ -268,23 +278,23 @@ function contractSuite(harness: Harness): void {
   })
 
   it('저장할 때마다 판본이 달라진다 — 같은 값이 두 번 나오면 지나간 판본이 통과한다', async () => {
-    const first = await store.saveCharacter(createInitialPlayer('판본'))
-    const second = await store.saveCharacter(createInitialPlayer('판본'), first)
+    const first = await store.saveCharacter(newPlayer('판본'))
+    const second = await store.saveCharacter(newPlayer('판본'), first)
 
     expect(second).not.toBe(first)
   })
 
   it('없는 캐릭터에 판본을 걸고 저장하면 충돌이다', async () => {
     await expect(
-      store.saveCharacter(createInitialPlayer('유령'), 'whatever'),
+      store.saveCharacter(newPlayer('유령'), 'whatever'),
     ).rejects.toBeInstanceOf(CharacterConflictError)
   })
 
   it('서로 다른 캐릭터는 서로에게 새지 않는다', async () => {
-    const a = createInitialPlayer('가')
+    const a = newPlayer('가')
     a.stacks.copper_ore = 1
     await store.saveCharacter(a)
-    await store.saveCharacter(createInitialPlayer('나'))
+    await store.saveCharacter(newPlayer('나'))
 
     expect((await store.getCharacter('나'))?.stacks).toEqual({})
     // 기본값을 리터럴로 주면 zod 가 그 한 객체를 모든 파싱 결과에 물려 준다 —

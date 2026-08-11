@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_APPEARANCE } from './appearance.js'
 import { PlayerStateSchema } from './protocol.js'
 
 /**
@@ -56,6 +57,27 @@ describe('PlayerStateSchema', () => {
     const parsed = PlayerStateSchema.safeParse(save)
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
+  })
+
+  // 왜: 이름·외형은 계정이 생긴 뒤의 필드다. dialogueHistory 와 같은 이유로
+  //     기본값이 필요하다 — 필수로 두면 그 전에 저장된 세이브가 형식 오류로
+  //     읽히지 않고, 숙련도도 강화한 도구도 같이 사라진다. 외형의 기본값이
+  //     'player' 인 것은 그 세이브가 실제로 그 시트로 그려지고 있었기 때문이다.
+  it('이름·외형이 없던 시절의 세이브도 기본값으로 살아난다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.name).toBe('')
+    expect(parsed.success && parsed.data.appearance).toBe(DEFAULT_APPEARANCE)
+  })
+
+  // 왜: 이 스키마는 **이미 저장된 것**을 읽는 게이트다. 사람이 방금 타이핑한
+  //     이름을 보는 문(account.ts 의 요청 스키마)과 규칙이 같으면, 이름 규칙을
+  //     조이는 날 이미 그 이름으로 놀던 사람의 세이브가 통째로 읽히지 않는다.
+  it('생성 규칙에 어긋나는 이름이 든 세이브도 읽는다 — 규칙은 입력의 문에서만 본다', () => {
+    const save = { ...validSave(), name: '한', appearance: '없어진외형' }
+
+    expect(PlayerStateSchema.safeParse(save).success).toBe(true)
   })
 
   it('파싱할 때마다 새 빈 이력을 만든다 — 세이브 둘이 같은 배열을 공유하면 안 된다', () => {

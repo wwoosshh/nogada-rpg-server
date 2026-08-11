@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { parseMaps } from './maps.js'
-import type { NodeDef } from '@nogada/shared'
+import { loadGameData } from './load.js'
+import { START_MAP_ID, WORLD_MAP_ID, parseMaps, startVillages } from './maps.js'
+import type { GameData, NodeDef } from '@nogada/shared'
 
 const NODES: Record<string, NodeDef> = {
   ice_vein: {
@@ -119,5 +120,46 @@ describe('parseMaps', () => {
     const { terrains } = parseMaps(ROWS, read, NODES)
     expect(Object.keys(terrains).sort()).toEqual(['alpha', 'beta'])
     expect(terrains['alpha']?.width).toBe(2)
+  })
+})
+
+describe('startVillages', () => {
+  // 왜: 캐릭터 생성 화면이 고르게 할 마을 목록이다. 목록을 코드에 적으면 마을을
+  //     하나 더 그리는 날 그 목록이 따라오지 않는다 — 전환표에서 유도하면
+  //     맵을 그린 사람이 그 사실을 이미 적어 둔 셈이 된다.
+  it('월드맵에서 바로 들어가는 맵이 마을이다', () => {
+    const data = loadGameData()
+    const villages = startVillages(data).map((m) => m.id)
+
+    const fromWorld = new Set(
+      data.transitions.filter((t) => t.fromMap === WORLD_MAP_ID).map((t) => t.toMap),
+    )
+    expect(new Set(villages)).toEqual(fromWorld)
+    expect(villages.length).toBeGreaterThan(0)
+  })
+
+  // 왜: 새 캐릭터가 서는 곳은 고른 마을의 spawn 이고, 아무것도 고르지 않은
+  //     테스트·시뮬레이터가 서는 곳은 시작 맵이다. 시작 맵이 고를 수 없는
+  //     마을이면 그 둘이 서로 다른 세계를 가리키게 된다.
+  it('시작 맵도 고를 수 있는 마을 중 하나다', () => {
+    expect(startVillages(loadGameData()).map((m) => m.id)).toContain(START_MAP_ID)
+  })
+
+  // 왜: 채집장과 개발용 시험장은 마을에서 들어간다. 마을 판정이 "전환이 있는 맵"
+  //     으로 느슨해지면 새 캐릭터가 개발 시험장에서 시작할 수 있게 된다.
+  it('마을에서 들어가는 맵은 마을이 아니다 — 채집장도 시험장도 고를 수 없다', () => {
+    const data = loadGameData()
+    const villages = new Set(startVillages(data).map((m) => m.id))
+    const behindVillages = data.transitions.filter((t) => villages.has(t.fromMap) && t.toMap !== WORLD_MAP_ID)
+
+    expect(behindVillages.length).toBeGreaterThan(0)
+    for (const t of behindVillages) expect(villages.has(t.toMap)).toBe(false)
+  })
+
+  // 왜: 빈 목록을 조용히 돌려주면 캐릭터 생성이 "무엇을 골라도 400" 이 되고,
+  //     그 이유가 화면 어디에도 나오지 않는다.
+  it('월드맵에서 나가는 전환이 없으면 조용히 빈 목록을 주지 않고 말한다', () => {
+    const empty = { maps: {}, transitions: [] } as unknown as GameData
+    expect(() => startVillages(empty)).toThrow(WORLD_MAP_ID)
   })
 })

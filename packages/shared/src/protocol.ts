@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DEFAULT_APPEARANCE } from './appearance.js'
 import { emptyDialogueHistory } from './dialogue.js'
 import { SKILL_IDS, type PlayerLocation, type SkillId } from './types.js'
 
@@ -67,6 +68,17 @@ const defaultLocation = (): PlayerLocation => ({ mapId: '', x: 0, y: 0 })
 
 export const PlayerStateSchema = z.object({
   id: z.string(),
+  // 이름과 외형은 계정·캐릭터 생성에서 생긴 필드라, 그 전에 저장된 세이브에는
+  // 키가 통째로 없다. dialogueHistory·location 과 **정확히 같은 이유로** 기본값을
+  // 단다 — 필수로 두면 옛 세이브가 형식 오류로 통째로 읽히지 않는다.
+  //
+  // 입력 규칙(2~12자, 목록에 있는 외형)을 여기 걸지 **않는** 이유: 이 스키마는
+  // 이미 저장된 것을 읽는 게이트이지 사람이 방금 타이핑한 것을 보는 문이 아니다.
+  // 규칙은 언젠가 조여지는데(금지어, 외형 목록에서 하나 뺌) 그때 이 스키마가
+  // 그것을 강제하면 이미 그 이름으로 놀던 사람의 세이브가 읽히지 않는다.
+  // 사람이 적는 것을 보는 문은 account.ts 의 요청 스키마다.
+  name: z.string().default(''),
+  appearance: z.string().default(DEFAULT_APPEARANCE),
   skills: z.object(skillsShape).strict(),
   stacks: z.record(z.string(), z.number().int().min(0)),
   instances: z.array(ItemInstanceSchema),

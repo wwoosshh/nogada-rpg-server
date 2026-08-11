@@ -1,4 +1,10 @@
-import { SKILL_IDS, emptyDialogueHistory, type PlayerState, type SkillId } from '@nogada/shared'
+import {
+  DEFAULT_APPEARANCE,
+  SKILL_IDS,
+  emptyDialogueHistory,
+  type PlayerState,
+  type SkillId,
+} from '@nogada/shared'
 import { loadGameData } from './load.js'
 import { startLocation } from './maps.js'
 
@@ -18,6 +24,10 @@ import { startLocation } from './maps.js'
 export function emptyPlayer(): PlayerState {
   return {
     id: 'empty',
+    // 이름도 외형도 시뮬레이터가 보지 않는다(대사 조건은 숙련도·이력·자리를 본다).
+    // id 와 같은 성격의 자리표시자다.
+    name: '',
+    appearance: DEFAULT_APPEARANCE,
     skills: Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>,
     stacks: {},
     instances: [],

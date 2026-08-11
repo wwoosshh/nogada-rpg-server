@@ -1,4 +1,6 @@
 export * from './types.js'
+export * from './appearance.js'
+export * from './account.js'
 export * from './rng.js'
 export * from './formulas/clamp.js'
 export * from './formulas/gather.js'
