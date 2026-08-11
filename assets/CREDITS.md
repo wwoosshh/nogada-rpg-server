@@ -131,11 +131,23 @@ M2 에서 아이템이 수백 종이 되면 이 방식은 무너지지만, 그�
 ```bash
 mkdir -p apps/client/public/tilesets apps/client/public/sprites apps/client/public/icons
 
-cp "assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32/Male/Male 01-1.png" \
-   apps/client/public/sprites/player.png
+CHR="assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32"
+
+cp "$CHR/Male/Male 01-1.png" apps/client/public/sprites/player.png
+
+# 플레이어가 고르는 외형 — 아래 "플레이어 외형 대장" 표와 같은 내용이다.
+while IFS=: read -r name src; do
+  cp "$CHR/$src.png" "apps/client/public/sprites/${name}.png"
+done <<'LOOKS'
+blue_hat:Male/Male 04-1
+olive_armor:Male/Male 09-1
+silver_hair:Male/Male 16-1
+rose_tunic:Female/Female 03-1
+violet_hat:Female/Female 09-1
+teal_robe:Female/Female 13-1
+LOOKS
 
 # 화자 스프라이트 — 아래 "화자 스프라이트 대장" 표와 같은 내용이다.
-CHR="assets/licensed/PIPOYA FREE RPG Character Sprites 32x32/PIPOYA FREE RPG Character Sprites 32x32"
 while IFS=: read -r name src; do
   cp "$CHR/$src.png" "apps/client/public/sprites/${name}.png"
 done <<'NPCS'
@@ -191,6 +203,41 @@ ImageMagick 이라면 한 줄이다:
 magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repage \
   apps/client/public/sprites/sign_wood.png
 ```
+
+### 플레이어 외형 대장
+
+캐릭터를 만들 때 고르는 외형. `packages/shared` 의 `APPEARANCES` → 파일 → 원본이고,
+클라이언트가 아는 목록은 `apps/client/src/game/playerSprites.ts` 다. **셋이 함께 움직인다** —
+`playerSprites.test.ts` 가 세 곳을 전수로 대조하고, 이 표에 빠진 id 는 그 테스트가 세운다
+(설계 규범 4).
+
+**모든 시트가 `player.png` 와 같은 96×128 = 3열 × 4행 규격이다**(설계 규범 13). 추출한 뒤
+크기를 확인한다 — 규격이 다르면 프레임 번호가 통째로 어긋나 걷는 방향이 뒤섞이는데,
+그건 게임을 켜서 걸어 봐야만 드러난다.
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+Get-ChildItem apps\client\public\sprites\*.png | Where-Object { $_.Name -ne 'sign_wood.png' } | ForEach-Object {
+  $i = New-Object System.Drawing.Bitmap($_.FullName)
+  "{0,-18} {1}x{2}" -f $_.Name, $i.Width, $i.Height
+  $i.Dispose()
+}
+```
+
+| APPEARANCES 의 id | 파일 | 원본 | 화면에 적히는 이름 | 왜 이 그림인가 |
+|---|---|---|---|---|
+| `player` | `player.png` | `Male/Male 01-1` | 은빛 갑옷 | 계정이 생기기 전부터 쓰던 시트. 옛 세이브의 기본값이라 목록에 남는다 |
+| `blue_hat` | `blue_hat.png` | `Male/Male 04-1` | 파란 챙모자 | 챙 넓은 파란 모자. 32px 에서 실루엣만으로 갈리는 유일한 모자다 |
+| `olive_armor` | `olive_armor.png` | `Male/Male 09-1` | 올리브 갑옷 | 어두운 올리브+금빛. 목록에서 가장 짙은 덩어리라 멀리서도 구별된다 |
+| `silver_hair` | `silver_hair.png` | `Male/Male 16-1` | 은빛 머리 | 뻗친 은발 + 청회색. 모자도 투구도 없는 맨머리 쪽의 대표 |
+| `rose_tunic` | `rose_tunic.png` | `Female/Female 03-1` | 분홍 상의 | 옆으로 묶은 머리 + 분홍 상의. 넷이 화려한 가운데 유일하게 수수하다 |
+| `violet_hat` | `violet_hat.png` | `Female/Female 09-1` | 보라 모자 | 뾰족한 보라 모자 + 안경. 파란 챙모자와 색·모양이 둘 다 다르다 |
+| `teal_robe` | `teal_robe.png` | `Female/Female 13-1` | 청록 예복 | 연보라 긴 머리 + 청록 예복. 목록에서 유일한 청록 계열 |
+
+**서로 구별되는 것이 이 여섯 장의 조건이다** — 고르는 화면에 나란히 놓이므로, 화자 시트와
+달리 "한 화면에 같이 안 나오니 비슷해도 된다" 가 통하지 않는다. 색이 여섯 방향(파랑·올리브·
+은회색·분홍·보라·청록)으로 흩어지고 셋은 머리, 둘은 모자, 하나는 투구다. 성별도 셋씩 섞었다.
+화자 여섯(`Male 07·12·14`, `Female 17·19·20`)과 플레이어 기본값(`Male 01-1`)은 피했다.
 
 ### 화자 스프라이트 대장
 

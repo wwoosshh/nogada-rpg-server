@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { START_MAP_ID, loadGameData, startVillages } from '@nogada/data'
-import { DEFAULT_APPEARANCE, type PlayerState } from '@nogada/shared'
+import { APPEARANCES, DEFAULT_APPEARANCE, type PlayerState } from '@nogada/shared'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from './auth/sessions.js'
@@ -351,12 +351,16 @@ describe('캐릭터의 일생', () => {
     // 것이 거짓이다.
     const village = startVillages(loadGameData()).find((map) => map.id !== START_MAP_ID)!
 
-    const res = await create(me, { name: '노가다', appearance: 'elder', village: village.id })
+    // 기본값이 아닌 외형을 고른다 — 기본값으로 시험하면 "고른 것이 저장됐다"와
+    // "아무것도 안 하고 기본값이 남았다"가 같은 결과라 구별되지 않는다. 목록에서
+    // 골라 오므로 외형 목록이 바뀌어도 이 시험은 그대로 산다.
+    const look = APPEARANCES.find((id) => id !== DEFAULT_APPEARANCE)!
+    const res = await create(me, { name: '노가다', appearance: look, village: village.id })
 
     expect(res.statusCode).toBe(201)
     const { player } = res.json() as { player: PlayerState }
     expect(player.name).toBe('노가다')
-    expect(player.appearance).toBe('elder')
+    expect(player.appearance).toBe(look)
     expect(player.location).toEqual(spawnOf(village.id))
     // 만든 것이 곧 다음 부팅의 상태여야 한다.
     expect((await me.inject({ method: 'GET', url: '/api/state' })).json()).toEqual({ player })
@@ -374,7 +378,11 @@ describe('캐릭터의 일생', () => {
     await me.inject({ method: 'POST', url: '/api/move', payload: { x: 0, y: 0 } })
     const before = (await me.inject({ method: 'GET', url: '/api/state' })).json() as { player: PlayerState }
 
-    const again = await create(me, { name: '다른이름', appearance: 'child', village: START_MAP_ID })
+    const again = await create(me, {
+      name: '다른이름',
+      appearance: APPEARANCES.find((id) => id !== DEFAULT_APPEARANCE)!,
+      village: START_MAP_ID,
+    })
 
     expect(again.statusCode).toBe(200)
     expect((again.json() as { player: PlayerState }).player).toEqual(before.player)

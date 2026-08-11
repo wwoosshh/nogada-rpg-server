@@ -1,14 +1,16 @@
 import { startVillages, villageField } from '@nogada/data'
 import {
+  APPEARANCES,
   CHARACTER_NAME_MAX,
   CHARACTER_NAME_MIN,
   CharacterNameSchema,
-  DEFAULT_APPEARANCE,
   SKILL_LABELS,
   type GameData,
 } from '@nogada/shared'
 import { useMemo, useState } from 'react'
+import { playerSprite } from '../game/playerSprites.js'
 import { useGameStore } from '../store/gameStore.js'
+import { AppearancePreview } from './AppearancePreview.js'
 
 const NAME_RULE = `이름 ${CHARACTER_NAME_MIN}~${CHARACTER_NAME_MAX}자`
 
@@ -61,13 +63,22 @@ export function CreateCharacterScreen(): JSX.Element {
   // 화면" 이 아니라 "바꾸는 화면" 이 되어, 마을이 곧 숙련도라는 사실을 읽지
   // 않고 지나치게 된다.
   const [village, setVillage] = useState<string | null>(null)
+  // 외형은 다르다 — 넷 중 하나를 골라야 뜻이 생기는 마을과 달리, 외형에는
+  // "안 고른 상태" 가 없다. 목록의 첫 칸이 곧 지금 보고 있는 모습이다.
+  const [appearanceIndex, setAppearanceIndex] = useState(0)
   const [localError, setLocalError] = useState<string | null>(null)
+
+  const appearance = APPEARANCES[appearanceIndex]!
+  // 끝에서 다시 처음으로 돈다. 여섯 칸뿐이라 막다른 끝을 만들면 "여기가 마지막인가"
+  // 를 확인하려고 양쪽 끝을 두 번씩 눌러 보게 된다.
+  const step = (delta: number): void =>
+    setAppearanceIndex((i) => (i + delta + APPEARANCES.length) % APPEARANCES.length)
 
   const submit = (): void => {
     if (!CharacterNameSchema.safeParse(name).success) return setLocalError(NAME_RULE)
     if (village === null) return setLocalError('시작할 마을을 고르세요.')
     setLocalError(null)
-    void createCharacter({ name, appearance: DEFAULT_APPEARANCE, village })
+    void createCharacter({ name, appearance, village })
   }
 
   return (
@@ -81,17 +92,41 @@ export function CreateCharacterScreen(): JSX.Element {
       >
         <h1 className="screen__title screen__title--small">캐릭터 만들기</h1>
 
-        <label className="field">
-          <span className="field__label">이름</span>
-          <input
-            className="field__input"
-            value={name}
-            maxLength={CHARACTER_NAME_MAX}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
+        <div className="create__top">
+          <div className="appearance">
+            <button
+              type="button"
+              className="appearance__arrow"
+              aria-label="이전 외형"
+              onClick={() => step(-1)}
+            >
+              ‹
+            </button>
+            <AppearancePreview appearance={appearance} />
+            <button
+              type="button"
+              className="appearance__arrow"
+              aria-label="다음 외형"
+              onClick={() => step(1)}
+            >
+              ›
+            </button>
+          </div>
 
-        <p className="screen__hint">{NAME_RULE} · 고른 마을의 숙련도가 먼저 오릅니다</p>
+          <div className="create__fields">
+            <span className="appearance__label">{playerSprite(appearance).label}</span>
+            <label className="field">
+              <span className="field__label">이름</span>
+              <input
+                className="field__input"
+                value={name}
+                maxLength={CHARACTER_NAME_MAX}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </label>
+            <p className="screen__hint">{NAME_RULE} · 고른 마을의 숙련도가 먼저 오릅니다</p>
+          </div>
+        </div>
 
         <div className="villages">
           {villages.map((v) => (

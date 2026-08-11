@@ -24,6 +24,7 @@ import { NodeMarker } from '../NodeMarker.js'
 import { NpcSprite, SpeakerPoseChannel } from '../NpcSprite.js'
 import { NpcScheduler, schedulesForMap, speakersForMap, type NpcCommand } from '../npcScheduler.js'
 import { npcSprite, npcSpriteKey } from '../npcSprites.js'
+import { playerSprite, playerSpriteKey } from '../playerSprites.js'
 import { facingToward } from '../speakerFacing.js'
 import { TileMover } from '../TileMover.js'
 import { fixedToCamera, renderScale } from '../viewport.js'
@@ -103,6 +104,15 @@ export class WorldScene extends Phaser.Scene {
    * 전환을 판정하게 된다.
    */
   private mapId = ''
+  /**
+   * 이 캐릭터의 외형이 올라간 로더 키. `preload()` 가 정하고 `create()` 와
+   * 걷기 애니메이션이 그대로 쓴다.
+   *
+   * 붙잡아 두는 이유는 mapId 와 같다: 이 셋이 각자 스토어를 다시 읽으면 한
+   * 씬 안에서 서로 다른 시트를 가리킬 여지가 생기고, 그러면 서 있는 모습과
+   * 걷는 모습이 다른 사람이 된다(설계 규범 13).
+   */
+  private appearanceKey = ''
   /**
    * 이 맵으로 걸어 들어온 방향. 전환의 `facing` 이 비어 있을 때 쓴다.
    * 첫 부팅(새로고침)에는 물려받을 방향이 없으므로 기본 자세인 아래다.
@@ -197,8 +207,16 @@ export class WorldScene extends Phaser.Scene {
     for (const name of TILESET_NAMES) {
       this.load.image(name, `tilesets/${name}.png`)
     }
+    // **외형은 preload 전에 정해져야 한다**(설계 규범 13). 맵을 넘을 때마다
+    // 이 씬은 통째로 다시 시작하므로, 그때마다 스토어에서 다시 읽어 큐에 올린다.
+    // 이미 캐시에 있는 키는 로더가 건너뛰므로 두 번 내려받지 않는다.
+    //
+    // 옛 세이브에는 이 필드가 없지만 여기까지 빈 값이 오지는 않는다 — 스키마가
+    // 읽는 순간 DEFAULT_APPEARANCE 로 채운다(shared 의 PlayerStateSchema).
+    const appearance = this.requirePlayer().appearance
+    this.appearanceKey = playerSpriteKey(appearance)
     // Pipoya 캐릭터 시트는 96x128 = 3열 x 4행, 프레임 32x32
-    this.load.spritesheet('player', 'sprites/player.png', {
+    this.load.spritesheet(this.appearanceKey, `sprites/${playerSprite(appearance).file}`, {
       frameWidth: TILE,
       frameHeight: TILE,
     })
@@ -361,7 +379,7 @@ export class WorldScene extends Phaser.Scene {
     this.player = this.add.sprite(
       startTile.x * TILE + TILE / 2,
       startTile.y * TILE + TILE / 2,
-      'player',
+      this.appearanceKey,
       idleFrame(startFacing),
     )
     this.player.setDepth(DEPTH.player)
@@ -1061,15 +1079,26 @@ export class WorldScene extends Phaser.Scene {
     if (idle) idle.remainingMs = this.nextIdleTurnMs()
   }
 
+  /** 이 외형의 그 방향 걷기. 키에 외형을 넣는 이유는 createAnimations 문서 참고. */
+  private walkKey(facing: Direction): string {
+    return `walk-${this.appearanceKey}-${facing}`
+  }
+
   private createAnimations(): void {
     for (const facing of DIRECTIONS) {
       // 애니메이션은 씬이 아니라 게임 전체가 갖는다. 맵을 넘을 때마다 이
       // create() 가 다시 도는데, 이미 있는 키를 다시 만들면 Phaser 가 조용히
       // 무시하면서 콘솔에 경고만 남긴다 — 전환마다 네 줄씩이다.
-      if (this.anims.exists(`walk-${facing}`)) continue
+      //
+      // **그래서 키에 외형이 들어간다.** 게임 전체가 갖는 것을 방향으로만
+      // 구분하면, 한 번 만들어진 `walk-down` 은 처음 들어온 사람의 시트에
+      // 영원히 묶인다 — 로그아웃하고 다른 계정으로 들어오면 서 있는 모습만
+      // 바뀌고 걷는 순간 앞사람으로 돌아간다.
+      const key = this.walkKey(facing)
+      if (this.anims.exists(key)) continue
       this.anims.create({
-        key: `walk-${facing}`,
-        frames: walkFrames(facing).map((frame) => ({ key: 'player', frame })),
+        key,
+        frames: walkFrames(facing).map((frame) => ({ key: this.appearanceKey, frame })),
         frameRate: 8,
         repeat: -1,
       })
@@ -1082,6 +1111,6 @@ export class WorldScene extends Phaser.Scene {
       this.player.setFrame(idleFrame(facing))
       return
     }
-    this.player.anims.play(`walk-${facing}`, true)
+    this.player.anims.play(this.walkKey(facing), true)
   }
 }

@@ -296,6 +296,63 @@
   cursor: default;
 }
 
+/*
+ * 캐릭터 생성 화면의 윗단 — 왼쪽에 외형 미리보기, 오른쪽에 이름.
+ * 세로 375px 을 아끼려고 나란히 놓는다(마을 카드 넉 장이 아래에 와야 한다).
+ */
+.create__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.create__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.appearance {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+/*
+ * 시트를 배율만큼 키워 깐 뒤 한 칸만 내다보는 창(AppearancePreview 참고).
+ * 픽셀아트라 보간을 끄고 정수 배율로만 키운다 — .icon 과 같은 규칙이다.
+ */
+.appearance__frame {
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  background-color: var(--c-ink);
+}
+
+.appearance__arrow {
+  background: none;
+  border: none;
+  padding: 0 var(--space-1);
+  font: inherit;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--c-parchment-dim);
+  cursor: pointer;
+}
+
+.appearance__arrow:active {
+  color: var(--c-accent);
+}
+
+.appearance__label {
+  font-size: 13px;
+  color: var(--c-accent);
+}
+
 /* 마을 카드 넷. 가로 화면이라 한 줄에 넷이 들어간다 — 세로 375px 을 카드가 먹지 않는다. */
 .villages {
   display: grid;
