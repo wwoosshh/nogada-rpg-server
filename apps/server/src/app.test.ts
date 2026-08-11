@@ -1,27 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { loadGameData, startLocation } from '@nogada/data'
 import { StateResponseSchema, type TransitionDef } from '@nogada/shared'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildApp } from './app.js'
-
-let dir: string
-
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'nogada-'))
-})
-
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true })
-})
-
-/** 세이브 파일을 임시 디렉터리로 격리한다. 테스트가 저장소 루트에 .data/ 를 남기지 않는다. */
-function buildTestApp() {
-  return buildApp({ dataFile: join(dir, 'players.json') })
-}
-
-type TestApp = ReturnType<typeof buildTestApp>
+import { describe, expect, it } from 'vitest'
+import { asPlayer, buildTestApp, type TestPlayer } from './testSupport.js'
 
 /** 이 테스트가 말을 거는 화자. 대사 파일이 있는 실재 화자여야 한다. */
 const ELDER = '채집장노인'
@@ -52,8 +32,8 @@ function transitionBetween(fromMap: string, toMap: string): TransitionDef {
 }
 
 /** 그 전환 칸을 밟는다. 넘어가지 못하면 여기서 세운다 — 뒤의 단정이 엉뚱한 이유로 깨지지 않도록. */
-async function step(app: TestApp, t: TransitionDef): Promise<void> {
-  const res = await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+async function step(me: TestPlayer, t: TransitionDef): Promise<void> {
+  const res = await me.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
   expect(res.statusCode).toBe(200)
 }
 
@@ -63,19 +43,20 @@ async function step(app: TestApp, t: TransitionDef): Promise<void> {
  * 시작 맵은 마을이라 그 자리에는 캘 것이 없다. 채집 라우트를 시험하려면 먼저
  * 노드 앞에 서야 하고, 그 걸음도 실제 전환표를 밟아서 간다.
  */
-async function enterField(app: TestApp): Promise<void> {
-  await step(app, transitionBetween(startLocation(loadGameData()).mapId, fieldMapId()))
+async function enterField(me: TestPlayer): Promise<void> {
+  await step(me, transitionBetween(startLocation(loadGameData()).mapId, fieldMapId()))
 }
 
 /** 화자가 있는 맵으로 걸어 넘어간다. 대화 라우트는 같은 맵에 서 있어야 답한다. */
-async function enterSpeakerMap(app: TestApp): Promise<void> {
-  await step(app, transitionBetween(startLocation(loadGameData()).mapId, speakerMapId(ELDER)))
+async function enterSpeakerMap(me: TestPlayer): Promise<void> {
+  await step(me, transitionBetween(startLocation(loadGameData()).mapId, speakerMapId(ELDER)))
 }
 
 describe('GET /api/health', () => {
   it('200 과 데이터 개수를 반환한다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({ method: 'GET', url: '/api/health' })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'GET', url: '/api/health' })
 
     // 밸런스 CSV 를 정당하게 고칠 때마다 이 패키지의 무관한 테스트가 깨지는 것을
     // 막기 위해 하드코딩된 개수 대신 loadGameData() 에서 기대값을 뽑는다.
@@ -96,8 +77,9 @@ describe('GET /api/health', () => {
   })
 
   it('없는 경로는 404 를 반환한다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({ method: 'GET', url: '/api/nope' })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'GET', url: '/api/nope' })
     expect(res.statusCode).toBe(404)
     await app.close()
   })
@@ -105,8 +87,9 @@ describe('GET /api/health', () => {
 
 describe('GET /api/state', () => {
   it('플레이어 상태를 반환한다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({ method: 'GET', url: '/api/state' })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'GET', url: '/api/state' })
 
     expect(res.statusCode).toBe(200)
     const body = res.json() as { player: { skills: Record<string, number> } }
@@ -116,8 +99,9 @@ describe('GET /api/state', () => {
   })
 
   it('응답이 프로토콜 스키마를 만족한다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({ method: 'GET', url: '/api/state' })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'GET', url: '/api/state' })
 
     // 클라이언트가 이 스키마로 응답을 검증한다(Task 10). 서버가 먼저 지키는지 확인한다.
     expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
@@ -126,9 +110,10 @@ describe('GET /api/state', () => {
   })
 
   it('다시 호출해도 같은 플레이어를 돌려준다', async () => {
-    const app = buildTestApp()
-    const first = await app.inject({ method: 'GET', url: '/api/state' })
-    const second = await app.inject({ method: 'GET', url: '/api/state' })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const first = await me.inject({ method: 'GET', url: '/api/state' })
+    const second = await me.inject({ method: 'GET', url: '/api/state' })
 
     expect(second.json()).toEqual(first.json())
 
@@ -138,10 +123,11 @@ describe('GET /api/state', () => {
 
 describe('POST /api/gather', () => {
   it('구리 광맥 채집 요청을 처리한다', async () => {
-    const app = buildTestApp()
-    await enterField(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterField(me)
 
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'copper_vein-1' },
@@ -150,23 +136,25 @@ describe('POST /api/gather', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json() as { chance: number; player: { id: string } }
     expect(body.chance).toBeCloseTo(0.5)
-    expect(body.player.id).toBe('local')
+    // 'local' 을 글자로 적지 않는다 — 신원이 헬퍼로 옮겨 갔으므로 기대값도 거기서 온다.
+    expect(body.player.id).toBe(me.id)
 
     await app.close()
   })
 
   it('판정 결과를 저장해서 다음 조회에 반영한다', async () => {
-    const app = buildTestApp()
-    await enterField(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterField(me)
 
-    const gather = await app.inject({
+    const gather = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'copper_vein-1' },
     })
     const outcome = gather.json() as { player: { nextActionAt: number } }
 
-    const state = await app.inject({ method: 'GET', url: '/api/state' })
+    const state = await me.inject({ method: 'GET', url: '/api/state' })
     const saved = state.json() as { player: { nextActionAt: number } }
 
     // 성패는 서버 난수라 단정할 수 없지만, 간격은 성패와 무관하게 걸리고 저장된다.
@@ -176,10 +164,11 @@ describe('POST /api/gather', () => {
   })
 
   it('응답에 achieved 배열이 실린다', async () => {
-    const app = buildTestApp()
-    await enterField(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterField(me)
 
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'copper_vein-1' },
@@ -199,11 +188,12 @@ describe('POST /api/gather', () => {
   })
 
   it('간격 안에 재요청하면 400 too_fast 를 반환한다', async () => {
-    const app = buildTestApp()
-    await enterField(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterField(me)
 
-    await app.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
-    const res = await app.inject({
+    await me.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
+    const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'copper_vein-1' },
@@ -216,10 +206,11 @@ describe('POST /api/gather', () => {
   })
 
   it('도구 등급이 모자란 노드는 400 을 반환한다', async () => {
-    const app = buildTestApp()
-    await enterField(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterField(me)
 
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'iron_vein-1' },
@@ -232,9 +223,10 @@ describe('POST /api/gather', () => {
   })
 
   it('없는 인스턴스는 400 을 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'ghost_vein-1' },
@@ -247,9 +239,10 @@ describe('POST /api/gather', () => {
   })
 
   it('instanceId 가 없으면 400 을 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
-    const res = await app.inject({ method: 'POST', url: '/api/gather', payload: {} })
+    const res = await me.inject({ method: 'POST', url: '/api/gather', payload: {} })
     expect(res.statusCode).toBe(400)
 
     await app.close()
@@ -258,12 +251,13 @@ describe('POST /api/gather', () => {
 
 describe('POST /api/craft', () => {
   it('재료가 없으면 400 missing_materials 를 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
     // copper_ingot 의 요구 숙련도가 0 이 되어 신규 플레이어(조합 숙련도 0)도 숙련도
     // 검사를 통과한다. 요구 숙련도가 1이던 Task 2 시점에는 숙련도 검사에 먼저 걸려
     // 이 재료 부족 분기에 닿을 수 없었다.
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/craft',
       payload: { recipeId: 'copper_ingot' },
@@ -276,12 +270,13 @@ describe('POST /api/craft', () => {
   })
 
   it('숙련도가 모자라면 400 level_too_low 를 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
     // 신규 플레이어는 조합 숙련도가 0이라 요구 숙련도가 높은 레시피에 닿지 못한다
     // (iron_pickaxe 요구치 500). 재료도 없지만 숙련도 검사가 먼저이므로
     // level_too_low 가 나와야 한다.
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/craft',
       payload: { recipeId: 'iron_pickaxe' },
@@ -294,9 +289,10 @@ describe('POST /api/craft', () => {
   })
 
   it('없는 레시피는 400 unknown_recipe 를 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/craft',
       payload: { recipeId: 'ghost' },
@@ -309,9 +305,10 @@ describe('POST /api/craft', () => {
   })
 
   it('recipeId 가 없으면 400 을 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
-    const res = await app.inject({ method: 'POST', url: '/api/craft', payload: {} })
+    const res = await me.inject({ method: 'POST', url: '/api/craft', payload: {} })
     expect(res.statusCode).toBe(400)
 
     await app.close()
@@ -320,8 +317,9 @@ describe('POST /api/craft', () => {
 
 describe('POST /api/talk', () => {
   it('화자에게 말을 걸면 발화 전체가 온다', async () => {
-    const app = buildTestApp()
-    await enterSpeakerMap(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterSpeakerMap(me)
     const data = loadGameData()
 
     // 어떤 규칙이 뽑힐지는 서버 난수라 이 테스트가 통제할 수 없다. 대신 응답의
@@ -329,7 +327,7 @@ describe('POST /api/talk', () => {
     // 전체와 응답을 비교한다 — `lines.length > 0` 만 보면 서비스가 발화를
     // 한 줄로 잘라 보내도(칸 하나만 보내도) 이 테스트는 계속 통과한다.
     const talkAndAssertFullUtterance = async (): Promise<string[]> => {
-      const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+      const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
       expect(res.statusCode).toBe(200)
       const body = res.json() as { speaker: string; lines: string[] }
       expect(body.speaker).toBe(ELDER)
@@ -356,13 +354,14 @@ describe('POST /api/talk', () => {
   })
 
   it('대화 이력을 저장해서 다음 조회에 반영한다', async () => {
-    const app = buildTestApp()
-    await enterSpeakerMap(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterSpeakerMap(me)
 
-    const talk = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    const talk = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     expect(talk.statusCode).toBe(200)
 
-    const state = await app.inject({ method: 'GET', url: '/api/state' })
+    const state = await me.inject({ method: 'GET', url: '/api/state' })
     const saved = state.json() as {
       player: { dialogueHistory: { recent: Record<string, string[]>; lastTalkAt: Record<string, number> } }
     }
@@ -375,14 +374,15 @@ describe('POST /api/talk', () => {
   })
 
   it('대화는 행동 간격을 소비하지 않는다', async () => {
-    const app = buildTestApp()
-    await enterSpeakerMap(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterSpeakerMap(me)
 
     // 서비스 단위 테스트가 같은 것을 보지만, 라우트가 나중에 채집처럼 간격을
     // 걸도록 "통일"되는 순간 그 단위 테스트는 아무것도 막지 못한다.
-    const before = await app.inject({ method: 'GET', url: '/api/state' })
-    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    const after = await app.inject({ method: 'GET', url: '/api/state' })
+    const before = await me.inject({ method: 'GET', url: '/api/state' })
+    await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    const after = await me.inject({ method: 'GET', url: '/api/state' })
 
     const nextActionAt = (res: typeof before) => (res.json() as { player: { nextActionAt: number } }).player.nextActionAt
     expect(nextActionAt(after)).toBe(nextActionAt(before))
@@ -391,12 +391,13 @@ describe('POST /api/talk', () => {
   })
 
   it('연달아 말을 걸어도 거부하지 않는다', async () => {
-    const app = buildTestApp()
-    await enterSpeakerMap(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterSpeakerMap(me)
 
     // 채집이라면 두 번째가 too_fast 다. 대화에는 간격이 없다.
-    await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
-    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
 
     expect(res.statusCode).toBe(200)
 
@@ -404,9 +405,10 @@ describe('POST /api/talk', () => {
   })
 
   it('없는 화자는 400 unknown_speaker 를 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
-    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '유령' } })
+    const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: '유령' } })
 
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ code: 'unknown_speaker' })
@@ -415,9 +417,10 @@ describe('POST /api/talk', () => {
   })
 
   it('speakerId 가 없으면 400 을 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
-    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: {} })
+    const res = await me.inject({ method: 'POST', url: '/api/talk', payload: {} })
     expect(res.statusCode).toBe(400)
 
     await app.close()
@@ -439,10 +442,11 @@ describe('POST /api/move', () => {
   }
 
   it('전환 칸을 밟았다고 하면 도착 맵·칸으로 옮기고 저장한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
     const t = first()
 
-    const res = await app.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
+    const res = await me.inject({ method: 'POST', url: '/api/move', payload: { x: t.fromX, y: t.fromY } })
     expect(res.statusCode).toBe(200)
     expect((res.json() as { player: { location: unknown } }).player.location).toEqual({
       mapId: t.toMap,
@@ -451,42 +455,45 @@ describe('POST /api/move', () => {
     })
 
     // 저장하지 않으면 새로고침할 때마다 첫 맵으로 돌아간다 — 위치를 서버가 갖기로 한 이유다.
-    const state = await app.inject({ method: 'GET', url: '/api/state' })
+    const state = await me.inject({ method: 'GET', url: '/api/state' })
     expect((state.json() as { player: { location: { mapId: string } } }).player.location.mapId).toBe(t.toMap)
 
     await app.close()
   })
 
   it('전환이 없는 칸은 400 no_transition 이다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
     // 요청은 목적지를 담지 않으므로, 전환이 없는 칸을 밟았다고 우겨도 갈 곳이 없다.
-    const res = await app.inject({ method: 'POST', url: '/api/move', payload: { x: 0, y: 0 } })
+    const res = await me.inject({ method: 'POST', url: '/api/move', payload: { x: 0, y: 0 } })
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ code: 'no_transition' })
     await app.close()
   })
 
   it('x·y 가 없으면 400 이다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({ method: 'POST', url: '/api/move', payload: {} })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'POST', url: '/api/move', payload: {} })
     expect(res.statusCode).toBe(400)
     await app.close()
   })
 
   it('맵을 넘어간 뒤에는 이전 맵의 화자에게 말을 걸 수 없다', async () => {
-    const app = buildTestApp()
-    await enterSpeakerMap(app)
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterSpeakerMap(me)
     // 여기서는 말이 통한다 — 아래의 거절이 "원래 안 되는 것" 이 아니라 맵을
     // 넘어간 결과임을 못 박는다.
-    const inside = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    const inside = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     expect(inside.statusCode).toBe(200)
 
     // 서비스 단위 테스트가 같은 것을 보지만, 그 검사는 라우트가 위치를 실제로
     // 저장하고 다시 읽어 오지 않으면 게임에서는 아무 효과가 없다 — 여기서
     // 확인하는 것이 그 연결이다.
-    await step(app, transitionBetween(speakerMapId(ELDER), startLocation(loadGameData()).mapId))
+    await step(me, transitionBetween(speakerMapId(ELDER), startLocation(loadGameData()).mapId))
 
-    const res = await app.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
+    const res = await me.inject({ method: 'POST', url: '/api/talk', payload: { speakerId: ELDER } })
     expect(res.statusCode).toBe(400)
     expect(res.json()).toEqual({ code: 'wrong_map' })
 
@@ -494,11 +501,12 @@ describe('POST /api/move', () => {
   })
 
   it('맵을 넘어간 뒤에는 이전 맵의 노드를 캘 수 없다', async () => {
-    const app = buildTestApp()
-    await enterField(app)
-    await step(app, transitionBetween(fieldMapId(), startLocation(loadGameData()).mapId))
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    await enterField(me)
+    await step(me, transitionBetween(fieldMapId(), startLocation(loadGameData()).mapId))
 
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: 'copper_vein-1' },
@@ -512,9 +520,10 @@ describe('POST /api/move', () => {
 
 describe('GET /api/time', () => {
   it('서버 현재 시각을 반환한다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
     const before = Date.now()
-    const res = await app.inject({ method: 'GET', url: '/api/time' })
+    const res = await me.inject({ method: 'GET', url: '/api/time' })
     const after = Date.now()
 
     expect(res.statusCode).toBe(200)
@@ -528,10 +537,11 @@ describe('GET /api/time', () => {
 
 describe('x-server-now 헤더', () => {
   it('모든 응답에 서버 시각이 실린다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
     for (const url of ['/api/health', '/api/state', '/api/time']) {
-      const res = await app.inject({ method: 'GET', url })
+      const res = await me.inject({ method: 'GET', url })
       const header = res.headers['x-server-now']
       expect(header, `${url} 에 헤더가 없다`).toBeDefined()
       expect(Number(header)).toBeGreaterThan(0)
@@ -541,8 +551,9 @@ describe('x-server-now 헤더', () => {
   })
 
   it('POST 응답에도 실린다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({
       method: 'POST',
       url: '/api/craft',
       payload: { recipeId: 'ghost' },
@@ -555,8 +566,9 @@ describe('x-server-now 헤더', () => {
   })
 
   it('없는 경로(404) 응답에도 실린다', async () => {
-    const app = buildTestApp()
-    const res = await app.inject({ method: 'GET', url: '/api/nope' })
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'GET', url: '/api/nope' })
 
     expect(res.statusCode).toBe(404)
     expect(Number(res.headers['x-server-now'])).toBeGreaterThan(0)
@@ -565,13 +577,14 @@ describe('x-server-now 헤더', () => {
   })
 
   it('CORS 프리플라이트(OPTIONS) 응답에도 실린다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
     // onSend 훅이 캡슐화된 자식 컨텍스트로 옮겨지거나 누군가 OPTIONS 를 특별
     // 취급하도록 리팩터링하면, 프리플라이트 응답에서만 헤더가 조용히 빠질 수 있다.
     // 그러면 브라우저는 실제 요청을 보내기도 전에 드리프트 감지에 쓸 기준 시각을
     // 하나 놓치게 되는데, 테스트가 없으면 이 회귀는 아무 것도 빨갛게 만들지 않는다.
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'OPTIONS',
       url: '/api/time',
       headers: {
@@ -589,14 +602,15 @@ describe('x-server-now 헤더', () => {
 
 describe('CORS exposedHeaders 설정', () => {
   it('Origin 요청에 access-control-expose-headers 로 x-server-now 를 실어 보낸다', async () => {
-    const app = buildTestApp()
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
 
     // app.ts 의 exposedHeaders: ['x-server-now'] 한 줄이 빠지거나 값이 바뀌면, 헤더
     // 자체는 여전히 응답에 실리지만 브라우저의 fetch 는 이 헤더를 볼 수 없게 된다.
     // app.inject() 는 Node 의 raw 응답을 읽을 뿐 브라우저의 CORS 가시성 필터링을
     // 적용하지 않으므로, 여기서는 서버가 Access-Control-Expose-Headers 를 실제로
     // 보내는지만 확인한다 — 브라우저 쪽 강제 여부는 이 테스트의 검증 범위가 아니다.
-    const res = await app.inject({
+    const res = await me.inject({
       method: 'GET',
       url: '/api/time',
       headers: { origin: 'http://localhost:5173' },
