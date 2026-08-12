@@ -189,11 +189,10 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 43종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 38종을 쓴다
-# (ingot_iron·plate_reinforced·pickaxe_reinforced·hammer_iron·hammer_mithril 은
-# 아직 쓰는 아이템이 없는 예비 배정. ore_mithril·ingot_mithril 은 mithril_ore·
-# mithril_ingot 이 재사용하며 주인을 얻었다. pickaxe_reinforced 는 G5 의
-# mithril_pickaxe 가 재사용할 예정이라 그때까지는 예비다).
+# 아이템 아이콘 43종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 39종을 쓴다
+# (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
+# 없는 예비 배정. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
+# mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었다).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"

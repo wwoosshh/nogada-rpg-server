@@ -172,10 +172,11 @@ describe('parseMilestones — 실제 출하 CSV', () => {
     expect(() => parseMilestones(readRealCsv('milestones.csv'), realRecipes)).not.toThrow()
   })
 
-  it('행 30개를 만든다', () => {
+  it('행 31개를 만든다', () => {
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
     const result = parseMilestones(readRealCsv('milestones.csv'), realRecipes)
     // 27 → 30: 주괴 3종(은·금·미스릴)의 recipes-이정표가 채집 티어 아크에서 늘었다.
-    expect(result).toHaveLength(30)
+    // 30 → 31: 미스릴 곡괭이(G5)의 recipes-이정표(crafting_25000)가 늘었다.
+    expect(result).toHaveLength(31)
   })
 })

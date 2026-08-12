@@ -37,3 +37,4 @@ mithril_ore,미스릴 원석,material,,,ore_mithril
 silver_ingot,은 주괴,material,,,ingot_silver
 gold_ingot,금 주괴,material,,,ingot_gold
 mithril_ingot,미스릴 주괴,material,,,ingot_mithril
+mithril_pickaxe,미스릴 곡괭이,tool,mineral,3,pickaxe_reinforced

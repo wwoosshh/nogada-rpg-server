@@ -44,6 +44,7 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
       'iron_axe',
       'iron_pickaxe',
       'iron_sickle',
+      'mithril_pickaxe',
     ])
   })
 

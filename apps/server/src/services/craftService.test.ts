@@ -14,6 +14,12 @@ const data: GameData = {
       id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
       toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
     },
+    // 3등급 — auto-equip 비교 로직(tier > equippedToolTier)이 2등급 전용이 아니라
+    // 임의 등급 간 비교라는 것을 이 픽스처로 못박는다(G5).
+    mithril_pickaxe: {
+      id: 'mithril_pickaxe', name: '미스릴 곡괭이', kind: 'tool',
+      toolSkill: 'mineral', toolTier: 3, icon: 'pickaxe_reinforced',
+    },
   },
   nodes: {},
   recipes: {
@@ -26,6 +32,11 @@ const data: GameData = {
       id: 'iron_pickaxe', name: '철 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 500, baseChance: 0.5,
       inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
       skillGainMin: 20, skillGainMax: 35,
+    },
+    mithril_pickaxe: {
+      id: 'mithril_pickaxe', name: '미스릴 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 25000, baseChance: 0.4,
+      inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'mithril_pickaxe', count: 1 },
+      skillGainMin: 150, skillGainMax: 250,
     },
   },
   // 제작 판정은 맵을 보지 않는다 — 등록부와 전환이 GameData 의 필수 칸이라 비운 채로 둔다.
@@ -62,6 +73,20 @@ function smithReadyForIronPickaxe(overrides: Partial<PlayerState> = {}): PlayerS
   return player({
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 500 },
     stacks: { copper_ingot: 3 },
+    ...overrides,
+  })
+}
+
+/**
+ * 조합 숙련도 25,000 + 구리 주괴 3개, 철 곡괭이(2등급) 착용 중 — 미스릴 곡괭이를
+ * 만들 수 있는 상태. auto-equip 이 2등급을 3등급으로 밀어내는지 보는 픽스처다.
+ */
+function smithReadyForMithrilPickaxe(overrides: Partial<PlayerState> = {}): PlayerState {
+  return player({
+    skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 25000 },
+    stacks: { copper_ingot: 3 },
+    instances: [{ instanceId: 'ironpick', itemId: 'iron_pickaxe', enhanceLevel: 0 }],
+    equipped: { mineral: 'ironpick' },
     ...overrides,
   })
 }
@@ -163,6 +188,20 @@ describe('performCraft', () => {
 
     expect(r.outcome.autoEquipped).toBe(false)
     expect(r.outcome.player.equipped.mineral).toBe('good')
+  })
+
+  // 사다리의 문(G5): auto-equip 비교(tier > equippedToolTier)는 2등급 전용으로
+  // 짜여 있지 않다 — 3등급 도구가 등장해도 craftService.ts 는 한 글자도 안
+  // 고쳤다. 이 테스트가 그 사실을 못박는다(코드 변경 없이 통과해야 정상이다).
+  it('철 곡괭이(2등급) 착용 중 미스릴 곡괭이(3등급)를 만들면 자동으로 갈아 낀다', () => {
+    const r = performCraft({
+      player: smithReadyForMithrilPickaxe(), data, recipeId: 'mithril_pickaxe',
+      rng: alwaysSucceed, newId: () => 'newmithril', now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.mineral).toBe('newmithril')
   })
 
   it('제작에 실패하면 도구를 만들지도 착용하지도 않는다', () => {

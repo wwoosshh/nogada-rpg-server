@@ -9,6 +9,7 @@ crafting_500,skill,crafting,500,철 도구를 만들 수 있다,철 도구를 �
 crafting_1500,skill,crafting,1500,은 주괴를 만들 수 있다,은 주괴를 만들 수 있게 됐다,recipes,silver_ingot
 crafting_5000,skill,crafting,5000,금 주괴를 만들 수 있다,금 주괴를 만들 수 있게 됐다,recipes,gold_ingot
 crafting_10000_ingot,skill,crafting,10000,미스릴 주괴를 만들 수 있다,미스릴 주괴를 만들 수 있게 됐다,recipes,mithril_ingot
+crafting_25000,skill,crafting,25000,미스릴 곡괭이를 만들 수 있다,미스릴 곡괭이를 만들 수 있게 됐다,recipes,mithril_pickaxe
 every_10000,every,ice_10000|wood_10000|mineral_10000|herb_10000,4,고르게 손에 익다,네 가지가 모두 손에 익었다,title,
 ice_10000,skill,ice,10000,얼음이 손에 익다,얼음이 손에 익었다 — 누르고 있으면 계속된다,repeat,ice
 wood_10000,skill,wood,10000,나무가 손에 익다,나무가 손에 익었다 — 누르고 있으면 계속된다,repeat,wood

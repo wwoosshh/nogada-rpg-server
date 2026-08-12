@@ -27,12 +27,11 @@ const data = loadGameData()
 
 const copper = data.items['copper_pickaxe']!
 const iron = data.items['iron_pickaxe']!
-// 3등급 도구의 실물(mithril_pickaxe)은 레시피 태스크가 추가한다 — 판정은 도구의
-// 등급(toolTier)만 보므로(기술 일치는 canGather·equippedToolTier 의 몫) 여기서는
-// factor ×0.8 경로만 필요한 리터럴로 충분하다.
-const mithril: ItemDef = {
-  id: 'mithril_pickaxe', name: '미스릴 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: 3, icon: 'pickaxe_reinforced',
-}
+// 3등급 도구의 실물 — G5(레시피 태스크)가 items.csv 에 추가한 mithril_pickaxe 를
+// 그대로 쓴다. 판정은 도구의 등급(toolTier)만 보므로(기술 일치는 canGather·
+// equippedToolTier 의 몫) 리터럴로도 충분했지만, 실물을 꿰면 items.csv 의 icon·
+// toolTier 가 실제로 factor 0.8 경로에 닿는다는 것까지 증명된다.
+const mithril = data.items['mithril_pickaxe']!
 
 interface SimResult {
   counts: Map<string, number>
