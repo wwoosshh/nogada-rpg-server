@@ -51,6 +51,22 @@ export interface CraftOutcomeDto {
 export interface TalkOutcomeDto {
   speaker: string
   lines: string[]
+  /**
+   * 이 대화가 여는 상점 id — **문이 실제로 열릴 때만** 실려 온다.
+   *
+   * 이긴 대사 규칙과 무관하게 서버가 등록부(`shops.csv`)와 상태로 판정한 것이다
+   * (설계 §6-앞 1). 클라이언트가 다시 판정하지 않는다: 이 값이 있으면 대사가
+   * 끝난 뒤 그 상점을 연다(§6-앞 20 — 스토어의 pendingShop).
+   */
+  shop?: string
+  /**
+   * 이번 대화에서 받은 달인의 1회성 대금. 두 번째 대화에는 실리지 않는다.
+   *
+   * 금액이 함께 오는 이유는 화면이 "+1,000,000 G" 를 말해야 하기 때문이다 —
+   * 골드 총액만 오면 클라이언트가 차이를 계산해야 하고, 그 계산은 같은 응답에
+   * 매도 대금이 섞이는 날 조용히 틀린다.
+   */
+  reward?: { id: string; gold: number }
   player: PlayerState
 }
 
@@ -278,5 +294,26 @@ export const GameClient = {
     request<{ player: PlayerState }>('/api/enhance', {
       method: 'POST',
       body: JSON.stringify({ materialInstanceId }),
+    }),
+
+  /**
+   * 매도 — 그 계열의 재료를 상점에 넘긴다. 착용·강화와 같이 응답은 `{ player }`
+   * 뿐이다(무엇이 얼마에 팔렸는지는 요청과 가격 함수가 이미 안다).
+   *
+   * **수량이 요청에 들어가는 첫 사례다**(설계 §6-앞 17). 지금까지 모든 요청은
+   * id 하나였고 그 최소성이 규범이었다 — 수량만은 서버가 유도할 수 없는 판정
+   * 대상의 크기라 예외다. 상한(999)은 서버 스키마가 조인다.
+   */
+  sell: (shopId: string, itemId: string, count: number) =>
+    request<{ player: PlayerState }>('/api/shop/sell', {
+      method: 'POST',
+      body: JSON.stringify({ shopId, itemId, count }),
+    }),
+
+  /** 매수 — 진열된 물건을 정가에 산다. 매도와 같은 모양이고 같은 이유다. */
+  buy: (shopId: string, itemId: string, count: number) =>
+    request<{ player: PlayerState }>('/api/shop/buy', {
+      method: 'POST',
+      body: JSON.stringify({ shopId, itemId, count }),
     }),
 }

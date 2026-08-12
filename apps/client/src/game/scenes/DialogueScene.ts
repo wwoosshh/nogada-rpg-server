@@ -391,6 +391,18 @@ export class DialogueScene extends Phaser.Scene {
       const hub = this.hub
       hub?.setWorldInputLocked('dialogue', open)
       if (hub) this.control?.setControllerVisible(!hub.worldInputLocked)
+
+      // **말이 끝나는 순간이 상점이 열리는 순간이다**(설계 §6-앞 20). 서버가
+      // talk 응답에 실어 보낸 상점은 스토어의 pendingShop 에서 기다리고 있다 —
+      // 응답이 오자마자 열 수 없는 이유는 바로 위의 utterance 구독이 가장 먼저
+      // 모든 패널을 닫기 때문이다(대사가 화면의 단독 소유자다). 여는 자리가
+      // 여기인 이유도 같다: "대사창이 닫혔다"를 아는 곳이 이 전환 하나뿐이다.
+      //
+      // 이 전환이 제 일(대사 잠금 해제·컨트롤러 복귀)을 끝낸 **뒤에** 부른다 —
+      // 패널이 열리면 PanelScene 의 구독이 자기 이름('panel')으로 다시 잠그고
+      // 컨트롤러를 도로 숨긴다. 잠금이 주인 이름별로 따로 사니 두 씬이 서로의
+      // 값을 지우지 않는다(InputHub.setWorldInputLocked 문서).
+      if (!open) useGameStore.getState().openPendingShop()
     }
 
     if (!box) {

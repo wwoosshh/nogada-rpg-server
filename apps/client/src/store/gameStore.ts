@@ -28,6 +28,7 @@ import {
   SERVER_UNREACHABLE,
   type MessageOverrides,
 } from '../ui/serverMessages.js'
+import { formatGold } from '../ui/shopModel.js'
 
 /**
  * 캐릭터 머리 위에 띄울 행동 결과.
@@ -161,7 +162,28 @@ export interface MenuRequest {
  * 키보드 리스너를 두지 않는 이유는 대사창 계약(대화 중 I/C 삼킴) 때문이다 —
  * 그 계약은 WorldScene 이 applyInput 을 부르지 않는 것 한 곳으로 지켜진다.
  */
-export type OpenPanel = 'bag' | 'craft' | 'menu' | null
+export type OpenPanel = 'bag' | 'craft' | 'menu' | ShopPanelKey | null
+
+/**
+ * 상점 패널의 열림 값 — 상점 **id 를 품은 문자열 키**다(설계 §6-앞 20).
+ *
+ * 왜 `{ kind: 'shop', id }` 객체가 아닌가: `setOpenPanel` 의 항등 가드
+ * (`panel === get().openPanel`)가 값 비교라, 객체를 넣으면 같은 상점을 다시
+ * 여는 요청이 매번 새 객체로 와서 가드를 통과한다 — 그 가드 하나가 제작 tally
+ * 리셋을 지키고 있다. 문자열이면 상호배제도 그대로 공짜다: 상점을 연 채 가방을
+ * 열면 값이 덮이며 닫힌다.
+ */
+export type ShopPanelKey = `shop:${string}`
+
+/** 상점 id 하나를 열림 값으로 만든다. 접두사를 손으로 적는 곳을 하나로 묶는다. */
+export function shopPanelKey(shopId: string): ShopPanelKey {
+  return `shop:${shopId}`
+}
+
+/** 열림 값이 상점이면 그 상점 id, 아니면 null — 상점 패널이 자기 차례인지 묻는 창구. */
+export function shopIdOf(panel: OpenPanel): string | null {
+  return panel !== null && panel.startsWith('shop:') ? panel.slice('shop:'.length) : null
+}
 
 /** 레시피 하나의 이번-열림 누적 성적. 제작 카드가 `+N · 실패 M` 로 보여준다(설계 §8-앞 3). */
 export interface CraftTallyEntry {
@@ -183,6 +205,16 @@ interface GameStore {
   confirmingDelete: boolean
   /** 지금 열려 있는 전면 패널. 규칙은 OpenPanel 타입 문서에 있다. */
   openPanel: OpenPanel
+  /**
+   * 대사가 끝나면 열릴 상점 id(설계 §6-앞 20).
+   *
+   * talk 응답이 곧바로 패널을 열지 못하는 이유가 이 필드의 존재 이유다:
+   * DialogueScene 의 발화 구독이 **가장 먼저** `setOpenPanel(null)` 을 부른다
+   * (대사가 화면의 단독 소유자여야 하므로). 응답에서 바로 열면 그 직후 닫힌다.
+   * 그래서 문은 여기서 기다렸다가 대사창이 닫히는 순간 열린다 — 원작에서도
+   * 상인은 말을 마치고 나서 물건을 펼쳤다.
+   */
+  pendingShop: string | null
   /**
    * 제작 패널이 열려 있는 동안의 레시피별 누적 성공/실패(설계 §8-앞 3).
    * 결과가 초당 여러 번 오는 화면이라 점멸 대신 쌓이는 숫자를 쓴다 —
@@ -210,8 +242,11 @@ interface GameStore {
   move: (x: number, y: number) => Promise<void>
   equip: (instanceId: string) => Promise<void>
   enhance: (materialInstanceId: string) => Promise<void>
+  sell: (shopId: string, itemId: string, count: number) => Promise<void>
+  buy: (shopId: string, itemId: string, count: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
   setOpenPanel: (panel: OpenPanel) => void
+  openPendingShop: () => void
 }
 
 /** 가입인가 로그인인가. 화면 하나가 둘을 오가므로(설계 §5) 값으로 받는다. */
@@ -242,10 +277,19 @@ function isNetworkFailure(err: unknown): boolean {
  * 는 안 잠겼는데 DOM 패널만 열려 있는" 화면이 된다(confirmingDelete 와 같은
  * 이유이지만, 그쪽은 여는 곳이 설정 탭 하나뿐이라 리셋도 그 옆에 둘 수 있었다).
  */
-function gate(boot: BootPhase): { boot: BootPhase; connection: Connection; openPanel: null } {
-  if (boot === 'playing') return { boot, connection: 'online', openPanel: null }
-  if (boot === 'checking') return { boot, connection: 'connecting', openPanel: null }
-  return { boot, connection: 'offline', openPanel: null }
+function gate(boot: BootPhase): {
+  boot: BootPhase
+  connection: Connection
+  openPanel: null
+  pendingShop: null
+} {
+  // 기다리던 상점도 함께 버린다 — 국면이 움직였다는 것은 그 대화가 있던 세계에서
+  // 나왔다는 뜻이라, 남겨 두면 재접속 뒤 첫 대화가 끝나는 순간 엉뚱한 상점이 열린다.
+  if (boot === 'playing') return { boot, connection: 'online', openPanel: null, pendingShop: null }
+  if (boot === 'checking') {
+    return { boot, connection: 'connecting', openPanel: null, pendingShop: null }
+  }
+  return { boot, connection: 'offline', openPanel: null, pendingShop: null }
 }
 
 /**
@@ -263,6 +307,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gateBusy: false,
   confirmingDelete: false,
   openPanel: null,
+  pendingShop: null,
   craftTally: {},
   lastAction: null,
   milestone: null,
@@ -480,7 +525,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const outcome: TalkOutcomeDto = await GameClient.talk(speakerId)
       applyPlayer(set, outcome.player)
-      set({ utterance: { seq: ++utteranceSeq, speaker: outcome.speaker, lines: outcome.lines } })
+      // 상점은 여기서 열지 않는다 — 대사창이 이 발화를 받으며 패널을 전부 닫기
+      // 때문이다(pendingShop 문서). 문은 대사가 끝난 뒤 열린다(설계 §6-앞 20).
+      set({
+        utterance: { seq: ++utteranceSeq, speaker: outcome.speaker, lines: outcome.lines },
+        pendingShop: outcome.shop ?? null,
+      })
+      // 달인의 1회성 대금 — 새 채널을 만들지 않고 머리 위 피드백으로 말한다.
+      // 대사창은 화면 아래쪽만 쓰므로 이 글자는 그 위에 그대로 보인다. 누적
+      // (groupKey)은 없다: 평생 한 번뿐인 사건을 다음 것과 합칠 이유가 없다.
+      if (outcome.reward) pushAction(set, `+${formatGold(outcome.reward.gold)}`, 'good')
     } catch (err) {
       // 서버와 끊겼으면 대사창이 아니라 게이트가 할 일이다 — 채집과 같다.
       if (isNetworkFailure(err)) {
@@ -556,6 +610,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
+  /**
+   * 매도 — 상점 패널의 [팔기] 버튼이 부른다. equip·enhance 와 같은 자세다:
+   * 거래는 행동 간격을 쓰지 않으므로(설계 §6-앞 18) too_fast 가 올 수 없고,
+   * 성공은 머리 위 글자로 알리지 않는다 — 결과는 그 자리에서 골드와 스택
+   * 숫자가 직접 말하고, 패널이 화면을 덮고 있어 어차피 안 보인다.
+   */
+  sell: async (shopId, itemId, count) => {
+    await trade(set, get, () => GameClient.sell(shopId, itemId, count))
+  },
+
+  /** 매수 — [사기] 버튼이 부른다. 매도와 같은 길이고 같은 이유다. */
+  buy: async (shopId, itemId, count) => {
+    await trade(set, get, () => GameClient.buy(shopId, itemId, count))
+  },
+
   // 톱니 클릭 자체는 게임 상태가 아니지만, App.tsx 를 건드리지 않고 React ->
   // Phaser 로 "메뉴를 열어라"를 전달할 통로가 이 스토어뿐이라 여기 둔다.
   // openPanel 을 'menu' 로 함께 덮는다 — 열려 있던 가방·제작(DOM) 패널은 그
@@ -575,6 +644,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 이 숫자는 "이번에 열어 둔 동안"의 성적이다.
     if (panel === 'craft') set({ openPanel: panel, craftTally: {} })
     else set({ openPanel: panel })
+  },
+
+  /**
+   * 대사가 끝났다 — 기다리던 상점이 있으면 지금 연다(설계 §6-앞 20).
+   *
+   * 부르는 곳은 DialogueScene 의 render() 하나다: 대사창이 열림→닫힘으로
+   * 바뀌는 그 순간이 유일하게 "말이 끝났다"를 아는 자리다. 기다리는 상점이
+   * 없으면 아무 일도 없다 — 대사창은 상점과 무관한 말에도 매번 닫힌다.
+   */
+  openPendingShop: () => {
+    const shopId = get().pendingShop
+    if (shopId === null) return
+    set({ pendingShop: null })
+    get().setOpenPanel(shopPanelKey(shopId))
   },
 }))
 
@@ -666,6 +749,38 @@ function applyPlayer(set: SetFn, next: PlayerState): void {
 }
 
 /**
+ * 거래 왕복 하나(매도·매수 공통) — 응답은 `{ player }` 하나뿐이라 적용도 하나다.
+ *
+ * 두 액션이 이 함수를 나눠 쓰는 이유는 **자리를 뜬 화자** 때문이다(설계 §6-앞 4):
+ * 상점 넷 중 셋은 화자의 일과에 실내 지점이 있어 밤이면 `not_here` 가 된다.
+ * 그건 버그가 아니라 세계가 살아 있다는 증거이고, 그때 화면이 할 일은 패널을
+ * 닫고 **대화와 똑같은 안내**를 띄우는 것 하나다 — 두 액션이 각자 적으면
+ * 언젠가 한쪽만 고쳐져서 "팔리지도 않고 닫히지도 않는" 패널이 남는다.
+ */
+async function trade(
+  set: SetFn,
+  get: () => GameStore,
+  send: () => Promise<{ player: PlayerState }>,
+): Promise<void> {
+  try {
+    const { player } = await send()
+    applyPlayer(set, player)
+  } catch (err) {
+    if (isNetworkFailure(err)) {
+      set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
+      return
+    }
+    if (err instanceof ApiError && err.code === 'not_here') {
+      get().setOpenPanel(null)
+      set({ notice: { seq: ++noticeSeq, text: NOT_HERE_NOTICE } })
+      return
+    }
+    pushAction(set, describeError(err), 'bad')
+    console.error(err)
+  }
+}
+
+/**
  * 제작 결과 하나를 누적 카운터에 더한다(설계 §8-앞 3·5).
  *
  * craft 액션이 여기까지 책임지는 이유: 현행 craft 는 `Promise<void>` 라 결과를
@@ -732,6 +847,30 @@ function describeError(err: unknown): string {
       return '강화할 착용 도구가 없다'
     case 'enhance_cap':
       return '더 강화할 수 없다'
+    // 아래는 거래(sell·buy) 전용 코드다(설계 §6-앞 18). 상점 패널이 잠긴 칸·
+    // 보유 증표·모자란 골드를 미리 걸러 버튼을 잠그므로 정상 조작으로는 거의
+    // 오지 않는다 — 두 창을 동시에 열어 같은 스택을 파는 경합처럼, 화면이
+    // 막을 수 없는 경우에만 온다. 그래도 말이 없으면 화면이 조용히 아무 일도
+    // 안 한 것처럼 보인다. `not_here` 는 여기 없다 — 그건 문구가 아니라
+    // 패널을 닫는 사건이라 trade() 가 대화와 같은 안내로 따로 다룬다.
+    case 'unknown_shop':
+      return '없는 상점'
+    case 'shop_locked':
+      return '아직 열리지 않은 상점'
+    case 'wrong_map':
+      return '여기서는 안 된다'
+    case 'unknown_item':
+      return '없는 물건'
+    case 'not_sellable':
+      return '이 상점이 사지 않는 물건'
+    case 'missing_items':
+      return '물건이 모자란다'
+    case 'item_locked':
+      return '아직 살 수 없는 물건'
+    case 'not_enough_gold':
+      return '골드 부족'
+    case 'already_owned':
+      return '이미 가지고 있다'
     default:
       return `오류: ${err.code}`
   }

@@ -49,11 +49,19 @@ function fakeWindow(): { localStorage: Pick<Storage, 'getItem' | 'setItem' | 're
   }
 }
 
+/** 서버 talk 응답(TalkOutcomeDto)의 최소 실물 — 상점·대금만 얹어 가른다. */
+function talkOutcome(extra: Record<string, unknown> = {}): unknown {
+  return { speaker: '채집장노인', lines: ['어서 오시게.'], player: emptyPlayer(), ...extra }
+}
+
 beforeEach(() => {
   // 게임 중인 상태에서 시작한다 — 패널은 게임 안에서만 열린다.
   useGameStore.setState({
     openPanel: null,
+    pendingShop: null,
     craftTally: {},
+    lastAction: null,
+    notice: null,
     player: emptyPlayer(),
     boot: 'playing',
     connection: 'online',
@@ -186,5 +194,103 @@ describe('openPanel 의 수명 — 게임 밖으로 나가면 닫힌다(설계 �
 
     expect(useGameStore.getState().openPanel).toBeNull()
     expect(useGameStore.getState().boot).toBe('unreachable')
+  })
+})
+
+describe('상점 — 문은 대사가 끝난 뒤에 열린다(설계 §6-앞 20)', () => {
+  // 왜: talk 응답이 바로 패널을 열면 그 직후 닫힌다 — DialogueScene 의 발화
+  //     구독이 가장 먼저 setOpenPanel(null) 을 부르기 때문이다(대사가 화면의
+  //     단독 소유자). 그래서 상점은 pendingShop 에서 기다린다.
+  it('talk 의 shop 은 pendingShop 에 담기고 그 자리에서 열리지 않는다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(talkOutcome({ shop: '얼음상점' }))))
+
+    await useGameStore.getState().talk('채집장노인')
+
+    expect(useGameStore.getState().pendingShop).toBe('얼음상점')
+    expect(useGameStore.getState().openPanel).toBeNull()
+  })
+
+  // 왜: 대사창이 닫히는 그 순간이 "말이 끝났다"를 아는 유일한 자리이고,
+  //     열림 값은 상점 id 를 품은 문자열 키다(항등 가드를 살리려고, ShopPanelKey).
+  it('openPendingShop 이 그 상점을 열고 채널을 비운다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(talkOutcome({ shop: '얼음상점' }))))
+
+    await useGameStore.getState().talk('채집장노인')
+    useGameStore.getState().openPendingShop()
+
+    expect(useGameStore.getState().openPanel).toBe('shop:얼음상점')
+    expect(useGameStore.getState().pendingShop).toBeNull()
+    // 대사창은 상점과 무관한 말에도 매번 닫힌다 — 두 번째 호출은 아무 일도 없다.
+    useGameStore.getState().setOpenPanel(null)
+    useGameStore.getState().openPendingShop()
+    expect(useGameStore.getState().openPanel).toBeNull()
+  })
+
+  // 왜: 문이 안 열리는 대화(숙련 미달·다른 화자)가 앞선 대화의 상점을 물려받으면,
+  //     아무 말이나 걸어도 상점이 열린다.
+  it('상점 없는 대화는 기다리던 상점을 지운다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(talkOutcome({ shop: '얼음상점' })))
+        .mockResolvedValueOnce(jsonResponse(talkOutcome())),
+    )
+
+    await useGameStore.getState().talk('채집장노인')
+    await useGameStore.getState().talk('여관안주인')
+
+    expect(useGameStore.getState().pendingShop).toBeNull()
+  })
+
+  // 왜: 달인 대금은 새 채널을 만들지 않는다(§6-앞 20 배선) — 머리 위 피드백
+  //     그대로다. 금액을 서버가 실어 보내는 이유는 화면이 차액을 계산하지
+  //     않기 위해서다(같은 응답에 매도 대금이 섞이는 날 조용히 틀린다).
+  it('달인 대금은 머리 위 피드백으로 +금액 을 말한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse(talkOutcome({ reward: { id: 'ice_master', gold: 1000000 } }))),
+    )
+
+    await useGameStore.getState().talk('여관안주인')
+
+    expect(useGameStore.getState().lastAction?.text).toBe('+1,000,000 G')
+    expect(useGameStore.getState().lastAction?.tone).toBe('good')
+  })
+})
+
+describe('거래 — 화자가 자리를 뜨면 패널이 닫힌다(설계 §6-앞 4)', () => {
+  // 왜: 상점 넷 중 셋은 화자의 일과에 실내 지점이 있어 밤이면 not_here 가 된다.
+  //     그건 버그가 아니라 세계가 살아 있다는 증거이고, 화면이 할 일은 패널을
+  //     닫고 **대화와 똑같은 안내**를 띄우는 것이다.
+  it('매도가 not_here 로 거절되면 패널이 닫히고 안내가 뜬다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'not_here' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    await useGameStore.getState().sell('얼음상점', 'ice_shard', 3)
+
+    expect(useGameStore.getState().openPanel).toBeNull()
+    expect(useGameStore.getState().notice?.text).toBe('지금 여기 없는 것 같다.')
+  })
+
+  // 왜: 거래의 응답은 { player } 하나다(착용·강화와 같은 모양) — 그 하나를
+  //     갈아 끼우는 것이 골드와 스택이 화면에서 움직이는 전부다.
+  it('매수 성공은 응답의 player 를 그대로 갈아 끼운다', async () => {
+    const bought = { ...emptyPlayer(), gold: 520000, stacks: { ice_speed_token: 1 } }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ player: bought })),
+    )
+
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    await useGameStore.getState().buy('얼음상점', 'ice_speed_token', 1)
+
+    expect(useGameStore.getState().player?.gold).toBe(520000)
+    expect(useGameStore.getState().openPanel).toBe('shop:얼음상점')
   })
 })

@@ -4,6 +4,7 @@ import {
   REAL_MS_PER_GAME_MINUTE,
   buyPrice,
   emptyDialogueHistory,
+  isSellTarget,
   sellPrice,
   type BakedLeg,
   type GameData,
@@ -18,7 +19,7 @@ import {
 import { testItem, testTool } from '@nogada/shared/testing'
 import { loadGameData } from '@nogada/data'
 import { describe, expect, it } from 'vitest'
-import { isSellTarget, performBuy, performSell } from './tradeService.js'
+import { performBuy, performSell } from './tradeService.js'
 
 // ---------------------------------------------------------------------------
 // 픽스처 — shopAccess.test.ts 의 무대를 그대로 쓴다. 거래가 부르는 현장 판정이

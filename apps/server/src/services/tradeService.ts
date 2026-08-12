@@ -1,5 +1,6 @@
 import {
   buyPrice,
+  isSellTarget,
   sellPrice,
   shopAccess,
   type GameData,
@@ -56,24 +57,6 @@ export type BuyErrorCode =
 
 export type SellResult = { ok: true; outcome: TradeOutcome } | { ok: false; code: SellErrorCode }
 export type BuyResult = { ok: true; outcome: TradeOutcome } | { ok: false; code: BuyErrorCode }
-
-/**
- * 이 상점이 이것을 사 주는가 — **매도 대상의 정의**(설계 §6-앞 13).
- *
- * 네 조건이 각각 무엇을 막는지: `material` 은 도구를(강화 재료를 실수로 파는
- * 사고가 크다), `!tokenEffect` 는 증표를(수십만 골드짜리 되팔기 창구가 열린다),
- * `price > 0` 은 값이 없는 것을(0원은 "공짜로 팔린다"가 아니라 **팔 수 없다**는
- * 뜻이다), `skill` 일치는 남의 계열을 막는다(남의 계열을 팔려면 그 마을에 가야
- * 한다 — 월드가 살아 있는 이유다).
- *
- * **빌드 검증(packages/data 의 validate.ts)이 같은 conjunction 을 쓴다.** 그쪽은
- * "쓸 곳도 팔 곳도 없는 아이템"을 잡을 때 이 정의로 묻는다. 둘이 갈라지면 빌드는
- * "이건 팔 데가 있다"며 통과시키는데 서버는 `not_sellable` 로 거절하는, 화면
- * 어디에도 이유가 안 적히는 상태가 된다 — 고칠 때는 반드시 두 곳을 함께 고친다.
- */
-export function isSellTarget(def: ItemDef, shop: ShopDef): boolean {
-  return def.kind === 'material' && !def.tokenEffect && def.price > 0 && def.skill === shop.skill
-}
 
 /**
  * 수량이 수량인지 못 박는다 — **오류 코드가 아니라 예외다.**

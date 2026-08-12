@@ -17,6 +17,7 @@ import {
   describeFactValueShape,
   factValueFitsShape,
   findFactSpec,
+  isSellTarget,
   matchesCondition,
   sellPrice,
   starterToolCandidates,
@@ -805,12 +806,14 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   for (const recipe of Object.values(data.recipes)) {
     for (const input of recipe.inputs) recipeInputs.add(input.item)
   }
-  /** 어느 상점이든 이것을 사 주는가. 매도 대상의 정의는 설계 §6-앞 13 그대로다. */
+  /**
+   * 어느 상점이든 이것을 사 주는가. 매도 대상의 정의(설계 §6-앞 13)는 **shared 의
+   * `isSellTarget` 하나가 소유한다** — 서버의 매도 판정도 같은 함수를 부르므로,
+   * 빌드가 "팔 데가 있다"며 통과시킨 아이템을 서버가 `not_sellable` 로 거절하는
+   * 어긋남이 생길 수 없다.
+   */
   const someShopBuys = (item: ItemDef): boolean =>
-    item.kind === 'material' &&
-    !item.tokenEffect &&
-    item.price > 0 &&
-    Object.values(data.shops).some((shop) => shop.skill === item.skill)
+    Object.values(data.shops).some((shop) => isSellTarget(item, shop))
   for (const item of Object.values(data.items)) {
     if (recipeInputs.has(item.id) || item.kind === 'tool' || item.tokenEffect || someShopBuys(item)) continue
     violations.push(

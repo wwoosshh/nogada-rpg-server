@@ -56,6 +56,18 @@
 }
 
 /*
+ * 소지금(TopBar.tsx) — 맵 이름 옆. 시계·톱니와 같은 flex: none 이라 이 숫자는
+ * 줄어들지 않는다: 자릿수가 곧 티어인 게임이라(24,000 과 240,000) 말줄임표로
+ * 잘리면 안 되는 유일한 문자열이다. 줄어드는 몫은 맵 이름 하나가 진다.
+ * tabular-nums 는 골드가 오르내려도 옆 글자가 흔들리지 않게 한다.
+ */
+.topbar__gold {
+  flex: none;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * 상세 메뉴(설정 탭)를 여는 톱니. 브라우저 기본 버튼 스타일을 지우고 상단 바
  * 팔레트에 맞춘다. min-width/height 는 이전에 이 자리에 있던 빈 예약 공간과
  * 같은 값이다 — 시계가 가운데로 밀리지 않게 폭을 계속 잡아 둔다.
@@ -441,6 +453,23 @@
   padding: 0 var(--space-3) var(--space-3);
 }
 
+/*
+ * 가방의 소지금 한 줄 — 골드도 "가진 것"이라 이 화면에 산다. 숫자는 오래
+ * 들여다보는 것이라 16px + tabular-nums(설계 §8-앞 12), 라벨은 섹션 제목과
+ * 같은 단(13px)으로 낮춰 숫자가 먼저 읽히게 한다.
+ */
+.bag__gold {
+  margin: var(--space-2) 0 0;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+}
+
+.bag__gold-num {
+  font-size: 16px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* 섹션 제목(도구/재료). 카드 제목(16px)보다 한 단 낮춘 13px. */
 .bag__section {
   margin: var(--space-2) 0 0;
@@ -681,6 +710,12 @@
  * 행 전체가 버튼이던 카드 더미는 "게임에서 쓰이는 방식이 아니다"로 기각됐다.
  * 왼쪽 목록 행은 선택만 하고, 실행은 상세 하단의 제작 버튼 하나다 — 선택과
  * 실행이 분리된 고전 제작 화면 문법. 가로 812×375 라 좌우 분할이 자연스럽다.
+ *
+ * **이 블록은 상점 패널(ShopPanel.tsx)도 그대로 입는다.** 상점은 같은 문법의
+ * 형제라(좌 목록·우 상세·큰 버튼, 잠긴 줄은 요구치 숫자), 클래스 이름을 한 벌
+ * 더 만들어 같은 규칙을 복사하면 두 화면이 조금씩 갈라져 형제로 안 보이게 된다.
+ * 이름은 처음 쓴 곳(craft)의 것을 그대로 두고, 상점에만 있는 것(탭·수량 고르개·
+ * 총액·소지금)만 아래 .shop__ 블록이 더한다.
  */
 .craft__body {
   flex: 1 1 auto;
@@ -994,6 +1029,149 @@
 
 .craft__tally-good {
   color: var(--c-success);
+}
+
+/*
+ * 상점 패널(ShopPanel.tsx)만의 것들 — 나머지 구조(.craft__body/list/row/detail/
+ * info/actions)는 제작 패널과 공유한다(위 블록 주석 참고).
+ */
+
+/* 헤더의 소지금 — 제목과 ✕ 사이. margin-left: auto 로 닫기 버튼 곁에 붙는다. */
+.shop__gold {
+  margin-left: auto;
+  margin-right: var(--space-2);
+  font-size: 16px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 팔기·사기 탭 — 인증 화면의 탭(.screen__tab)을 그대로 입는다. 두 탭이 화면
+ * 폭을 반씩 나눠 갖고(그쪽 flex: 1 1 0), 밑줄이 지금 어느 쪽인지 말한다.
+ */
+.shop__tabs {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-1);
+}
+
+/*
+ * 목록 행 오른쪽 숫자 — 팔기는 보유 수량(×N), 사기는 개당 값. 잠긴 행의
+ * 요구치(.craft__row-req)와 같은 자리·같은 크기라 탭을 오가도 눈이 그 열을
+ * 다시 찾지 않는다. 색만 다르다: 요구치는 당근(accent)이고 이쪽은 사실(parchment).
+ */
+.shop__row-num {
+  flex: none;
+  font-size: 16px;
+  color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 이미 가진 증표 — 값 대신 이 말이 그 자리에 선다. 살 수 없음이 아니라 이미 이뤘음이다. */
+.shop__row-owned {
+  flex: none;
+  font-size: 13px;
+  color: var(--c-success);
+}
+
+/* 상세의 라벨 줄(개당·합계) — 제작 상세의 .craft__stat 과 같은 단이다. */
+.shop__stat {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+}
+
+.shop__unit {
+  font-size: 16px;
+  color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 수량 고르개 — `−` / 큰 숫자 / `+` / `전부`. 버튼은 손가락 최소 32px(설계
+ * §6-앞 20 의 요구), 숫자는 성공률과 같은 32px 헤드라인이다: 이 화면에서 사람이
+ * 실제로 조작하는 값이 이것 하나뿐이라 가장 크다.
+ */
+.shop__qty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* "수량" 라벨 — 상세의 다른 라벨(개당·합계)과 같은 단이라 한 목소리로 읽힌다. */
+.shop__qty-label {
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+}
+
+.shop__qty-num {
+  min-width: 3ch;
+  text-align: right;
+  font-size: 32px;
+  line-height: 1;
+  color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop__step {
+  flex: none;
+  min-width: 40px;
+  min-height: 32px;
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--c-parchment);
+  cursor: pointer;
+}
+
+.shop__step:active:not(:disabled) {
+  border-color: var(--c-accent);
+}
+
+/* 경계에 닿은 −/+ 는 잠긴다. 없애지 않는 이유: 자리가 사라지면 숫자가 옆으로 밀린다. */
+.shop__step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shop__step--all {
+  color: var(--c-accent);
+}
+
+/*
+ * 총액 — 실시간으로 따라 오르는 숫자다. 골드보다 커지면 붉어지고, 그 붉음이
+ * 곧 아래 버튼이 잠긴 이유다(따로 "골드 부족"이라 적지 않는다 — 숫자 둘이
+ * 이미 그 말을 하고 있고, 하나는 헤더에 상주한다).
+ */
+.shop__total {
+  font-size: 16px;
+  color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop__total--short {
+  color: var(--c-danger);
+}
+
+/* 상세의 "보유 중" — 잠긴 요구치 카운터와 같은 자리를 쓰는 상태 문구. */
+.shop__owned-mark {
+  font-size: 16px;
+  color: var(--c-success);
+}
+
+/*
+ * 팔기·사기 버튼 — 제작 버튼(.craft__craft)과 같은 스펙이다. 다른 점은 홀드가
+ * 없다는 것 하나뿐이라(거래는 쥐고 있을 일이 아니다) touch-action 을 건드릴
+ * 이유가 없다.
+ */
+.shop__confirm {
+  min-height: 48px;
+  font-size: 16px;
 }
 
 /*

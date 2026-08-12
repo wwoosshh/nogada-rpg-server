@@ -10,6 +10,7 @@ import {
 } from '@nogada/shared'
 import { useGameStore } from '../store/gameStore.js'
 import { ItemIcon } from './ItemIcon.js'
+import { formatGold } from './shopModel.js'
 
 /**
  * 도구 하나가 화면에 말할 속도 축 한 줄(§6-앞 13) — 채집 기술은 간격 절감률,
@@ -113,6 +114,11 @@ export function BagPanel(): JSX.Element | null {
           </button>
         </header>
         <div className="bag__body">
+          {/* 소지금 — 가방은 "내가 가진 것"의 화면이고, 골드도 가진 것이다.
+              상점 밖에서 다음 증표까지의 거리를 재는 자리가 여기다(설계 §2). */}
+          <p className="bag__gold">
+            소지금 <span className="bag__gold-num">{formatGold(player.gold)}</span>
+          </p>
           <h3 className="bag__section">장비</h3>
           <ul className="bag__slots">
             {SKILL_IDS.map((skill) => {

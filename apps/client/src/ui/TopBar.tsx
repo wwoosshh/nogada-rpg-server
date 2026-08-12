@@ -5,6 +5,8 @@ import { worldNow } from '../time/clock.js'
 import { BagPanel } from './BagPanel.js'
 import { CraftPanel } from './CraftPanel.js'
 import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
+import { ShopPanel } from './ShopPanel.js'
+import { formatGold } from './shopModel.js'
 
 /** 게임 1분 = 현실 2.5초. 초 단위로 갱신해봐야 읽는 사람에게 의미가 없다. */
 const TICK_MS = 2500
@@ -32,6 +34,12 @@ export function TopBar(): JSX.Element {
     s.player ? (s.data.maps[s.player.location.mapId]?.name ?? null) : null,
   )
 
+  // 골드도 같은 이유로 숫자 하나만 고른다 — 채집·제작마다 player 객체는 새로
+  // 오지만 이 값이 안 바뀌면 상단 바는 다시 그려지지 않는다. 맵 이름 옆이
+  // 자리인 이유(설계 §6-앞 20 의 배선): 상점 밖에서도 "지금 얼마 있나"가
+  // 보여야 캐는 동안 다음 증표까지의 거리가 읽힌다.
+  const gold = useGameStore((s) => s.player?.gold ?? null)
+
   return (
     <>
       {/*
@@ -43,12 +51,18 @@ export function TopBar(): JSX.Element {
       {/* 삭제 확인 창이 패널보다 뒤(위)다 — 설정 탭에서 삭제를 여는 순간 패널 값은 이미 'menu' 라 겹칠 일은 없지만, DOM 순서로도 확인 창이 이긴다. */}
       <BagPanel />
       <CraftPanel />
+      <ShopPanel />
       <DeleteCharacterDialog />
       <div className="topbar">
         <span className="topbar__clock">
           {SEASON_LABELS[t.season]} {t.dayOfSeason}일 · {pad(t.hour)}:{pad(t.minute)}
         </span>
         {mapName !== null && <span className="topbar__map">{mapName}</span>}
+        {gold !== null && (
+          <span className="topbar__gold" aria-label="소지금">
+            {formatGold(gold)}
+          </span>
+        )}
         {/*
           상세 메뉴(Phaser 의 PanelScene)를 설정 탭으로 여는 두 번째 입구다 — B 와
           같은 목적지를 가리킨다. 메뉴 자체는 React 가 아니라 Phaser 씬이라 여기서
