@@ -11,8 +11,6 @@ import { clamp } from './clamp.js'
 export const SPEED_DECADES = 6
 /** 성공률이 자릿수 몇 개에 걸쳐 오르는가 */
 export const CHANCE_DECADES = 5
-/** 수량 보너스가 자릿수 몇 개에 걸쳐 오르는가 */
-export const YIELD_DECADES = 5
 
 /** 숙련도 0 일 때의 행동 간격 — 초당 2회 */
 export const ACTION_INTERVAL_MAX_MS = 500
@@ -26,11 +24,10 @@ export const ACTION_INTERVAL_MAX_MS = 500
  */
 export const ACTION_INTERVAL_MIN_MS = 50
 
-export const MAX_YIELD_BONUS = 2
 export const MAX_SUCCESS_CHANCE = 0.98
 /** 성공률 하한. 판정이 살아 있다는 느낌을 유지하려고 0 이 아니라 여기까지만 떨어진다 */
 export const MIN_SUCCESS_CHANCE = 0.05
-/** 제작 성공률에 망치 등급 1 당 더해지는 보너스. 채집은 도구 등급이 접근 게이트라 이런 보너스가 없다 */
+/** 제작 성공률에 망치 등급 1 당 더해지는 보너스. 채집 도구의 등급은 성공률이 아니라 roll 보정(toolGatherFactor)이라 이런 보너스가 없다 */
 export const CRAFT_TOOL_TIER_CHANCE_BONUS = 0.02
 
 /**
@@ -66,12 +63,5 @@ export function actionIntervalMs(proficiency: number): number {
   return Math.round(ACTION_INTERVAL_MAX_MS - (ACTION_INTERVAL_MAX_MS - ACTION_INTERVAL_MIN_MS) * t)
 }
 
-/**
- * 채집 수량에 더해지는 보너스.
- *
- * 상한을 2 로 묶는다 — 속도가 이미 10배까지 복리로 작용하므로 수량까지 크게 굴리면
- * 곱셈이 과해진다.
- */
-export function yieldBonus(proficiency: number): number {
-  return Math.floor(proficiencyProgress(proficiency, YIELD_DECADES) * MAX_YIELD_BONUS)
-}
+// yieldBonus·MAX_YIELD_BONUS·YIELD_DECADES 는 은퇴했다(설계 §7-앞 2) — 표 모델에서
+// 살려두면 고숙련 잭팟이 3개씩 나와 표의 질량 설계가 ×3 된다. 수량은 항상 1 이다(§3.2).

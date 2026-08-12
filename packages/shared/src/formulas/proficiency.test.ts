@@ -4,10 +4,8 @@ import {
   ACTION_INTERVAL_MIN_MS,
   CHANCE_DECADES,
   MAX_SUCCESS_CHANCE,
-  MAX_YIELD_BONUS,
   actionIntervalMs,
   proficiencyProgress,
-  yieldBonus,
 } from './proficiency.js'
 
 describe('proficiencyProgress', () => {
@@ -78,31 +76,6 @@ describe('actionIntervalMs', () => {
       expect(Number.isInteger(ms)).toBe(true)
       expect(ms).toBeGreaterThanOrEqual(ACTION_INTERVAL_MIN_MS)
       expect(ms).toBeLessThanOrEqual(ACTION_INTERVAL_MAX_MS)
-    }
-  })
-})
-
-describe('yieldBonus', () => {
-  it('초반에는 보너스가 없다', () => {
-    expect(yieldBonus(0)).toBe(0)
-    expect(yieldBonus(99)).toBe(0)
-  })
-
-  it('자릿수가 오르면 늘어난다', () => {
-    expect(yieldBonus(999)).toBe(1)
-    expect(yieldBonus(99_999)).toBe(MAX_YIELD_BONUS)
-  })
-
-  it('상한을 넘지 않는다', () => {
-    expect(yieldBonus(100_000_000)).toBe(MAX_YIELD_BONUS)
-    expect(MAX_YIELD_BONUS).toBe(2)
-  })
-
-  it('항상 0 이상의 정수다', () => {
-    for (const s of [0, 5, 50, 5_000, 5_000_000]) {
-      const b = yieldBonus(s)
-      expect(Number.isInteger(b)).toBe(true)
-      expect(b).toBeGreaterThanOrEqual(0)
     }
   })
 })

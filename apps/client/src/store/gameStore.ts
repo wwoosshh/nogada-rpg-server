@@ -1,7 +1,6 @@
 import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
-  calcGatherChance,
   equippedToolTier,
   type CreateCharacterRequest,
   type GameData,
@@ -685,16 +684,9 @@ export function selectToolTier(skill: SkillId): number {
   return player ? equippedToolTier(player, data, skill) : 0
 }
 
-export function selectGatherChance(nodeId: string): number {
-  const { player, data } = useGameStore.getState()
-  const node = data.nodes[nodeId]
-  if (!player || !node) return 0
-  return calcGatherChance({
-    proficiency: player.skills[node.skill],
-    toolTier: equippedToolTier(player, data, node.skill),
-    node,
-  })
-}
+// selectGatherChance 는 은퇴했다(설계 §7-앞 2, 소비자 0) — 채집은 더 이상 단일
+// 성공률이 아니라 표의 분포이고, 그 표는 클라이언트에 없다(§7-앞 9). 예상치를
+// 그릴 재료 자체가 없는 것이 의도다.
 
 export function selectCraftChance(recipeId: string): number {
   const { player, data } = useGameStore.getState()

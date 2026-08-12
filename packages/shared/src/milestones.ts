@@ -15,16 +15,18 @@ export type MilestoneMetric =
 /**
  * 달성했을 때 무엇이 열리는가.
  *
- * `recipes` 와 `nodes` 는 새 게이트를 만드는 것이 아니라 이미 데이터가 강제하는
- * 게이트를 선언하는 것이다. 그래야 목록에 "칭호를 받는다" 와 "철 곡괭이를 만들 수
- * 있게 된다" 가 섞이고, 그 차이가 이 시스템의 값어치다.
+ * `recipes` 는 새 게이트를 만드는 것이 아니라 이미 데이터가 강제하는 게이트를
+ * 선언하는 것이다. 그래야 목록에 "칭호를 받는다" 와 "철 곡괭이를 만들 수 있게
+ * 된다" 가 섞이고, 그 차이가 이 시스템의 값어치다.
+ *
+ * `nodes` 는 은퇴했다(설계 §7-앞 2) — 노드 tier 게이트가 폐지되어(§3.3) 선언할
+ * 게이트 자체가 없다. 노드는 이제 잠기지 않고, 숙련은 접근이 아니라 분포를 바꾼다.
  *
  * `title` 은 효과가 없다는 뜻이고, 그 사실을 숨기지 않는다.
  */
 export type MilestoneEffect =
   | { kind: 'repeat'; skill: SkillId }
   | { kind: 'recipes'; ids: string[] }
-  | { kind: 'nodes'; ids: string[] }
   | { kind: 'title' }
 
 export interface MilestoneDef {

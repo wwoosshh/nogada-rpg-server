@@ -222,7 +222,7 @@ function loadRealGameData(): GameData {
     maps,
     transitions: parseTransitions(readRealCsv('transitions.csv')),
     placements,
-    milestones: parseMilestones(readRealCsv('milestones.csv'), nodes, recipes),
+    milestones: parseMilestones(readRealCsv('milestones.csv'), recipes),
     speakers: parseSpeakers(readRealCsv('speakers.csv')),
     // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
     places,

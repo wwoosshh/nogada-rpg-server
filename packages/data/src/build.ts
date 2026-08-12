@@ -135,7 +135,7 @@ const data: GameData = {
   maps,
   transitions: parseTransitions(readCsv('transitions.csv')),
   placements,
-  milestones: parseMilestones(readCsv('milestones.csv'), nodes, recipes),
+  milestones: parseMilestones(readCsv('milestones.csv'), recipes),
   speakers: parseSpeakers(readCsv('speakers.csv')),
   places,
   schedules,

@@ -2,7 +2,6 @@ import type {
   MilestoneDef,
   MilestoneEffect,
   MilestoneMetric,
-  NodeDef,
   RecipeDef,
 } from '@nogada/shared'
 import { addUnique, requireCell, toInt, toSkillId } from './parse.js'
@@ -29,7 +28,8 @@ function parsePipeList(value: string, context: string, field: string): string[] 
 }
 
 const METRIC_KINDS = ['skill', 'every'] as const
-const EFFECT_KINDS = ['repeat', 'recipes', 'nodes', 'title'] as const
+// 'nodes' 는 은퇴했다(설계 §7-앞 2) — 노드 tier 게이트가 폐지되어 선언할 게이트가 없다.
+const EFFECT_KINDS = ['repeat', 'recipes', 'title'] as const
 
 function toMetric(row: Row, ctx: string): MilestoneMetric {
   const kind = requireCell(row, 'metricKind', ctx)
@@ -42,7 +42,7 @@ function toMetric(row: Row, ctx: string): MilestoneMetric {
 }
 
 /**
- * `recipes`·`nodes` 효과가 가리키는 대상이 실재하는지 여기서 바로 검사한다.
+ * `recipes` 효과가 가리키는 대상이 실재하는지 여기서 바로 검사한다.
  *
  * 이정표는 게이트를 선언할 뿐이므로, 선언한 대상이 없으면 그 자체로 데이터 오류다 —
  * placements.ts 가 노드 참조를 파싱 시점에 바로 검사하는 것과 같은 이유로, validate.ts 의
@@ -55,7 +55,6 @@ function toMetric(row: Row, ctx: string): MilestoneMetric {
 function toEffect(
   row: Row,
   ctx: string,
-  nodes: Record<string, NodeDef>,
   recipes: Record<string, RecipeDef>,
 ): MilestoneEffect {
   const kind = requireCell(row, 'effectKind', ctx)
@@ -77,16 +76,6 @@ function toEffect(
     return { kind: 'recipes', ids }
   }
 
-  if (kind === 'nodes') {
-    const ids = parsePipeList(requireCell(row, 'effectArg', ctx), ctx, 'effectArg')
-    for (const id of ids) {
-      if (!Object.hasOwn(nodes, id)) {
-        throw new Error(`${ctx}: 존재하지 않는 노드 "${id}" 를 가리킨다`)
-      }
-    }
-    return { kind: 'nodes', ids }
-  }
-
   throw new Error(`${ctx}: effectKind "${kind}" 는 알 수 없다 (허용값: ${EFFECT_KINDS.join(', ')})`)
 }
 
@@ -97,7 +86,6 @@ function toEffect(
  */
 export function parseMilestones(
   rows: Row[],
-  nodes: Record<string, NodeDef>,
   recipes: Record<string, RecipeDef>,
 ): MilestoneDef[] {
   const out: MilestoneDef[] = []
@@ -116,7 +104,7 @@ export function parseMilestones(
       threshold: toInt(requireCell(row, 'threshold', ctx), ctx, 'threshold'),
       name: requireCell(row, 'name', ctx),
       announce: row['announce'] ?? '',
-      effect: toEffect(row, ctx, nodes, recipes),
+      effect: toEffect(row, ctx, recipes),
     })
   }
 

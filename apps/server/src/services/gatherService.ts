@@ -1,18 +1,44 @@
 import {
   actionIntervalMs,
-  calcGatherChance,
   canGather,
+  CHANCE_DECADES,
+  clamp,
   EFFICIENCY_MULTIPLIER,
   equippedToolTier,
+  MAX_SUCCESS_CHANCE,
+  MIN_SUCCESS_CHANCE,
   newlyAchieved,
+  proficiencyProgress,
   rollInt,
-  yieldBonus,
   type GameData,
   type MilestoneDef,
   type NodeDef,
   type PlayerState,
   type RecipeInput,
 } from '@nogada/shared'
+
+/**
+ * 임시 성공률·수량 곡선 — shared 에서 은퇴한 calcGatherChance·yieldBonus 의
+ * 마지막 사본이다(설계 §7-앞 2). 표 판정(gatherOutcome)을 서버에 주입하는 것은
+ * 다음 태스크의 것이라, 그때까지 이 파일만 옛 행동을 그대로 보존한다 — 사본을
+ * shared 에 남겨 두면 "고숙련 잭팟 ×3" 같은 표 질량 왜곡의 재료가 도로 공용
+ * 규칙이 된다. // G4 가 표 판정으로 교체한다
+ */
+const LEGACY_BASE_CHANCE = 0.5
+
+function legacyGatherChance(proficiency: number): number {
+  const t = proficiencyProgress(proficiency, CHANCE_DECADES)
+  return clamp(
+    LEGACY_BASE_CHANCE + (MAX_SUCCESS_CHANCE - LEGACY_BASE_CHANCE) * t,
+    MIN_SUCCESS_CHANCE,
+    MAX_SUCCESS_CHANCE,
+  )
+}
+
+function legacyYieldBonus(proficiency: number): number {
+  // 옛 YIELD_DECADES=5, MAX_YIELD_BONUS=2 — 상수까지 함께 은퇴했으므로 여기 박아 둔다.
+  return Math.floor(proficiencyProgress(proficiency, 5) * 2)
+}
 
 /**
  * 임시 산출물 — 노드가 yieldItem 을 잃고 표(tableId)를 가리키게 됐지만, 표를
@@ -61,8 +87,10 @@ export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; c
 /**
  * 채집 판정. 성패와 산출 수량을 여기서 확정하고 결과만 내려보낸다.
  *
- * 확률은 `calcGatherChance` 하나에서 나온다 — 클라이언트가 툴팁에 그리는
- * 예상치와 실제 판정이 같은 함수라서 표시값과 결과가 어긋날 수 없다.
+ * 성공률은 임시 곡선(legacyGatherChance)이다 — 표 기반 티어 판정(gatherOutcome,
+ * packages/shared)이 이 성패 모델 자체를 은퇴시키고, 그 교체는 서버가 표를
+ * 주입받는 다음 태스크에서 일어난다. 클라이언트는 이제 예상 성공률을 그리지
+ * 않는다(표는 클라이언트에 없다, §7-앞 9).
  */
 export function performGather(args: PerformGatherArgs): GatherResult {
   const { data, instanceId, rng, now } = args
@@ -88,9 +116,8 @@ export function performGather(args: PerformGatherArgs): GatherResult {
 
   const proficiency = player.skills[node.skill]
   const toolTier = equippedToolTier(player, data, node.skill)
-  const ctx = { proficiency, toolTier, node }
 
-  if (!canGather(ctx)) return { ok: false, code: 'cannot_gather' }
+  if (!canGather(toolTier)) return { ok: false, code: 'cannot_gather' }
 
   // 검사 순서: 대상 존재 → 같은 맵 → 접근 자격 → 간격 → 난수.
   //
@@ -103,7 +130,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 실수이지 속도 위반이 아니다.
   if (now < player.nextActionAt) return { ok: false, code: 'too_fast' }
 
-  const chance = calcGatherChance(ctx)
+  const chance = legacyGatherChance(proficiency)
   const success = rng() < chance
 
   // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다.
@@ -120,7 +147,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 상수로 보존한다. 표가 정하는 진짜 판정은 G4 가 넣는다.
   const yieldItem = legacyYieldItem(node)
   if (!yieldItem) return { ok: false, code: 'unknown_node' }
-  const count = rollInt(rng, 1, node.variant === 'deep' ? 2 : 3) + yieldBonus(proficiency)
+  const count = rollInt(rng, 1, node.variant === 'deep' ? 2 : 3) + legacyYieldBonus(proficiency)
   player.stacks[yieldItem] = (player.stacks[yieldItem] ?? 0) + count
 
   // 효율 배수는 아직 항상 1 이다. 식에 자리를 두는 이유는, 나중에 배수를 도입할 때

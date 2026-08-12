@@ -14,7 +14,16 @@
  * 함수로 export 하고, 실제 실행은 파일 맨 아래 main-guard 뒤에 둔다.
  */
 import { pathToFileURL } from 'node:url'
-import type { Condition, DialogueHistory, DialogueRule, Facts, FactValue, GameData } from '@nogada/shared'
+import type {
+  Condition,
+  DialogueHistory,
+  DialogueRule,
+  Facts,
+  FactValue,
+  GameData,
+  GatherTables,
+  ItemDef,
+} from '@nogada/shared'
 import {
   DECLARED_FACTS,
   EVENT_ORDER,
@@ -24,15 +33,21 @@ import {
   describeFactValueShape,
   emptyDialogueHistory,
   findFactSpec,
+  gatherBracketFor,
+  gatherOutcome,
+  jackpotFlatBonus,
   matchesCondition,
   onceKey,
   ruleMatches,
   selectDialogue,
+  toolGatherFactor,
+  toolMatchesSkill,
 } from '@nogada/shared'
 import { coerceFactValue, dialogueLocation } from './dialogueParse.js'
 import { emptyPlayer } from './emptyPlayer.js'
 import { collectDialogueNotices, conditionText, factReferenceError, findDeadDialogueRules } from './validate.js'
 import { loadGameData } from './load.js'
+import { loadGatherTables } from './loadGatherTables.js'
 
 // ---------------------------------------------------------------------------
 // 명령줄 파싱
@@ -52,10 +67,22 @@ export interface DeadCommand {
 export interface WaitingCommand {
   kind: 'waiting'
 }
-export type ContentCommand = DialogueCommand | FactsCommand | DeadCommand | WaitingCommand
+export interface GatherCommand {
+  kind: 'gather'
+  tableId: string
+  proficiency: number
+  /** 없으면 그 표 기술의 1등급 도구를 쓴다 — 새 캐릭터의 손과 같다. */
+  toolId: string | undefined
+  n: number
+}
+export type ContentCommand = DialogueCommand | FactsCommand | DeadCommand | WaitingCommand | GatherCommand
 
 const USAGE =
-  '사용법: pnpm content dialogue <화자id> [--사실=값 ...] | pnpm content facts | pnpm content dead | pnpm content waiting'
+  '사용법: pnpm content dialogue <화자id> [--사실=값 ...] | pnpm content facts | pnpm content dead | pnpm content waiting' +
+  ' | pnpm content gather <표id> --prof=<숙련도> [--tool=<도구id>] [--n=<횟수>]'
+
+/** gather 명령의 기본 시행 횟수 — 시뮬 테스트(gatherSimulation.test.ts)와 같은 N 이다. */
+const GATHER_DEFAULT_N = 100_000
 
 /**
  * `--사실=값` 인자들을 Facts 로 바꾼다.
@@ -144,7 +171,58 @@ export function parseArgs(argv: readonly string[], data: GameData): ContentComma
     return { kind: 'dialogue', speaker, overrides: parseFactOverrides(factArgs, data) }
   }
 
-  throw new Error(`알 수 없는 명령 "${command ?? ''}" — 쓸 수 있는 명령: dialogue, facts, dead, waiting`)
+  if (command === 'gather') {
+    const [tableId, ...optionArgs] = rest
+    if (!tableId || tableId.startsWith('--')) {
+      throw new Error(`표 id 가 없다.\n${USAGE}`)
+    }
+    return { kind: 'gather', tableId, ...parseGatherOptions(optionArgs) }
+  }
+
+  throw new Error(`알 수 없는 명령 "${command ?? ''}" — 쓸 수 있는 명령: dialogue, facts, dead, waiting, gather`)
+}
+
+/**
+ * gather 의 `--이름=값` 인자들. dialogue 의 사실 인자와 같은 문법을 쓰되 이름이
+ * 사실이 아니라 옵션(prof·tool·n)이다 — 문법이 두 벌이면 작가가 명령마다 다른
+ * 손을 익혀야 한다.
+ *
+ * `--prof` 는 필수다. 분포는 숙련 브라켓의 함수라(설계 §2) 숙련 없는 분포 조회는
+ * 질문 자체가 성립하지 않는다 — 기본값 0 을 깔면 "왜 상위 티어가 안 나오지"가
+ * 도구 탓처럼 보인다.
+ */
+function parseGatherOptions(args: readonly string[]): { proficiency: number; toolId: string | undefined; n: number } {
+  let proficiency: number | undefined
+  let toolId: string | undefined
+  let n = GATHER_DEFAULT_N
+
+  for (const arg of args) {
+    const eq = arg.indexOf('=')
+    if (!arg.startsWith('--') || eq < 0 || eq === arg.length - 1) {
+      throw new Error(`"${arg}" 를 이해할 수 없다 — --이름=값 형식으로 쓴다 (예: --prof=15000)`)
+    }
+    const name = arg.slice(2, eq)
+    const raw = arg.slice(eq + 1)
+
+    if (name === 'tool') {
+      toolId = raw
+      continue
+    }
+    if (name !== 'prof' && name !== 'n') {
+      throw new Error(`gather 는 "--${name}" 옵션을 모른다 — 쓸 수 있는 옵션: --prof, --tool, --n`)
+    }
+    const value = Number(raw)
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`"${arg}" 인자를 쓸 수 없다 — ${name} 은 0 이상의 정수여야 한다`)
+    }
+    if (name === 'prof') proficiency = value
+    else n = Math.max(1, value)
+  }
+
+  if (proficiency === undefined) {
+    throw new Error(`--prof=<숙련도> 가 필요하다 — 무엇이 나오는가는 숙련 브라켓의 함수다.\n${USAGE}`)
+  }
+  return { proficiency, toolId, n }
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +562,99 @@ export function runDialogueCommand(
 }
 
 // ---------------------------------------------------------------------------
+// gather — 채집 분포 시뮬레이터
+// ---------------------------------------------------------------------------
+
+/**
+ * `pnpm content gather <표id> --prof=N [--tool=도구id] [--n=횟수]` 의 본체.
+ *
+ * 대사 시뮬레이터와 같은 원칙이다: 새 판정을 만들지 않는다. 서버가 실제로 굴리는
+ * `gatherOutcome`(packages/shared)을 고정 시드로 N 번 부르고 그 결과를 셀 뿐이다
+ * (설계 §7-앞 12). 브라켓 선택도 엔진의 `gatherBracketFor` 를 그대로 쓴다 —
+ * 여기서 브라켓을 다시 고르면 판정이 두 벌이 된다.
+ *
+ * "표 기준" 열은 도구 보정 **전** 누적표의 폭이다. 좋은 도구를 주면 관측이 그
+ * 열보다 위 티어로 쏠린다 — 그 쏠림을 보는 것이 --tool 옵션의 존재 이유다.
+ */
+export function runGatherCommand(
+  data: GameData,
+  tables: GatherTables,
+  cmd: GatherCommand,
+  opts: { seed: number },
+): string {
+  const table = tables[cmd.tableId]
+  if (!table) {
+    const known = Object.keys(tables).sort().join(', ') || '(없음)'
+    throw new Error(`표 "${cmd.tableId}" 를 모른다 — 있는 표: ${known}`)
+  }
+
+  // 그 기술의 도구만 받는다 — 게임에서도 다른 기술의 도구로는 애초에 접근이
+  // 안 되므로(equippedToolTier), 여기서 허용하면 게임에 없는 세계를 시뮬한다.
+  const skillTools = Object.values(data.items).filter((item) => toolMatchesSkill(item, table.skill))
+  let tool: ItemDef
+  if (cmd.toolId === undefined) {
+    const starter = skillTools.find((t) => t.toolTier === 1)
+    if (!starter) throw new Error(`표 "${table.id}" 의 기술(${table.skill})에 1등급 도구가 없다 — items.csv 를 본다`)
+    tool = starter
+  } else {
+    const found = skillTools.find((t) => t.id === cmd.toolId)
+    if (!found) {
+      const known = skillTools.map((t) => t.id).join(', ') || '(없음)'
+      throw new Error(`"${cmd.toolId}" 는 ${table.skill} 기술의 도구가 아니다 — 쓸 수 있는 도구: ${known}`)
+    }
+    tool = found
+  }
+
+  const rng = createRng(opts.seed)
+  const counts = new Map<string, number>()
+  let failures = 0
+  for (let i = 0; i < cmd.n; i++) {
+    const { itemId } = gatherOutcome(table, cmd.proficiency, tool, rng)
+    if (itemId === null) failures += 1
+    else counts.set(itemId, (counts.get(itemId) ?? 0) + 1)
+  }
+
+  const bracket = gatherBracketFor(table, cmd.proficiency)
+  const bracketLabel = bracket.bracketMax === null ? '∞' : `≤${bracket.bracketMax.toLocaleString('ko-KR')}`
+  const bracketIndex = table.brackets.indexOf(bracket) + 1
+  const factor = toolGatherFactor(tool)
+  const flat = jackpotFlatBonus(tool)
+
+  const out: string[] = []
+  out.push(
+    `표 ${table.id} — 기술 ${table.skill}, 숙련 ${cmd.proficiency.toLocaleString('ko-KR')} → 브라켓 ${bracketLabel} (${table.brackets.length}개 중 ${bracketIndex}번째)`,
+  )
+  out.push(
+    `도구 ${tool.name}(${tool.id}, ${tool.toolTier}등급) — roll ×${factor}` +
+      (flat > 0 ? `, 잭팟 밴드(roll≤10) 평감산 −${flat}` : '') +
+      ` · N=${cmd.n.toLocaleString('ko-KR')} · 고정 시드`,
+  )
+  out.push('')
+
+  // roll ∈ 0~100000 이라 확률 분모는 100001 이다 — 폭을 100000 으로 나누면
+  // 잭팟(4/100001)처럼 작은 값에서 표와 관측이 미세하게 어긋나 보인다.
+  const domain = 100_001
+  const pct = (count: number, total: number) => ((count / total) * 100).toFixed(3).padStart(7)
+  const nameWidth = Math.max(...table.tiers.map((t) => (data.items[t.itemId]?.name ?? t.itemId).length))
+
+  out.push(`  티어  ${'아이템'.padEnd(nameWidth, '　')}  표 기준%  관측%     (횟수)`)
+  let prev = 0
+  table.tiers.forEach((tier, i) => {
+    const cum = bracket.cumulative[i] ?? prev
+    const width = Math.max(0, cum - prev)
+    prev = cum
+    const name = (data.items[tier.itemId]?.name ?? tier.itemId).padEnd(nameWidth, '　')
+    const count = counts.get(tier.itemId) ?? 0
+    out.push(`  ${String(i + 1).padStart(2)}    ${name}  ${pct(width, domain)}  ${pct(count, cmd.n)}  (${count.toLocaleString('ko-KR')}회)`)
+  })
+  const failWidth = Math.max(0, 100_000 - (bracket.cumulative.at(-1) ?? 0))
+  out.push(`   -    ${'실패'.padEnd(nameWidth, '　')}  ${pct(failWidth, domain)}  ${pct(failures, cmd.n)}  (${failures.toLocaleString('ko-KR')}회)`)
+  out.push('')
+  out.push(`숙련 증가: 시도마다 +${table.skillGainMin}~${table.skillGainMax} (성패 무관)`)
+  return out.join('\n')
+}
+
+// ---------------------------------------------------------------------------
 // facts — 역방향 조회: 사실별로 그것을 쓰는 대사가 몇 줄인지
 // ---------------------------------------------------------------------------
 
@@ -578,6 +749,10 @@ function main(): void {
       console.log(runDeadCommand(data))
     } else if (command.kind === 'waiting') {
       console.log(runWaitingCommand(data))
+    } else if (command.kind === 'gather') {
+      // 표는 서버 전용 산출물이라 GameData 에 없다(§7-앞 9) — 이 도구는 서버와
+      // 같은 편(빌드 파이프라인)이므로 같은 문(loadGatherTables)으로 읽는다.
+      console.log(runGatherCommand(data, loadGatherTables(), command, { seed: SIMULATOR_SEED }))
     } else {
       const opts = { now: Date.now(), seed: SIMULATOR_SEED }
       console.log(runDialogueCommand(data, command.speaker, command.overrides, opts))

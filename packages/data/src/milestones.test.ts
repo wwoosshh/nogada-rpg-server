@@ -2,15 +2,9 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { NodeDef, RecipeDef } from '@nogada/shared'
-import { parseCsv, parseNodes, parseRecipes } from './parse.js'
+import type { RecipeDef } from '@nogada/shared'
+import { parseCsv, parseRecipes } from './parse.js'
 import { parseMilestones } from './milestones.js'
-
-const nodes: Record<string, NodeDef> = {
-  copper_vein: {
-    id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
-  },
-}
 
 const recipes: Record<string, RecipeDef> = {
   copper_hammer: {
@@ -32,7 +26,7 @@ function row(overrides: Record<string, string> = {}): Record<string, string> {
 
 describe('parseMilestones — 정상 행', () => {
   it('metricKind=skill, effectKind=title 을 파싱한다', () => {
-    const [m] = parseMilestones([row()], nodes, recipes)
+    const [m] = parseMilestones([row()], recipes)
     expect(m).toEqual({
       id: 'ice_1000',
       metric: { kind: 'skill', skill: 'ice' },
@@ -46,25 +40,19 @@ describe('parseMilestones — 정상 행', () => {
   it('metricKind=every 를 파싱한다 — 파이프로 이은 이정표 id 목록이 된다', () => {
     const [m] = parseMilestones(
       [row({ id: 'every_1', metricKind: 'every', metricArg: 'ice_1000|wood_1000', threshold: '2' })],
-      nodes,
       recipes,
     )
     expect(m?.metric).toEqual({ kind: 'every', of: ['ice_1000', 'wood_1000'] })
   })
 
   it('effectKind=repeat 을 파싱한다', () => {
-    const [m] = parseMilestones([row({ effectKind: 'repeat', effectArg: 'ice' })], nodes, recipes)
+    const [m] = parseMilestones([row({ effectKind: 'repeat', effectArg: 'ice' })], recipes)
     expect(m?.effect).toEqual({ kind: 'repeat', skill: 'ice' })
   })
 
   it('effectKind=recipes 를 파싱한다', () => {
-    const [m] = parseMilestones([row({ effectKind: 'recipes', effectArg: 'copper_hammer' })], nodes, recipes)
+    const [m] = parseMilestones([row({ effectKind: 'recipes', effectArg: 'copper_hammer' })], recipes)
     expect(m?.effect).toEqual({ kind: 'recipes', ids: ['copper_hammer'] })
-  })
-
-  it('effectKind=nodes 를 파싱한다', () => {
-    const [m] = parseMilestones([row({ effectKind: 'nodes', effectArg: 'copper_vein' })], nodes, recipes)
-    expect(m?.effect).toEqual({ kind: 'nodes', ids: ['copper_vein'] })
   })
 
   it('CSV 행 순서를 그대로 보존한다', () => {
@@ -76,14 +64,14 @@ describe('parseMilestones — 정상 행', () => {
       row({ id: 'a_second', metricArg: 'wood' }),
       row({ id: 'm_third', metricArg: 'mineral' }),
     ]
-    const result = parseMilestones(rows, nodes, recipes)
+    const result = parseMilestones(rows, recipes)
     expect(result.map((m) => m.id)).toEqual(['z_first', 'a_second', 'm_third'])
   })
 })
 
 describe('parseMilestones — metricKind 검사', () => {
   it('모르는 metricKind 면 던진다', () => {
-    expect(() => parseMilestones([row({ metricKind: 'bogus' })], nodes, recipes)).toThrow(
+    expect(() => parseMilestones([row({ metricKind: 'bogus' })], recipes)).toThrow(
       'milestones.csv[ice_1000]: metricKind "bogus" 는 알 수 없다 (허용값: skill, every)',
     )
   })
@@ -91,7 +79,7 @@ describe('parseMilestones — metricKind 검사', () => {
   it('metricKind=skill 인데 metricArg 가 기술 id 가 아니면 던진다', () => {
     // 오타(mineral → minerall)가 조용히 통과하면 영원히 달성될 수 없는 이정표가
     // 목록에 남는다 — 어떤 플레이어의 숙련도도 "minerall" 이라는 기술을 올릴 수 없다.
-    expect(() => parseMilestones([row({ metricArg: 'minerall' })], nodes, recipes)).toThrow(
+    expect(() => parseMilestones([row({ metricArg: 'minerall' })], recipes)).toThrow(
       'milestones.csv[ice_1000]: skill "minerall" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)',
     )
   })
@@ -99,8 +87,16 @@ describe('parseMilestones — metricKind 검사', () => {
 
 describe('parseMilestones — effectKind 검사', () => {
   it('모르는 effectKind 면 던진다', () => {
-    expect(() => parseMilestones([row({ effectKind: 'bogus' })], nodes, recipes)).toThrow(
-      'milestones.csv[ice_1000]: effectKind "bogus" 는 알 수 없다 (허용값: repeat, recipes, nodes, title)',
+    expect(() => parseMilestones([row({ effectKind: 'bogus' })], recipes)).toThrow(
+      'milestones.csv[ice_1000]: effectKind "bogus" 는 알 수 없다 (허용값: repeat, recipes, title)',
+    )
+  })
+
+  it('은퇴한 effectKind=nodes 를 거부한다 — 노드 tier 게이트가 폐지되어 선언할 게이트가 없다(§7-앞 2)', () => {
+    // 옛 CSV 를 되살리거나 문서의 옛 예시를 베낀 행이 조용히 통과하면, 목록에
+    // "달성하면 캘 수 있다" 라는 거짓 약속이 남는다 — 노드는 이제 잠기지 않는다.
+    expect(() => parseMilestones([row({ effectKind: 'nodes', effectArg: 'copper_vein' })], recipes)).toThrow(
+      'milestones.csv[ice_1000]: effectKind "nodes" 는 알 수 없다 (허용값: repeat, recipes, title)',
     )
   })
 
@@ -108,38 +104,32 @@ describe('parseMilestones — effectKind 검사', () => {
     // 이정표는 게이트를 선언할 뿐이므로 대상이 실재해야 한다 — 없으면 플레이어에게
     // 거짓 약속을 하는 줄이 목록에 남는다.
     expect(() =>
-      parseMilestones([row({ effectKind: 'recipes', effectArg: 'ghost_recipe' })], nodes, recipes),
+      parseMilestones([row({ effectKind: 'recipes', effectArg: 'ghost_recipe' })], recipes),
     ).toThrow('milestones.csv[ice_1000]: 존재하지 않는 레시피 "ghost_recipe" 를 가리킨다')
-  })
-
-  it('effectKind=nodes 인데 없는 노드 id 를 가리키면 던진다', () => {
-    expect(() =>
-      parseMilestones([row({ effectKind: 'nodes', effectArg: 'ghost_node' })], nodes, recipes),
-    ).toThrow('milestones.csv[ice_1000]: 존재하지 않는 노드 "ghost_node" 를 가리킨다')
   })
 
   it('effectKind=repeat 인데 effectArg 가 기술 id 가 아니면 던진다', () => {
     expect(() =>
-      parseMilestones([row({ effectKind: 'repeat', effectArg: 'minerall' })], nodes, recipes),
+      parseMilestones([row({ effectKind: 'repeat', effectArg: 'minerall' })], recipes),
     ).toThrow('milestones.csv[ice_1000]: skill "minerall" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
   })
 })
 
 describe('parseMilestones — 공통 검사', () => {
   it('id 가 겹치면 던진다', () => {
-    expect(() => parseMilestones([row(), row()], nodes, recipes)).toThrow(
+    expect(() => parseMilestones([row(), row()], recipes)).toThrow(
       'milestones.csv: 중복된 id "ice_1000"',
     )
   })
 
   it('threshold 가 0 이하면 던진다', () => {
-    expect(() => parseMilestones([row({ threshold: '0' })], nodes, recipes)).toThrow(
+    expect(() => parseMilestones([row({ threshold: '0' })], recipes)).toThrow(
       'milestones.csv[ice_1000]: threshold "0" 는 1 이상이어야 한다',
     )
   })
 
   it('threshold 가 정수가 아니면 던진다', () => {
-    expect(() => parseMilestones([row({ threshold: '1.5' })], nodes, recipes)).toThrow(
+    expect(() => parseMilestones([row({ threshold: '1.5' })], recipes)).toThrow(
       'milestones.csv[ice_1000]: threshold "1.5" 는 정수가 아니다',
     )
   })
@@ -150,7 +140,6 @@ describe('parseMilestones — 공통 검사', () => {
     expect(() =>
       parseMilestones(
         [row({ id: 'every_1', metricKind: 'every', metricArg: 'ice_1000||wood_1000', threshold: '2' })],
-        nodes,
         recipes,
       ),
     ).toThrow(/빈 항목이 있다/)
@@ -160,7 +149,6 @@ describe('parseMilestones — 공통 검사', () => {
     expect(() =>
       parseMilestones(
         [row({ effectKind: 'recipes', effectArg: 'copper_hammer|' })],
-        nodes,
         recipes,
       ),
     ).toThrow(/빈 항목이 있다/)
@@ -169,7 +157,7 @@ describe('parseMilestones — 공통 검사', () => {
   it('announce 가 빈칸이어도 던지지 않는다', () => {
     // 다섯 기술이 같은 문턱을 각각 넘을 때마다 매번 화면을 가리면 소음이 된다 —
     // 그래서 announce 를 비워 목록에만 남기는 행이 실제 CSV에 여럿 있다.
-    const [m] = parseMilestones([row({ announce: '' })], nodes, recipes)
+    const [m] = parseMilestones([row({ announce: '' })], recipes)
     expect(m?.announce).toBe('')
   })
 })
@@ -180,15 +168,13 @@ describe('parseMilestones — 실제 출하 CSV', () => {
   const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
 
   it('오류 없이 파싱된다', () => {
-    const realNodes = parseNodes(readRealCsv('nodes.csv'))
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
-    expect(() => parseMilestones(readRealCsv('milestones.csv'), realNodes, realRecipes)).not.toThrow()
+    expect(() => parseMilestones(readRealCsv('milestones.csv'), realRecipes)).not.toThrow()
   })
 
   it('행 30개를 만든다', () => {
-    const realNodes = parseNodes(readRealCsv('nodes.csv'))
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
-    const result = parseMilestones(readRealCsv('milestones.csv'), realNodes, realRecipes)
+    const result = parseMilestones(readRealCsv('milestones.csv'), realRecipes)
     // 27 → 30: 주괴 3종(은·금·미스릴)의 recipes-이정표가 채집 티어 아크에서 늘었다.
     expect(result).toHaveLength(30)
   })

@@ -9,7 +9,7 @@ import {
   factValueFitsShape,
   findFactSpec,
   matchesCondition,
-  toolAppliesTo,
+  toolMatchesSkill,
 } from '@nogada/shared'
 import { dialogueLocation } from './dialogueParse.js'
 import { startVillages, villageField } from './maps.js'
@@ -247,7 +247,11 @@ function computeReachableItems(data: GameData, gatherTables: GatherTables): Set<
       // 거치지 않은 데이터로 불릴 수 있으니 조용히 건너뛴다.
       const table = gatherTables[node.tableId]
       if (!table) continue
-      const hasCoveringTool = tools.some((tool) => reachable.has(tool.id) && toolAppliesTo(tool, node))
+      // "그 기술의 도구인가"는 shared 의 toolMatchesSkill 하나가 정한다 — 서버의
+      // 착용 판정(equippedToolTier)과 같은 정의라, 여기서 도달 가능하다고 판단한
+      // 노드는 게임에서도 반드시 열린다. 등급 조건이 없는 것은 tier 게이트의
+      // 폐지(§7-앞 8)다.
+      const hasCoveringTool = tools.some((tool) => reachable.has(tool.id) && toolMatchesSkill(tool, node.skill))
       if (!hasCoveringTool) continue
       for (const tier of table.tiers) {
         if (!reachable.has(tier.itemId)) {

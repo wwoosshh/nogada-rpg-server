@@ -13,12 +13,14 @@ import {
 } from '@nogada/shared'
 import { collectDialogueNotices, validateGameData } from './validate.js'
 import { loadGameData } from './load.js'
+import { loadGatherTables } from './loadGatherTables.js'
 import {
   parseArgs,
   parseFactOverrides,
   runDeadCommand,
   runDialogueCommand,
   runFactsCommand,
+  runGatherCommand,
   runWaitingCommand,
 } from './content-cli.js'
 
@@ -98,8 +100,31 @@ describe('parseArgs', () => {
     })
   })
 
-  it('알 수 없는 명령을 거부하고 쓸 수 있는 네 명령을 안내한다', () => {
-    expect(() => parseArgs(['nope'], realData)).toThrow(/dialogue, facts, dead, waiting/)
+  it('알 수 없는 명령을 거부하고 쓸 수 있는 다섯 명령을 안내한다', () => {
+    expect(() => parseArgs(['nope'], realData)).toThrow(/dialogue, facts, dead, waiting, gather/)
+  })
+
+  it('gather 는 표 id 와 --prof 를 받고, --tool·--n 은 기본값이 있다', () => {
+    expect(parseArgs(['gather', 'ice', '--prof=15000'], realData)).toEqual({
+      kind: 'gather', tableId: 'ice', proficiency: 15000, toolId: undefined, n: 100_000,
+    })
+    expect(parseArgs(['gather', 'ice', '--prof=0', '--tool=iron_chisel', '--n=1000'], realData)).toEqual({
+      kind: 'gather', tableId: 'ice', proficiency: 0, toolId: 'iron_chisel', n: 1000,
+    })
+  })
+
+  it('gather 인데 표 id 가 없으면 거부한다', () => {
+    expect(() => parseArgs(['gather'], realData)).toThrow(/표 id/)
+    expect(() => parseArgs(['gather', '--prof=0'], realData)).toThrow(/표 id/)
+  })
+
+  it('gather 인데 --prof 가 없으면 거부한다 — 분포는 숙련 브라켓의 함수라 기본값을 깔면 안 된다', () => {
+    expect(() => parseArgs(['gather', 'ice'], realData)).toThrow(/--prof/)
+  })
+
+  it('gather 의 모르는 옵션과 정수 아닌 값을 거부한다', () => {
+    expect(() => parseArgs(['gather', 'ice', '--prof=0', '--seed=3'], realData)).toThrow(/--seed/)
+    expect(() => parseArgs(['gather', 'ice', '--prof=많이'], realData)).toThrow(/정수/)
   })
 
   it('명령이 아예 없으면 거부한다', () => {
@@ -497,6 +522,52 @@ describe('runWaitingCommand', () => {
 
   it('기다리는 대사가 없으면 그렇다고 말한다', () => {
     expect(runWaitingCommand(emptyGameData())).toContain('없음')
+  })
+})
+
+describe('runGatherCommand', () => {
+  const realTables = loadGatherTables()
+  const gatherCmd = (overrides: Partial<Parameters<typeof runGatherCommand>[2]> = {}) =>
+    ({ kind: 'gather', tableId: 'ice', proficiency: 0, toolId: undefined, n: 2000, ...overrides }) as const
+
+  it('실제 표의 분포를 아이템 이름과 실패 줄로 보여준다', () => {
+    const out = runGatherCommand(realData, realTables, gatherCmd(), { seed: 1 })
+    // 숙련 0 얼음은 대부분 얼음 조각이다(§8-1) — 이름이 나와야 작가가 CSV 의
+    // itemId 와 게임의 얼굴을 잇는다.
+    expect(out).toContain('브라켓 ≤500')
+    expect(out).toContain('얼음 조각')
+    expect(out).toContain('실패')
+    expect(out).toContain('숙련 증가: 시도마다 +1~2 (성패 무관)')
+  })
+
+  it('같은 시드로 두 번 부르면 완전히 같은 표가 나온다 — 실행마다 답이 바뀌는 도구는 신뢰할 수 없다', () => {
+    const a = runGatherCommand(realData, realTables, gatherCmd(), { seed: 7 })
+    const b = runGatherCommand(realData, realTables, gatherCmd(), { seed: 7 })
+    expect(a).toBe(b)
+  })
+
+  it('--tool 을 안 주면 그 기술의 1등급 도구로 굴린다 — 새 캐릭터의 손과 같다', () => {
+    const out = runGatherCommand(realData, realTables, gatherCmd(), { seed: 1 })
+    expect(out).toContain('copper_chisel')
+    expect(out).toContain('×1')
+  })
+
+  it('다른 기술의 도구를 거부하고 그 기술의 도구 목록을 보여준다 — 게임에 없는 세계를 시뮬하지 않는다', () => {
+    expect(() =>
+      runGatherCommand(realData, realTables, gatherCmd({ toolId: 'copper_pickaxe' }), { seed: 1 }),
+    ).toThrow(/ice 기술의 도구가 아니다.*copper_chisel/)
+  })
+
+  it('모르는 표를 거부하고 있는 표를 나열한다', () => {
+    expect(() => runGatherCommand(realData, realTables, gatherCmd({ tableId: 'fish' }), { seed: 1 })).toThrow(
+      /표 "fish" 를 모른다.*herb, ice, mineral, wood/,
+    )
+  })
+
+  it('2등급 도구는 잭팟 평감산까지 표기한다 — 작가가 곱 보정만 있다고 오해하면 안 된다', () => {
+    const out = runGatherCommand(realData, realTables, gatherCmd({ toolId: 'iron_chisel' }), { seed: 1 })
+    expect(out).toContain('×0.9')
+    expect(out).toContain('−2')
   })
 })
 

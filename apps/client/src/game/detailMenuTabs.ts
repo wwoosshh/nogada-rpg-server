@@ -70,10 +70,6 @@ function effectDescription(effect: MilestoneEffect, data: GameData, achieved: bo
       const names = namesOf(effect.ids, data.recipes)
       return achieved ? `만들 수 있다 — ${names}` : `달성하면 만들 수 있다 — ${names}`
     }
-    case 'nodes': {
-      const names = namesOf(effect.ids, data.nodes)
-      return achieved ? `캘 수 있다 — ${names}` : `달성하면 캘 수 있다 — ${names}`
-    }
     case 'title':
       return achieved ? '칭호. 그 외 효과는 없다' : '칭호 — 효과는 없다'
     default: {
