@@ -243,7 +243,7 @@ describe('performCraft', () => {
 
     const recipe = data.recipes.copper_ingot!
     // 예상치와 판정이 같은 함수(calcCraftSuccess)라는 규범 — 서비스가 강화 0 을
-    // 넘기면(옛 코드) 아래 두 단정 중 첫째가 깨진다. +5 는 +2.5%p 차이다.
+    // 넘기면(옛 코드) 아래 두 단정 중 첫째가 깨진다. +5 는 +1.5%p 차이다.
     expect(r.outcome.chance).toBe(
       calcCraftSuccess({ proficiency: 0, toolTier: 1, enhanceLevel: 5, recipe }),
     )
@@ -382,10 +382,13 @@ describe('performCraft — 자동 착용은 원시 tier 가 아니라 유효 효
     expect(r.outcome.player.equipped.mineral).toBe('newpick')
   })
 
-  it('망치는 성공률 보너스로 견준다 — 만강 구리 망치(+4.5%p)를 신품 철 망치(+4.0%p)가 덮지 않는다', () => {
-    // 망치의 효과 축은 간격이 아니라 성공률이다(§5): 간격배수로 견주면 숫자는
-    // 나오지만 아무 효과도 재지 않은 수고, 원시 tier(2>1)로 견주면 강화 투자를
-    // 신품이 덮어쓴다 — 채집 도구의 §6-앞 2 와 같은 사고가 축만 바꿔 재발한다.
+  it('만강 구리 망치도 신품 철 망치에는 자리를 내준다 — 망치 축의 티어 불변식(§6-앞 18)', () => {
+    // 망치의 효과 축은 간격이 아니라 성공률이다(§5) — 그래서 비교는
+    // hammerChanceBonus 로 한다(간격배수로 견주면 숫자는 나오지만 아무 효과도
+    // 재지 않은 수고다). 그 축 위에서 승급이 강화를 이기는 것은 상수가 정한다:
+    // 티어 한 칸(+2.0%p)이 만강(+1.5%p)보다 크므로 구리+5(+3.5%p) < 철 신품(+4.0%p).
+    // 강화 보너스가 +0.5%p 이던 시절에는 이 부등식이 뒤집혀 승급이 손해였다 —
+    // 그 사실이 흔들리는 날(상수 조정)은 toolProfile 의 불변식 테스트가 먼저 깨진다.
     const p = player({
       stacks: { copper_ingot: 2 },
       instances: [{ instanceId: 'h1', itemId: 'copper_hammer', enhanceLevel: 5 }],
@@ -394,8 +397,8 @@ describe('performCraft — 자동 착용은 원시 tier 가 아니라 유효 효
     const r = performCraft({ player: p, data, recipeId: 'iron_hammer', rng: alwaysSucceed, newId: () => 'newhammer', now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
-    expect(r.outcome.autoEquipped).toBe(false)
-    expect(r.outcome.player.equipped.crafting).toBe('h1')
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.crafting).toBe('newhammer')
   })
 
   it('신품끼리는 더 나은 망치를 착용한다 — 등급이 곧 보너스 차이다', () => {

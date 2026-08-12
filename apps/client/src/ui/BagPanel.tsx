@@ -1,5 +1,6 @@
 import {
   effectiveIntervalFactor,
+  ENHANCE_CAP,
   hammerChanceBonus,
   SKILL_IDS,
   SKILL_LABELS,
@@ -44,11 +45,12 @@ function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): str
  * 그 API 를 만들면서 §6-앞 12 가 이 전제를 **예비 칩 한 곳에 한해** 의식적으로
  * 기각한다 — 죽은 버튼 금지 규범(설계 §8-앞 13)은 "될 수 없는 조작을 버튼으로
  * 보여주지 말라"는 것이지 "될 수 있는 조작을 숨기라"는 뜻이 아니었다. 그래서
- * 예비 칩은 `착용` 버튼을 상시, `강화` 버튼을 같은 itemId 를 착용 중일 때만
- * 얻는다(비활성 노출은 여전히 금지 — 조건을 못 채우면 버튼 자체를 그리지
- * 않는다). **장비 슬롯과 재료 리스트는 여전히 버튼이 아니다** — 슬롯은 착용
- * 결과를 비추는 자리이지 조작하는 자리가 아니고(조작은 예비 칩에서 온다),
- * 재료는 애초에 눌러서 될 일이 없다.
+ * 예비 칩은 `착용` 버튼을 상시, `강화` 버튼을 같은 itemId 를 착용 중이고 그
+ * 착용분이 아직 상한(+5) 아래일 때만 얻는다(비활성 노출은 여전히 금지 —
+ * 조건을 못 채우면 버튼 자체를 그리지 않는다. 만강 도구 곁의 `강화` 는 눌러도
+ * enhance_cap 만 돌아오는 죽은 버튼이다). **장비 슬롯과 재료 리스트는 여전히
+ * 버튼이 아니다** — 슬롯은 착용 결과를 비추는 자리이지 조작하는 자리가
+ * 아니고(조작은 예비 칩에서 온다), 재료는 애초에 눌러서 될 일이 없다.
  */
 export function BagPanel(): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === 'bag')
@@ -71,13 +73,17 @@ export function BagPanel(): JSX.Element | null {
   const equippedIds = new Set(Object.values(player.equipped))
   const spares = player.instances.filter((inst) => !equippedIds.has(inst.instanceId))
 
-  // 강화 버튼의 노출 조건(같은 itemId 착용 중)을 itemId 집합으로 미리 계산한다
-  // (§6-앞 12) — 대상이 없는 강화는 서버가 no_target 으로 거절하니, 그 조건을
-  // 화면이 먼저 걸러야 "눌러도 매번 거절만 돌아오는" 죽은 버튼이 생기지 않는다.
-  const equippedItemIds = new Set(
+  // 강화 버튼의 노출 조건을 itemId 집합으로 미리 계산한다(§6-앞 12) — 대상이
+  // 없거나(no_target) 상한에 닿은(enhance_cap) 강화는 서버가 거절하니, 그 두
+  // 조건을 화면이 먼저 걸러야 "눌러도 매번 거절만 돌아오는" 죽은 버튼이 생기지
+  // 않는다. 상한을 보는 곳이 예비 칩 자신이 아니라 **착용 중인 대상**인 이유는
+  // 강화의 규칙이 그렇기 때문이다(equipService: 재료는 예비, +1 은 착용분에
+  // 붙고 ENHANCE_CAP 도 그 착용분에 걸린다).
+  const enhanceableItemIds = new Set(
     Object.values(player.equipped)
-      .map((instanceId) => player.instances.find((inst) => inst.instanceId === instanceId)?.itemId)
-      .filter((itemId): itemId is string => itemId !== undefined),
+      .map((instanceId) => player.instances.find((inst) => inst.instanceId === instanceId))
+      .filter((inst): inst is ItemInstance => inst !== undefined && inst.enhanceLevel < ENHANCE_CAP)
+      .map((inst) => inst.itemId),
   )
 
   // 재료는 items.csv 선언 순서(= data.items 의 키 순서)로 고정한다 — 제작
@@ -139,7 +145,7 @@ export function BagPanel(): JSX.Element | null {
               <ul className="bag__spares">
                 {spares.map((inst) => {
                   const def = data.items[inst.itemId]
-                  const canEnhance = equippedItemIds.has(inst.itemId)
+                  const canEnhance = enhanceableItemIds.has(inst.itemId)
                   const speedLabel =
                     def !== undefined && def.toolSkill !== undefined
                       ? toolSpeedLabel(def.toolSkill, def, inst.enhanceLevel)
@@ -169,8 +175,8 @@ export function BagPanel(): JSX.Element | null {
                         >
                           착용
                         </button>
-                        {/* 강화는 같은 itemId 를 착용 중일 때만 그린다 — 비활성 노출 금지
-                            (설계 §8-앞 13, §6-앞 12). */}
+                        {/* 강화는 같은 itemId 를 착용 중이고 그 착용분이 만강이 아닐 때만
+                            그린다 — 비활성 노출 금지(설계 §8-앞 13, §6-앞 12). */}
                         {canEnhance && (
                           <button
                             type="button"

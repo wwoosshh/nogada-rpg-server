@@ -49,8 +49,16 @@ export const ENHANCE_CAP = 5
  */
 export const ENHANCE_INTERVAL_FACTOR = 0.97
 
-/** 망치 강화 +1당 제작 성공률 보너스(+0.5%p, §5) — 망치의 강화 축은 간격이 아니라 조합이다. */
-export const HAMMER_ENHANCE_CHANCE_BONUS = 0.005
+/**
+ * 망치 강화 +1당 제작 성공률 보너스(+0.3%p, §5) — 망치의 강화 축은 간격이 아니라 조합이다.
+ *
+ * 불변식(§6-앞 18): 만강 보너스(×ENHANCE_CAP = +1.5%p)가 티어 한 칸
+ * (CRAFT_TOOL_TIER_CHANCE_BONUS = +2.0%p)보다 항상 작다 — 채집 축의 §6-앞 1 과
+ * 같은 규범이 성공률 축에 걸린 것이다. +0.5%p 이던 값은 만강 구리(+4.5%p)가
+ * 신품 철(+4.0%p)을 이겨 승급의 드라마를 먹어치웠기에 여기로 내렸다.
+ * toolProfile.test.ts 가 두 축의 부등식을 나란히 강제한다.
+ */
+export const HAMMER_ENHANCE_CHANCE_BONUS = 0.003
 
 /**
  * 유효 간격배수 — 티어(intervalFactor)와 강화(×0.97^n)를 곱한 한 숫자(§6-앞 2).
@@ -70,11 +78,18 @@ export function effectiveIntervalFactor(def: ItemDef | null, enhanceLevel: numbe
  *
  * 하한(ACTION_INTERVAL_MIN_MS)은 **배수를 전부 곱한 뒤에** 클램프한다(§6-앞 6) —
  * 그래야 "초당 20회" 문서가 계속 참이고, 종반의 도구 포화는 수용한다.
+ *
+ * 반올림은 여기서 한다 — `actionIntervalMs` 가 이미 정수를 약속하는데 배수를
+ * 곱하면 그 약속이 깨지고(구리 +5 = 429.3670128499999), 숙련도 탭이 그 꼬리를
+ * 그대로 찍는다. 밖에서 각자 반올림하면 화면과 서버 스탬프가 1ms 씩 어긋날 수
+ * 있으므로, 간격을 만드는 이 한 자리가 정수 계약을 함께 지킨다(§6-앞 10).
  */
 export function gatherIntervalMs(proficiency: number, tool: EquippedToolInfo | null): number {
   return Math.max(
     ACTION_INTERVAL_MIN_MS,
-    actionIntervalMs(proficiency) *
-      effectiveIntervalFactor(tool?.def ?? null, tool?.instance.enhanceLevel ?? 0),
+    Math.round(
+      actionIntervalMs(proficiency) *
+        effectiveIntervalFactor(tool?.def ?? null, tool?.instance.enhanceLevel ?? 0),
+    ),
   )
 }

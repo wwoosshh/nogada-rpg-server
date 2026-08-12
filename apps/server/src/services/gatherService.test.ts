@@ -1,5 +1,8 @@
 import {
+  ACTION_INTERVAL_MAX_MS,
   emptyDialogueHistory,
+  ENHANCE_CAP,
+  ENHANCE_INTERVAL_FACTOR,
   type GameData,
   type GatherTables,
   type MilestoneDef,
@@ -192,12 +195,15 @@ describe('performGather', () => {
   })
 
   it('강화된 도구는 간격 스탬프가 짧아진다 — 스탬프가 ×0.97^강화 를 실제로 읽는다(§6-앞 10)', () => {
-    const p = player({ instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 5 }] })
+    const p = player({ instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: ENHANCE_CAP }] })
     const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
-    // 구리(×1.0) +5 → 500 × 0.97^5 ≈ 429.4ms. actionIntervalMs(0)=500 그대로라면
-    // (스탬프가 강화를 안 읽는다면) 1500 이 나와 이 테스트가 깨진다.
-    expect(r.outcome.player.nextActionAt).toBe(1000 + 500 * 0.97 ** 5)
+    // 구리(×1.0) +5 → 500 × 0.97^5 = 429ms(반올림). actionIntervalMs(0)=500 그대로라면
+    // (스탬프가 강화를 안 읽는다면) 1500 이 나와 이 테스트가 깨진다. 스탬프는
+    // gatherIntervalMs 의 정수 계약을 그대로 물려받는다 — 소수점 시각은 없다.
+    expect(r.outcome.player.nextActionAt).toBe(
+      1000 + Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR ** ENHANCE_CAP),
+    )
   })
 
   it('간격이 지나지 않았으면 too_fast 로 거부한다', () => {

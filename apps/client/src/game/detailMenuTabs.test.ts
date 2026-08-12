@@ -1,4 +1,5 @@
 import { emptyPlayer, loadGameData } from '@nogada/data'
+import { ENHANCE_CAP, SKILL_LABELS, type PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { SETTINGS_ACTION, TABS } from './detailMenuTabs.js'
 
@@ -6,6 +7,63 @@ function settingsLines() {
   const tab = TABS.find((t) => t.id === 'settings')!
   return tab.buildLines(loadGameData(), emptyPlayer())
 }
+
+function skillLines(player: PlayerState) {
+  const tab = TABS.find((t) => t.id === 'skills')!
+  return tab.buildLines(loadGameData(), player)
+}
+
+/** 각 줄이 적은 간격 숫자만 뽑는다 — 화면에 뜨는 그 문자열 그대로다. */
+function intervalTokens(player: PlayerState): string[] {
+  return skillLines(player).map((line) => {
+    const found = /행동 간격 (.+)ms$/.exec(line.text)
+    if (!found?.[1]) throw new Error(`간격을 적지 않은 줄이 있다: ${line.text}`)
+    return found[1]
+  })
+}
+
+/** 광물 줄 하나 — 곡괭이(mineral)가 바뀌는 것을 보는 자리다. */
+function mineralInterval(player: PlayerState): string {
+  const line = skillLines(player).find((l) => l.text.startsWith(SKILL_LABELS.mineral))!
+  return /행동 간격 (.+)ms$/.exec(line.text)![1]!
+}
+
+describe('숙련도 탭', () => {
+  // 왜: 이 탭은 강화 직후에 확인하러 오는 자리다. 배수를 곱한 값을 그대로 찍으면
+  //     "행동 간격 429.3670128499999ms" 가 뜬다 — 도구가 준 것이 무엇인지 읽을 수
+  //     없는 숫자다. 맨손도 홀수 기준선(숙련 9 → 425ms)에서는 ×1.5 가 .5 를 남긴다.
+  it('강화한 도구의 간격에 소수점이 없다', () => {
+    const player: PlayerState = {
+      ...emptyPlayer(),
+      instances: [{ instanceId: 'p1', itemId: 'copper_pickaxe', enhanceLevel: ENHANCE_CAP }],
+      equipped: { mineral: 'p1' },
+    }
+    // 500 × 0.97^5 = 429.3670128499999 → 429
+    expect(mineralInterval(player)).toMatch(/^\d+$/)
+    for (const token of intervalTokens(player)) expect(token).toMatch(/^\d+$/)
+  })
+
+  it('맨손의 간격에도 소수점이 없다', () => {
+    // 숙련 9 의 기준선은 425ms(홀수) — 맨손 ×1.5 는 637.5 가 된다.
+    const player: PlayerState = {
+      ...emptyPlayer(),
+      skills: { ice: 9, wood: 9, mineral: 9, herb: 9, crafting: 9 },
+    }
+    for (const token of intervalTokens(player)) expect(token).toMatch(/^\d+$/)
+  })
+
+  // 왜: 위 두 검사는 "간격을 아예 안 쓰거나 늘 정수 상수를 쓰는" 구현으로도
+  //     통과한다. 강화가 이 줄을 실제로 움직이는지까지 봐야 §6-앞 13(화면이
+  //     서버와 같은 함수를 읽는다)이 지켜진 것이다.
+  it('강화가 이 줄을 실제로 움직인다 — 정수로 찍되 도구를 반영한다', () => {
+    const base = { ...emptyPlayer(), instances: [{ instanceId: 'p1', itemId: 'copper_pickaxe', enhanceLevel: 0 }], equipped: { mineral: 'p1' } }
+    const enhanced: PlayerState = {
+      ...base,
+      instances: [{ instanceId: 'p1', itemId: 'copper_pickaxe', enhanceLevel: ENHANCE_CAP }],
+    }
+    expect(Number(mineralInterval(enhanced))).toBeLessThan(Number(mineralInterval(base)))
+  })
+})
 
 describe('설정 탭', () => {
   // 왜: 이 두 줄이 계정을 놓는 유일한 문이다. groupId 가 빠지면 줄은 그대로

@@ -2,12 +2,10 @@ import {
   actionIntervalMs,
   calcCraftSuccess,
   canCraft,
-  CRAFT_TOOL_TIER_CHANCE_BONUS,
   EFFICIENCY_MULTIPLIER,
-  ENHANCE_INTERVAL_FACTOR,
+  effectiveIntervalFactor,
   equippedToolInfo,
-  gatherToolProfile,
-  HAMMER_ENHANCE_CHANCE_BONUS,
+  hammerChanceBonus,
   newlyAchieved,
   rollInt,
   type EquippedToolInfo,
@@ -53,16 +51,6 @@ function spend(player: PlayerState, item: string, count: number): void {
   else delete player.stacks[item]
 }
 
-/** 망치가 성공률에 더하는 양. 등급과 강화가 같은 축(성공률)에 쌓인다. */
-function hammerBonus(def: ItemDef, enhanceLevel: number): number {
-  return (def.toolTier ?? 0) * CRAFT_TOOL_TIER_CHANCE_BONUS + enhanceLevel * HAMMER_ENHANCE_CHANCE_BONUS
-}
-
-/** 채집 도구의 유효 간격배수. 작을수록 빠르다 — 등급과 강화가 곱으로 쌓인다. */
-function effectiveIntervalFactor(def: ItemDef, enhanceLevel: number): number {
-  return gatherToolProfile(def).intervalFactor * ENHANCE_INTERVAL_FACTOR ** enhanceLevel
-}
-
 /**
  * 새로 만든 도구가 착용 중인 것보다 **실제로 나은가**(§6-앞 2).
  *
@@ -72,10 +60,19 @@ function effectiveIntervalFactor(def: ItemDef, enhanceLevel: number): number {
  * 쌓인다), 채집 도구는 간격(곱하기로 쌓이고 작을수록 빠르다).
  *
  * 동률이면 바꾸지 않는다. 나아지는 것이 없는데 강화 수치만 0 으로 잃는다.
+ *
+ * 두 식 모두 shared 의 것을 그대로 부른다 — 여기 사본을 두면 "낫다"의 정의가
+ * 판정(calcCraftSuccess)·화면(BagPanel)과 갈라져, 화면이 더 좋다고 적은 도구를
+ * 서비스가 착용하지 않는 날이 온다(§6-앞 2).
  */
 function isBetterTool(skill: SkillId, next: ItemDef, current: EquippedToolInfo | null): boolean {
   if (!current) return true
-  if (skill === 'crafting') return hammerBonus(next, 0) > hammerBonus(current.def, current.instance.enhanceLevel)
+  if (skill === 'crafting') {
+    return (
+      hammerChanceBonus(next.toolTier ?? 0, 0) >
+      hammerChanceBonus(current.def.toolTier ?? 0, current.instance.enhanceLevel)
+    )
+  }
   return (
     effectiveIntervalFactor(next, 0) < effectiveIntervalFactor(current.def, current.instance.enhanceLevel)
   )

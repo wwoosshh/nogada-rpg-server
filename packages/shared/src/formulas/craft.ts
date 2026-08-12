@@ -34,6 +34,13 @@ export function canCraft(ctx: CraftContext): boolean {
  * 판정(calcCraftSuccess)과 제작 후 자동 착용 비교(craftService)가 이 식 하나를
  * 나눠 읽는다. 두 벌로 적으면 판정과 비교가 서로 다른 망치를 "낫다"고 말할 수
  * 있다 — 채집 도구의 effectiveIntervalFactor 와 정확히 같은 이유다(§6-앞 2).
+ *
+ * 인자가 `ItemDef` 가 아니라 숫자 둘인 이유: 판정이 보는 `CraftContext` 에는
+ * 정의가 없고 `toolTier` 만 있다(그 자리에는 그것으로 충분하다). 정의를 받는
+ * 모양으로 바꾸면 판정 쪽에 가짜 def 를 지어내는 어댑터가 생기는데, 그 어댑터가
+ * 중복보다 더 거짓말에 가깝다 — 호출자가 `def.toolTier ?? 0` 을 적는 편이 정직하다.
+ *
+ * 티어와 강화의 크기 관계는 상수가 지킨다(§6-앞 18, HAMMER_ENHANCE_CHANCE_BONUS).
  */
 export function hammerChanceBonus(toolTier: number, enhanceLevel: number): number {
   return toolTier * CRAFT_TOOL_TIER_CHANCE_BONUS + enhanceLevel * HAMMER_ENHANCE_CHANCE_BONUS

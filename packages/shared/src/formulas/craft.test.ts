@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { RecipeDef } from '../types.js'
 import { calcCraftSuccess, canCraft, hammerChanceBonus } from './craft.js'
+import { CRAFT_TOOL_TIER_CHANCE_BONUS } from './proficiency.js'
+import { ENHANCE_CAP, HAMMER_ENHANCE_CHANCE_BONUS } from './toolProfile.js'
 
 const copperIngot: RecipeDef = {
   id: 'copper_ingot',
@@ -54,12 +56,12 @@ describe('calcCraftSuccess', () => {
     expect(armed).toBeGreaterThan(bare)
   })
 
-  it('망치 강화 +1당 성공률이 0.5%p 씩 오른다 — 망치의 강화 축은 간격이 아니라 조합이다(§5·§6-앞 10)', () => {
+  it('망치 강화 +1당 성공률이 0.3%p 씩 오른다 — 망치의 강화 축은 간격이 아니라 조합이다(§5·§6-앞 10)', () => {
     // 서버 판정과 클라 예상치(craftCardModel)가 같은 함수라는 규범을 지키려고
     // 보너스가 calcCraftSuccess **안**에 산다 — 밖에서 더하면 언젠가 둘이 갈라진다.
     const plain = calcCraftSuccess({ proficiency: 1, toolTier: 2, enhanceLevel: 0, recipe: copperIngot })
-    const enhanced = calcCraftSuccess({ proficiency: 1, toolTier: 2, enhanceLevel: 5, recipe: copperIngot })
-    expect(enhanced - plain).toBeCloseTo(5 * 0.005)
+    const enhanced = calcCraftSuccess({ proficiency: 1, toolTier: 2, enhanceLevel: ENHANCE_CAP, recipe: copperIngot })
+    expect(enhanced - plain).toBeCloseTo(ENHANCE_CAP * HAMMER_ENHANCE_CHANCE_BONUS)
   })
 
   it('hammerChanceBonus 와 같은 보너스를 더한다 — 판정과 자동 착용 비교(craftService)가 식 하나를 나눠 읽는다', () => {
@@ -78,13 +80,15 @@ describe('calcCraftSuccess', () => {
 })
 
 describe('hammerChanceBonus — 망치의 유효 성공률 보너스', () => {
-  it('등급 ×2%p + 강화 ×0.5%p — 등급과 강화가 한 숫자로 합쳐지는 유일한 자리다', () => {
+  it('등급 ×2%p + 강화 ×0.3%p — 등급과 강화가 한 숫자로 합쳐지는 유일한 자리다', () => {
     expect(hammerChanceBonus(0, 0)).toBe(0)
-    expect(hammerChanceBonus(2, 0)).toBeCloseTo(0.04)
-    expect(hammerChanceBonus(1, 5)).toBeCloseTo(0.045)
+    expect(hammerChanceBonus(2, 0)).toBeCloseTo(2 * CRAFT_TOOL_TIER_CHANCE_BONUS)
+    expect(hammerChanceBonus(1, ENHANCE_CAP)).toBeCloseTo(
+      CRAFT_TOOL_TIER_CHANCE_BONUS + ENHANCE_CAP * HAMMER_ENHANCE_CHANCE_BONUS,
+    )
   })
 
-  it('만강 구리 망치(+4.5%p)가 신품 철 망치(+4.0%p)보다 크다 — 채집 도구와 달리 망치에는 티어 불변식(§6-앞 1)이 없어서, 자동 착용이 원시 tier 로 견주면 이 투자를 신품이 덮어쓴다', () => {
-    expect(hammerChanceBonus(1, 5)).toBeGreaterThan(hammerChanceBonus(2, 0))
-  })
+  // 티어와 강화의 크기 관계(상위 티어 기본 > 하위 티어 만강, §6-앞 18)는 채집
+  // 축의 같은 불변식 바로 옆(toolProfile.test.ts)에서 강제한다 — 두 축이 한
+  // 규범을 나눠 가지므로 부등식도 한자리에 모아 둔다. 여기는 식의 모양만 본다.
 })

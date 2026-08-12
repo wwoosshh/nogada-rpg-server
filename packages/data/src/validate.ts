@@ -694,8 +694,10 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   //
   // 도구 배수(맨손 ×1.5 ~ 미스릴+5 ×0.52)가 생긴 뒤로 실제 채집 간격은 손에 따라
   // 이 값의 위아래로 흩어진다(도구 루프 설계 §3). 그래도 이 검사가 보는 것은
-  // **맨손 기준선**이다 — 문턱은 도구를 무엇을 들었든 같은 자리에 있어야 하고,
-  // 도구는 그 자리를 옮기는 것이 아니라 그 자리까지 가는 길을 빠르게 하는 것이다.
+  // **도구 배수를 곱하기 전의 숙련도 곡선 그 자체**(actionIntervalMs, = 1티어
+  // 도구를 든 손의 간격이자 맨손·상위 티어가 위아래로 벌어지는 기준선)다 —
+  // 문턱은 도구를 무엇을 들었든 같은 자리에 있어야 하고, 도구는 그 자리를 옮기는
+  // 것이 아니라 그 자리까지 가는 길을 빠르게 하는 것이다.
   for (const milestone of data.milestones) {
     const effect = milestone.effect
     if (effect.kind !== 'repeat') continue

@@ -2,13 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { equippedToolInfo, type EquippedToolInfo } from '../equipment.js'
 import type { ItemDef, PlayerState } from '../types.js'
 import { emptyDialogueHistory } from '../dialogue.js'
-import { actionIntervalMs } from './proficiency.js'
+import { hammerChanceBonus } from './craft.js'
+import {
+  ACTION_INTERVAL_MAX_MS,
+  ACTION_INTERVAL_MIN_MS,
+  actionIntervalMs,
+  CRAFT_TOOL_TIER_CHANCE_BONUS,
+} from './proficiency.js'
 import {
   ENHANCE_CAP,
   ENHANCE_INTERVAL_FACTOR,
   effectiveIntervalFactor,
   gatherIntervalMs,
   gatherToolProfile,
+  HAMMER_ENHANCE_CHANCE_BONUS,
 } from './toolProfile.js'
 
 const copper: ItemDef = {
@@ -74,6 +81,17 @@ describe('티어 대 강화의 불변식 — 강화가 승급의 드라마를 �
       gatherToolProfile(iron).intervalFactor * maxEnhance,
     )
   })
+
+  // 망치 축에도 같은 규범이 걸린다(§6-앞 18). 이 부등식이 없던 시절
+  // (+0.5%p/레벨)에는 만강 구리 망치(+4.5%p)가 신품 철 망치(+4.0%p)를 이겨,
+  // 승급이 강화보다 못한 선택이 됐다 — 간격 축에서 §6-앞 1 이 금지한 바로 그 일이다.
+  it('상위 티어 망치 기본 보너스 > 하위 티어 만강 보너스 — 승급이 강화에 먹히지 않는다', () => {
+    expect(hammerChanceBonus(2, 0)).toBeGreaterThan(hammerChanceBonus(1, ENHANCE_CAP))
+    expect(hammerChanceBonus(3, 0)).toBeGreaterThan(hammerChanceBonus(2, ENHANCE_CAP))
+    // 티어 한 칸이 만강 한 벌보다 크다는 상수 사이의 부등식이 위 둘의 근거다 —
+    // 티어가 몇 개로 늘어도 이 한 줄이 성립하는 한 불변식은 유지된다.
+    expect(CRAFT_TOOL_TIER_CHANCE_BONUS).toBeGreaterThan(ENHANCE_CAP * HAMMER_ENHANCE_CHANCE_BONUS)
+  })
 })
 
 describe('effectiveIntervalFactor — 자동 착용 비교와 화면 표기가 읽는 유효 간격배수(§6-앞 2·13)', () => {
@@ -89,7 +107,7 @@ describe('effectiveIntervalFactor — 자동 착용 비교와 화면 표기가 �
 
   it('gatherIntervalMs 가 같은 배수를 읽는다 — 비교와 스탬프가 갈라지면 "낫다"고 착용한 도구가 실제로는 더 느릴 수 있다', () => {
     expect(gatherIntervalMs(100, info(mithril, 3))).toBe(
-      Math.max(50, actionIntervalMs(100) * effectiveIntervalFactor(mithril, 3)),
+      Math.max(ACTION_INTERVAL_MIN_MS, Math.round(actionIntervalMs(100) * effectiveIntervalFactor(mithril, 3))),
     )
   })
 })
@@ -103,9 +121,25 @@ describe('gatherIntervalMs', () => {
     expect(gatherIntervalMs(0, info(copper, 0))).toBe(500)
   })
 
-  it('강화 +1 마다 ×0.97 이 곱으로 붙는다 — 구리 +1 은 485ms, +5 는 ≈429ms(§5)', () => {
-    expect(gatherIntervalMs(0, info(copper, 1))).toBeCloseTo(485)
-    expect(gatherIntervalMs(0, info(copper, 5))).toBeCloseTo(500 * 0.97 ** 5)
+  it('강화 +1 마다 ×0.97 이 곱으로 붙는다 — 구리 +1 은 485ms, +5 는 429ms(§5)', () => {
+    expect(gatherIntervalMs(0, info(copper, 1))).toBe(
+      Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR),
+    )
+    expect(gatherIntervalMs(0, info(copper, ENHANCE_CAP))).toBe(
+      Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR ** ENHANCE_CAP),
+    )
+  })
+
+  // 왜: 이 숫자는 숙련도 탭이 그대로 찍는다(§6-앞 13). 배수를 곱한 값을 반올림
+  //     하지 않으면 강화 직후에 "행동 간격 429.3670128499999ms" 가 뜬다 —
+  //     맨손도 홀수 기준선에서는 .5 가 남는다. actionIntervalMs 가 이미 정수를
+  //     약속하므로, 간격을 만드는 이 함수도 같은 계약을 지켜야 한다.
+  it('간격은 언제나 정수다 — 강화한 도구도 맨손도 소수점 꼬리를 남기지 않는다', () => {
+    for (const tool of [null, info(copper, 1), info(copper, ENHANCE_CAP), info(iron, 3), info(mithril, 5)]) {
+      for (const prof of [0, 1, 7, 123, 4_567, 98_765, 1_000_000]) {
+        expect(Number.isInteger(gatherIntervalMs(prof, tool))).toBe(true)
+      }
+    }
   })
 
   it('하한 50ms 는 배수를 곱한 뒤에 클램프한다 — 기본 간격이 하한 위여도 곱이 내려가면 하한이 답이다(§6-앞 6)', () => {

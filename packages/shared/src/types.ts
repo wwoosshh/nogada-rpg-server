@@ -21,7 +21,7 @@ export const SKILL_LABELS: Record<SkillId, string> = {
 
 /**
  * 강화 수치가 붙는 순간 개별 정체성이 생겨 스택이 불가능하다.
- * 지금 enhanceLevel 은 항상 0 이지만 구조는 처음부터 분리해 둔다.
+ * `enhanceLevel` 은 0~ENHANCE_CAP(+5) 이고, 중복 도구를 재료로 먹여 오른다(설계 §5).
  */
 export interface ItemInstance {
   instanceId: string
