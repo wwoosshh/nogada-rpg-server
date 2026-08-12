@@ -477,6 +477,33 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
         violations.push(
           `shops[${shop.id}]: "${entry.itemId}" 는 도구라 진열할 수 없다 — 매수는 무엇을 사든 가방의 재료 칸(player.stacks)에 넣는데, 가방 화면은 도구를 그 칸이 아니라 instances 에서만 그린다. 산 도구는 골드만 줄이고 가방 어디에도 나타나지 않는다. 진열은 kind 가 material 인 아이템만 할 수 있다`,
         )
+        // 도구는 값이 0 이고 계열이 비어 있는 것이 **정상**이라(팔 수 없고 상점
+        // 계열을 물을 일이 없다), 아래 두 검사까지 돌리면 한 줄의 오타가 위반
+        // 셋이 되어 진짜 원인이 자기 그림자에 묻힌다.
+        continue
+      }
+      // price 0 은 "팔 수 없다"는 뜻이지 "공짜"가 아니다(설계 §2). 그런데 진열에
+      // 놓이는 순간 그 뜻이 정확히 뒤집힌다: 매수 총액은 개당 값 × 수량이라 0 이
+      // 되고, 서버의 `gold < cost` 검사는 0 앞에서 언제나 통과하며, 화면도 총액
+      // 0 을 붉히지 않으니 [사기] 버튼이 살아 있다 — 무한 무료 아이템이다.
+      // 화면 쪽 가드(maxBuyCount 의 `unitPrice <= 0`)는 수량을 0 으로 만들 뿐
+      // 버튼을 잠그지 못한다(clampCount 가 1 을 돌려준다). 판정이 아니라 데이터가
+      // 틀린 것이므로 여기서 막는다.
+      if (stockedItem.price <= 0) {
+        violations.push(
+          `shops[${shop.id}]: "${entry.itemId}" 은 price 가 0 이라 진열할 수 없다 — price 0 은 "팔 수 없다"는 뜻이지 "공짜"가 아니다. 값이 0 이면 매수 총액이 0 이라 골드 검사가 언제나 통과해 누구나 무한히 가져간다. items.csv 의 price 를 1 이상으로 올리거나 shop_stock.csv 에서 그 줄을 지운다`,
+        )
+      }
+      // 진열은 그 상점 계열의 물건이어야 한다(설계 §6-앞 14). 진열 한 칸의
+      // 요구치(unlockSkill)가 재는 것도, 화면이 잠긴 칸에 적는 "현재/필요"와
+      // 기술 이름도 전부 **상점의 계열**이다(shopModel.buyRows). 그래서
+      // `얼음상점,wood_speed_token,10000` 한 줄이면 나무 증표가 얼음 숙련도로
+      // 열리고 화면은 "얼음 0/10,000"을 적는다 — 데이터가 적은 계열과 화면이
+      // 말하는 계열이 갈라지는데, 어느 쪽도 화면에서 되짚을 수 없다.
+      if (stockedItem.skill !== shop.skill) {
+        violations.push(
+          `shops[${shop.id}]: "${entry.itemId}" 는 "${stockedItem.skill ?? '(비어 있음)'}" 계열인데 이 상점은 "${shop.skill}" 계열이다 — 진열의 요구치도 화면의 "현재/필요"도 전부 상점 계열의 숙련도를 재므로, 이 칸은 남의 계열 숙련도로 열리고 화면은 엉뚱한 기술 이름을 적는다. shop_stock.csv 에서 그 줄을 "${stockedItem.skill ?? shop.skill}" 상점으로 옮기거나 items.csv 의 skill 을 고친다`,
+        )
       }
     }
   }
@@ -725,9 +752,17 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 되는데, 그 원인은 화면에서 되짚을 수 없다 — 소속이 서버 전용 산출물에만
   // 있어서 사람이 눈으로 대조할 곳도 없다.
   //
-  // 표의 티어가 아닌 아이템(주괴·증표)은 대상이 아니다. 사다리 밖이라 대조할
-  // 상대가 없을 뿐이고, 그 skill 값 자체가 실재하는 기술인지는 parseItems 의
-  // toSkillId 가 이미 본다.
+  // **양방향으로 본다.** 한때 이 검사는 `if (!item.skill) continue` 로 시작해
+  // "적힌 계열이 표와 다른가" 한쪽만 봤는데, 그러면 **표의 티어인데 계열 칸이
+  // 빈** 재료가 그물을 그대로 빠져나갔다. 매도 판정(isSellTarget)은 아이템의
+  // skill 과 상점의 skill 을 견주므로 계열 없는 재료는 어느 상점도 사 주지
+  // 않는데(undefined 는 어느 계열과도 같지 않다), 그것이 하필 레시피 재료이기도
+  // 하면 "쓸 곳도 팔 곳도 없다" 검사마저 통과해 빌드가 끝까지 초록이다 —
+  // soft_log 의 skill 을 비우면 나무상점이 무른 통나무를 안 사는 화면이 된다.
+  //
+  // 표의 티어가 아닌 아이템(주괴·증표·도구)은 대상이 아니다. 사다리 밖이라
+  // 대조할 상대가 없을 뿐이고, 그 skill 값 자체가 실재하는 기술인지는
+  // parseItems 의 toSkillId 가 이미 본다.
   //
   // 색인을 둘 만든다: 계열은 이 검사가, 표 id 는 아래 증표 제약("증표는 캐는 것이
   // 아니다")이 쓴다 — 표를 두 번 돌 이유가 없다.
@@ -740,9 +775,13 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     }
   }
   for (const item of Object.values(data.items)) {
-    if (!item.skill) continue
     const ladder = ladderSkillOf.get(item.id)
-    if (ladder && ladder !== item.skill) {
+    if (!ladder) continue
+    if (!item.skill) {
+      violations.push(
+        `items[${item.id}]: 채집표에서는 "${ladder}" 사다리의 티어인데 skill 칸이 비어 있다 — 매도 판정이 아이템의 skill 과 상점의 skill 을 견주므로, 계열이 없는 재료는 어느 상점도 사 주지 않는다. 캔 것이 팔리지 않는 화면이 된다. items.csv 의 skill 을 "${ladder}" 로 채운다`,
+      )
+    } else if (ladder !== item.skill) {
       violations.push(
         `items[${item.id}]: skill 이 "${item.skill}" 인데 채집표에서는 "${ladder}" 사다리의 티어다 — 캔 곳과 팔 곳이 갈라진다. items.csv 의 skill 을 "${ladder}" 로 고친다`,
       )

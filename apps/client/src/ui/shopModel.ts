@@ -122,8 +122,13 @@ export function maxSellCount(row: ShopSellRow): number {
  * 이 줄을 한 번에 살 수 있는 최대 수량 — **지금 골드로 감당되는 만큼**이다.
  *
  * 잠겼거나 이미 가진 칸은 0 이다(그 칸의 버튼은 애초에 눌리지 않는다). 증표는
- * 1 이 상한이다(§6-앞 16 — 둘째부터는 효과 없이 돈만 나간다). 값이 0 인 진열은
- * 빌드가 막지만, 그래도 0 으로 나누지 않는다 — 여기서 새면 화면에 Infinity 가 뜬다.
+ * 1 이 상한이다(§6-앞 16 — 둘째부터는 효과 없이 돈만 나간다).
+ *
+ * `unitPrice <= 0` 가드는 **0 으로 나누지 않기 위한 것뿐이다** — 여기서 새면
+ * 화면에 Infinity 가 뜬다. 값이 0 인 진열을 막는 것은 이 가드가 아니라
+ * 빌드다(validate.ts 의 진열 price 검사): 이 함수가 0 을 돌려줘도 clampCount 가
+ * 1 을 돌려주므로 총액은 0 이 되고, 총액 0 은 골드보다 크지 않아 [사기] 버튼이
+ * 살아 있다. 즉 화면 혼자서는 무한 무료 아이템을 막지 못한다.
  */
 export function maxBuyCount(row: ShopBuyRow, gold: number): number {
   if (row.state !== 'ready' || row.unitPrice <= 0) return 0

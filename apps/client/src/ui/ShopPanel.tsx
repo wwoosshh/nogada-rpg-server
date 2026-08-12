@@ -30,6 +30,11 @@ import {
  * 증표는 `보유 중` 이라 적고 버튼을 그리지 않는다 — 눌러도 서버가 거절만 하는
  * 죽은 버튼을 만들지 않는다(§8-앞 13).
  *
+ * **서버가 거절하면 이 패널 안에서 말한다**(합계 줄 아래의 TradeError). 거래는
+ * 이 패널이 화면을 덮은 상태에서만 일어나므로 머리 위 글자로 보내면 아무도 못
+ * 본다. 그리고 왕복이 도는 동안 [팔기]·[사기] 는 잠긴다 — 두 번 빠르게 누른
+ * 둘째 요청이 거절되는 일 자체를 없애는 것이 근본이고, 문구는 그 뒤의 안전망이다.
+ *
  * **키보드 리스너를 두지 않는다** — I/C/ESC·B 는 전부 InputHub →
  * PanelScene.applyInput 이 라우팅한다(§8-앞 7). 이 컴포넌트는 openPanel 을
  * 구독해 그리고, ✕ 로 스토어 액션을 부르는 것이 전부다.
@@ -188,11 +193,38 @@ function TotalLine({ total, short }: { total: number; short: boolean }): JSX.Ele
   )
 }
 
+/**
+ * 서버가 이번 거래를 거절한 이유 — 합계 줄과 버튼 사이의 한 줄.
+ *
+ * **이 자리가 이 컴포넌트의 존재 이유다.** 거래는 상점 패널이 화면을 덮은
+ * 상태에서만 일어나므로, 거절을 머리 위 글자로 보내면 그 문구는 패널 뒤에서
+ * 뜨고 사라져 아무도 못 본다 — 팔기를 보유량 전부로 두 번 빠르게 누르면
+ * 두 번째가 거절되는데 화면에는 아무 일도 일어나지 않았다. 그래서 스토어는
+ * `tradeError` 채널에 쓰고 이 줄이 그것을 읽는다.
+ *
+ * `role="status"` 인 이유: 스크린 리더에게도 "방금 누른 것이 왜 아무 일도
+ * 안 했는가"가 전달되어야 하는데, 초점을 빼앗으면(alert) 수량 고르개로
+ * 돌아가는 길이 끊긴다.
+ */
+function TradeError(): JSX.Element | null {
+  const text = useGameStore((s) => s.tradeError)
+  if (text === null) return null
+  return (
+    <p className="shop__error" role="status">
+      {text}
+    </p>
+  )
+}
+
 /** 오른쪽 상세 — 파는 쪽. 큰 아이콘 · 개당 값 · 보유 · 수량 · 총액 · [팔기]. */
 function SellDetail({ shopId, row }: { shopId: string; row: ShopSellRow }): JSX.Element {
   const max = maxSellCount(row)
   const [pick, setPick] = useState(1)
   const count = clampCount(pick, max)
+  // 요청이 나가 있는 동안 버튼을 잠근다 — 보유량 전부로 두 번 빠르게 누르면
+  // 둘째는 이미 비워진 스택을 다시 팔려 해 반드시 거절된다. 문구를 보여주는
+  // 것보다 그 두 번째 요청을 아예 안 보내는 것이 근본이다.
+  const busy = useGameStore((s) => s.tradeBusy)
 
   return (
     <section className="craft__detail">
@@ -215,9 +247,11 @@ function SellDetail({ shopId, row }: { shopId: string; row: ShopSellRow }): JSX.
       </div>
       <div className="craft__actions">
         <TotalLine total={tradeTotal(row.unitPrice, count)} short={false} />
+        <TradeError />
         <button
           type="button"
           className="btn btn--primary shop__confirm"
+          disabled={busy}
           onClick={() => void useGameStore.getState().sell(shopId, row.itemId, count)}
         >
           팔기
@@ -245,6 +279,9 @@ function BuyDetail({
   const count = clampCount(pick, max)
   const total = tradeTotal(row.unitPrice, count)
   const locked = row.state === 'locked'
+  // 팔기와 같은 잠금이다 — 증표는 둘째 요청이 already_owned 로 거절되고,
+  // 재료는 골드가 아직 안 줄어든 화면을 보고 한 번 더 누르게 된다.
+  const busy = useGameStore((s) => s.tradeBusy)
 
   return (
     <section className="craft__detail">
@@ -281,10 +318,11 @@ function BuyDetail({
       {row.state === 'ready' && (
         <div className="craft__actions">
           <TotalLine total={total} short={total > gold} />
+          <TradeError />
           <button
             type="button"
             className="btn btn--primary shop__confirm"
-            disabled={total > gold}
+            disabled={busy || total > gold}
             onClick={() => void useGameStore.getState().buy(shopId, row.itemId, count)}
           >
             사기

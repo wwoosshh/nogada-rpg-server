@@ -62,6 +62,8 @@ beforeEach(() => {
     craftTally: {},
     lastAction: null,
     notice: null,
+    tradeError: null,
+    tradeBusy: false,
     player: emptyPlayer(),
     boot: 'playing',
     connection: 'online',
@@ -276,6 +278,85 @@ describe('거래 — 화자가 자리를 뜨면 패널이 닫힌다(설계 §6-�
 
     expect(useGameStore.getState().openPanel).toBeNull()
     expect(useGameStore.getState().notice?.text).toBe('지금 여기 없는 것 같다.')
+  })
+
+  // 왜: 거절 문구가 캔버스 플로터(lastAction)로 나가면 아무도 못 본다 — 거래는
+  //     상점 패널이 화면을 덮은 상태에서만 일어나기 때문이다. 그래서 거절은
+  //     패널 안에서 말한다(tradeError). 재현: 보유량 전부로 두 번 빠르게 팔면
+  //     두 번째가 missing_items 로 거절되는데 화면에 아무 일도 안 일어났다.
+  it('거래 거절은 패널 안의 채널로 간다 — 머리 위 글자는 건드리지 않는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'missing_items' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    await useGameStore.getState().sell('얼음상점', 'ice_shard', 3)
+
+    expect(useGameStore.getState().tradeError).toBe('물건이 모자란다')
+    expect(useGameStore.getState().lastAction).toBeNull()
+    expect(useGameStore.getState().openPanel).toBe('shop:얼음상점')
+  })
+
+  // 왜: 남아 있는 거절 문구는 다음 거래가 성공한 뒤에도 화면에 붙어 있으면
+  //     방금 성공한 거래를 실패로 읽게 만든다.
+  it('다음 거래가 성공하면 지난 거절 문구가 지워진다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementationOnce(async () => jsonResponse({ code: 'not_enough_gold' }, 400))
+        .mockImplementationOnce(async () => jsonResponse({ player: emptyPlayer() })),
+    )
+
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    await useGameStore.getState().buy('얼음상점', 'ice_speed_token', 1)
+    expect(useGameStore.getState().tradeError).toBe('골드 부족')
+
+    await useGameStore.getState().buy('얼음상점', 'ice_speed_token', 1)
+    expect(useGameStore.getState().tradeError).toBeNull()
+  })
+
+  // 왜: 문구는 그 상점 그 순간의 것이다 — 패널을 닫았다 다시 열었는데 지난
+  //     거절이 그대로 붙어 있으면, 아무것도 안 했는데 실패한 화면이 된다.
+  it('패널을 닫으면 거절 문구도 함께 지워진다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'item_locked' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    await useGameStore.getState().buy('얼음상점', 'ice_sight_token', 1)
+    expect(useGameStore.getState().tradeError).toBe('아직 살 수 없는 물건')
+
+    useGameStore.getState().setOpenPanel(null)
+    expect(useGameStore.getState().tradeError).toBeNull()
+  })
+
+  // 왜: **두 번째 요청 자체를 막는 것이 근본이다.** 보유량 전부로 두 번 빠르게
+  //     누르면 첫 요청이 아직 돌아오지 않은 채 두 번째가 나가고, 그 둘째는 이미
+  //     비워진 스택을 다시 팔려 해 반드시 거절된다. 버튼을 잠그면 그 거절이
+  //     애초에 생기지 않는다.
+  it('요청이 나가 있는 동안에는 잠금 신호(tradeBusy)가 켜져 있다', async () => {
+    let release: (() => void) | null = null
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await held
+        return jsonResponse({ player: emptyPlayer() })
+      }),
+    )
+
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    const inflight = useGameStore.getState().sell('얼음상점', 'ice_shard', 3)
+    expect(useGameStore.getState().tradeBusy).toBe(true)
+
+    release!()
+    await inflight
+    expect(useGameStore.getState().tradeBusy).toBe(false)
   })
 
   // 왜: 거래의 응답은 { player } 하나다(착용·강화와 같은 모양) — 그 하나를

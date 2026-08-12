@@ -45,7 +45,7 @@ ice_speed_token,얼음 속도증표,material,,,feather_ice,480000,ice,speed
 wood_speed_token,나무 속도증표,material,,,feather_wood,900000,wood,speed
 mineral_speed_token,광물 속도증표,material,,,feather_mineral,360000,mineral,speed
 herb_speed_token,허브 속도증표,material,,,feather_herb,600000,herb,speed
-ice_sight_token,얼음 선별증표,material,,,ring_ice,240000,ice,sight
-wood_sight_token,나무 선별증표,material,,,ring_wood,450000,wood,sight
-mineral_sight_token,광물 선별증표,material,,,ring_mineral,180000,mineral,sight
+ice_sight_token,얼음 선별증표,material,,,ring_ice,170000,ice,sight
+wood_sight_token,나무 선별증표,material,,,ring_wood,150000,wood,sight
+mineral_sight_token,광물 선별증표,material,,,ring_mineral,140000,mineral,sight
 herb_sight_token,허브 선별증표,material,,,ring_herb,300000,herb,sight

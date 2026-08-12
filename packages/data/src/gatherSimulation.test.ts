@@ -313,6 +313,20 @@ describe('§6-앞 7 증표의 값어치 — 가격을 유도한 두 숫자를 �
     return goldPerMinute(table, prof, handOf(skill, 1, [effect])) / goldPerMinute(table, prof, handOf(skill, 1))
   }
 
+  const tokenOf = (skill: SkillId, effect: TokenEffect): ItemDef =>
+    Object.values(data.items).find((i) => i.tokenEffect === effect && i.skill === skill)!
+
+  /**
+   * 그 증표의 값이 그 계열 그 시점 수입의 **몇 분치**인가.
+   *
+   * 계열 배수가 존재하는 이유가 정확히 이 숫자다(§6-앞 7): 값어치는 표와 무관한
+   * 산술이라 네 계열이 같은데 **수입은 계열마다 다르므로**, 균일 가격은 어느
+   * 계열에게는 잔돈이고 어느 계열에게는 벽이 된다. 배수는 그 격차를 흡수하라고
+   * 넣은 것이고, 그러니 배수가 제 일을 했는지 재는 자는 골드가 아니라 분이다.
+   */
+  const minutesOfIncome = (skill: SkillId, prof: number, price: number): number =>
+    price / goldPerMinute(tables[skill]!, prof, handOf(skill, 1))
+
   it('속도증표는 분당 골드를 정확히 +11.1% 올린다 — 표와 무관한 산술이라 네 계열이 같은 값이다', () => {
     for (const skill of SKILLS) {
       // 간격이 ×0.9 이므로 분당 시행 수가 1/0.9 배다. 회당 기대 골드는 손도
@@ -349,18 +363,24 @@ describe('§6-앞 7 증표의 값어치 — 가격을 유도한 두 숫자를 �
     }
   })
 
-  it('속도가 선별보다 2배쯤 값어치가 크고, 출하 가격이 정확히 그 비율(2:1)이다 — 뒤집힌 스펙을 고친 근거(§6-앞 7)', () => {
+  it('속도가 선별보다 2배쯤 값어치가 크다 — 뒤집힌 스펙을 고친 근거(§6-앞 7)', () => {
     for (const skill of SKILLS) {
       const speedGain = payoff(skill, SIGHT_UNLOCK, 'speed') - 1
       const sightGain = payoff(skill, SIGHT_UNLOCK, 'sight') - 1
       const 값어치비 = speedGain / sightGain
       expect(값어치비).toBeGreaterThan(2)
       expect(값어치비).toBeLessThan(2.2)
-
-      const speedToken = Object.values(data.items).find((i) => i.tokenEffect === 'speed' && i.skill === skill)!
-      const sightToken = Object.values(data.items).find((i) => i.tokenEffect === 'sight' && i.skill === skill)!
-      expect(speedToken.price / sightToken.price).toBe(2)
     }
+  })
+
+  it('기준 계열(허브)의 출하 가격이 정확히 그 비율(600,000 : 300,000)이다', () => {
+    // 계열 배수가 붙은 뒤로 "속도 : 선별 = 2 : 1" 은 **계열마다는 성립하지 않는다** —
+    // 두 증표의 배수를 서로 다른 지점에서 뽑기 때문이다(속도는 10,000, 선별은
+    // 25,000, 그 사이에 계열 수입 순위가 바뀐다). 허브만은 두 지점 모두에서
+    // 최고 수입이라 양쪽 다 ×1.0 인 기준 계열이고, 그래서 허브의 두 값이
+    // 기준값 쌍을 가림 없이 드러낸다. 기준값이 흔들리면 여기가 먼저 말한다.
+    expect(tokenOf('herb', 'speed').price).toBe(600_000)
+    expect(tokenOf('herb', 'sight').price).toBe(300_000)
   })
 
   it('선별증표의 관측 골드가 전수 기대의 3σ 안이다 — 전수 셈이 실제 판정 경로와 갈라지지 않았다', () => {
@@ -377,6 +397,61 @@ describe('§6-앞 7 증표의 값어치 — 가격을 유도한 두 숫자를 �
       const { mean, variance } = goldMoments(table, SIGHT_UNLOCK, hand)
       expect(Math.abs(observed - N * mean)).toBeLessThanOrEqual(3 * Math.sqrt(N * variance))
     }
+  })
+
+  /**
+   * **배수가 격차를 줄였는가** — 값어치(위)와 달리 이것은 가격표가 지켜야 하는
+   * 약속이라, 값이 아니라 "몇 분치"로 잰다.
+   *
+   * 한때 두 증표의 배수를 **속도증표 해금 지점(10,000)의 수입 하나로** 뽑았다.
+   * 그런데 10,000 과 25,000 사이에서 계열 순위가 바뀐다(10,000: 나무 18,819 >
+   * 허브 15,757 > 얼음 10,927 > 광물 10,422 / 25,000: 허브 39,434 > 얼음
+   * 21,965 > 나무 19,492 > 광물 18,207). 그래서 선별증표에 그 배수를 그대로
+   * 쓰면 배수가 격차를 **키웠다**: 몇 분치가 얼음 10.9 · 나무 23.1 · 광물 9.9 ·
+   * 허브 7.6 으로 최대·최소 비 3.04 였는데, 배수 없이 균일 300,000 이면 오히려
+   * 2.17 이었다. 목적과 정반대다.
+   *
+   * → 증표마다 **자기 해금 지점의** 분당 골드로 배수를 뽑는다. 두 스위트가
+   *   그 규칙이 지켜지는지를 각자의 지점에서 잰다.
+   */
+  describe('§6-앞 7 계열 배수 — 몇 분치가 계열마다 나란한가', () => {
+    it('속도증표는 네 계열 모두 해금 지점(10,000) 수입의 30~50분치다', () => {
+      // 측정: 얼음 43.9 · 나무 47.8 · 광물 34.5 · 허브 38.1 분. 대역을 30~50 으로
+      // 두는 것은 관측 넷을 감싸는 가장 가까운 만·십 단위이고, 이 밖으로 나가면
+      // 그 계열의 첫 싱크가 "잔돈"이거나 "벽"이 되었다는 뜻이다.
+      for (const skill of SKILLS) {
+        const minutes = minutesOfIncome(skill, SPEED_UNLOCK, tokenOf(skill, 'speed').price)
+        expect(minutes, skill).toBeGreaterThan(30)
+        expect(minutes, skill).toBeLessThan(50)
+      }
+    })
+
+    it('속도증표의 계열 격차가 배수 없는 1.81 에서 1.45 아래로 줄었다', () => {
+      // 배수를 빼고 균일 600,000 이면 이 비는 계열 수입 격차 그대로인 1.81 이다.
+      // 배수를 넣은 실제 값은 1.385 — 상한을 1.45 로 두어 "줄였다"까지가 단언이
+      // 되게 한다(1.81 을 그냥 통과시키는 느슨한 상한은 아무것도 못 잡는다).
+      const minutes = SKILLS.map((s) => minutesOfIncome(s, SPEED_UNLOCK, tokenOf(s, 'speed').price))
+      expect(Math.max(...minutes) / Math.min(...minutes)).toBeLessThan(1.45)
+    })
+
+    it('선별증표는 네 계열 모두 해금 지점(25,000) 수입의 7~8분치다', () => {
+      // 측정: 얼음 7.74 · 나무 7.70 · 광물 7.69 · 허브 7.61 분. 배수를 25,000 의
+      // 수입에서 뽑고 만 단위로 반올림한 결과라(170,000 / 150,000 / 140,000 /
+      // 300,000) 넷이 거의 한 점에 모인다 — 반올림이 만드는 흔들림까지 담는
+      // 가장 좁은 정수 대역이 7~8 이다.
+      for (const skill of SKILLS) {
+        const minutes = minutesOfIncome(skill, SIGHT_UNLOCK, tokenOf(skill, 'sight').price)
+        expect(minutes, skill).toBeGreaterThan(7)
+        expect(minutes, skill).toBeLessThan(8)
+      }
+    })
+
+    it('선별증표의 계열 격차가 배수 없는 2.17 에서 1.05 아래로 줄었다', () => {
+      // 균일 300,000 이면 2.166, 옛 속도 배수를 물려 쓰면 3.035(오히려 악화).
+      // 자기 지점에서 뽑은 배수의 실제 값은 1.017 이다.
+      const minutes = SKILLS.map((s) => minutesOfIncome(s, SIGHT_UNLOCK, tokenOf(s, 'sight').price))
+      expect(Math.max(...minutes) / Math.min(...minutes)).toBeLessThan(1.05)
+    })
   })
 
   it('남의 계열 증표는 값어치가 0 이다 — 얼음 증표 둘을 들고 나무를 캐면 손이 그대로다', () => {

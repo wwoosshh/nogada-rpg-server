@@ -507,6 +507,20 @@ describe('validateGameData 의 사다리 소속 검사', () => {
     expect(validateGameData(data, baseTables())).toEqual([])
   })
 
+  it('표의 티어인데 계열 칸이 비어 있으면 잡아낸다 — 캔 것을 아무도 사 주지 않는다', () => {
+    // 검사가 "적힌 계열이 표와 다른가" 한 방향만 보면, **아예 안 적은** 재료가
+    // 그물을 그대로 빠져나간다. 매도 판정은 `def.skill === shop.shop.skill` 이라
+    // 계열이 없는 재료는 어느 상점도 사 주지 않는데(undefined 는 어느 계열과도
+    // 같지 않다), 그것이 하필 레시피 재료이기도 하면 "쓸 곳도 팔 곳도 없다"
+    // 검사마저 통과해 빌드가 끝까지 초록이다.
+    const data = baseData()
+    delete data.items.copper_ore!.skill
+
+    expect(validateGameData(data, baseTables())).toEqual([
+      'items[copper_ore]: 채집표에서는 "mineral" 사다리의 티어인데 skill 칸이 비어 있다 — 매도 판정이 아이템의 skill 과 상점의 skill 을 견주므로, 계열이 없는 재료는 어느 상점도 사 주지 않는다. 캔 것이 팔리지 않는 화면이 된다. items.csv 의 skill 을 "mineral" 로 채운다',
+    ])
+  })
+
   it('실제로 출하되는 CSV 데이터는 사다리 소속이 전부 일치한다', () => {
     expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
   })
@@ -1425,6 +1439,32 @@ describe('validateGameData 의 상점 등록부 검사', () => {
     expect(validateGameData(data, baseTables())).toContain(
       'shops[광물상점]: "copper_pickaxe" 는 도구라 진열할 수 없다 — 매수는 무엇을 사든 가방의 재료 칸(player.stacks)에 넣는데, 가방 화면은 도구를 그 칸이 아니라 instances 에서만 그린다. 산 도구는 골드만 줄이고 가방 어디에도 나타나지 않는다. 진열은 kind 가 material 인 아이템만 할 수 있다',
     )
+  })
+
+  it('값이 0 인 아이템을 진열한 상점을 잡아낸다', () => {
+    // price 0 은 "팔 수 없다"는 뜻이지 "공짜"가 아니다(설계 §2). 그런데 진열에
+    // 놓이면 그 뜻이 뒤집힌다: 화면은 총액 0 을 적은 채 [사기] 를 살려 두고
+    // (maxBuyCount 가 0 을 돌려줘도 clampCount 는 1 을 돌려준다) 서버의
+    // `gold < cost` 검사도 0 앞에서는 통과한다 — 무한 무료 아이템이 된다.
+    const data = registryData()
+    data.items.gravel = testItem('gravel', { name: '자갈', icon: 'ore_copper', price: 0, skill: 'mineral' })
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'gravel', unlockSkill: 10000 }] }) }
+    expect(validateGameData(data, baseTables())).toEqual([
+      'shops[광물상점]: "gravel" 은 price 가 0 이라 진열할 수 없다 — price 0 은 "팔 수 없다"는 뜻이지 "공짜"가 아니다. 값이 0 이면 매수 총액이 0 이라 골드 검사가 언제나 통과해 누구나 무한히 가져간다. items.csv 의 price 를 1 이상으로 올리거나 shop_stock.csv 에서 그 줄을 지운다',
+    ])
+  })
+
+  it('남의 계열 아이템을 진열한 상점을 잡아낸다', () => {
+    // 진열의 요구치(unlockSkill)도 화면의 "현재/필요"도 전부 **상점의 계열**을
+    // 잰다(§6-앞 14). 그래서 나무 증표를 얼음상점에 놓으면 그것이 얼음 숙련도로
+    // 열리고 화면은 "얼음 0/10,000"을 적는다 — 데이터에 적힌 계열과 화면이 말하는
+    // 계열이 갈라지는데, 그 어긋남을 화면에서 되짚을 방법이 없다.
+    const data = registryData()
+    data.items.ice_shard = testItem('ice_shard', { name: '얼음 조각', icon: 'shard_ice', price: 50, skill: 'ice' })
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'ice_shard', unlockSkill: 10000 }] }) }
+    expect(validateGameData(data, baseTables())).toEqual([
+      'shops[광물상점]: "ice_shard" 는 "ice" 계열인데 이 상점은 "mineral" 계열이다 — 진열의 요구치도 화면의 "현재/필요"도 전부 상점 계열의 숙련도를 재므로, 이 칸은 남의 계열 숙련도로 열리고 화면은 엉뚱한 기술 이름을 적는다. shop_stock.csv 에서 그 줄을 "ice" 상점으로 옮기거나 items.csv 의 skill 을 고친다',
+    ])
   })
 
   it('실제로 출하되는 CSV 데이터는 상점 검사를 통과한다', () => {

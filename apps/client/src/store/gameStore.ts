@@ -221,6 +221,30 @@ interface GameStore {
    * 제작 패널이 열리는 순간 리셋된다(setOpenPanel).
    */
   craftTally: Record<string, CraftTallyEntry>
+  /**
+   * 방금 거래가 거절된 이유 한 줄 — **상점 패널 안에서** 읽는 채널이다.
+   *
+   * 왜 머리 위 글자(lastAction)가 아닌가: 거래는 상점 패널이 화면을 덮은
+   * 상태에서만 일어난다. 캔버스 플로터로 보내면 그 글자는 패널 뒤에서 뜨고
+   * 사라져 **아무도 못 본다** — 같은 이유로 이 파일의 매도 액션은 성공을
+   * 아예 알리지 않는다(성공은 골드와 스택 숫자가 그 자리에서 직접 말한다).
+   * 거절은 다르다: 화면이 바뀌지 않으니 말이 없으면 정말로 아무 일도 안
+   * 일어난 것처럼 보인다. 그래서 문구는 패널 안 합계 줄 옆에 앉는다.
+   *
+   * seq 를 달지 않는 이유는 이것이 사건이 아니라 **상태**이기 때문이다 —
+   * 구독자(ShopPanel)는 글자를 띄웠다 지우는 것이 아니라 값이 있는 동안 그
+   * 자리를 그린다. 다음 요청이 나갈 때·거래가 성공할 때·패널이 바뀔 때 지워진다.
+   */
+  tradeError: string | null
+  /**
+   * 거래 요청이 나가 있다 — 상점 패널의 [팔기]·[사기] 를 그동안 잠근다.
+   *
+   * 이것이 "보유량 전부로 두 번 빠르게 누르면 둘째가 거절된다"의 **근본**
+   * 교정이다: 첫 요청이 돌아오기 전에 둘째가 나가면 그 둘째는 이미 비워진
+   * 스택을 다시 팔려 해 반드시 `missing_items` 로 거절된다. 문구를 보여주는
+   * 것은 그 뒤에 남는 안전망이고, 애초에 두 번째 요청을 안 보내는 것이 답이다.
+   */
+  tradeBusy: boolean
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
@@ -309,6 +333,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   openPanel: null,
   pendingShop: null,
   craftTally: {},
+  tradeError: null,
+  tradeBusy: false,
   lastAction: null,
   milestone: null,
   utterance: null,
@@ -611,10 +637,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   /**
-   * 매도 — 상점 패널의 [팔기] 버튼이 부른다. equip·enhance 와 같은 자세다:
-   * 거래는 행동 간격을 쓰지 않으므로(설계 §6-앞 18) too_fast 가 올 수 없고,
-   * 성공은 머리 위 글자로 알리지 않는다 — 결과는 그 자리에서 골드와 스택
-   * 숫자가 직접 말하고, 패널이 화면을 덮고 있어 어차피 안 보인다.
+   * 매도 — 상점 패널의 [팔기] 버튼이 부른다. 거래는 행동 간격을 쓰지 않으므로
+   * (설계 §6-앞 18) too_fast 가 올 수 없다. 성공은 머리 위 글자로 알리지 않는다 —
+   * 결과는 그 자리에서 골드와 스택 숫자가 직접 말하고, 패널이 화면을 덮고 있어
+   * 어차피 안 보인다. **거절도 같은 이유로 머리 위에 띄우지 않는다**: 패널 안
+   * 합계 줄 옆(tradeError)에 앉힌다. 여기가 equip·enhance 와 갈라지는 자리다 —
+   * 그쪽은 가방 패널이 열려 있어도 거절이 드물고 채널을 나눌 이유가 없었다.
    */
   sell: async (shopId, itemId, count) => {
     await trade(set, get, () => GameClient.sell(shopId, itemId, count))
@@ -640,6 +668,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
    */
   setOpenPanel: (panel) => {
     if (panel === get().openPanel) return
+    // 거래 거절 문구는 그 상점 그 순간의 것이다 — 남겨 두면 패널을 닫았다 다시
+    // 연 사람이 아무것도 안 했는데 실패한 화면을 본다. craftTally 가 제작
+    // 패널을 열 때 0 에서 시작하는 것과 같은 이유이고, 여기 한 곳이면 빠짐이 없다.
+    set({ tradeError: null })
     // 제작 패널이 열리는 순간 누적 카운터를 0 에서 시작한다(설계 §8-앞 3) —
     // 이 숫자는 "이번에 열어 둔 동안"의 성적이다.
     if (panel === 'craft') set({ openPanel: panel, craftTally: {} })
@@ -756,12 +788,21 @@ function applyPlayer(set: SetFn, next: PlayerState): void {
  * 그건 버그가 아니라 세계가 살아 있다는 증거이고, 그때 화면이 할 일은 패널을
  * 닫고 **대화와 똑같은 안내**를 띄우는 것 하나다 — 두 액션이 각자 적으면
  * 언젠가 한쪽만 고쳐져서 "팔리지도 않고 닫히지도 않는" 패널이 남는다.
+ *
+ * 나머지 거절은 **패널 안에서** 말한다(`tradeError`). 거래는 상점 패널이 화면을
+ * 덮은 상태에서만 일어나므로 머리 위 글자로 보내면 그 문구는 패널 뒤에서
+ * 뜨고 사라진다 — 이 파일이 매도 성공을 아예 안 알리는 것과 정확히 같은 사정이다.
+ *
+ * 왕복 동안 `tradeBusy` 를 켜 두 번째 요청 자체를 막는다. 이것이 근본 교정이다:
+ * 보유량 전부로 두 번 빠르게 누르면 둘째는 이미 비워진 스택을 다시 팔려 해
+ * 반드시 거절되는데, 버튼이 잠겨 있으면 그 거절이 애초에 생기지 않는다.
  */
 async function trade(
   set: SetFn,
   get: () => GameStore,
   send: () => Promise<{ player: PlayerState }>,
 ): Promise<void> {
+  set({ tradeBusy: true, tradeError: null })
   try {
     const { player } = await send()
     applyPlayer(set, player)
@@ -775,8 +816,10 @@ async function trade(
       set({ notice: { seq: ++noticeSeq, text: NOT_HERE_NOTICE } })
       return
     }
-    pushAction(set, describeError(err), 'bad')
+    set({ tradeError: describeError(err) })
     console.error(err)
+  } finally {
+    set({ tradeBusy: false })
   }
 }
 
@@ -848,11 +891,15 @@ function describeError(err: unknown): string {
     case 'enhance_cap':
       return '더 강화할 수 없다'
     // 아래는 거래(sell·buy) 전용 코드다(설계 §6-앞 18). 상점 패널이 잠긴 칸·
-    // 보유 증표·모자란 골드를 미리 걸러 버튼을 잠그므로 정상 조작으로는 거의
-    // 오지 않는다 — 두 창을 동시에 열어 같은 스택을 파는 경합처럼, 화면이
-    // 막을 수 없는 경우에만 온다. 그래도 말이 없으면 화면이 조용히 아무 일도
-    // 안 한 것처럼 보인다. `not_here` 는 여기 없다 — 그건 문구가 아니라
-    // 패널을 닫는 사건이라 trade() 가 대화와 같은 안내로 따로 다룬다.
+    // 보유 증표·모자란 골드를 미리 걸러 버튼을 잠그고, 왕복 동안에는 버튼
+    // 자체가 잠기므로(tradeBusy) 정상 조작으로는 거의 오지 않는다 — 두 창을
+    // 동시에 열어 같은 스택을 파는 경합처럼, 화면이 막을 수 없는 경우에만 온다.
+    // 그래도 말이 없으면 화면이 조용히 아무 일도 안 한 것처럼 보이므로 문구가
+    // 있어야 한다. **그 문구는 머리 위가 아니라 상점 패널 안에 앉는다**
+    // (trade() 가 tradeError 에 싣는다) — 거래는 패널이 화면을 덮은 상태에서만
+    // 일어나므로 캔버스 플로터로 보내면 패널 뒤에서 뜨고 사라져 아무도 못 본다.
+    // `not_here` 는 여기 없다 — 그건 문구가 아니라 패널을 닫는 사건이라
+    // trade() 가 대화와 같은 안내로 따로 다룬다.
     case 'unknown_shop':
       return '없는 상점'
     case 'shop_locked':
