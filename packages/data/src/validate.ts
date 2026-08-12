@@ -4,6 +4,7 @@ import type {
   FactValue,
   GameData,
   GatherTables,
+  ItemDef,
   MapDef,
   MilestoneDef,
   SkillId,
@@ -248,6 +249,15 @@ export function findDeadDialogueRules(dialogue: readonly DialogueRule[]): DeadDi
 function computeReachableItems(data: GameData, gatherTables: GatherTables): Set<string> {
   const reachable = new Set<string>()
 
+  // 상점 진열은 노드 표와 같은 자격의 시드다(§6-앞 12). 매수는 골드를 요구하지만
+  // 골드는 캔 것을 팔면 나오고, 진열의 unlockSkill 도 숙련도라 그라인딩으로 언젠가
+  // 닿는다 — "언젠가 항상 닿는다"는 점에서 브라켓과 같은 성질이라 조건으로 세지
+  // 않는다. 이 시드가 없으면 증표 8종처럼 **오직 사는 것**인 물건이 전부 도달
+  // 불가로 잡혀, 설계가 의도한 데이터가 빌드를 세운다.
+  for (const shop of Object.values(data.shops)) {
+    for (const entry of shop.stock) reachable.add(entry.itemId)
+  }
+
   const placedNodeIds = new Set(Object.values(data.placements).map((placement) => placement.nodeId))
   for (const node of Object.values(data.nodes)) {
     if (!placedNodeIds.has(node.id)) continue
@@ -424,6 +434,69 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     }
   }
 
+  // ---- 등록부 참조(설계 §4·§6-앞 1·2·14) ----
+  //
+  // 상점과 달인 대금은 대사가 아니라 등록부가 소유한다. 그 대가로 등록부는 화자·
+  // 아이템을 **이름으로** 가리키므로, 오타가 나면 증상이 전부 화면에서 원인을
+  // 되짚을 수 없는 모양이 된다("말은 걸리는데 가게가 안 열린다"). 아래 검사가
+  // 획득 가능 검사보다 앞에 오는 이유: 진열의 아이템 오타는 그 아이템이 획득
+  // 불가로도 잡히는데, 원인 한 줄이 결과보다 먼저 인쇄되어야 한다.
+  const shopOfSpeaker = new Map<string, string>()
+  for (const shop of Object.values(data.shops)) {
+    if (!Object.hasOwn(data.speakers, shop.speakerId)) {
+      violations.push(
+        `shops[${shop.id}]: 없는 화자 "${shop.speakerId}" 를 가리킨다 — speakers.csv 의 id 중 하나여야 한다`,
+      )
+    }
+    // talkService 는 speakerId 로 상점을 찾는다(§6-앞 1) — 한 화자에 둘이면 어느
+    // 쪽이 열릴지 정해지지 않고, 그 선택은 레코드 순회 순서라는 아무 뜻 없는 것에
+    // 걸린다.
+    const owner = shopOfSpeaker.get(shop.speakerId)
+    if (owner) {
+      violations.push(
+        `shops[${shop.id}]: 화자 "${shop.speakerId}" 는 이미 상점 "${owner}" 을 연다 — 한 화자가 두 상점을 열 수는 없다`,
+      )
+    } else {
+      shopOfSpeaker.set(shop.speakerId, shop.id)
+    }
+    for (const entry of shop.stock) {
+      if (!hasItem(entry.itemId)) {
+        violations.push(
+          `shops[${shop.id}]: 없는 아이템 "${entry.itemId}" 를 진열한다 — items.csv 의 id 중 하나여야 한다`,
+        )
+      }
+    }
+  }
+
+  // 달인은 화자 하나·기술 하나에 한 명이다. 서버는 말을 건 화자로 대금을 찾고
+  // (§6-앞 2), 사람은 "이 기술의 달인"으로 그를 부른다 — 둘 중 어느 쪽이 갈라져도
+  // 같은 문턱이 두 개의 답을 갖는다.
+  const masterOfSpeaker = new Map<string, string>()
+  const masterOfSkill = new Map<SkillId, string>()
+  for (const master of data.masters) {
+    if (!Object.hasOwn(data.speakers, master.speakerId)) {
+      violations.push(
+        `masters[${master.id}]: 없는 화자 "${master.speakerId}" 를 가리킨다 — speakers.csv 의 id 중 하나여야 한다`,
+      )
+    }
+    const speakerOwner = masterOfSpeaker.get(master.speakerId)
+    if (speakerOwner) {
+      violations.push(
+        `masters[${master.id}]: 화자 "${master.speakerId}" 에게 이미 달인 "${speakerOwner}" 가 있다 — 한 화자는 달인 하나다`,
+      )
+    } else {
+      masterOfSpeaker.set(master.speakerId, master.id)
+    }
+    const skillOwner = masterOfSkill.get(master.skill)
+    if (skillOwner) {
+      violations.push(
+        `masters[${master.id}]: 기술 "${master.skill}" 의 달인이 이미 "${skillOwner}" 다 — 한 기술에 달인 하나다`,
+      )
+    } else {
+      masterOfSkill.set(master.skill, master.id)
+    }
+  }
+
   // 채집으로 얻는 것은 노드가 가리키는 표의 전 아이템이다(설계 §7-앞 11) —
   // 노드는 이제 산출물을 직접 갖지 않는다. 없는 표(?? [])는 위 참조 검사가
   // 이미 말했으므로 여기서 그림자 위반을 만들지 않는다. 시작 도구를 따로
@@ -435,9 +508,14 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     for (const tier of gatherTables[node.tableId]?.tiers ?? []) obtainable.add(tier.itemId)
   }
   for (const recipe of Object.values(data.recipes)) obtainable.add(recipe.output.item)
+  // 사는 것도 획득이다(§6-앞 12) — 증표는 캐지지도 만들어지지도 않으므로, 진열을
+  // 세지 않으면 설계가 요구한 물건 8종이 그대로 빌드를 세운다.
+  for (const shop of Object.values(data.shops)) {
+    for (const entry of shop.stock) obtainable.add(entry.itemId)
+  }
   for (const item of Object.values(data.items)) {
     if (!obtainable.has(item.id)) {
-      violations.push(`items[${item.id}]: 채집으로도 제작으로도 획득할 수 없다`)
+      violations.push(`items[${item.id}]: 채집으로도 제작으로도 구매로도 획득할 수 없다`)
     }
   }
 
@@ -637,9 +715,16 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 표의 티어가 아닌 아이템(주괴·증표)은 대상이 아니다. 사다리 밖이라 대조할
   // 상대가 없을 뿐이고, 그 skill 값 자체가 실재하는 기술인지는 parseItems 의
   // toSkillId 가 이미 본다.
+  //
+  // 색인을 둘 만든다: 계열은 이 검사가, 표 id 는 아래 증표 제약("증표는 캐는 것이
+  // 아니다")이 쓴다 — 표를 두 번 돌 이유가 없다.
   const ladderSkillOf = new Map<string, SkillId>()
+  const tableOfTier = new Map<string, string>()
   for (const table of Object.values(gatherTables)) {
-    for (const tier of table.tiers) ladderSkillOf.set(tier.itemId, table.skill)
+    for (const tier of table.tiers) {
+      ladderSkillOf.set(tier.itemId, table.skill)
+      tableOfTier.set(tier.itemId, table.id)
+    }
   }
   for (const item of Object.values(data.items)) {
     if (!item.skill) continue
@@ -647,6 +732,43 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     if (ladder && ladder !== item.skill) {
       violations.push(
         `items[${item.id}]: skill 이 "${item.skill}" 인데 채집표에서는 "${ladder}" 사다리의 티어다 — 캔 곳과 팔 곳이 갈라진다. items.csv 의 skill 을 "${ladder}" 로 고친다`,
+      )
+    }
+  }
+
+  // 증표 제약(설계 §5·§6-앞 11): 증표는 새 kind 가 아니라 "재료 + tokenEffect" 다.
+  // 그 결정이 가방 패널의 가드(kind !== 'material')로부터 증표를 구했지만, 대신
+  // 재료라면 할 수 있는 것들이 증표에게도 열려 버렸다 — 캐지고, 만들어지고,
+  // 도구가 되는 것. 셋 다 열려 있으면 "상점이 유일한 골드 싱크"라는 설계가 조용히
+  // 무너지므로 여기서 닫는다. 표 색인(tableOfTier)은 바로 위 사다리 소속 검사가
+  // 만들어 둔 것을 그대로 쓴다.
+  const recipeOfOutput = new Map<string, string>()
+  for (const recipe of Object.values(data.recipes)) {
+    if (!recipeOfOutput.has(recipe.output.item)) recipeOfOutput.set(recipe.output.item, recipe.id)
+  }
+  for (const item of Object.values(data.items)) {
+    if (!item.tokenEffect) continue
+
+    if (!item.skill) {
+      violations.push(
+        `items[${item.id}]: 증표인데 계열(skill)이 없다 — 어느 계열의 채집에 걸리는 효과인지 정해지지 않는다. items.csv 의 skill 을 채운다`,
+      )
+    }
+    const recipeId = recipeOfOutput.get(item.id)
+    if (recipeId) {
+      violations.push(
+        `items[${item.id}]: 증표가 레시피 "${recipeId}" 의 산출물이다 — 증표는 사는 것이지 만드는 것이 아니다. recipes.csv 에서 그 레시피를 지운다`,
+      )
+    }
+    const ladderTable = tableOfTier.get(item.id)
+    if (ladderTable) {
+      violations.push(
+        `items[${item.id}]: 증표가 채집표 "${ladderTable}" 의 티어다 — 증표는 캐는 것이 아니다. gather_tiers.csv 에서 그 줄을 지운다`,
+      )
+    }
+    if (item.toolSkill) {
+      violations.push(
+        `items[${item.id}]: 증표가 toolSkill 을 가진다 — 증표는 슬롯을 먹지 않는 보유 효과라 도구일 수 없다. items.csv 의 kind 를 material 로 두고 toolSkill 을 비운다`,
       )
     }
   }
@@ -660,9 +782,40 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   for (const item of Object.values(data.items)) {
     if (!reachable.has(item.id)) {
       violations.push(
-        `items[${item.id}]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다`,
+        `items[${item.id}]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다`,
       )
     }
+  }
+
+  // 죽은 아이템 검사(설계 §6-앞 13): 모든 아이템은 **쓸 곳이나 팔 곳**이 있어야 한다.
+  //
+  // 옛 성공 기준(§9-7)은 "레시피 입력 ∨ 도구 ∨ price>0" 이었는데, 가격표를 붙이고
+  // 나면 그 조건은 항상 참이라 아무것도 못 잡는다. 팔 곳이 있다는 것은 값이 붙어
+  // 있다는 뜻이 아니라 **그것을 사 주는 상점이 있다**는 뜻이다 — 상점은 자기 계열만
+  // 사므로(설계 §4), 계열이 어긋난 재료는 값이 아무리 커도 팔 데가 없다.
+  //
+  // 이 아크가 시작된 이유가 정확히 이것이다: 채집 사다리를 22종으로 늘렸는데
+  // 13종이 어느 레시피에도 안 들어갔다. 그 13종을 구제한 것이 상점이고, 사다리가
+  // 다음에 또 자랄 때 같은 일이 조용히 반복되지 않게 하는 것이 이 검사다.
+  //
+  // **위의 값 검사들과 달리 조기 반환 뒤에 있다.** 이 검사는 "레시피 입력인가"를
+  // 물으므로 재료 id 오타 하나가 그 재료를 곧바로 죽은 아이템으로 만든다 — 앞에
+  // 두면 오타 하나가 위반 둘이 되어 진짜 원인이 자기 그림자에 묻힌다.
+  const recipeInputs = new Set<string>()
+  for (const recipe of Object.values(data.recipes)) {
+    for (const input of recipe.inputs) recipeInputs.add(input.item)
+  }
+  /** 어느 상점이든 이것을 사 주는가. 매도 대상의 정의는 설계 §6-앞 13 그대로다. */
+  const someShopBuys = (item: ItemDef): boolean =>
+    item.kind === 'material' &&
+    !item.tokenEffect &&
+    item.price > 0 &&
+    Object.values(data.shops).some((shop) => shop.skill === item.skill)
+  for (const item of Object.values(data.items)) {
+    if (recipeInputs.has(item.id) || item.kind === 'tool' || item.tokenEffect || someShopBuys(item)) continue
+    violations.push(
+      `items[${item.id}]: 쓸 곳도 팔 곳도 없다 — 어느 레시피의 재료도 아니고, 도구도 증표도 아니며, 어느 상점도 사 주지 않는다(매도 대상은 price 가 0 보다 크고 그 상점과 skill 이 같은 재료다). recipes.csv 의 재료로 쓰거나, items.csv 의 price·skill 을 사 줄 상점(shops.csv)에 맞춘다`,
+    )
   }
 
   // 이정표는 새 게이트를 만들지 않고 이미 존재하는 게이트를 선언할 뿐이다(설계 §2.3,

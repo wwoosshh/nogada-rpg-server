@@ -256,6 +256,9 @@ function gameData(over: Partial<GameData>): GameData {
     placements: {},
     milestones: [],
     speakers: {},
+    // 이 스위트는 일과만 본다 — 상점·달인은 타입을 맞추는 빈 등록부다.
+    shops: {},
+    masters: [],
     places: {},
     schedules: {},
     routes: [],

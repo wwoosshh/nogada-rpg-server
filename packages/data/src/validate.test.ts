@@ -2,9 +2,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { DialogueRule, GameData, GatherTables, MilestoneDef, SpeakerDef } from '@nogada/shared'
+import type { DialogueRule, GameData, GatherTables, MilestoneDef, ShopDef, SpeakerDef } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseMasters, parseShops } from './shops.js'
 import { parseGatherTables } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
 import { parseMaps } from './maps.js'
@@ -127,6 +128,10 @@ function baseData(): GameData {
     // 조용히 통과하고, 이 파일의 나머지(도달 가능성 등) 테스트를 방해하지
     // 않는다.
     speakers: {},
+    // 상점·달인이 없는 픽스처다 — 등록부가 비어 있으면 그 검사들은 순회할
+    // 대상이 없어 조용히 통과하고, 나머지 테스트를 방해하지 않는다. 죽은 아이템
+    // 검사도 여기 아이템 전부가 레시피 재료이거나 도구라 상점 없이 통과한다.
+    shops: {}, masters: [],
     places: {}, schedules: {}, routes: [],
     dialogue: [],
   }
@@ -225,6 +230,8 @@ function loadRealGameData(): GameData {
     placements,
     milestones: parseMilestones(readRealCsv('milestones.csv'), recipes),
     speakers: parseSpeakers(readRealCsv('speakers.csv')),
+    shops: parseShops(readRealCsv('shops.csv'), readRealCsv('shop_stock.csv')),
+    masters: parseMasters(readRealCsv('masters.csv')),
     // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
     places,
     schedules: {},
@@ -287,7 +294,7 @@ describe('validateGameData', () => {
     const data = baseData()
     data.items.orphan = testItem('orphan', { name: '고아', icon: 'x' })
     expect(validateGameData(data, baseTables())).toContain(
-      'items[orphan]: 채집으로도 제작으로도 획득할 수 없다',
+      'items[orphan]: 채집으로도 제작으로도 구매로도 획득할 수 없다',
     )
   })
 
@@ -299,7 +306,7 @@ describe('validateGameData', () => {
     const data = baseData()
     delete data.recipes.copper_pickaxe
     expect(validateGameData(data, baseTables())).toContain(
-      'items[copper_pickaxe]: 채집으로도 제작으로도 획득할 수 없다',
+      'items[copper_pickaxe]: 채집으로도 제작으로도 구매로도 획득할 수 없다',
     )
   })
 })
@@ -311,13 +318,13 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     // iron_pickaxe 까지 걸려 있다 — 셋 다 레시피 산출물이라 "획득 가능" 검사는
     // 통과하지만, 놓인 노드의 표에서 출발하는 어떤 사슬도 진입하지 못한다.
     expect(violations).toContain(
-      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ore]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_ore]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ingot]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_ingot]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
     )
   })
 
@@ -325,7 +332,14 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     // 표에 아직 아무 레시피도 산출한 적 없는 아이템(silver_like)을 끼워 넣는다.
     // 게이트가 없는 세계에서는 도구 유무와 무관하게 그 표의 전 브라켓 전
     // 아이템이 열려야 한다 — 브라켓은 그라인딩으로 언젠가 닿는다.
-    const data = baseData()
+    //
+    // 광물상점을 함께 두는 것은 이 검사와 무관하다: 어느 레시피도 먹지 않는 새
+    // 재료는 팔 곳이 없으면 죽은 아이템 검사(§6-앞 13)에 걸리고, 그 위반이
+    // 여기서 보려는 도달 가능성 결과를 흐린다. (픽스처 registryData·mineralShop 은
+    // 등록부 검사 스위트와 함께 이 파일 아래쪽에 있다 — 상점은 화자를 가리키므로
+    // 화자 픽스처 옆에 두었다.)
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop() }
     data.items.silver_like = testItem('silver_like', { name: '은 비슷한 것', icon: 'x', price: 200, skill: 'mineral' })
     const tables = baseTables()
     tables.mineral!.tiers = [{ itemId: 'silver_like' }, { itemId: 'copper_ore' }]
@@ -1145,7 +1159,7 @@ describe('validateGameData 의 대화 검사 — 다른 데이터의 오타에 �
     const violations = validateGameData(data, baseTables())
     expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
     expect(violations).toContain(
-      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
     )
   })
 })
@@ -1336,6 +1350,291 @@ describe('validateGameData 의 대화 검사 — 한 번만 하는 말의 조건
 
   it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
     expect(onceViolations(loadRealGameData())).toEqual([])
+  })
+})
+
+// ---- 등록부 검사(설계 §4·§6-앞 2·11·12·13) ----
+//
+// 상점과 달인 대금은 대사가 아니라 등록부가 소유한다(§6-앞 1·2). 그래서 오타의
+// 증상이 전부 "말은 걸리는데 가게가 안 열린다"·"문턱을 넘었는데 대금이 안 온다"
+// 처럼 화면에서 원인을 되짚을 수 없는 모양이라, 빌드가 대신 본다.
+//
+// 이 자리가 대화 검사 뒤인 것은 픽스처 때문이다 — 상점은 화자를 가리키므로
+// 위(testSpeaker·unconditionalGreet)에서 만들어 둔 화자 픽스처를 그대로 쓴다.
+
+/** 상점·달인 픽스처의 바탕 — 화자 하나와 그 화자의 무조건 인사가 있다. */
+function registryData(): GameData {
+  const data = baseData()
+  data.speakers = { 노인: testSpeaker }
+  data.dialogue = [unconditionalGreet()]
+  return data
+}
+
+/** baseData 의 유일한 계열(mineral)을 사 주는 상점 하나. */
+function mineralShop(overrides: Partial<ShopDef> = {}): ShopDef {
+  return { id: '광물상점', name: '광물 상점', speakerId: '노인', skill: 'mineral', unlockSkill: 5000, stock: [], ...overrides }
+}
+
+describe('validateGameData 의 상점 등록부 검사', () => {
+  it('상점만 더해도 위반이 없다', () => {
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop() }
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('없는 화자를 가리키는 상점을 잡아낸다', () => {
+    // 화자가 없으면 그 상점을 열 문이 세상에 없다 — 상점은 화자에게 말을 걸어야
+    // 열리므로(§6-앞 1), 오타는 "데이터에는 있는데 아무도 못 여는 가게"가 된다.
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop({ speakerId: '유령' }) }
+    expect(validateGameData(data, baseTables())).toEqual([
+      'shops[광물상점]: 없는 화자 "유령" 를 가리킨다 — speakers.csv 의 id 중 하나여야 한다',
+    ])
+  })
+
+  it('한 화자가 두 상점을 열면 잡아낸다', () => {
+    // talkService 는 speakerId 로 상점을 찾는다 — 둘이면 어느 쪽이 열릴지
+    // 정해지지 않고, 그 선택은 레코드의 순회 순서라는 아무 뜻 없는 것에 걸린다.
+    const data = registryData()
+    data.shops = {
+      광물상점: mineralShop(),
+      얼음상점: mineralShop({ id: '얼음상점', name: '얼음 상점', skill: 'ice' }),
+    }
+    expect(validateGameData(data, baseTables())).toContain(
+      'shops[얼음상점]: 화자 "노인" 는 이미 상점 "광물상점" 을 연다 — 한 화자가 두 상점을 열 수는 없다',
+    )
+  })
+
+  it('없는 아이템을 진열한 상점을 잡아낸다', () => {
+    // 진열은 화면의 목록이 되고 매수 판정의 대상이 된다 — 없는 id 는 살 수 없는
+    // 칸으로 조용히 남는다.
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: '유령증표', unlockSkill: 10000 }] }) }
+    expect(validateGameData(data, baseTables())).toContain(
+      'shops[광물상점]: 없는 아이템 "유령증표" 를 진열한다 — items.csv 의 id 중 하나여야 한다',
+    )
+  })
+
+  it('실제로 출하되는 CSV 데이터는 상점 검사를 통과한다', () => {
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
+describe('validateGameData 의 달인 등록부 검사', () => {
+  it('없는 화자를 가리키는 달인을 잡아낸다', () => {
+    const data = registryData()
+    data.masters = [{ id: 'mineral_master', speakerId: '유령', skill: 'mineral', threshold: 21345, gold: 300000 }]
+    expect(validateGameData(data, baseTables())).toEqual([
+      'masters[mineral_master]: 없는 화자 "유령" 를 가리킨다 — speakers.csv 의 id 중 하나여야 한다',
+    ])
+  })
+
+  it('한 화자에게 달인이 둘이면 잡아낸다', () => {
+    // 서버는 말을 건 화자로 대금을 찾는다 — 둘이면 한 번의 대화가 무엇을
+    // 지급하는지 정해지지 않는다.
+    const data = registryData()
+    data.masters = [
+      { id: 'mineral_master', speakerId: '노인', skill: 'mineral', threshold: 21345, gold: 300000 },
+      { id: 'ice_master', speakerId: '노인', skill: 'ice', threshold: 63235, gold: 1000000 },
+    ]
+    expect(validateGameData(data, baseTables())).toContain(
+      'masters[ice_master]: 화자 "노인" 에게 이미 달인 "mineral_master" 가 있다 — 한 화자는 달인 하나다',
+    )
+  })
+
+  it('한 기술에 달인이 둘이면 잡아낸다', () => {
+    // 같은 기술의 문턱이 두 사람 입에 나뉘어 있으면 "이 기술의 달인"이 누구인지
+    // 데이터가 두 가지로 답한다.
+    const data = registryData()
+    data.speakers = { 노인: testSpeaker, 안주인: { ...testSpeaker, id: '안주인', name: '안주인' } }
+    data.dialogue = [unconditionalGreet(), dRule({ id: 'bare2', event: 'greet', conditions: [], speaker: '안주인' })]
+    data.masters = [
+      { id: 'mineral_master', speakerId: '노인', skill: 'mineral', threshold: 21345, gold: 300000 },
+      { id: 'mineral_master2', speakerId: '안주인', skill: 'mineral', threshold: 40000, gold: 500000 },
+    ]
+    expect(validateGameData(data, baseTables())).toContain(
+      'masters[mineral_master2]: 기술 "mineral" 의 달인이 이미 "mineral_master" 다 — 한 기술에 달인 하나다',
+    )
+  })
+
+  it('상점 화자가 달인을 겸하는 것은 정상이다 — 넷 중 셋이 실제로 그렇다', () => {
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop() }
+    data.masters = [{ id: 'mineral_master', speakerId: '노인', skill: 'mineral', threshold: 21345, gold: 300000 }]
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('실제로 출하되는 CSV 데이터는 달인 검사를 통과한다', () => {
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
+// ---- 증표 제약(설계 §5·§6-앞 11) ----
+//
+// 증표는 새 kind 가 아니라 재료 + tokenEffect 다. 그래서 "재료라면 할 수 있는 것"
+// 중 증표에게는 성립하지 않는 것들을 여기서 막는다 — 안 막으면 증표가 캐지거나
+// 만들어지고, 그 순간 상점이 유일한 골드 싱크라는 설계가 조용히 무너진다.
+
+describe('validateGameData 의 증표 제약 검사', () => {
+  /** registryData 에 증표 하나와 그것을 파는 상점을 얹는다 — 진열은 획득 가능 시드다. */
+  function tokenData(): GameData {
+    const data = registryData()
+    data.items.mineral_speed_token = testItem('mineral_speed_token', {
+      name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
+    })
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockSkill: 10000 }] }) }
+    return data
+  }
+
+  it('상점이 파는 증표는 위반이 없다', () => {
+    expect(validateGameData(tokenData(), baseTables())).toEqual([])
+  })
+
+  it('계열(skill)이 없는 증표를 잡아낸다', () => {
+    // 증표의 효과는 "그 계열의 채집"에 걸린다 — 계열이 없으면 무엇이 빨라지는지
+    // 정해지지 않아, 산 사람에게 아무 일도 일어나지 않는다.
+    const data = tokenData()
+    delete data.items.mineral_speed_token!.skill
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[mineral_speed_token]: 증표인데 계열(skill)이 없다 — 어느 계열의 채집에 걸리는 효과인지 정해지지 않는다. items.csv 의 skill 을 채운다',
+    )
+  })
+
+  it('레시피 산출물인 증표를 잡아낸다', () => {
+    // 만들 수 있으면 사지 않는다 — 증표는 골드를 빼내는 싱크인데, 제작으로
+    // 우회되는 순간 그 골드는 어디로도 나가지 않는다.
+    const data = tokenData()
+    data.recipes.mineral_speed_token = {
+      id: 'mineral_speed_token', name: '광물 속도증표', category: '도구', skill: 'crafting', requiredSkill: 0,
+      baseChance: 0.5, inputs: [{ item: 'copper_ingot', count: 3600 }],
+      output: { item: 'mineral_speed_token', count: 1 }, skillGainMin: 10, skillGainMax: 20,
+    }
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[mineral_speed_token]: 증표가 레시피 "mineral_speed_token" 의 산출물이다 — 증표는 사는 것이지 만드는 것이 아니다. recipes.csv 에서 그 레시피를 지운다',
+    )
+  })
+
+  it('채집표의 티어인 증표를 잡아낸다', () => {
+    // 캐서 나오는 증표는 값이 아무리 비싸도 싱크가 아니다 — 그리고 그 계열의
+    // 채집이 자기 자신을 빠르게 만드는 되먹임이 된다.
+    const data = tokenData()
+    const tables = baseTables()
+    tables.mineral!.tiers = [{ itemId: 'mineral_speed_token' }, { itemId: 'copper_ore' }]
+    tables.mineral!.brackets = [{ bracketMax: null, cumulative: [3, 60000] }]
+    expect(validateGameData(data, tables)).toContain(
+      'items[mineral_speed_token]: 증표가 채집표 "mineral" 의 티어다 — 증표는 캐는 것이 아니다. gather_tiers.csv 에서 그 줄을 지운다',
+    )
+  })
+
+  it('toolSkill 을 가진 증표를 잡아낸다', () => {
+    // 증표의 존재 이유는 슬롯 경합을 돈으로 푸는 것이다(설계 §5) — 도구가 되면
+    // 착용 슬롯을 먹고, 그러면 도구와 증표가 같은 자리를 두고 다툰다.
+    const data = tokenData()
+    data.items.mineral_speed_token = {
+      ...data.items.mineral_speed_token!, kind: 'tool', toolSkill: 'mineral', toolTier: 1,
+    }
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[mineral_speed_token]: 증표가 toolSkill 을 가진다 — 증표는 슬롯을 먹지 않는 보유 효과라 도구일 수 없다. items.csv 의 kind 를 material 로 두고 toolSkill 을 비운다',
+    )
+  })
+
+  it('실제로 출하되는 증표 8종은 이 제약을 전부 지킨다', () => {
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
+// ---- 상점 진열은 획득·도달의 시드다(§6-앞 12) ----
+//
+// 이것이 없으면 증표 8종이 "채집으로도 제작으로도 획득할 수 없다"로 빌드를 세운다 —
+// 증표는 캐는 것도 만드는 것도 아니고 오직 사는 것이라, 사는 것이 획득 수단으로
+// 세어지지 않으면 데이터가 자기 설계와 모순된다.
+
+describe('validateGameData 의 획득·도달 시드 — 상점 진열', () => {
+  it('상점이 파는 것은 캘 수도 만들 수도 없어도 획득 가능하다', () => {
+    const data = registryData()
+    data.items.mineral_speed_token = testItem('mineral_speed_token', {
+      name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
+    })
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockSkill: 10000 }] }) }
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('어느 상점도 팔지 않으면 획득할 수 없다고 잡아낸다 — 진열을 지우면 그 물건은 세상에서 사라진다', () => {
+    const data = registryData()
+    data.items.mineral_speed_token = testItem('mineral_speed_token', {
+      name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
+    })
+    data.shops = { 광물상점: mineralShop() }
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[mineral_speed_token]: 채집으로도 제작으로도 구매로도 획득할 수 없다',
+    )
+  })
+})
+
+// ---- 죽은 아이템 검사(§6-앞 13) ----
+//
+// 옛 성공 기준(§9-7)의 "레시피 입력 ∨ 도구 ∨ price>0" 은 가격표를 붙이고 나면
+// 항상 참이라 아무것도 못 잡는다. 실제로 물어야 할 것은 **쓸 곳도 팔 곳도 없는가**
+// 이고, "팔 곳"은 값이 아니라 **그 계열을 사 주는 상점이 있는가**로 정해진다.
+
+describe('validateGameData 의 죽은 아이템 검사', () => {
+  it('캘 수는 있는데 쓸 곳도 팔 곳도 없는 아이템을 잡아낸다', () => {
+    // price 0 은 "팔 수 없다"는 뜻이다(설계 §2) — 상점이 그 계열을 사 주더라도
+    // 이 물건만은 사 주지 않으므로, 가방에 쌓이기만 하는 죽은 재료가 된다.
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop() }
+    data.items.gravel = testItem('gravel', { name: '자갈', icon: 'gravel', price: 0, skill: 'mineral' })
+    const tables = baseTables()
+    tables.mineral!.tiers = [{ itemId: 'gravel' }, { itemId: 'copper_ore' }]
+    tables.mineral!.brackets = [{ bracketMax: null, cumulative: [3, 60000] }]
+
+    expect(validateGameData(data, tables)).toEqual([
+      'items[gravel]: 쓸 곳도 팔 곳도 없다 — 어느 레시피의 재료도 아니고, 도구도 증표도 아니며, 어느 상점도 사 주지 않는다(매도 대상은 price 가 0 보다 크고 그 상점과 skill 이 같은 재료다). recipes.csv 의 재료로 쓰거나, items.csv 의 price·skill 을 사 줄 상점(shops.csv)에 맞춘다',
+    ])
+  })
+
+  it('값이 있어도 그 계열을 사 주는 상점이 없으면 잡아낸다 — 남의 계열은 그 마을에 가야 팔린다', () => {
+    // 상점은 자기 계열만 산다(설계 §4). 그러니 "값이 있다"는 것만으로는 팔 곳이
+    // 있다는 뜻이 되지 않는다 — 이 구별이 이 검사의 전부다.
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop() }
+    data.items.dried_herb = testItem('dried_herb', { name: '말린 약초', icon: 'herb_dried', price: 100, skill: 'herb' })
+    data.recipes.dried_herb = {
+      id: 'dried_herb', name: '말린 약초', category: '가공', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'dried_herb', count: 1 },
+      skillGainMin: 10, skillGainMax: 20,
+    }
+
+    expect(validateGameData(data, baseTables())).toEqual([
+      'items[dried_herb]: 쓸 곳도 팔 곳도 없다 — 어느 레시피의 재료도 아니고, 도구도 증표도 아니며, 어느 상점도 사 주지 않는다(매도 대상은 price 가 0 보다 크고 그 상점과 skill 이 같은 재료다). recipes.csv 의 재료로 쓰거나, items.csv 의 price·skill 을 사 줄 상점(shops.csv)에 맞춘다',
+    ])
+  })
+
+  it('레시피 재료면 팔 곳이 없어도 통과한다 — 쓸 곳이 있으면 죽은 것이 아니다', () => {
+    // baseData 의 copper_ore·copper_ingot 이 그렇다: 상점이 하나도 없어도
+    // 레시피가 그것들을 먹으므로 위반이 없다(위 baseData 스위트가 이미 초록이다).
+    // 원석과 주괴의 값을 함께 0 으로 내린다 — 원석만 내리면 주괴가 "재료보다
+    // 비싸게 팔린다"는 돈복사 검사에 걸려, 이 테스트가 보려는 것이 흐려진다.
+    const data = registryData()
+    data.items.copper_ore = { ...data.items.copper_ore!, price: 0 }
+    data.items.copper_ingot = { ...data.items.copper_ingot!, price: 0 }
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('증표는 팔 곳이 아니라 살 곳이 있는 물건이라 그 자체로 통과한다', () => {
+    // 증표는 매도 대상이 아니다(tokenEffect 가 있으면 상점이 사 주지 않는다) —
+    // 그런데도 죽은 물건이 아닌 이유는 그것이 **효과**이기 때문이다.
+    const data = registryData()
+    data.items.mineral_speed_token = testItem('mineral_speed_token', {
+      name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
+    })
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockSkill: 10000 }] }) }
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('실제로 출하되는 CSV 데이터에는 죽은 아이템이 없다 — 주괴도 레시피 재료이면서 광물상점의 매도 대상이다', () => {
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('쓸 곳도 팔 곳도 없다'))
+    expect(violations).toEqual([])
   })
 })
 

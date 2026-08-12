@@ -1,0 +1,5 @@
+shopId,name,speakerId,skill,unlockSkill
+얼음상점,얼음 상점,채집장노인,ice,5000
+나무상점,나무 상점,숲마을벌목꾼,wood,5000
+광물상점,광물 상점,광산노인,mineral,5000
+허브상점,허브 상점,항구약초지기,herb,5000

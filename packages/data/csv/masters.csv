@@ -1,0 +1,5 @@
+id,speakerId,skill,threshold,gold
+ice_master,여관안주인,ice,63235,1000000
+herb_master,항구약초지기,herb,33526,500000
+mineral_master,광산노인,mineral,21345,300000
+wood_master,숲마을벌목꾼,wood,7587,100000

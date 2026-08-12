@@ -97,6 +97,35 @@ describe('parseItems', () => {
     )
   })
 
+  it('tokenEffect 칸이 비어 있으면 증표가 아니다 — 재료 대부분이 그렇다', () => {
+    const items = parseItems([itemRow({ tokenEffect: '' })])
+    expect(items.copper_ore).not.toHaveProperty('tokenEffect')
+  })
+
+  it('tokenEffect 칸이 아예 없는 CSV 도 읽는다 — 이 칸이 생기기 전의 행이 그대로 살아 있어야 한다', () => {
+    const row = itemRow()
+    expect('tokenEffect' in row).toBe(false)
+    expect(parseItems([row]).copper_ore).not.toHaveProperty('tokenEffect')
+  })
+
+  it('증표는 tokenEffect 를 싣는다 — 새 kind 를 만들지 않는 것이 요점이다', () => {
+    // kind 는 여전히 material 이다(§6-앞 11): kind='token' 이면 가방 패널의
+    // `kind !== 'material'` 가드가 48만 골드짜리 물건을 조용히 숨긴다.
+    const items = parseItems([
+      itemRow({ id: 'ice_speed_token', name: '얼음 속도증표', icon: 'feather_ice', price: '480000', skill: 'ice', tokenEffect: 'speed' }),
+    ])
+    expect(items.ice_speed_token).toEqual({
+      id: 'ice_speed_token', name: '얼음 속도증표', kind: 'material', icon: 'feather_ice', price: 480000,
+      skill: 'ice', tokenEffect: 'speed',
+    })
+  })
+
+  it('알 수 없는 tokenEffect 값을 거부한다 — 효과 없는 수십만 골드짜리 물건이 된다', () => {
+    expect(() => parseItems([itemRow({ tokenEffect: 'fast' })])).toThrow(
+      'items.csv[copper_ore]: tokenEffect "fast" 는 알 수 없다 (허용값: speed, sight)',
+    )
+  })
+
   it('알 수 없는 toolSkill 값을 거부한다', () => {
     expect(() =>
       parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'minig', toolTier: '2', skill: '' })]),

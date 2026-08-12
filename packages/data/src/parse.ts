@@ -1,5 +1,5 @@
-import type { ItemDef, NodeDef, RecipeDef, RecipeInput, SkillId } from '@nogada/shared'
-import { SKILL_IDS } from '@nogada/shared'
+import type { ItemDef, NodeDef, RecipeDef, RecipeInput, SkillId, TokenEffect } from '@nogada/shared'
+import { SKILL_IDS, TOKEN_EFFECTS } from '@nogada/shared'
 
 type Row = Record<string, string>
 
@@ -95,6 +95,20 @@ export function toSkillId(value: string, context: string): SkillId {
   return value
 }
 
+/**
+ * `tokenEffect` 칸이 실제 효과 이름인지 검사한다.
+ *
+ * 오타를 통과시키면 그 증표는 수십만 골드짜리인데 아무 효과도 없는 물건이 된다 —
+ * 효과를 곱하는 쪽(GatherHand)이 모르는 이름을 그냥 무시하므로 화면 어디에도
+ * 이유가 안 남는다.
+ */
+export function toTokenEffect(value: string, context: string): TokenEffect {
+  if (!(TOKEN_EFFECTS as readonly string[]).includes(value)) {
+    throw new Error(`${context}: tokenEffect "${value}" 는 알 수 없다 (허용값: ${TOKEN_EFFECTS.join(', ')})`)
+  }
+  return value as TokenEffect
+}
+
 /** 같은 id 를 가진 행이 이미 있으면 던진다. 조용한 덮어쓰기는 진단 없이 행 하나를 통째로 지운다. */
 export function addUnique<T>(out: Record<string, T>, id: string, def: T, csvFile: string): void {
   if (Object.hasOwn(out, id)) {
@@ -147,6 +161,14 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
     // validateGameData 의 몫이다.
     const skill = optionalCell(row, 'skill')
     if (skill !== undefined) def.skill = toSkillId(skill, ctx)
+    // 증표는 새 kind 가 아니라 이 선택 칸으로만 드러난다(설계 §6-앞 11) —
+    // kind='token' 을 만들면 가방 패널의 `kind !== 'material'` 가드가 수십만
+    // 골드짜리 물건을 조용히 숨긴다. 값은 두 가지뿐이고, 오타는 "샀는데 아무
+    // 효과도 없는 증표"가 되므로 여기서 막는다. 나머지 증표 제약(레시피 산출물
+    // 금지·표 티어 금지·toolSkill 금지·skill 필수)은 레시피와 표를 함께 보는
+    // validateGameData 의 몫이다.
+    const tokenEffect = optionalCell(row, 'tokenEffect')
+    if (tokenEffect !== undefined) def.tokenEffect = toTokenEffect(tokenEffect, ctx)
     if (kind === 'tool') {
       def.toolSkill = toSkillId(requireCell(row, 'toolSkill', ctx), ctx)
       def.toolTier = toInt(requireCell(row, 'toolTier', ctx), ctx, 'toolTier')

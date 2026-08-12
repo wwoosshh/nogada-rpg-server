@@ -1,0 +1,9 @@
+shopId,itemId,unlockSkill
+얼음상점,ice_speed_token,10000
+얼음상점,ice_sight_token,25000
+나무상점,wood_speed_token,10000
+나무상점,wood_sight_token,25000
+광물상점,mineral_speed_token,10000
+광물상점,mineral_sight_token,25000
+허브상점,herb_speed_token,10000
+허브상점,herb_sight_token,25000

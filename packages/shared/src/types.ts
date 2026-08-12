@@ -145,6 +145,75 @@ export interface ItemDef {
    * `mineral` 을 적는다 — 제련은 광물의 일이고, 그래야 광물상점이 사 준다.
    */
   skill?: SkillId
+  /**
+   * 증표 효과. 가지고만 있으면(개수 무관) 그 계열 채집에 곱해진다(설계 §5).
+   *
+   * **새 `kind` 를 만들지 않는 이유**(§6-앞 11): `kind='token'` 을 넣으면
+   * `BagPanel` 의 `kind !== 'material'` 가드가 수십만 골드짜리 물건을 가방에서
+   * 조용히 숨긴다 — switch 가 아니라 비교라서 컴파일도 통과한다. 그래서 증표는
+   * 재료이고, 증표임은 이 선택 칸 하나로만 드러난다.
+   *
+   * 효과를 실제로 곱하는 것은 `GatherHand` 하나뿐이다(E3) — 여기 있는 것은
+   * "무엇인가"이지 "얼마인가"가 아니다.
+   */
+  tokenEffect?: TokenEffect
+}
+
+/** 증표가 무엇을 곱하는가. `speed` 는 채집 간격을, `sight` 는 표 굴림을 건드린다. */
+export type TokenEffect = 'speed' | 'sight'
+
+export const TOKEN_EFFECTS: readonly TokenEffect[] = ['speed', 'sight'] as const
+
+/**
+ * 상점 진열 한 칸 — 그 상점이 파는 물건 하나와, 그것이 열리는 숙련도.
+ *
+ * `unlockSkill` 이 재는 것은 언제나 **그 상점의 `skill`** 이다(설계 §6-앞 14).
+ * 품목마다 다른 기술을 재게 하면 "얼음상점에서 나무 숙련을 요구하는 칸"이
+ * 만들어지고, 그것은 화면에서 되짚을 수 없는 종류의 데이터 오류다.
+ */
+export interface ShopStockEntry {
+  itemId: string
+  unlockSkill: number
+}
+
+/**
+ * 상점 하나. **대사가 아니라 이 등록부가 상점의 유일한 출처다**(설계 §6-앞 1).
+ *
+ * 한때 상점은 대사 규칙에 붙는 효과(`!shop=`)로 열릴 예정이었다. 그러면 한 번도
+ * 안 열린다 — `selectDialogue` 는 조건이 가장 많은 규칙만 남기는데 네 화자의
+ * 거래 암시 규칙은 전부 조건 둘이라 조건 하나짜리 상점 규칙이 언제나 진다.
+ * 그래서 `talkService` 는 **이긴 규칙과 무관하게** `speakerId` 로 여기를 조회한다:
+ * 대사는 안내이고, 문은 상태가 연다.
+ */
+export interface ShopDef {
+  id: string
+  name: string
+  /** 이 상점을 여는 화자. 한 화자가 두 상점을 열 수 없다(빌드가 강제한다). */
+  speakerId: string
+  /** 이 상점이 사고파는 계열. 매도 대상은 이 계열의 재료뿐이다 — 남의 계열은 그 마을에 가야 판다. */
+  skill: SkillId
+  /** 상점 자체가 열리는 숙련도(원작 그대로 5,000). 미달이면 대사만 나온다. */
+  unlockSkill: number
+  /** 매수 진열. 매도는 진열이 필요 없다 — 그 계열 재료면 무엇이든 사 준다(설계 §4). */
+  stock: ShopStockEntry[]
+}
+
+/**
+ * 달인 한 명의 1회성 대금. 원작의 그 숫자를 우리 규모로 옮긴 것이다(설계 §6, §6-앞 8).
+ *
+ * **왜 대사가 아니라 등록부인가**(§6-앞 2): `@story skill.ice>=63235` 는 현행
+ * 검증이 즉시 거절한다(한 번만 하는 말의 조건은 전부 `=` 여야 한다). 통과시켰다면
+ * `onceKey` 가 숙련도의 지금 값을 스냅샷하므로 말을 걸 때마다 무한 지급됐을 것이다.
+ * 지급 판정은 서버가 `skills[skill] >= threshold && !rewarded.includes(id)` 로 한다.
+ */
+export interface MasterDef {
+  id: string
+  speakerId: string
+  skill: SkillId
+  /** 이 숫자를 넘으면 준다. 우리 대사에 이미 심어져 있는 그 기록이다. */
+  threshold: number
+  /** 한 번만 주는 금액. */
+  gold: number
 }
 
 export interface NodeDef {
@@ -434,6 +503,21 @@ export interface GameData {
   /** 정의 순서를 유지한다 — 이정표 탭이 동점 진척을 이 순서로 정렬한다(detailMenuTabs.ts) */
   milestones: MilestoneDef[]
   speakers: Record<string, SpeakerDef>
+  /**
+   * 상점 등록부. 키는 shopId 다.
+   *
+   * **확률표와 달리 이것은 GameData 에 싣는다** — 클라이언트가 매도 목록(가방 ∩
+   * 그 상점 계열)과 진열(잠긴 칸의 요구치까지)을 그려야 하기 때문이다. 표를 뺀
+   * 이유(브라켓 경계가 곧 숨은 문턱이라 F12 로 스포일된다, §7-앞 9)는 여기 없다:
+   * 상점의 값과 요구치는 애초에 화면이 숫자로 말해 주기로 한 것들이다.
+   */
+  shops: Record<string, ShopDef>
+  /**
+   * 달인 대금 등록부. 순서에 뜻은 없지만 배열인 것은 키가 화자·기술 둘 다일 수
+   * 있어서다 — 서버는 화자로 찾고, 검증은 기술로 센다. 이것도 클라이언트가 본다
+   * (대금이 들어온 뒤 무엇이 들어왔는지 화면이 말해야 한다).
+   */
+  masters: MasterDef[]
   /** 지점 등록부. 키는 지점 id 이고 맵을 넘어 유일하다. */
   places: Record<string, PlaceDef>
   /** 일과가 있는 화자만. 키는 화자 id 다 — `.sched` 가 없는 화자는 여기 없고 좌표에 고정이다. */

@@ -6,6 +6,7 @@ import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
+import { parseMasters, parseShops } from './shops.js'
 import { parseSpeakers } from './speakers.js'
 import { parseTransitions, validateTransitions } from './transitions.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
@@ -137,6 +138,12 @@ const data: GameData = {
   placements,
   milestones: parseMilestones(readCsv('milestones.csv'), recipes),
   speakers: parseSpeakers(readCsv('speakers.csv')),
+  // 상점·달인은 확률표와 달리 GameData 에 싣는다 — 클라이언트가 매도 목록과
+  // 진열(잠긴 칸의 요구치까지)을 그려야 한다. 진열을 상점에 붙이는 일까지
+  // parseShops 하나가 한다: 어느 상점에도 안 붙은 진열이라는 중간 상태를
+  // 만들지 않기 위해서다.
+  shops: parseShops(readCsv('shops.csv'), readCsv('shop_stock.csv')),
+  masters: parseMasters(readCsv('masters.csv')),
   places,
   schedules,
   // 길은 아래에서 굽는다 — 참조가 성립하는지부터 보고 나서다.
@@ -206,6 +213,9 @@ console.log(
     `맵 ${Object.keys(data.maps).length}, ` +
     `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}, ` +
     `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}, ` +
+    `상점 ${Object.keys(data.shops).length}, ` +
+    `진열 ${Object.values(data.shops).reduce((sum, shop) => sum + shop.stock.length, 0)}, ` +
+    `달인 ${data.masters.length}, ` +
     `전환 ${data.transitions.length}, ` +
     `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
 )

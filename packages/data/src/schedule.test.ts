@@ -24,6 +24,7 @@ function dataOf(
 ): GameData {
   return {
     items: {}, nodes: {}, recipes: {}, maps: {}, transitions: [], placements: {},
+    shops: {}, masters: [],
     milestones: [], dialogue: [], routes: [],
     speakers, places, schedules,
   }

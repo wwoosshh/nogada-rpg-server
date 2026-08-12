@@ -150,6 +150,18 @@ assets/licensed/
 | `ore_ruby` | icon910 | 붉은 보석 원석 |
 | `ingot_silver` | icon960 | 파란빛 주괴 |
 | `ingot_gold` | icon965 | 금빛 주괴 |
+| `feather_ice` | icon875 | 하늘빛 깃털 |
+| `feather_wood` | icon876 | 밝은 갈색 깃털 |
+| `feather_mineral` | icon877 | 잿빛 깃털 |
+| `feather_herb` | icon879 | 주홍 깃털 |
+| `ring_ice` | icon802 | 금빛 반지 (파란 보석) |
+| `ring_wood` | icon801 | 금빛 반지 (초록 보석) |
+| `ring_mineral` | icon800 | 은빛 반지 (푸른 보석) |
+| `ring_herb` | icon803 | 금빛 반지 (붉은 보석) |
+
+증표 8종은 나머지와 고르는 방식이 다르다 — **종류를 형태로, 계열을 색으로** 읽는다(깃털 = 속도증표,
+반지 = 선별증표). 8종이 한 벌이라 가방에서 묻는 것이 "이게 무엇인가"보다 "내가 무슨 증표를 가졌는가"
+이기 때문이다. 이 배정은 4배 확대 대조 시트로 눈으로 확인하고 승인한 것이다.
 
 재질별 색 구분은 팩에 있는 그림을 그대로 쓴 것이라 등급 간 대비가 약하다. 실제로 구분이 안 되면
 **아이콘을 더 찾기보다 M2 의 팔레트 스왑을 앞당기는 쪽이 맞다** — 같은 실루엣에 색만 다른 편이
@@ -192,11 +204,12 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 46종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 42종을 쓴다
+# 아이템 아이콘 54종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 50종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
-# 없는 예비 배정. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
+# 없는 예비 배정 4종. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
 # mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
-# axe_mithril·sickle_mithril 은 미스릴 정·도끼·낫(도구 루프 T2)의 것이다).
+# axe_mithril·sickle_mithril 은 미스릴 정·도끼·낫(도구 루프 T2)의 것이다.
+# feather_*·ring_* 8종은 증표 8종(경제 E2)의 것이다).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
@@ -247,6 +260,14 @@ ore_sapphire:909
 ore_ruby:910
 ingot_silver:960
 ingot_gold:965
+feather_ice:875
+feather_wood:876
+feather_mineral:877
+feather_herb:879
+ring_ice:802
+ring_wood:801
+ring_mineral:800
+ring_herb:803
 ICONS
 ```
 
