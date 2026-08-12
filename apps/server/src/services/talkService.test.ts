@@ -8,11 +8,13 @@ import {
   type BakedLeg,
   type DialogueRule,
   type GameData,
+  type MasterDef,
   type MilestoneDef,
   type PlaceDef,
   type PlayerState,
   type RouteStep,
   type ScheduleDef,
+  type ShopDef,
 } from '@nogada/shared'
 import { loadGameData } from '@nogada/data'
 import { describe, expect, it } from 'vitest'
@@ -111,6 +113,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    // 아직 아무 달인에게도 대금을 받지 않았다 — 대금 테스트가 여기에 값을 넣어
+    // "이미 받은 사람"을 만든다.
+    rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     // 화자 둘 다 얼음채집장에 서 있으므로 기본 플레이어도 거기 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.
@@ -307,6 +312,139 @@ describe('performTalk', () => {
     const last = talk(player(), { rng: pickLast })
     if (!first.ok || !last.ok) throw new Error('둘 다 성공해야 한다')
     expect(first.outcome.lines).not.toEqual(last.outcome.lines)
+  })
+})
+
+/**
+ * 상점과 달인 대금은 **대사가 아니라 등록부가 연다**(§6-앞 1·2).
+ *
+ * 한때 상점은 대사 규칙에 붙는 효과(`!shop=`)로 열릴 예정이었다. 그러면 한 번도
+ * 안 열린다 — `selectDialogue` 는 조건이 가장 많은 규칙만 남기므로 조건 하나짜리
+ * 상점 규칙은 조건 둘짜리 거래 암시 규칙에게 언제나 진다. 그래서 이 스위트가
+ * 보는 것은 하나다: **이긴 규칙이 무엇이든** 상점과 대금이 실려 나가는가.
+ */
+describe('performTalk — 등록부가 싣는 것(상점·달인 대금)', () => {
+  const 얼음상점: ShopDef = {
+    id: '얼음상점',
+    name: '얼음 상점',
+    speakerId: '노인',
+    skill: 'ice',
+    unlockSkill: 5_000,
+    stock: [],
+  }
+  /** 노인이 아니라 안내판이 여는 상점 — 화자로 조회한다는 것을 대조로 보인다. */
+  const 안내판상점: ShopDef = { ...얼음상점, id: '안내판상점', speakerId: '안내판', unlockSkill: 0 }
+  const 얼음달인: MasterDef = { id: 'ice_master', speakerId: '노인', skill: 'ice', threshold: 10_000, gold: 1_000_000 }
+
+  const base = gameData([greetA, greetB, greetC, greetD, milestoneRule, otherRule])
+  const registry: GameData = { ...base, shops: { 얼음상점, 안내판상점 }, masters: [얼음달인] }
+
+  const talkToElder = (p: PlayerState, now = 0) =>
+    performTalk({ player: p, data: registry, speakerId: '노인', rng: pickFirst, now })
+
+  const veteran = (over: Partial<PlayerState> = {}) =>
+    player({ skills: { ice: 5_000, wood: 0, mineral: 0, herb: 0, crafting: 0 }, ...over })
+
+  it('해금된 상점의 화자와 말하면 상점 id 가 응답에 실린다 — 이긴 규칙은 조건 없는 인사다', () => {
+    const r = talkToElder(veteran())
+    if (!r.ok) throw new Error('성공해야 한다')
+    // 이긴 규칙에는 조건이 하나도 없다. 상점이 대사에 붙어 있었다면 이 대화에서는
+    // 아무 문도 열리지 않았을 것이다.
+    expect(r.outcome.lines).toEqual(['허어, 또 왔는가.'])
+    expect(r.outcome.shop).toBe('얼음상점')
+  })
+
+  it('숙련이 요구치에 못 미치면 shop 필드가 아예 없다 — 대사만 나온다', () => {
+    const r = talkToElder(player())
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.shop).toBeUndefined()
+  })
+
+  it('상점을 열지 않는 화자와의 대화에는 shop 이 없다', () => {
+    const r = performTalk({ player: veteran(), data: base, speakerId: '노인', rng: pickFirst, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.shop).toBeUndefined()
+  })
+
+  it('상점은 화자로 조회한다 — 다른 화자의 상점이 딸려 오지 않는다', () => {
+    const r = performTalk({ player: veteran(), data: registry, speakerId: '안내판', rng: pickFirst, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.shop).toBe('안내판상점')
+  })
+
+  it('문턱을 넘은 사람에게 달인 대금을 준다 — 골드가 늘고 rewarded 에 남고 응답에 실린다', () => {
+    const r = talkToElder(veteran({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.reward).toEqual({ id: 'ice_master', gold: 1_000_000 })
+    expect(r.outcome.player.gold).toBe(1_000_000)
+    expect(r.outcome.player.rewarded).toEqual(['ice_master'])
+  })
+
+  it('두 번째 대화에서는 아무것도 주지 않는다 — 1회성은 rewarded 가 지킨다', () => {
+    // 이것이 대사 효과(`!reward=`)를 버린 이유다(§6-앞 2): once 사건의 onceKey 는
+    // 숙련도의 지금 값을 스냅샷하므로, 숙련도가 계속 오르는 동안 말을 걸 때마다
+    // 새 키가 되어 무한 지급됐을 것이다.
+    const first = talkToElder(veteran({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
+    if (!first.ok) throw new Error('첫 대화가 성공해야 한다')
+
+    const second = talkToElder(first.outcome.player, 1000)
+    if (!second.ok) throw new Error('두 번째 대화도 성공해야 한다')
+    expect(second.outcome.reward).toBeUndefined()
+    expect(second.outcome.player.gold).toBe(1_000_000)
+    expect(second.outcome.player.rewarded).toEqual(['ice_master'])
+  })
+
+  it('숙련도가 더 올라도 다시 주지 않는다 — 기록을 갱신할 때마다 받는 돈이 아니다', () => {
+    const 받은사람 = veteran({
+      skills: { ice: 999_999, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      rewarded: ['ice_master'],
+      gold: 1_000_000,
+    })
+    const r = talkToElder(받은사람)
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.reward).toBeUndefined()
+    expect(r.outcome.player.gold).toBe(1_000_000)
+  })
+
+  it('문턱에 못 미치면 주지 않는다. 경계값(딱 그 숫자)은 받는다', () => {
+    const 미달 = talkToElder(veteran({ skills: { ice: 9_999, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
+    if (!미달.ok) throw new Error('성공해야 한다')
+    expect(미달.outcome.reward).toBeUndefined()
+    expect(미달.outcome.player.gold).toBe(0)
+
+    const 딱 = talkToElder(veteran({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }))
+    if (!딱.ok) throw new Error('성공해야 한다')
+    expect(딱.outcome.reward).toEqual({ id: 'ice_master', gold: 1_000_000 })
+  })
+
+  it('다른 화자와 말해서는 그 대금을 받을 수 없다 — 달인은 자기 입으로만 준다', () => {
+    const r = performTalk({
+      player: veteran({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }),
+      data: registry,
+      speakerId: '안내판',
+      rng: pickFirst,
+      now: 0,
+    })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.reward).toBeUndefined()
+    expect(r.outcome.player.gold).toBe(0)
+  })
+
+  it('막힌 대화는 대금도 상점도 내지 않는다 — 다른 맵에서 돈이 나가면 안 된다', () => {
+    const 멀리 = veteran({
+      skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      location: { mapId: '눈의마을', x: 1, y: 1 },
+    })
+    expect(talkToElder(멀리)).toEqual({ ok: false, code: 'wrong_map' })
+    expect(멀리.gold).toBe(0)
+    expect(멀리.rewarded).toEqual([])
+  })
+
+  it('입력 플레이어의 rewarded 를 건드리지 않는다 — 판정은 사본 위에서 한다', () => {
+    const p = veteran({ skills: { ice: 10_000, wood: 0, mineral: 0, herb: 0, crafting: 0 } })
+    talkToElder(p)
+    expect(p.rewarded).toEqual([])
+    expect(p.gold).toBe(0)
   })
 })
 

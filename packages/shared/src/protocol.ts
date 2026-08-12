@@ -94,6 +94,12 @@ export const PlayerStateSchema = z.object({
   equipped: z.record(z.string(), z.string()),
   nextActionAt: z.number(),
   celebrated: z.array(z.string()),
+  // gold 와 **같은 이유로** 기본값을 단다: 이 필드는 경제 아크에서 생겼으므로 그
+  // 전에 저장된 플레이어에게는 키가 통째로 없고, 필수로 두면 readPlayers(store.ts)
+  // 가 그 플레이어를 통째로 버린다. 아무에게도 대금을 받지 않은 세이브는 "아직
+  // 그 문턱을 넘고 말을 걸어 본 적 없다"와 같은 뜻이라 빈 목록이 맞는 답이다 —
+  // 그리고 그 사람은 조건을 이미 넘겼다면 다음 대화에서 제 몫을 받는다.
+  rewarded: z.array(z.string()).default([]),
   // 안쪽 lastTalkAt 과 **같은 이유로** 바깥 필드에도 기본값을 단다. 안쪽만
   // 챙기고 바깥을 필수로 두면 그 배려가 닿는 세이브가 하나도 없다 —
   // dialogueHistory 자체가 대화 태스크에서 생긴 필드라, 그 전에 저장된
@@ -155,6 +161,48 @@ export type EnhanceRequest = z.infer<typeof EnhanceRequestSchema>
  */
 export const TalkRequestSchema = z.object({ speakerId: z.string().min(1) })
 export type TalkRequest = z.infer<typeof TalkRequestSchema>
+
+/**
+ * 수량. **요청이 수량을 담는 첫 사례**이고, 앞선 요청들의 최소성(EquipRequest·
+ * EnhanceRequest·TalkRequest·MoveRequest 가 각자 그 이유를 적는다)에 대한 예외다.
+ *
+ * **왜 예외인가:** 앞의 것들이 요청에서 뺀 값은 전부 **서버가 규칙으로 유도할 수
+ * 있는 것**이었다 — 슬롯은 그 도구의 toolSkill 이, 강화 대상은 "같은 itemId 의
+ * 착용 인스턴스"가, 목적지는 밟은 칸의 전환이 정한다. 담으면 요청 하나로 규칙
+ * 밖의 조합을 표현할 수 있게 되므로 뺐다. 수량은 그런 값이 아니다. "가진 것
+ * 전부"로 정하면 하나만 팔고 싶은 사람이 그것을 말할 방법이 없고, "언제나 하나"로
+ * 정하면 999개를 파는 데 요청 999번이 든다. 수량은 판정의 결과가 아니라 **판정
+ * 대상의 크기**이고, 그것을 아는 것은 사람뿐이다.
+ *
+ * 그래서 상한은 스키마가 든다. `.int()` 가 NaN·Infinity·소수를 막고(`0.5`개를
+ * 팔면 스택은 소수가 되고 골드는 내림으로 사라진다), `.max(999)` 가 총액이
+ * `Number.MAX_SAFE_INTEGER` 를 넘겨 잔고 비교가 무의미해지는 요청을 막는다 —
+ * 999 는 원작의 소지 상한이라 "한 번에 다 판다"에 모자라지도 않는다.
+ */
+const TradeCount = z.number().int().min(1).max(999)
+
+/**
+ * 매도 요청. 어느 상점에, 무엇을, 몇 개.
+ *
+ * 값은 담기지 않는다 — 매도가는 `sellPrice` 가 정하는 유도값이고, 클라이언트가
+ * 값을 보낼 수 있게 하는 순간 요청 하나로 자기 물건에 자기가 값을 매긴다.
+ * 상점 id 를 담는 이유는 그 반대다: **누구에게 파는가**는 유도할 수 없다(같은
+ * 재료를 사 주는 상점이 여럿일 수 있고, 접근 판정도 상점마다 다르다).
+ */
+export const SellRequestSchema = z.object({
+  shopId: z.string().min(1),
+  itemId: z.string().min(1),
+  count: TradeCount,
+})
+export type SellRequest = z.infer<typeof SellRequestSchema>
+
+/** 매수 요청. 모양이 매도와 같다 — 판정만 반대편이다(진열·잔고·중복). */
+export const BuyRequestSchema = z.object({
+  shopId: z.string().min(1),
+  itemId: z.string().min(1),
+  count: TradeCount,
+})
+export type BuyRequest = z.infer<typeof BuyRequestSchema>
 
 /**
  * 전환 요청. **밟은 칸**만 담는다 — 어디로 갈지는 담기지 않는다.

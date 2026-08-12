@@ -93,6 +93,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: 채집장, x: 0, y: 0 },
     ...overrides,

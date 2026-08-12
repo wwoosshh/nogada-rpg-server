@@ -243,7 +243,9 @@ function contractSuite(harness: Harness): void {
       equipped: { mineral: 'inst-1' },
       nextActionAt: 0,
       celebrated: ['ice_10000'],
-      // dialogueHistory 도 location 도 없다 — 그 필드들이 생기기 전의 세이브다.
+      // dialogueHistory 도 location 도 gold 도 rewarded 도 없다 — 그 필드들이
+      // 생기기 전의 세이브다. 경제 아크가 필드를 둘 더 얹었으므로 그 둘의
+      // 기본값도 여기서 함께 시험된다.
     })
 
     const loaded = await (await reopen()).getCharacter('옛사람')
@@ -253,6 +255,10 @@ function contractSuite(harness: Harness): void {
     expect(loaded?.celebrated).toEqual(['ice_10000'])
     expect(loaded?.dialogueHistory).toEqual({ said: [], recent: {}, lastTalkAt: {} })
     expect(loaded?.location).toEqual(startLocation(loadGameData()))
+    // 대금을 받은 적 없는 사람으로 살아난다. 이 기본값이 저장 계층까지 닿지
+    // 않으면 옛 세이브는 스키마에서 걸려 통째로 사라지고, 빈 목록이 아닌
+    // 무엇으로 살아나면 달인이 준 적 없는 돈을 이미 준 것으로 기억한다.
+    expect(loaded?.rewarded).toEqual([])
     // 이름·외형도 나중에 생긴 필드다 — 기본값이 저장 계층까지 닿지 않으면
     // 그 세이브는 "형식 오류" 하나로 통째로 읽히지 않는다.
     expect(loaded?.appearance).toBe(DEFAULT_APPEARANCE)

@@ -82,6 +82,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: { mineral: 'i1' },
     nextActionAt: 0,
     celebrated: [],
+    rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     // 배치가 전부 world 에 있으므로 기본 플레이어도 world 에 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.

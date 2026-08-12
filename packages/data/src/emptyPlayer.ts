@@ -37,6 +37,9 @@ export function emptyPlayer(): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    // 아직 어떤 달인의 문턱도 넘지 않은 사람이다 — celebrated 와 같은 성격의
+    // "아직 아무 일도 없었다"이고, 시뮬레이터가 흉내 내는 것이 정확히 그 상태다.
+    rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     // 시뮬레이터가 "아직 아무 데도 안 간 사람" 을 흉내 내는 것이므로 시작 맵의
     // 시작 칸이다. 좌표를 여기 적지 않는다 — 그 칸은 world.tmx 의 spawn

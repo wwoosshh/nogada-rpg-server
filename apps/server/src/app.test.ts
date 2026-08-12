@@ -3,6 +3,8 @@ import {
   GAME_EPOCH_MS,
   REAL_MS_PER_GAME_MINUTE,
   StateResponseSchema,
+  type ItemDef,
+  type ShopDef,
   type TransitionDef,
 } from '@nogada/shared'
 import { describe, expect, it, vi } from 'vitest'
@@ -615,6 +617,174 @@ describe('POST /api/enhance', () => {
 
     const res = await me.inject({ method: 'POST', url: '/api/enhance', payload: {} })
     expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
+/**
+ * 거래 두 문. 서비스 테스트(tradeService.test.ts)가 판정을 지키므로 여기서
+ * 보는 것은 **배선**이다: 스키마 → 서비스 → 저장 → `{ player }` 응답.
+ *
+ * 화자가 서 있는 시각으로 시계를 고정하는 이유는 대화 라우트와 같다 — 상점은
+ * 그 사람이 그 자리에 있을 때만 열리므로(§6-앞 4), 벽시계에 맡기면 하루 중
+ * 어느 순간에 돌리느냐에 따라 not_here 로 흔들린다.
+ */
+describe('POST /api/shop/sell·buy', () => {
+  /** 채집장노인이 여는 상점. 어느 상점인지는 등록부가 말한다 — 이름을 적으면 CSV 가 바뀔 때 거짓말이 된다. */
+  function elderShop(): ShopDef {
+    const shop = Object.values(loadGameData().shops).find((s) => s.speakerId === ELDER)
+    if (!shop) throw new Error(`shops.csv 에 ${ELDER} 가 여는 상점이 없다`)
+    return shop
+  }
+
+  /** 그 상점이 사 주는 재료 하나. 정렬해 고르는 것은 데이터가 늘어도 같은 것을 고르기 위해서다. */
+  function sellableAt(shop: ShopDef): ItemDef {
+    const item = Object.values(loadGameData().items)
+      .filter((def) => def.kind === 'material' && !def.tokenEffect && def.price > 0 && def.skill === shop.skill)
+      .sort((a, b) => a.id.localeCompare(b.id))[0]
+    if (!item) throw new Error(`${shop.id} 이 사 주는 재료가 items.csv 에 없다`)
+    return item
+  }
+
+  /** 그 상점의 진열 한 칸. 요구치가 가장 낮은 것 — 그것을 살 수 있으면 배선이 산 것이다. */
+  function stockedAt(shop: ShopDef): { def: ItemDef; unlockSkill: number } {
+    const entry = [...shop.stock].sort((a, b) => a.unlockSkill - b.unlockSkill)[0]
+    if (!entry) throw new Error(`${shop.id} 의 진열이 비어 있다`)
+    const def = loadGameData().items[entry.itemId]
+    if (!def) throw new Error(`진열한 ${entry.itemId} 가 items.csv 에 없다`)
+    return { def, unlockSkill: entry.unlockSkill }
+  }
+
+  /** 숙련도·재고·골드를 세이브에 직접 심고 그 위에 앱을 다시 세운다. */
+  async function withStocked(
+    plant: (raw: { skills: Record<string, number>; stacks: Record<string, number>; gold?: number }) => void,
+    body: (me: TestPlayer) => Promise<void>,
+  ): Promise<void> {
+    await withElderStanding(async () => {
+      const before = await buildTestApp()
+      const me = await asPlayer(before)
+      const file = saveFileOf(before)
+
+      // API 로 숙련 5,000 을 쌓으려면 채집을 수천 번 해야 한다 — 라우트 시험이
+      // 그 시간(과 난수)에 매달리면 안 되므로 세이브에 직접 심는다.
+      const raw = rawSaveOf(before)[me.id] as {
+        skills: Record<string, number>
+        stacks: Record<string, number>
+        gold?: number
+      }
+      plant(raw)
+      writeRawCharacter(file, me.id, raw)
+
+      const app = await buildTestApp({ dataFile: file })
+      const resumed = await asPlayer(app, { resume: me })
+      await enterSpeakerMap(resumed)
+      await body(resumed)
+
+      await app.close()
+      // 임시 디렉터리를 지우는 것은 파일을 만든 쪽이다 — 나중에 닫는다.
+      await before.close()
+    })
+  }
+
+  it('가진 재료를 팔면 골드가 늘고, 그 상태가 저장된다', async () => {
+    const shop = elderShop()
+    const item = sellableAt(shop)
+
+    await withStocked(
+      (raw) => {
+        raw.skills[shop.skill] = shop.unlockSkill
+        raw.stacks[item.id] = 5
+      },
+      async (me) => {
+        const res = await me.inject({
+          method: 'POST',
+          url: '/api/shop/sell',
+          payload: { shopId: shop.id, itemId: item.id, count: 2 },
+        })
+
+        expect(res.statusCode).toBe(200)
+        // 응답이 { player } 통째 관례를 지키는지 — 상태 응답과 같은 스키마다.
+        expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
+        const body = res.json() as { player: { gold: number; stacks: Record<string, number> } }
+        expect(body.player.gold).toBe(Math.floor(item.price / 2) * 2)
+        expect(body.player.stacks[item.id]).toBe(3)
+
+        // 저장까지 갔는지 — 응답에만 있고 세이브에 없으면 새로고침이 되돌린다.
+        const state = await me.inject({ method: 'GET', url: '/api/state' })
+        expect((state.json() as { player: { gold: number } }).player.gold).toBe(body.player.gold)
+      },
+    )
+  })
+
+  it('진열된 증표를 사면 골드가 줄고, 같은 것을 또 사려 하면 400 already_owned 다', async () => {
+    const shop = elderShop()
+    const { def, unlockSkill } = stockedAt(shop)
+    const purse = def.price * 2
+
+    await withStocked(
+      (raw) => {
+        raw.skills[shop.skill] = unlockSkill
+        raw.gold = purse
+      },
+      async (me) => {
+        const payload = { shopId: shop.id, itemId: def.id, count: 1 }
+        const res = await me.inject({ method: 'POST', url: '/api/shop/buy', payload })
+
+        expect(res.statusCode).toBe(200)
+        expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
+        const body = res.json() as { player: { gold: number; stacks: Record<string, number> } }
+        expect(body.player.gold).toBe(purse - def.price)
+        expect(body.player.stacks[def.id]).toBe(1)
+
+        // 증표는 하나로 충분하다는 것이 서버 규칙이다(§6-앞 14) — 돈이 남아 있어도 거절이다.
+        const again = await me.inject({ method: 'POST', url: '/api/shop/buy', payload })
+        expect(again.statusCode).toBe(400)
+        expect(again.json()).toEqual({ code: 'already_owned' })
+      },
+    )
+  })
+
+  it('접근이 막히면 그 코드를 그대로 400 으로 낸다 — 숙련이 모자란 상점은 shop_locked 다', async () => {
+    const shop = elderShop()
+    const item = sellableAt(shop)
+
+    await withStocked(
+      (raw) => {
+        raw.skills[shop.skill] = shop.unlockSkill - 1
+        raw.stacks[item.id] = 5
+      },
+      async (me) => {
+        const res = await me.inject({
+          method: 'POST',
+          url: '/api/shop/sell',
+          payload: { shopId: shop.id, itemId: item.id, count: 1 },
+        })
+        expect(res.statusCode).toBe(400)
+        expect(res.json()).toEqual({ code: 'shop_locked' })
+      },
+    )
+  })
+
+  it('규격 밖의 수량은 서비스에 닿기 전에 400 이다 — 0개·1000개·수량 없음', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const shop = elderShop()
+    const item = sellableAt(shop)
+
+    for (const count of [0, 1_000, 1.5, Number.NaN]) {
+      for (const url of ['/api/shop/sell', '/api/shop/buy']) {
+        const res = await me.inject({ method: 'POST', url, payload: { shopId: shop.id, itemId: item.id, count } })
+        expect({ url, count, status: res.statusCode }).toEqual({ url, count, status: 400 })
+        expect(res.json()).toEqual({ code: 'bad_request' })
+      }
+    }
+    const missing = await me.inject({
+      method: 'POST',
+      url: '/api/shop/sell',
+      payload: { shopId: shop.id, itemId: item.id },
+    })
+    expect(missing.statusCode).toBe(400)
 
     await app.close()
   })

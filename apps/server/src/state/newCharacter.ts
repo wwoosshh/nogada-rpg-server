@@ -66,6 +66,9 @@ export function createInitialPlayer(spec: NewCharacterSpec): PlayerState {
     equipped,
     nextActionAt: 0,
     celebrated: [],
+    // 달인의 대금은 하나도 받지 않은 채로 시작한다 — 가장 낮은 문턱도 7,587
+    // 이고, 그 숫자는 캐서 넘는 것이지 시작할 때 주어지는 것이 아니다.
+    rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     // 시작 자리는 **고른 마을의** spawn 오브젝트가 유일한 출처다 — 좌표를 여기
     // 적으면 맵을 고쳐 그려도 따라오지 않는 숫자가 하나 생기고, 그 칸에 벽을 그린

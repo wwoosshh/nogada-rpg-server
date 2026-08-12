@@ -105,6 +105,35 @@ describe('PlayerStateSchema', () => {
     expect(PlayerStateSchema.safeParse({ ...validSave(), gold: -1 }).success).toBe(false)
   })
 
+  // 왜: rewarded 도 경제 아크에서 생긴 필드이고, gold 와 같은 이유로 기본값이
+  //     필요하다. 그 기본값이 **빈 목록**이어야 하는 이유가 하나 더 있다 —
+  //     다른 무엇으로 살아나면 달인이 준 적 없는 돈을 이미 받은 것으로 기억해,
+  //     그 사람은 넘긴 문턱의 대금을 평생 못 받는다.
+  it('rewarded 가 통째로 없는 옛 세이브를 빈 목록으로 받아들인다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.rewarded).toEqual([])
+  })
+
+  it('적혀 있는 대금 기록은 그대로 읽는다', () => {
+    const parsed = PlayerStateSchema.safeParse({ ...validSave(), rewarded: ['ice_master'] })
+
+    expect(parsed.success && parsed.data.rewarded).toEqual(['ice_master'])
+  })
+
+  // 왜: 기본값이 리터럴 하나뿐이면 세이브 둘이 **같은 배열**을 물려받을 수 있다.
+  //     그러면 한 사람이 얼음 달인에게 받은 기록이 다른 사람에게도 "이미 받음"
+  //     으로 보여 100만 골드가 조용히 사라진다 — 빈 이력이 파싱마다 새로
+  //     만들어져야 하는 것과 정확히 같은 이유다.
+  it('파싱할 때마다 새 빈 목록을 만든다 — 세이브 둘이 같은 rewarded 를 공유하면 안 된다', () => {
+    const first = PlayerStateSchema.parse(validSave())
+    const second = PlayerStateSchema.parse(validSave())
+
+    first.rewarded.push('ice_master')
+    expect(second.rewarded).toEqual([])
+  })
+
   it('파싱할 때마다 새 빈 이력을 만든다 — 세이브 둘이 같은 배열을 공유하면 안 된다', () => {
     const first = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())
     const second = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())

@@ -40,6 +40,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: '얼음채집장', x: 3, y: 1 },
     ...overrides,

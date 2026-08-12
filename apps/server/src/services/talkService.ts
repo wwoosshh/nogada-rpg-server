@@ -5,6 +5,7 @@ import {
   npcStateAt,
   onceKey,
   selectDialogue,
+  shopAccess,
   speakerPresence,
   type GameData,
   type PlayerState,
@@ -29,6 +30,23 @@ export interface TalkOutcome {
    * 말하는 사이에 시각·숙련도가 바뀌면 플레이어는 두 세계가 섞인 말을 듣는다.
    */
   lines: string[]
+  /**
+   * 이 대화가 여는 상점 id. **문이 실제로 열릴 때만** 실린다 — 없으면 대사만이다.
+   *
+   * 이긴 대사 규칙과 무관하다(§6-앞 1). 상점이 대사에 붙어 있었다면 한 번도 안
+   * 열렸을 것이다: `selectDialogue` 는 조건이 가장 많은 규칙만 남기는데, 네 화자의
+   * 거래 암시 규칙은 전부 조건 둘이라 조건 하나짜리 상점 규칙이 언제나 진다.
+   * **대사는 안내이고, 문은 상태가 연다.**
+   */
+  shop?: string
+  /**
+   * 이번 대화에서 받은 달인의 1회성 대금. 두 번째 대화에는 실리지 않는다.
+   *
+   * 금액을 함께 싣는 이유는 화면이 "+1,000,000 G" 를 말해야 하기 때문이다 —
+   * 골드 총액만 보내면 클라이언트가 차이를 계산해야 하고, 그 계산은 같은 응답에
+   * 매도 대금이 섞이는 날 조용히 틀린다.
+   */
+  reward?: { id: string; gold: number }
   player: PlayerState
 }
 
@@ -105,7 +123,30 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
   history.recent[speakerId] = [...previous, rule.id].slice(-RECENT_DIALOGUE_LIMIT)
   history.lastTalkAt[speakerId] = now
 
-  // lines 를 복사한다. 그대로 실으면 응답 객체가 GameData 의 배열을 가리켜,
-  // 누가 그것을 건드리는 순간 그 화자의 대사가 프로세스 전체에서 바뀐다.
-  return { ok: true, outcome: { speaker: speakerId, lines: [...rule.lines], player } }
+  // 아래 둘은 **이긴 규칙을 보지 않는다**(§6-앞 1·2). 등록부가 화자로 답한다.
+  const outcome: TalkOutcome = { speaker: speakerId, lines: [...rule.lines], player }
+
+  // 상점: 이 화자가 여는 상점이 있고 그 문이 지금 열리면 id 를 싣는다. 문을 여는
+  // 판정은 shopAccess 하나뿐이다 — 여기서 "숙련도가 넘으면" 같은 조건을 다시
+  // 적으면 sell·buy 와 갈라져서 "가게는 열리는데 아무것도 못 파는" 화면이 온다.
+  const shop = Object.values(data.shops).find((s) => s.speakerId === speakerId)
+  if (shop && shopAccess(data, shop.id, player, now) === 'ok') outcome.shop = shop.id
+
+  // 달인 대금: 문턱을 넘었고 아직 안 받았으면 준다. 조건이 상태(숙련도·rewarded)
+  // 뿐이라 몇 번을 말해도 답이 같다 — 한 번 주고 나면 rewarded 가 그 답을 바꾼다.
+  // 한 대화에서 하나만 준다: 한 화자가 두 계열의 달인일 수 있지만, 응답의
+  // reward 는 하나이고 화면도 한 번에 한 금액만 말할 수 있다. 남은 하나는 다음
+  // 대화에서 나온다(문턱은 이미 넘었으므로 사라지지 않는다).
+  const master = data.masters.find(
+    (m) => m.speakerId === speakerId && player.skills[m.skill] >= m.threshold && !player.rewarded.includes(m.id),
+  )
+  if (master) {
+    player.gold += master.gold
+    player.rewarded.push(master.id)
+    outcome.reward = { id: master.id, gold: master.gold }
+  }
+
+  // lines 는 위에서 복사해 실었다. 그대로 실으면 응답 객체가 GameData 의 배열을
+  // 가리켜, 누가 그것을 건드리는 순간 그 화자의 대사가 프로세스 전체에서 바뀐다.
+  return { ok: true, outcome }
 }
