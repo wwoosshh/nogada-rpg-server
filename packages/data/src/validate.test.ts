@@ -1415,6 +1415,18 @@ describe('validateGameData 의 상점 등록부 검사', () => {
     )
   })
 
+  it('도구를 진열한 상점을 잡아낸다', () => {
+    // 매수(tradeService.performBuy)는 무엇을 사든 player.stacks 에 넣는다 —
+    // 도구가 진열되면 골드만 줄고 산 도구는 stacks 에 쌓이는데, 가방(BagPanel)은
+    // 재료를 stacks 에서, 도구는 instances 에서만 그린다. 그래서 산 도구는 가방
+    // 어디에도 나타나지 않고 조용히 사라진다 — E4 가 미룬 구멍(§progress.md).
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'copper_pickaxe', unlockSkill: 10000 }] }) }
+    expect(validateGameData(data, baseTables())).toContain(
+      'shops[광물상점]: "copper_pickaxe" 는 도구라 진열할 수 없다 — 매수는 무엇을 사든 가방의 재료 칸(player.stacks)에 넣는데, 가방 화면은 도구를 그 칸이 아니라 instances 에서만 그린다. 산 도구는 골드만 줄이고 가방 어디에도 나타나지 않는다. 진열은 kind 가 material 인 아이템만 할 수 있다',
+    )
+  })
+
   it('실제로 출하되는 CSV 데이터는 상점 검사를 통과한다', () => {
     expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
   })

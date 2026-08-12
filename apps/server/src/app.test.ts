@@ -3,6 +3,7 @@ import {
   GAME_EPOCH_MS,
   REAL_MS_PER_GAME_MINUTE,
   StateResponseSchema,
+  isSellTarget,
   type ItemDef,
   type ShopDef,
   type TransitionDef,
@@ -638,10 +639,16 @@ describe('POST /api/shop/sell·buy', () => {
     return shop
   }
 
-  /** 그 상점이 사 주는 재료 하나. 정렬해 고르는 것은 데이터가 늘어도 같은 것을 고르기 위해서다. */
+  /**
+   * 그 상점이 사 주는 재료 하나. 정렬해 고르는 것은 데이터가 늘어도 같은 것을 고르기 위해서다.
+   *
+   * 매도 대상의 정의는 shared 의 isSellTarget 하나가 소유한다(sellTarget.ts) — 여기서
+   * 그 conjunction 을 다시 적으면, 훗날 그 정의가 바뀔 때 이 배선 테스트만 옛 규칙으로
+   * 남아 조용히 틀린 재료를 고른다.
+   */
   function sellableAt(shop: ShopDef): ItemDef {
     const item = Object.values(loadGameData().items)
-      .filter((def) => def.kind === 'material' && !def.tokenEffect && def.price > 0 && def.skill === shop.skill)
+      .filter((def) => isSellTarget(def, shop))
       .sort((a, b) => a.id.localeCompare(b.id))[0]
     if (!item) throw new Error(`${shop.id} 이 사 주는 재료가 items.csv 에 없다`)
     return item

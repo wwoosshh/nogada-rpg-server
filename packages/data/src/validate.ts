@@ -461,9 +461,21 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
       shopOfSpeaker.set(shop.speakerId, shop.id)
     }
     for (const entry of shop.stock) {
-      if (!hasItem(entry.itemId)) {
+      const stockedItem = data.items[entry.itemId]
+      if (!stockedItem) {
         violations.push(
           `shops[${shop.id}]: 없는 아이템 "${entry.itemId}" 를 진열한다 — items.csv 의 id 중 하나여야 한다`,
+        )
+        continue
+      }
+      // 진열이 도구를 가리키면 안 된다(E4 가 남긴 구멍): tradeService.performBuy 는
+      // 무엇을 사든 player.stacks 에 넣는데, 가방(BagPanel)은 재료를 stacks 에서,
+      // 도구는 instances 에서만 그린다. 그래서 산 도구는 골드만 줄이고 가방
+      // 어디에도 나타나지 않은 채 조용히 사라진다 — 매수 성공 화면과 텅 빈
+      // 가방 사이에서 원인을 되짚을 길이 없다.
+      if (stockedItem.kind !== 'material') {
+        violations.push(
+          `shops[${shop.id}]: "${entry.itemId}" 는 도구라 진열할 수 없다 — 매수는 무엇을 사든 가방의 재료 칸(player.stacks)에 넣는데, 가방 화면은 도구를 그 칸이 아니라 instances 에서만 그린다. 산 도구는 골드만 줄이고 가방 어디에도 나타나지 않는다. 진열은 kind 가 material 인 아이템만 할 수 있다`,
         )
       }
     }
