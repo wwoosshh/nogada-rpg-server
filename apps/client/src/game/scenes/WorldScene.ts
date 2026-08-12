@@ -6,6 +6,7 @@ import {
   gameTimeAt,
   isAchieved,
   isAdjacentFacing,
+  weatherView,
   type Direction,
   type PlayerState,
   type TilePos,
@@ -27,6 +28,7 @@ import { npcSprite, npcSpriteKey } from '../npcSprites.js'
 import { playerSprite, playerSpriteKey } from '../playerSprites.js'
 import { facingToward } from '../speakerFacing.js'
 import { TileMover } from '../TileMover.js'
+import { WeatherSky } from '../WeatherSky.js'
 import { fixedToCamera, renderScale } from '../viewport.js'
 import { ControlScene } from './ControlScene.js'
 import { DialogueScene } from './DialogueScene.js'
@@ -85,6 +87,7 @@ interface WorldSceneData {
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite
   private dayNight!: DayNightOverlay
+  private weatherSky!: WeatherSky
   private unsubscribeStore: (() => void) | null = null
   private unsubscribeMilestone: (() => void) | null = null
   private unsubscribeUtterance: (() => void) | null = null
@@ -476,6 +479,9 @@ export class WorldScene extends Phaser.Scene {
     })
 
     this.dayNight = new DayNightOverlay(this)
+    // 하늘은 명암 뒤에 만든다 — 그리는 순서는 depth 가 정하지만(DEPTH.weather),
+    // 읽는 사람에게 "명암 위에 비가 온다"를 두 줄의 순서로도 말해 둔다.
+    this.weatherSky = new WeatherSky(this)
 
     // 컨트롤러는 별도 씬이라 카메라 스크롤과 낮밤 명암의 영향을 받지 않는다.
     // hub 가 여기서 막 만들어졌으므로 Control 씬 자신의 create() 가 끝난 뒤에야
@@ -542,6 +548,7 @@ export class WorldScene extends Phaser.Scene {
       this.scene.stop('Panel')
       this.scene.stop('Dialogue')
       this.dayNight.destroy()
+      this.weatherSky.destroy()
       this.keyboard.destroy()
       this.floaters.destroy()
       this.unsubscribeStore?.()
@@ -733,6 +740,12 @@ export class WorldScene extends Phaser.Scene {
     this.updateIdleFacing(delta)
 
     this.dayNight.update(gameTimeAt(worldNow()).minuteOfDay)
+
+    // 하늘도 낮밤과 같은 자세로 매 프레임 "지금 무엇인가"를 받는다 — 켜고 끄는
+    // 타이머가 없다. 만료는 시각 비교 하나이므로(shared 의 weatherView) 그친
+    // 순간은 이 줄이 스스로 알아낸다: 취소할 타이머가 없으니 세계가 상태보다
+    // 오래 비를 뿌릴 길이 없다. 상단바가 남은 시간을 세는 함수도 이것이다.
+    this.weatherSky.update(weatherView(useGameStore.getState().player?.weather ?? null, worldNow()))
 
     // beginFrame() 은 반드시 update() 의 맨 끝에 있어야 한다 — 위로 옮기고
     // 싶어지면 이 주석부터 다시 읽을 것.

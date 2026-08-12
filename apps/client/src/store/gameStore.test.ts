@@ -64,6 +64,7 @@ beforeEach(() => {
     notice: null,
     tradeError: null,
     tradeBusy: false,
+    bagError: null,
     player: emptyPlayer(),
     boot: 'playing',
     connection: 'online',
@@ -373,5 +374,87 @@ describe('거래 — 화자가 자리를 뜨면 패널이 닫힌다(설계 §6-�
 
     expect(useGameStore.getState().player?.gold).toBe(520000)
     expect(useGameStore.getState().openPanel).toBe('shop:얼음상점')
+  })
+})
+
+describe('사용 — 가방에서 쓴 가루가 하늘이 된다(설계 §6-앞 1~4)', () => {
+  // 왜: 하늘의 유일한 출처는 서버가 돌려준 player.weather 다. 클라이언트가
+  //     날씨를 따로 기억하면 그 사본이 새로고침·재접속에서 상태와 갈라진다 —
+  //     응답 하나를 통째로 갈아 끼우는 것이 착용·강화·거래와 같은 길이다.
+  it('응답의 player 를 그대로 갈아 끼운다 — 하늘도 그 안에 실려 온다', async () => {
+    const rained = {
+      ...emptyPlayer(),
+      stacks: { rain_powder: 2 },
+      weather: { kind: 'rain', untilMs: 4_000 },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ player: rained })),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().use('rain_powder')
+
+    expect(useGameStore.getState().player?.weather).toEqual({ kind: 'rain', untilMs: 4_000 })
+    expect(useGameStore.getState().player?.stacks.rain_powder).toBe(2)
+    // 쓰고 나서도 가방은 열려 있다 — 줄어든 개수를 그 자리에서 봐야 한다.
+    expect(useGameStore.getState().openPanel).toBe('bag')
+  })
+
+  // 왜: 이것이 상점에서 배운 것과 같은 교훈이다 — 가방 패널이 화면을 덮은
+  //     상태에서 거절을 머리 위 글자(lastAction)로 보내면 그 문구는 패널 뒤
+  //     캔버스에서 뜨고 사라져 아무도 못 본다. 재현: 마지막 한 개를 두 창에서
+  //     동시에 쓰면 둘째가 missing_items 로 거절된다.
+  it('거절은 가방 안의 채널로 간다 — 머리 위 글자는 건드리지 않는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'missing_items' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().use('rain_powder')
+
+    expect(useGameStore.getState().bagError).toBe('물건이 모자란다')
+    expect(useGameStore.getState().lastAction).toBeNull()
+    expect(useGameStore.getState().openPanel).toBe('bag')
+  })
+
+  // 왜: 착용·강화도 같은 패널의 같은 사정이다(그쪽은 오래 머리 위로 보내고
+  //     있었다) — 채널이 생긴 이상 셋이 같은 자리에서 말해야, 다음 버튼이
+  //     늘어날 때 어디에 적을지 고민할 일이 없다.
+  it('착용·강화의 거절도 같은 자리에서 말한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'enhance_cap' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().enhance('some-instance')
+
+    expect(useGameStore.getState().bagError).toBe('더 강화할 수 없다')
+    expect(useGameStore.getState().lastAction).toBeNull()
+  })
+
+  // 왜: 문구는 그 순간의 것이다 — 패널을 닫았다 다시 열었는데 지난 거절이
+  //     붙어 있으면 아무것도 안 했는데 실패한 화면이 된다(상점과 같은 규칙).
+  it('다음 사용이 성공하거나 패널이 바뀌면 지난 거절이 지워진다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockImplementationOnce(async () => jsonResponse({ code: 'not_usable' }, 400))
+        .mockImplementationOnce(async () => jsonResponse({ player: emptyPlayer() })),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().use('soft_log')
+    expect(useGameStore.getState().bagError).toBe('쓸 수 없는 물건')
+
+    await useGameStore.getState().use('rain_powder')
+    expect(useGameStore.getState().bagError).toBeNull()
+
+    useGameStore.setState({ bagError: '물건이 모자란다' })
+    useGameStore.getState().setOpenPanel(null)
+    expect(useGameStore.getState().bagError).toBeNull()
   })
 })

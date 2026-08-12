@@ -245,6 +245,20 @@ interface GameStore {
    * 것은 그 뒤에 남는 안전망이고, 애초에 두 번째 요청을 안 보내는 것이 답이다.
    */
   tradeBusy: boolean
+  /**
+   * 가방 패널 안에서 거절된 이유 한 줄 — 착용·강화·사용이 함께 쓴다.
+   *
+   * `tradeError` 가 상점 패널에서 배운 것을 그대로 옮긴 채널이다: 이 세 조작은
+   * **가방 패널이 화면을 덮은 상태에서만** 일어나므로, 거절을 머리 위 글자
+   * (lastAction → 캔버스 플로터)로 보내면 그 문구는 패널 뒤에서 뜨고 사라져
+   * 아무도 못 본다. 착용·강화가 오래 그 자리에 있었던 것은 "거절이 드물어
+   * 채널을 나눌 이유가 없다"는 판단이었는데, [사용] 버튼이 들어오면서 채널이
+   * 생겼으니 셋이 같은 자리를 쓴다 — 같은 패널의 같은 종류의 실패다.
+   *
+   * seq 가 없는 이유도 tradeError 와 같다: 이것은 사건이 아니라 **상태**다.
+   * 다음 요청이 나갈 때·성공할 때·패널이 바뀔 때 지워진다.
+   */
+  bagError: string | null
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
@@ -266,6 +280,7 @@ interface GameStore {
   move: (x: number, y: number) => Promise<void>
   equip: (instanceId: string) => Promise<void>
   enhance: (materialInstanceId: string) => Promise<void>
+  use: (itemId: string) => Promise<void>
   sell: (shopId: string, itemId: string, count: number) => Promise<void>
   buy: (shopId: string, itemId: string, count: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
@@ -335,6 +350,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   craftTally: {},
   tradeError: null,
   tradeBusy: false,
+  bagError: null,
   lastAction: null,
   milestone: null,
   utterance: null,
@@ -608,32 +624,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
    * 열려 있는 동안 세계 위 글자는 어차피 보이지도 않는다.
    */
   equip: async (instanceId) => {
-    try {
-      const { player } = await GameClient.equip(instanceId)
-      applyPlayer(set, player)
-    } catch (err) {
-      if (isNetworkFailure(err)) {
-        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
-        return
-      }
-      pushAction(set, describeError(err), 'bad')
-      console.error(err)
-    }
+    await bagAction(set, () => GameClient.equip(instanceId))
   },
 
   /** 강화 — 가방의 예비 도구 칩 [강화] 버튼이 부른다. equip 과 같은 자세(정리 행위, 실패만 알린다). */
   enhance: async (materialInstanceId) => {
-    try {
-      const { player } = await GameClient.enhance(materialInstanceId)
-      applyPlayer(set, player)
-    } catch (err) {
-      if (isNetworkFailure(err)) {
-        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
-        return
-      }
-      pushAction(set, describeError(err), 'bad')
-      console.error(err)
-    }
+    await bagAction(set, () => GameClient.enhance(materialInstanceId))
+  },
+
+  /**
+   * 사용 — 가방의 재료 줄 [사용] 버튼이 부른다(설계 §6-앞 1~4).
+   *
+   * 착용·강화와 같은 길이다: 응답은 `{ player }` 하나뿐이고, 성공은 알리지
+   * 않는다 — 줄어든 개수와 상단바에 뜬 남은 시간, 그리고 무엇보다 **바뀐
+   * 하늘**이 그 자리에서 직접 말한다. 여기서 날씨를 따로 기억하지 않는 것이
+   * 요점이다: 하늘의 유일한 출처는 `player.weather` 이고 만료는 저장된 타이머가
+   * 아니라 시각 비교 하나라(shared 의 weatherView), 스토어가 들고 있을 상태가
+   * 애초에 없다.
+   */
+  use: async (itemId) => {
+    await bagAction(set, () => GameClient.use(itemId))
   },
 
   /**
@@ -641,8 +651,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
    * (설계 §6-앞 18) too_fast 가 올 수 없다. 성공은 머리 위 글자로 알리지 않는다 —
    * 결과는 그 자리에서 골드와 스택 숫자가 직접 말하고, 패널이 화면을 덮고 있어
    * 어차피 안 보인다. **거절도 같은 이유로 머리 위에 띄우지 않는다**: 패널 안
-   * 합계 줄 옆(tradeError)에 앉힌다. 여기가 equip·enhance 와 갈라지는 자리다 —
-   * 그쪽은 가방 패널이 열려 있어도 거절이 드물고 채널을 나눌 이유가 없었다.
+   * 합계 줄 옆(tradeError)에 앉힌다. 가방 쪽(착용·강화·사용)이 나중에 같은
+   * 결론에 도달해 자기 채널(bagError)을 얻었다 — 덮인 패널 뒤에서는 머리 위
+   * 글자가 보이지 않는다는 사실이 상점만의 사정이 아니었다.
    */
   sell: async (shopId, itemId, count) => {
     await trade(set, get, () => GameClient.sell(shopId, itemId, count))
@@ -668,10 +679,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
    */
   setOpenPanel: (panel) => {
     if (panel === get().openPanel) return
-    // 거래 거절 문구는 그 상점 그 순간의 것이다 — 남겨 두면 패널을 닫았다 다시
+    // 거절 문구는 그 패널 그 순간의 것이다 — 남겨 두면 패널을 닫았다 다시
     // 연 사람이 아무것도 안 했는데 실패한 화면을 본다. craftTally 가 제작
     // 패널을 열 때 0 에서 시작하는 것과 같은 이유이고, 여기 한 곳이면 빠짐이 없다.
-    set({ tradeError: null })
+    // 가방(bagError)과 상점(tradeError)을 함께 지우는 이유: 지우는 자리가 패널이
+    // 바뀌는 이 한 곳이라, 채널마다 따로 두면 언젠가 한쪽이 빠진다.
+    set({ tradeError: null, bagError: null })
     // 제작 패널이 열리는 순간 누적 카운터를 0 에서 시작한다(설계 §8-앞 3) —
     // 이 숫자는 "이번에 열어 둔 동안"의 성적이다.
     if (panel === 'craft') set({ openPanel: panel, craftTally: {} })
@@ -781,6 +794,33 @@ function applyPlayer(set: SetFn, next: PlayerState): void {
 }
 
 /**
+ * 가방 패널 안에서 누른 버튼 하나의 왕복(착용·강화·사용 공통).
+ *
+ * 셋 다 응답이 `{ player }` 뿐이라 적용은 한 줄이고, **거절을 말하는 자리**가
+ * 셋이 같아서 함수 하나로 묶인다: 이 조작들은 가방 패널이 화면을 덮은 상태에서만
+ * 일어나므로 머리 위 글자로 보내면 패널 뒤에서 뜨고 사라진다(bagError 문서).
+ * trade() 가 상점에서 하는 일과 같은 모양이고 같은 이유다.
+ *
+ * 성공을 알리지 않는 것도 셋이 같다 — 슬롯 그림, 강화 +N, 줄어든 개수와 바뀐
+ * 하늘이 그 자리에서 직접 말한다. 행동 간격(too_fast)은 셋 다 올 수 없다:
+ * 정리와 사용은 행동이 아니다(설계 §6-앞 11, 서버 useService).
+ */
+async function bagAction(set: SetFn, send: () => Promise<{ player: PlayerState }>): Promise<void> {
+  set({ bagError: null })
+  try {
+    const { player } = await send()
+    applyPlayer(set, player)
+  } catch (err) {
+    if (isNetworkFailure(err)) {
+      set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
+      return
+    }
+    set({ bagError: describeError(err) })
+    console.error(err)
+  }
+}
+
+/**
  * 거래 왕복 하나(매도·매수 공통) — 응답은 `{ player }` 하나뿐이라 적용도 하나다.
  *
  * 두 액션이 이 함수를 나눠 쓰는 이유는 **자리를 뜬 화자** 때문이다(설계 §6-앞 4):
@@ -880,6 +920,7 @@ function describeError(err: unknown): string {
     // 아래 다섯은 착용·강화(equip·enhance) 전용 코드다(설계 §6-앞 11). 가방의
     // 버튼 조건(같은 itemId 착용 중일 때만 강화 노출 등)이 대부분 막지만,
     // 여러 탭·경합 요청은 화면이 못 막으므로 서버 거절도 말이 있어야 한다.
+    // 이 문구들이 앉는 자리는 가방 패널 안이다(bagError) — 머리 위가 아니다.
     case 'unknown_instance':
       return '존재하지 않는 도구'
     case 'not_a_tool':
@@ -890,6 +931,11 @@ function describeError(err: unknown): string {
       return '강화할 착용 도구가 없다'
     case 'enhance_cap':
       return '더 강화할 수 없다'
+    // 사용(use) 전용. 가방은 `useEffect` 가 있는 재료에만 [사용] 을 그리므로
+    // 정상 조작으로는 오지 않지만, 두 창에서 마지막 한 개를 동시에 쓰면
+    // 둘째가 missing_items 로 돌아온다 — 그때 화면이 조용하면 안 된다.
+    case 'not_usable':
+      return '쓸 수 없는 물건'
     // 아래는 거래(sell·buy) 전용 코드다(설계 §6-앞 18). 상점 패널이 잠긴 칸·
     // 보유 증표·모자란 골드를 미리 걸러 버튼을 잠그고, 왕복 동안에는 버튼
     // 자체가 잠기므로(tradeBusy) 정상 조작으로는 거의 오지 않는다 — 두 창을

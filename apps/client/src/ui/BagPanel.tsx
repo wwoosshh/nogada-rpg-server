@@ -49,9 +49,15 @@ function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): str
  * 예비 칩은 `착용` 버튼을 상시, `강화` 버튼을 같은 itemId 를 착용 중이고 그
  * 착용분이 아직 상한(+5) 아래일 때만 얻는다(비활성 노출은 여전히 금지 —
  * 조건을 못 채우면 버튼 자체를 그리지 않는다. 만강 도구 곁의 `강화` 는 눌러도
- * enhance_cap 만 돌아오는 죽은 버튼이다). **장비 슬롯과 재료 리스트는 여전히
- * 버튼이 아니다** — 슬롯은 착용 결과를 비추는 자리이지 조작하는 자리가
- * 아니고(조작은 예비 칩에서 온다), 재료는 애초에 눌러서 될 일이 없다.
+ * enhance_cap 만 돌아오는 죽은 버튼이다).
+ *
+ * **재료 줄에도 버튼이 생겼다 — 단, 쓸 수 있는 재료에만**(설계 §6-앞 1~4).
+ * "재료는 애초에 눌러서 될 일이 없다"는 v1 의 전제는 서버에 사용 API 가 없던
+ * 시절의 것이었다. 날씨 가루가 그 전제를 깬다: 그것은 가지고 있는 것이 아니라
+ * **쓰는 것**이고, 쓸 곳이 없으면 만들 이유도 없다. 자격은 `useEffect` 칸
+ * 하나이고 없는 재료에는 버튼을 그리지 않는다 — 예비 칩의 `강화` 와 정확히
+ * 같은 규칙이다(비활성 노출 금지). **장비 슬롯은 여전히 버튼이 아니다** —
+ * 슬롯은 착용 결과를 비추는 자리이지 조작하는 자리가 아니다(조작은 예비 칩).
  */
 export function BagPanel(): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === 'bag')
@@ -90,13 +96,17 @@ export function BagPanel(): JSX.Element | null {
   // 재료는 items.csv 선언 순서(= data.items 의 키 순서)로 고정한다 — 제작
   // 패널의 행이 흔들리면 안 되는 것과 같은 이유. 수량 0(스택에 키가 아예
   // 없는 경우 포함)은 제외한다.
-  const materials: { id: string; name: string; qty: number }[] = []
+  //
+  // `usable` 은 그 줄이 [사용] 버튼을 얻는가다. 자격은 `useEffect` 칸 하나뿐이고
+  // (서버 performUse 가 보는 것과 같은 칸), 없는 재료에는 버튼을 아예 그리지
+  // 않는다 — 눌러도 not_usable 만 돌아오는 죽은 버튼 금지(설계 §8-앞 13).
+  const materials: { id: string; name: string; qty: number; usable: boolean }[] = []
   for (const id of Object.keys(data.items)) {
     const def = data.items[id]
     if (def?.kind !== 'material') continue
     const qty = player.stacks[id] ?? 0
     if (qty <= 0) continue
-    materials.push({ id, name: def.name, qty })
+    materials.push({ id, name: def.name, qty, usable: def.useEffect !== undefined })
   }
 
   return (
@@ -113,6 +123,7 @@ export function BagPanel(): JSX.Element | null {
             ✕
           </button>
         </header>
+        <BagError />
         <div className="bag__body">
           {/* 소지금 — 가방은 "내가 가진 것"의 화면이고, 골드도 가진 것이다.
               상점 밖에서 다음 증표까지의 거리를 재는 자리가 여기다(설계 §2). */}
@@ -209,6 +220,18 @@ export function BagPanel(): JSX.Element | null {
                   <ItemIcon itemId={m.id} />
                   <span className="bag__material-name">{m.name}</span>
                   <span className="bag__material-qty">×{m.qty}</span>
+                  {/* 쓸 수 있는 재료에만 붙는다 — 날씨 가루 4종이 지금 유일한
+                      소지자다. 누른 뒤에도 패널은 열려 있고, 줄어든 개수가 이
+                      줄에서 그대로 갱신된다(스토어가 돌아온 player 를 갈아 끼운다). */}
+                  {m.usable && (
+                    <button
+                      type="button"
+                      className="bag__material-btn"
+                      onClick={() => void useGameStore.getState().use(m.id)}
+                    >
+                      사용
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -216,5 +239,28 @@ export function BagPanel(): JSX.Element | null {
         </div>
       </section>
     </div>
+  )
+}
+
+/**
+ * 방금 누른 가방 버튼이 거절된 이유 — 헤더와 본문 사이의 한 줄.
+ *
+ * **이 자리가 이 컴포넌트의 존재 이유다**(상점의 TradeError 와 같은 사정).
+ * 착용·강화·사용은 가방 패널이 화면을 덮은 상태에서만 일어나므로, 거절을 머리 위
+ * 글자로 보내면 그 문구는 패널 뒤 캔버스에서 뜨고 사라져 아무도 못 본다 —
+ * 마지막 한 개를 두 번 눌러 둘째가 거절돼도 화면에는 아무 일도 안 일어난 것처럼
+ * 보인다. 스크롤되는 본문(.bag__body) 밖에 두는 이유는 하나 더 있다: 재료는
+ * 목록 맨 아래라 그 옆에 두면 스크롤 위치에 따라 문구가 화면 밖에 있을 수 있다.
+ *
+ * `role="status"` 인 이유도 상점과 같다 — 초점을 빼앗지 않고(alert 가 아니다)
+ * 스크린 리더에게 "방금 누른 것이 왜 아무 일도 안 했는가"를 전한다.
+ */
+function BagError(): JSX.Element | null {
+  const text = useGameStore((s) => s.bagError)
+  if (text === null) return null
+  return (
+    <p className="bag__error" role="status">
+      {text}
+    </p>
   )
 }

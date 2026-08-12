@@ -287,6 +287,20 @@ export const GameClient = {
     }),
 
   /**
+   * 사용 — 소모품 하나를 쓴다. 지금 쓸 수 있는 것은 날씨 가루 4종뿐이고, 그
+   * 효과는 하늘이다(설계 §6-앞 1~4).
+   *
+   * 착용·강화와 같은 모양(`{ player }` 하나)이고 같은 이유다: 무엇이 일어났는지는
+   * 돌아온 상태가 이미 말한다 — 가루는 하나 줄었고 `player.weather` 에 그치는
+   * 시각이 적혀 있다. 행동 간격도 여기 없다(서버 useService 의 머리말).
+   */
+  use: (itemId: string) =>
+    request<{ player: PlayerState }>('/api/use', {
+      method: 'POST',
+      body: JSON.stringify({ itemId }),
+    }),
+
+  /**
    * 강화 — 예비 인스턴스(재료)를 소모해 같은 itemId 의 착용 중 인스턴스를 +1
    * 한다. 대상은 요청에 없다 — "같은 itemId 의 착용 인스턴스"를 서버가 스스로 찾는다.
    */

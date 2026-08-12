@@ -1,4 +1,4 @@
-import { gameTimeAt, SEASON_LABELS } from '@nogada/shared'
+import { gameTimeAt, SEASON_LABELS, WEATHER_LABELS, weatherView } from '@nogada/shared'
 import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
@@ -40,6 +40,15 @@ export function TopBar(): JSX.Element {
   // 보여야 캐는 동안 다음 증표까지의 거리가 읽힌다.
   const gold = useGameStore((s) => s.player?.gold ?? null)
 
+  // 셀렉터는 **저장된 값**(player.weather)만 고른다 — 남은 시간을 여기서 계산해
+  // 돌려주면 매 초 새 객체가 되어 스토어가 바뀌지 않았는데도 다시 그린다.
+  // 계산은 아래 한 줄이 맡고, 그 입력인 now 는 이 컴포넌트가 이미 게임 1분마다
+  // 갱신하고 있다(TICK_MS) — 남은 시간의 단위가 게임 분이라 딱 맞는 주기다.
+  const weather = useGameStore((s) => s.player?.weather ?? null)
+  // 세계(WeatherSky)와 **같은 함수**를 본다. 갈라 두면 하늘은 아직 뿌리는데
+  // 이 줄만 사라진 순간이 생긴다(shared 의 weatherView 문서).
+  const sky = weatherView(weather, now)
+
   return (
     <>
       {/*
@@ -58,6 +67,18 @@ export function TopBar(): JSX.Element {
           {SEASON_LABELS[t.season]} {t.dayOfSeason}일 · {pad(t.hour)}:{pad(t.minute)}
         </span>
         {mapName !== null && <span className="topbar__map">{mapName}</span>}
+        {/*
+          내리는 동안에만 있는 칸이다 — 맑을 때 "맑음"을 적지 않는 것은 사실
+          공급자와 같은 자세다(shared 의 activeWeather: 자리표시를 지어내지
+          않는다). 자리가 맵 이름 옆인 이유: 하늘은 지금 서 있는 곳의 사정이라
+          그 이름 바로 옆이 읽는 순서에 맞고, 남은 시간이 있어야 "곧 그친다"를
+          알고 다음 가루를 준비할 수 있다.
+        */}
+        {sky !== null && (
+          <span className="topbar__weather">
+            {WEATHER_LABELS[sky.kind]} {sky.remainingMinutes}분
+          </span>
+        )}
         {gold !== null && (
           <span className="topbar__gold" aria-label="소지금">
             {formatGold(gold)}

@@ -60,3 +60,46 @@ export function activeWeather(weather: PlayerWeather | null, nowMs: number): Wea
   if (!weather || weather.untilMs <= nowMs) return undefined
   return weather.kind
 }
+
+/** 하늘의 이름. `SEASON_LABELS`(time.ts)와 같은 자리·같은 이유 — 화면이 낱말을 지어내지 않는다. */
+export const WEATHER_LABELS: Record<WeatherKind, string> = {
+  rain: '비',
+  snow: '눈',
+}
+
+/**
+ * 화면이 보는 하늘 하나 — 무엇이 내리는가와 얼마나 남았는가.
+ *
+ * 남은 시간이 **게임 분**인 것은 상단 바가 이미 게임 시각을 말하고 있기
+ * 때문이다(`봄 3일 · 14:23`). 실측 분으로 적으면 같은 줄 안에서 두 개의 시간이
+ * 흐른다 — "비 2분"이 게임 시각으로는 48분이다.
+ */
+export interface WeatherView {
+  kind: WeatherKind
+  /**
+   * 남은 게임 분. **항상 1 이상이다** — 0 은 그친 것이고, 그친 것은 숫자가
+   * 아니라 `null` 로 말한다. 올림인 이유가 그것이다: 내림이면 마지막 1분 동안
+   * "비 0분"이 떠 있고, 그 줄은 내리는 비를 보면서 안 온다고 적은 것이 된다.
+   */
+  remainingMinutes: number
+}
+
+/**
+ * 지금 이 사람의 하늘을 화면 둘이 **같은 계산**으로 읽는 창구다 —
+ * 상단바(TopBar)의 남은 시간과 세계(WeatherSky)의 입자가 여기 하나를 본다.
+ *
+ * 갈라 두면 어긋나는 순간이 반드시 온다: 하늘은 아직 비를 뿌리는데 상단바는
+ * 이미 지워졌거나 그 반대다. 만료가 저장된 타이머가 아니라 시각 비교 하나라
+ * (`activeWeather`) 그 경계는 두 화면이 정확히 같아야 한다.
+ *
+ * `PlayerState` 가 아니라 `PlayerWeather` 를 받는다 — types.ts 가 이 파일을
+ * import 하므로 반대로 받으면 순환이 된다. 부르는 쪽이 `player.weather` 를 준다.
+ */
+export function weatherView(weather: PlayerWeather | null, nowMs: number): WeatherView | null {
+  const kind = activeWeather(weather, nowMs)
+  if (kind === undefined || weather === null) return null
+  return {
+    kind,
+    remainingMinutes: Math.ceil((weather.untilMs - nowMs) / REAL_MS_PER_GAME_MINUTE),
+  }
+}
