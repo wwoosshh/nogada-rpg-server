@@ -158,10 +158,26 @@ assets/licensed/
 | `ring_wood` | icon801 | 금빛 반지 (초록 보석) |
 | `ring_mineral` | icon800 | 은빛 반지 (푸른 보석) |
 | `ring_herb` | icon803 | 금빛 반지 (붉은 보석) |
+| `plank_light` | icon956 | 밝은 갈색 널빤지 |
+| `plank_dark` | icon957 | 짙은 갈색 널빤지 |
+| `flask_gold` | icon284 | 금빛 액체가 담긴 넓은 병 |
+| `flask_green` | icon278 | 초록 액체 병 (붉은 마개) |
+| `flask_rose` | icon282 | 분홍빛이 피어오르는 병 |
+| `flask_teal` | icon274 | 청록 액체 병 |
+| `cloud_rain` | icon121 | 비 내리는 구름 |
+| `cloud_snow` | icon122 | 눈 내리는 구름 |
+| `cloud_storm` | icon124 | 잿빛 구름의 굵은 비 |
+| `snowflake` | icon152 | 파란 눈송이 |
 
 증표 8종은 나머지와 고르는 방식이 다르다 — **종류를 형태로, 계열을 색으로** 읽는다(깃털 = 속도증표,
 반지 = 선별증표). 8종이 한 벌이라 가방에서 묻는 것이 "이게 무엇인가"보다 "내가 무슨 증표를 가졌는가"
 이기 때문이다. 이 배정은 4배 확대 대조 시트로 눈으로 확인하고 승인한 것이다.
+
+정제품 6종과 날씨 가루 4종도 같은 방식으로 고른다 — **계열을 형태로** 읽는다: 나무는 널빤지
+(`plank_light`·`plank_dark`), 허브는 유리병(`flask_green`·`flask_rose`·`flask_teal`), 얼음은 하늘
+(`cloud_rain`·`cloud_snow`·`cloud_storm`·`snowflake`). 나무 3단(`leaf_extract`)만 널빤지가 아니라
+병(`flask_gold`)인데, 그것이 목재가 아니라 **잎을 우린 물**이기 때문이다. 이 10종도 4배 확대 대조
+시트로 확인하고 승인한 배정이다.
 
 재질별 색 구분은 팩에 있는 그림을 그대로 쓴 것이라 등급 간 대비가 약하다. 실제로 구분이 안 되면
 **아이콘을 더 찾기보다 M2 의 팔레트 스왑을 앞당기는 쪽이 맞다** — 같은 실루엣에 색만 다른 편이
@@ -204,12 +220,13 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 54종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 50종을 쓴다
+# 아이템 아이콘 64종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 60종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
 # 없는 예비 배정 4종. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
 # mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
 # axe_mithril·sickle_mithril 은 미스릴 정·도끼·낫(도구 루프 T2)의 것이다.
-# feather_*·ring_* 8종은 증표 8종(경제 E2)의 것이다).
+# feather_*·ring_* 8종은 증표 8종(경제 E2)의 것이고, plank_*·flask_*·cloud_*·
+# snowflake 10종은 정제품 6종과 날씨 가루 4종(제작 확장 C2)의 것이다).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
@@ -268,6 +285,16 @@ ring_ice:802
 ring_wood:801
 ring_mineral:800
 ring_herb:803
+plank_light:956
+plank_dark:957
+flask_gold:284
+flask_green:278
+flask_rose:282
+flask_teal:274
+cloud_rain:121
+cloud_snow:122
+cloud_storm:124
+snowflake:152
 ICONS
 ```
 

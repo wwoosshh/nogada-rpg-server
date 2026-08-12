@@ -61,9 +61,12 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
   // 왜: 반복 제작을 쥐고 있는 동안 손가락 아래에서 목록이 흔들리면 안 된다.
   //     카테고리는 recipes.csv 에서 처음 나타난 순서, 카드는 선언 순서 고정 —
   //     진척순 재정렬 같은 것을 하지 않는다(설계 §2 행 순서 불변).
+  //     정제·조제가 도구 아래인 이유: 새 10행을 파일 끝에 붙였기 때문이고,
+  //     그렇게 붙인 이유는 목록이 선택으로 자동 스크롤하지 않아서다 — 잠긴
+  //     10장을 맨 위에 끼우면 첫날 만드는 구리 도구가 화면 밖으로 밀린다.
   it('카테고리는 첫 등장 순서, 카드는 선언 순서다', () => {
     const sections = buildCraftCards(data, emptyPlayer(), {})
-    expect(sections.map((s) => s.category)).toEqual(['제련', '도구'])
+    expect(sections.map((s) => s.category)).toEqual(['제련', '도구', '정제', '조제'])
     // 구리 4종은 copper_hammer 곁, 미스릴 위(§6-앞 15) — 카테고리 안에서
     // 요구치가 낮은 문이 위에 오는 원작의 배치를 행 순서가 그대로 나른다.
     expect(sections[1]!.cards.map((c) => c.recipeId)).toEqual([

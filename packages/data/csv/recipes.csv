@@ -16,3 +16,13 @@ mithril_pickaxe,미스릴 곡괭이,crafting,25000,0.4,mithril_ingot:3|golden_fr
 mithril_chisel,미스릴 정,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_chisel,1,150,250,도구,,
 mithril_axe,미스릴 도끼,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_axe,1,150,250,도구,,
 mithril_sickle,미스릴 낫,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_sickle,1,150,250,도구,,
+compressed_log,압축 목재,crafting,0,0.95,soft_log:20,compressed_log,1,10,20,정제,wood,1000
+dense_log,고압축 목재,crafting,0,0.95,hard_log:15|compressed_log:1,dense_log,1,25,40,정제,wood,10000
+leaf_extract,농축 잎물,crafting,0,0.95,tea_leaf:10|golden_leaf:3|dense_log:1,leaf_extract,1,40,70,정제,wood,50000
+herb_extract,허브 농축액,crafting,0,0.95,common_herb:20,herb_extract,1,10,20,정제,herb,1000
+lavender_oil,라벤더 향유,crafting,0,0.95,lavender:15|lime:5|herb_extract:1,lavender_oil,1,25,40,정제,herb,10000
+sage_essence,세이지 정수,crafting,0,0.95,sage:10|rare_herb:3|lavender_oil:1,sage_essence,1,40,70,정제,herb,50000
+rain_powder,비 가루,crafting,0,0.95,ice_shard:10|pure_ice:5,rain_powder,1,10,20,조제,ice,1000
+snow_powder,눈 가루,crafting,0,0.95,ice_shard:10|pure_ice:5,snow_powder,1,10,20,조제,ice,1000
+heavy_rain_powder,굵은 비 가루,crafting,0,0.95,ice_shard:30|pure_ice:10,heavy_rain_powder,1,25,40,조제,ice,10000
+heavy_snow_powder,함박눈 가루,crafting,0,0.95,ice_shard:30|pure_ice:10,heavy_snow_powder,1,25,40,조제,ice,10000
