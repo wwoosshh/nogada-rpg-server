@@ -25,40 +25,48 @@ const fixtureHighRequiredSkillRecipe: RecipeDef = {
 
 describe('canCraft', () => {
   it('숙련도를 충족하면 제작할 수 있다', () => {
-    expect(canCraft({ proficiency: 1, toolTier: 0, recipe: copperIngot })).toBe(true)
+    expect(canCraft({ proficiency: 1, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })).toBe(true)
   })
 
   it('숙련도가 모자라면 제작할 수 없다', () => {
-    expect(canCraft({ proficiency: 499, toolTier: 3, recipe: fixtureHighRequiredSkillRecipe })).toBe(false)
+    expect(canCraft({ proficiency: 499, toolTier: 3, enhanceLevel: 0, recipe: fixtureHighRequiredSkillRecipe })).toBe(false)
   })
 })
 
 describe('calcCraftSuccess', () => {
   it('제작 불가 조건에서는 0 을 반환한다', () => {
-    expect(calcCraftSuccess({ proficiency: 499, toolTier: 3, recipe: fixtureHighRequiredSkillRecipe })).toBe(0)
+    expect(calcCraftSuccess({ proficiency: 499, toolTier: 3, enhanceLevel: 0, recipe: fixtureHighRequiredSkillRecipe })).toBe(0)
   })
 
   it('망치 없이 요구 숙련도만 만족하면 기본 확률이다', () => {
-    expect(calcCraftSuccess({ proficiency: 1, toolTier: 0, recipe: copperIngot })).toBeCloseTo(0.6)
+    expect(calcCraftSuccess({ proficiency: 1, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })).toBeCloseTo(0.6)
   })
 
   it('요구 숙련도를 넘어서면 성공률이 오른다', () => {
-    const low = calcCraftSuccess({ proficiency: 1, toolTier: 0, recipe: copperIngot })
-    const high = calcCraftSuccess({ proficiency: 10_001, toolTier: 0, recipe: copperIngot })
+    const low = calcCraftSuccess({ proficiency: 1, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })
+    const high = calcCraftSuccess({ proficiency: 10_001, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })
     expect(high).toBeGreaterThan(low)
   })
 
   it('망치 등급이 높을수록 확률이 오른다', () => {
-    const bare = calcCraftSuccess({ proficiency: 1, toolTier: 0, recipe: copperIngot })
-    const armed = calcCraftSuccess({ proficiency: 1, toolTier: 2, recipe: copperIngot })
+    const bare = calcCraftSuccess({ proficiency: 1, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })
+    const armed = calcCraftSuccess({ proficiency: 1, toolTier: 2, enhanceLevel: 0, recipe: copperIngot })
     expect(armed).toBeGreaterThan(bare)
   })
 
-  it('요구 숙련도보다 10만 쌓이면 상한에 닿는다', () => {
-    expect(calcCraftSuccess({ proficiency: 100_000, toolTier: 0, recipe: copperIngot })).toBeCloseTo(0.98)
+  it('망치 강화 +1당 성공률이 0.5%p 씩 오른다 — 망치의 강화 축은 간격이 아니라 조합이다(§5·§6-앞 10)', () => {
+    // 서버 판정과 클라 예상치(craftCardModel)가 같은 함수라는 규범을 지키려고
+    // 보너스가 calcCraftSuccess **안**에 산다 — 밖에서 더하면 언젠가 둘이 갈라진다.
+    const plain = calcCraftSuccess({ proficiency: 1, toolTier: 2, enhanceLevel: 0, recipe: copperIngot })
+    const enhanced = calcCraftSuccess({ proficiency: 1, toolTier: 2, enhanceLevel: 5, recipe: copperIngot })
+    expect(enhanced - plain).toBeCloseTo(5 * 0.005)
   })
 
-  it('상한을 넘지 않는다', () => {
-    expect(calcCraftSuccess({ proficiency: 100_000_000, toolTier: 99, recipe: copperIngot })).toBeCloseTo(0.98)
+  it('요구 숙련도보다 10만 쌓이면 상한에 닿는다', () => {
+    expect(calcCraftSuccess({ proficiency: 100_000, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })).toBeCloseTo(0.98)
+  })
+
+  it('상한을 넘지 않는다 — 등급도 강화도 0.98 벽을 못 뚫는다', () => {
+    expect(calcCraftSuccess({ proficiency: 100_000_000, toolTier: 99, enhanceLevel: 99, recipe: copperIngot })).toBeCloseTo(0.98)
   })
 })

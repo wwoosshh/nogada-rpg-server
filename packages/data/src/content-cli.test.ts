@@ -546,10 +546,10 @@ describe('runGatherCommand', () => {
     expect(a).toBe(b)
   })
 
-  it('--tool 을 안 주면 그 기술의 1등급 도구로 굴린다 — 새 캐릭터의 손과 같다', () => {
+  it('--tool 을 안 주면 맨손으로 굴린다 — 도구 게이트가 없는 세계의 기준선이라 배수 ×1.45 까지 밝힌다(§6-앞 17)', () => {
     const out = runGatherCommand(realData, realTables, gatherCmd(), { seed: 1 })
-    expect(out).toContain('copper_chisel')
-    expect(out).toContain('×1')
+    expect(out).toContain('맨손')
+    expect(out).toContain('×1.45')
   })
 
   it('다른 기술의 도구를 거부하고 그 기술의 도구 목록을 보여준다 — 게임에 없는 세계를 시뮬하지 않는다', () => {

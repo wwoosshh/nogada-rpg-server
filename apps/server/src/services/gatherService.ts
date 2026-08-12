@@ -1,6 +1,5 @@
 import {
   actionIntervalMs,
-  canGather,
   EFFICIENCY_MULTIPLIER,
   gatherOutcome,
   newlyAchieved,
@@ -48,10 +47,10 @@ export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'cannot_gather' | '
 export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; code: GatherErrorCode }
 
 /**
- * 그 기술에 착용된 도구의 정의. `canGather` 가 등급을 확인하기 전에도 부를 수
- * 있게 `ItemDef | undefined` 를 돌려준다 — 등급 판정(canGather)과 도구 조회를
- * 분리해 두면, "맨손"과 "엉뚱한 기술의 도구"가 같은 함수 하나(toolMatchesSkill)
- * 위에서 갈린다.
+ * 그 기술에 착용된 도구의 정의. "맨손"과 "엉뚱한 기술의 도구"가 같은 함수
+ * 하나(toolMatchesSkill) 위에서 갈린다.
+ * T3 이 shared 의 equippedToolInfo(정의+인스턴스 쌍)로 교체한다 — 간격 스탬프에
+ * 강화 수치가 필요해지는 그때 함께 잇는다.
  */
 function equippedTool(player: PlayerState, data: GameData, skill: SkillId): ItemDef | undefined {
   const instanceId = player.equipped[skill]
@@ -107,10 +106,10 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 두드리는 것이 간격까지 잡아먹으면 안 되기 때문이다 — 자격 미달은 조작
   // 실수이지 속도 위반이 아니다.
   //
-  // canGather 는 "그 기술의 도구가 착용됨(등급>0)" 하나만 본다(설계 §7-앞 8) —
-  // 노드 tier 게이트는 표 모델에서 폐지됐다. tool 이 없으면(맨손, 또는 엉뚱한
-  // 기술의 도구) 등급이 0 으로 취급되어 여기서 함께 거부된다.
-  if (!tool || !canGather(tool.toolTier ?? 0)) return { ok: false, code: 'cannot_gather' }
+  // canGather 는 shared 에서 은퇴했다(도구 루프 설계 §2 — 맨손 채집 허용).
+  // 서버 경로의 맨손 허용·cannot_gather 은퇴·간격 스탬프(gatherIntervalMs)는
+  // T3 이 잇는다 — 여기서는 기존 거부 동작만 그대로 남긴다.
+  if (!tool || (tool.toolTier ?? 0) <= 0) return { ok: false, code: 'cannot_gather' }
 
   if (now < player.nextActionAt) return { ok: false, code: 'too_fast' }
 

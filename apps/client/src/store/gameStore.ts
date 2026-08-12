@@ -703,6 +703,8 @@ export function selectCraftChance(recipeId: string): number {
   return calcCraftSuccess({
     proficiency: player.skills[recipe.skill],
     toolTier: equippedToolTier(player, data, recipe.skill),
+    // enhanceLevel 0: T4 가 실값(착용 망치의 강화 수치)을 잇는다.
+    enhanceLevel: 0,
     recipe,
   })
 }

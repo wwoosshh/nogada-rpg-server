@@ -7,12 +7,19 @@ import {
   MIN_SUCCESS_CHANCE,
   proficiencyProgress,
 } from './proficiency.js'
+import { HAMMER_ENHANCE_CHANCE_BONUS } from './toolProfile.js'
 
 export interface CraftContext {
   /** 조합 숙련도 */
   proficiency: number
   /** 착용한 망치의 등급. 없으면 0 — 맨손으로도 제작은 가능하되 성공률이 낮다. */
   toolTier: number
+  /**
+   * 착용한 망치의 강화 수치. 없으면 0. 보너스(+0.5%p/레벨)가 이 함수 밖이 아니라
+   * calcCraftSuccess 안에 사는 이유: 서버 판정과 클라 예상치(craftCardModel)가
+   * 같은 함수라는 규범(§6-앞 10) — 밖에서 더하면 언젠가 둘이 갈라진다.
+   */
+  enhanceLevel: number
   recipe: RecipeDef
 }
 
@@ -33,6 +40,10 @@ export function calcCraftSuccess(ctx: CraftContext): number {
   const over = ctx.proficiency - ctx.recipe.requiredSkill
   const t = proficiencyProgress(over, CHANCE_DECADES)
   const base = ctx.recipe.baseChance
-  const withToolBonus = base + (MAX_SUCCESS_CHANCE - base) * t + ctx.toolTier * CRAFT_TOOL_TIER_CHANCE_BONUS
+  const withToolBonus =
+    base +
+    (MAX_SUCCESS_CHANCE - base) * t +
+    ctx.toolTier * CRAFT_TOOL_TIER_CHANCE_BONUS +
+    ctx.enhanceLevel * HAMMER_ENHANCE_CHANCE_BONUS
   return clamp(withToolBonus, MIN_SUCCESS_CHANCE, MAX_SUCCESS_CHANCE)
 }

@@ -27,7 +27,7 @@ export const ACTION_INTERVAL_MIN_MS = 50
 export const MAX_SUCCESS_CHANCE = 0.98
 /** 성공률 하한. 판정이 살아 있다는 느낌을 유지하려고 0 이 아니라 여기까지만 떨어진다 */
 export const MIN_SUCCESS_CHANCE = 0.05
-/** 제작 성공률에 망치 등급 1 당 더해지는 보너스. 채집 도구의 등급은 성공률이 아니라 roll 보정(toolGatherFactor)이라 이런 보너스가 없다 */
+/** 제작 성공률에 망치 등급 1 당 더해지는 보너스. 채집 도구의 등급은 성공률이 아니라 효과 프로필(gatherToolProfile)이라 이런 보너스가 없다 */
 export const CRAFT_TOOL_TIER_CHANCE_BONUS = 0.02
 
 /**

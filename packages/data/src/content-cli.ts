@@ -35,12 +35,11 @@ import {
   findFactSpec,
   gatherBracketFor,
   gatherOutcome,
-  jackpotFlatBonus,
+  gatherToolProfile,
   matchesCondition,
   onceKey,
   ruleMatches,
   selectDialogue,
-  toolGatherFactor,
   toolMatchesSkill,
 } from '@nogada/shared'
 import { coerceFactValue, dialogueLocation } from './dialogueParse.js'
@@ -71,7 +70,7 @@ export interface GatherCommand {
   kind: 'gather'
   tableId: string
   proficiency: number
-  /** 없으면 그 표 기술의 1등급 도구를 쓴다 — 새 캐릭터의 손과 같다. */
+  /** 없으면 맨손(§6-앞 17) — 도구 게이트가 없는 세계에서 가장 가난한 손이 기준선이다. */
   toolId: string | undefined
   n: number
 }
@@ -574,7 +573,8 @@ export function runDialogueCommand(
  * 여기서 브라켓을 다시 고르면 판정이 두 벌이 된다.
  *
  * "표 기준" 열은 도구 보정 **전** 누적표의 폭이다. 좋은 도구를 주면 관측이 그
- * 열보다 위 티어로 쏠린다 — 그 쏠림을 보는 것이 --tool 옵션의 존재 이유다.
+ * 열보다 위 티어로 쏠리고, --tool 을 생략하면 맨손(roll ×1.45)이라 아래 티어와
+ * 실패로 쏠린다(§6-앞 17) — 맨손 vs 구리를 나란히 굴려 보는 것이 성공 기준 2 다.
  */
 export function runGatherCommand(
   data: GameData,
@@ -588,14 +588,14 @@ export function runGatherCommand(
     throw new Error(`표 "${cmd.tableId}" 를 모른다 — 있는 표: ${known}`)
   }
 
-  // 그 기술의 도구만 받는다 — 게임에서도 다른 기술의 도구로는 애초에 접근이
-  // 안 되므로(equippedToolTier), 여기서 허용하면 게임에 없는 세계를 시뮬한다.
+  // --tool 생략 = 맨손(§6-앞 17) — 성공 기준 2(맨손 vs 구리 분포·간격)를 작가가
+  // CLI 로도 확인할 수 있어야 한다. 도구를 줄 때는 그 기술의 도구만 받는다 —
+  // 게임에서는 엉뚱한 기술의 도구가 맨손 취급이라(equippedToolInfo 가 null 을
+  // 답한다), 엉뚱한 도구의 프로필을 그대로 굴려 주면 게임에 없는 세계를 시뮬한다.
   const skillTools = Object.values(data.items).filter((item) => toolMatchesSkill(item, table.skill))
-  let tool: ItemDef
+  let tool: ItemDef | null
   if (cmd.toolId === undefined) {
-    const starter = skillTools.find((t) => t.toolTier === 1)
-    if (!starter) throw new Error(`표 "${table.id}" 의 기술(${table.skill})에 1등급 도구가 없다 — items.csv 를 본다`)
-    tool = starter
+    tool = null
   } else {
     const found = skillTools.find((t) => t.id === cmd.toolId)
     if (!found) {
@@ -617,16 +617,18 @@ export function runGatherCommand(
   const bracket = gatherBracketFor(table, cmd.proficiency)
   const bracketLabel = bracket.bracketMax === null ? '∞' : `≤${bracket.bracketMax.toLocaleString('ko-KR')}`
   const bracketIndex = table.brackets.indexOf(bracket) + 1
-  const factor = toolGatherFactor(tool)
-  const flat = jackpotFlatBonus(tool)
+  const profile = gatherToolProfile(tool)
 
   const out: string[] = []
   out.push(
     `표 ${table.id} — 기술 ${table.skill}, 숙련 ${cmd.proficiency.toLocaleString('ko-KR')} → 브라켓 ${bracketLabel} (${table.brackets.length}개 중 ${bracketIndex}번째)`,
   )
+  // 맨손 줄도 도구 줄과 같은 형태로 배수를 밝힌다 — ×1.45 가 화면에 찍혀야
+  // "왜 상위 티어가 안 나오지"의 답이 도구의 부재임이 보인다.
+  const handLabel = tool ? `도구 ${tool.name}(${tool.id}, ${tool.toolTier}등급)` : '맨손(--tool 생략)'
   out.push(
-    `도구 ${tool.name}(${tool.id}, ${tool.toolTier}등급) — roll ×${factor}` +
-      (flat > 0 ? `, 잭팟 밴드(roll≤10) 평감산 −${flat}` : '') +
+    `${handLabel} — roll ×${profile.rollFactor}` +
+      (profile.jackpotFlat > 0 ? `, 잭팟 밴드(roll≤10) 평감산 −${profile.jackpotFlat}` : '') +
       ` · N=${cmd.n.toLocaleString('ko-KR')} · 고정 시드`,
   )
   out.push('')

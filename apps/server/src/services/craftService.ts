@@ -60,7 +60,8 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   const player = structuredClone(args.player)
   const proficiency = player.skills[recipe.skill]
   const toolTier = equippedToolTier(player, data, recipe.skill)
-  const ctx = { proficiency, toolTier, recipe }
+  // enhanceLevel 0: T3 이 실값(착용 망치 인스턴스의 강화 수치)을 잇는다.
+  const ctx = { proficiency, toolTier, enhanceLevel: 0, recipe }
 
   if (!canCraft(ctx)) return { ok: false, code: 'level_too_low' }
 

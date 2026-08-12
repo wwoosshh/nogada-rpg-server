@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ItemDef } from '../types.js'
-import { canGather, toolMatchesSkill } from './gather.js'
+import { toolMatchesSkill } from './gather.js'
 
 const copperPickaxe: ItemDef = {
   id: 'copper_pickaxe',
@@ -27,16 +27,6 @@ describe('toolMatchesSkill', () => {
   })
 })
 
-describe('canGather', () => {
-  it('맨손(착용 등급 0)이면 채집할 수 없다 — tier 게이트가 사라진 뒤에도 남는 명시 조건이다(§7-앞 8)', () => {
-    expect(canGather(0)).toBe(false)
-  })
-
-  it('그 기술의 도구를 착용했으면(등급 > 0) 채집할 수 있다', () => {
-    expect(canGather(1)).toBe(true)
-  })
-
-  it('등급이 높아도 접근이 더 열리거나 닫히지 않는다 — 등급의 몫은 toolGatherFactor 뿐이다', () => {
-    expect(canGather(3)).toBe(true)
-  })
-})
+// canGather 테스트는 함수와 함께 은퇴했다(설계 §2 — 맨손 채집 허용). 맨손의
+// 페널티 숫자는 toolProfile.test.ts 가, 맨손 판정 경로는 gatherTable.test.ts 의
+// "맨손(null)" 스위트가 증명한다.

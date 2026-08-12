@@ -3,9 +3,8 @@ import {
   createRng,
   gatherOutcome,
   GATHER_ROLL_MAX,
+  gatherToolProfile,
   JACKPOT_BAND_MAX,
-  jackpotFlatBonus,
-  toolGatherFactor,
   type GatherTableDef,
   type ItemDef,
 } from '@nogada/shared'
@@ -37,9 +36,9 @@ const data = loadGameData()
 const copper = data.items['copper_pickaxe']!
 const iron = data.items['iron_pickaxe']!
 // 3등급 도구의 실물 — G5(레시피 태스크)가 items.csv 에 추가한 mithril_pickaxe 를
-// 그대로 쓴다. 판정은 도구의 등급(toolTier)만 보므로(기술 일치는 canGather·
-// equippedToolTier 의 몫) 리터럴로도 충분했지만, 실물을 꿰면 items.csv 의 icon·
-// toolTier 가 실제로 factor 0.8 경로에 닿는다는 것까지 증명된다.
+// 그대로 쓴다. 판정은 도구의 등급(toolTier)만 보므로(기술 일치는 equippedToolInfo
+// 의 몫 — 불일치는 null=맨손이 된다) 리터럴로도 충분했지만, 실물을 꿰면
+// items.csv 의 icon·toolTier 가 실제로 미스릴 프로필 경로에 닿는다는 것까지 증명된다.
 const mithril = data.items['mithril_pickaxe']!
 
 interface SimResult {
@@ -47,7 +46,7 @@ interface SimResult {
   failures: number
 }
 
-function simulate(table: GatherTableDef, proficiency: number, tool: ItemDef, n: number): SimResult {
+function simulate(table: GatherTableDef, proficiency: number, tool: ItemDef | null, n: number): SimResult {
   const rng = createRng(SEED)
   const counts = new Map<string, number>()
   let failures = 0
@@ -147,11 +146,11 @@ describe('§8-5 도구 등급이 희귀 티어를 체감되게 더 뽑는다', (
   const rareCut = 10_065
 
   const exactRareCount = (tool: ItemDef): number => {
-    const factor = toolGatherFactor(tool)
-    const flat = jackpotFlatBonus(tool)
+    const { rollFactor, jackpotFlat } = gatherToolProfile(tool)
     let count = 0
     for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
-      const roll = rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - flat) : Math.floor(rawRoll * factor)
+      const roll =
+        rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - jackpotFlat) : Math.floor(rawRoll * rollFactor)
       if (roll <= rareCut) count++
     }
     return count
@@ -177,5 +176,45 @@ describe('§8-5 도구 등급이 희귀 티어를 체감되게 더 뽑는다', (
     const sigma = (p: number) => Math.sqrt(N * p * (1 - p))
     expect(ironRare - copperRare).toBeGreaterThan(3 * Math.hypot(sigma(pFor(copper)), sigma(pFor(iron))))
     expect(mithrilRare - ironRare).toBeGreaterThan(3 * Math.hypot(sigma(pFor(iron)), sigma(pFor(mithril))))
+  })
+})
+
+describe('§6-앞 3 맨손 페널티 — 첫 도구를 만드는 순간이 체감되려면 맨손은 같은 자리에서 눈에 띄게 자주 빈손이어야 한다', () => {
+  // mineral 첫 브라켓(≤500, 부트스트랩 시기)의 마지막 누적 — 성공은 roll ≤ 이 값.
+  // 구리(×1.0)는 rawRoll 0..20000 이 성공(≈20.0%), 맨손(×1.45)은 밴드 11개 +
+  // rawRoll 11..13793 만 성공(≈13.8%) — §6-앞 3 이 "저브라켓에서도 무감각하지
+  // 않은 페널티"로 ×1.1 을 ×1.45 로 올린 그 수치다. §8-5 와 같은 이유로 근사식
+  // 대신 gatherOutcome 과 똑같은 두 갈래 식의 전수 셈으로 정확한 확률을 낸다.
+  const table = tables['mineral']!
+  const successCut = table.brackets[0]!.cumulative.at(-1)!
+
+  const exactSuccessCount = (tool: ItemDef | null): number => {
+    const { rollFactor, jackpotFlat } = gatherToolProfile(tool)
+    let count = 0
+    for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
+      const roll =
+        rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - jackpotFlat) : Math.floor(rawRoll * rollFactor)
+      if (roll <= successCut) count++
+    }
+    return count
+  }
+  const pFor = (tool: ItemDef | null) => exactSuccessCount(tool) / DOMAIN
+
+  const bareSuccesses = N - simulate(table, 0, null, N).failures
+  const copperSuccesses = N - simulate(table, 0, copper, N).failures
+
+  it('전수 확률 자체가 §6-앞 3 의 수치다 — 구리 20.0%, 맨손 13.8%(상대 −31%)', () => {
+    expect(pFor(copper)).toBeCloseTo(0.2, 3)
+    expect(pFor(null)).toBeCloseTo(0.138, 3)
+    expect((pFor(copper) - pFor(null)) / pFor(copper)).toBeCloseTo(0.31, 2)
+  })
+
+  it('관측이 각자의 전수 확률 3σ 안이고, 격차는 합성 3σ 를 넘는 유의차다 — 우연으로 설명되지 않는 차이', () => {
+    expectWithin3Sigma(copperSuccesses, N, pFor(copper))
+    expectWithin3Sigma(bareSuccesses, N, pFor(null))
+    const sigma = (p: number) => Math.sqrt(N * p * (1 - p))
+    expect(copperSuccesses - bareSuccesses).toBeGreaterThan(
+      3 * Math.hypot(sigma(pFor(copper)), sigma(pFor(null))),
+    )
   })
 })

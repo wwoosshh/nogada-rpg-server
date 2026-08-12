@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GatherTableDef, ItemDef } from '../types.js'
-import { gatherBracketFor, gatherOutcome, jackpotFlatBonus, toolGatherFactor } from './gatherTable.js'
+import { gatherBracketFor, gatherOutcome } from './gatherTable.js'
 
 // ---------------------------------------------------------------------------
 // 픽스처 — 실제 표가 아니라 경계가 한눈에 보이는 작은 표를 쓴다. 실물 표에 대한
@@ -36,21 +36,8 @@ const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
  */
 const rawRollOf = (rawRoll: number) => () => (rawRoll + 0.5) / 100001
 
-describe('toolGatherFactor', () => {
-  it('구리(1등급) ×1.0 / 철(2등급) ×0.9 / 미스릴(3등급) ×0.8 — 설계 §3.3·§7-앞 13', () => {
-    expect(toolGatherFactor(copper)).toBe(1.0)
-    expect(toolGatherFactor(iron)).toBe(0.9)
-    expect(toolGatherFactor(mithril)).toBe(0.8)
-  })
-})
-
-describe('jackpotFlatBonus', () => {
-  it('구리 0 / 철 2 / 미스릴 3 — 잭팟 밴드(roll≤10)의 평감산이다(§7-앞 13)', () => {
-    expect(jackpotFlatBonus(copper)).toBe(0)
-    expect(jackpotFlatBonus(iron)).toBe(2)
-    expect(jackpotFlatBonus(mithril)).toBe(3)
-  })
-})
+// roll 배수·평감산의 값 자체는 gatherToolProfile(toolProfile.test.ts)이 증명한다 —
+// 여기서는 그 프로필이 판정(gatherOutcome)에 실제로 배타 적용되는지를 본다.
 
 describe('gatherBracketFor', () => {
   it('proficiency ≤ bracketMax 인 첫 브라켓을 고른다 — 경계값은 그 브라켓에 속한다', () => {
@@ -146,5 +133,29 @@ describe('gatherOutcome — 도구 보정', () => {
 
     expect(gatherOutcome(table, 0, mithril, rawRollOf(6)).roll).toBe(3) // 6−3=3, 마지막으로 걸림
     expect(gatherOutcome(table, 0, mithril, rawRollOf(7)).roll).toBe(4) // 7−3=4, 그 다음은 밖
+  })
+})
+
+describe('gatherOutcome — 맨손(null)', () => {
+  it('밴드 밖은 roll ×1.45 다 — 같은 운이 도구가 없다는 이유로 더 나쁜 티어가 된다(§6-앞 3)', () => {
+    // rawRoll 10000: 구리는 10000(첫 브라켓에서 shard), 맨손은 14500 — 같은
+    // 브라켓·같은 운인데 배수가 티어를 깎는 것이 맨손 페널티의 형태다.
+    expect(gatherOutcome(table, 0, null, rawRollOf(10000))).toEqual({ itemId: 'shard', roll: 14500 })
+  })
+
+  it('최종 브라켓(실패 0%)에서도 맨손은 실패가 남는다 — 표 끝 100000 을 넘긴 몫은 실패다(§3, 도구의 영원한 존재 이유)', () => {
+    // 최종 브라켓의 마지막 누적이 100000 이라 도구 손엔 어떤 roll 도 빈손이
+    // 아니지만(위 §8-3 테스트), 맨손 ×1.45 는 rawRoll 68967 부터 100000 을
+    // 넘긴다 — floor(68966×1.45)=100000(성공), floor(68967×1.45)=100002(실패).
+    expect(gatherOutcome(table, 501, null, rawRollOf(68966))).toEqual({ itemId: 'shard', roll: 100000 })
+    expect(gatherOutcome(table, 501, null, rawRollOf(68967))).toEqual({ itemId: null, roll: 100002 })
+    expect(gatherOutcome(table, 501, null, rawRollOf(100000))).toEqual({ itemId: null, roll: 145000 })
+  })
+
+  it('잭팟 밴드 안은 평감산 0 이라 rawRoll 이 그대로다 — 맨손도 잭팟은 원확률로 가능하다(원작 정신, §3)', () => {
+    // 배타 규칙 덕에 밴드 안에서는 ×1.45 를 아예 안 겪는다 — 3 이 4.35 로
+    // 불어나 gem(≤3)을 놓치는 일이 없다.
+    expect(gatherOutcome(table, 0, null, rawRollOf(3))).toEqual({ itemId: 'gem', roll: 3 })
+    expect(gatherOutcome(table, 0, null, rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
   })
 })

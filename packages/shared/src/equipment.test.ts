@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
-import { equippedToolTier } from './equipment.js'
+import { equippedToolInfo, equippedToolTier } from './equipment.js'
 import type { GameData, PlayerState } from './types.js'
 
 const data: GameData = {
@@ -47,6 +47,43 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     ...overrides,
   }
 }
+
+describe('equippedToolInfo', () => {
+  it('착용한 도구의 정의와 인스턴스를 한 쌍으로 돌려준다 — 간격 계산은 티어(def)와 강화 수치(instance)가 둘 다 필요하다', () => {
+    const p = player({
+      instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 2 }],
+      equipped: { mineral: 'i1' },
+    })
+    expect(equippedToolInfo(p, 'mineral', data.items)).toEqual({
+      def: data.items['copper_pickaxe'],
+      instance: { instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 2 },
+    })
+  })
+
+  it('아무것도 착용하지 않으면 null — 판정자는 이 null 을 맨손으로 읽는다(§6-앞 9)', () => {
+    expect(equippedToolInfo(player(), 'mineral', data.items)).toBeNull()
+  })
+
+  it('착용 기록이 가리키는 인스턴스가 없으면 null 이다', () => {
+    expect(equippedToolInfo(player({ equipped: { mineral: 'ghost' } }), 'mineral', data.items)).toBeNull()
+  })
+
+  it('엉뚱한 기술의 도구는 null — "엉뚱한 도구 = 맨손" 규범은 프로필이 아니라 이 조회가 지킨다(§6-앞 9)', () => {
+    const p = player({
+      instances: [{ instanceId: 'i1', itemId: 'iron_hammer', enhanceLevel: 0 }],
+      equipped: { mineral: 'i1' },
+    })
+    expect(equippedToolInfo(p, 'mineral', data.items)).toBeNull()
+  })
+
+  it('도구가 아닌 아이템을 착용했으면 null 이다', () => {
+    const p = player({
+      instances: [{ instanceId: 'i1', itemId: 'copper_ore', enhanceLevel: 0 }],
+      equipped: { mineral: 'i1' },
+    })
+    expect(equippedToolInfo(p, 'mineral', data.items)).toBeNull()
+  })
+})
 
 describe('equippedToolTier', () => {
   it('착용한 도구의 등급을 반환한다', () => {

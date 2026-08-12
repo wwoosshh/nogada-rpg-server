@@ -136,7 +136,7 @@ describe('performGather', () => {
 
   it('다른 기술의 도구뿐이면 cannot_gather 로 거부한다', () => {
     // 광물 곡괭이만 착용한 채 약초 군락을 두드린다 — 맨손은 아니지만 그 기술의
-    // 도구가 아니므로 게이트(canGather — equippedToolTier > 0)가 닫혀 있다.
+    // 도구가 아니므로 거부된다. (이 거부 자체가 T3 에서 은퇴한다 — 맨손 허용.)
     const r = performGather({ player: player(), data, tables, instanceId: 'herb_patch-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
   })

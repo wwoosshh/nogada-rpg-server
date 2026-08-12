@@ -69,6 +69,7 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
       calcCraftSuccess({
         proficiency: 0,
         toolTier: equippedToolTier(player, data, 'crafting'),
+        enhanceLevel: 0,
         recipe: data.recipes['copper_ingot']!,
       }) * 100,
     )
