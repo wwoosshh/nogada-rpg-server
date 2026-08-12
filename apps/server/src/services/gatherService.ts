@@ -1,6 +1,6 @@
 import {
   EFFICIENCY_MULTIPLIER,
-  equippedToolInfo,
+  gatherHandOf,
   gatherIntervalMs,
   gatherOutcome,
   newlyAchieved,
@@ -81,10 +81,12 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   if (placement.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
 
   const proficiency = player.skills[node.skill]
-  // 그 기술에 착용된 도구 — 없거나 **엉뚱한 기술의 도구면 null(맨손)** 이다
-  // (§6-앞 9, 그 규범은 equippedToolInfo 가 지킨다). 게이트는 없다(§2): 맨손도
-  // 캐되 프로필(roll ×1.45·간격 ×1.5)이 페널티를 진다.
-  const tool = equippedToolInfo(player, node.skill, data.items)
+  // 이 기술로 캐는 지금 이 손 — 착용한 도구(없거나 엉뚱한 기술이면 맨손, §6-앞 9)와
+  // 가지고 있는 그 계열 증표(설계 §5)가 여기서 한 번 합쳐진다. 게이트는 없다(§2):
+  // 맨손도 캐되 프로필(roll ×1.45·간격 ×1.5)이 페널티를 진다. 판정(gatherOutcome)과
+  // 간격 스탬프(gatherIntervalMs)가 **같은 손**을 본다 — 각자 조회하면 한쪽만
+  // 증표를 세는 날이 온다.
+  const hand = gatherHandOf(player, node.skill, data.items)
 
   // 검사 순서: 대상 존재 → 같은 맵 → 간격 → 난수. (도구 자격 검사는 은퇴했다.)
   //
@@ -100,13 +102,14 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 막으므로 여기 오면 데이터가 깨진 것이다 — unknown_node 와 같은 성격의 방어다.
   if (!table) return { ok: false, code: 'unknown_node' }
 
-  const { itemId } = gatherOutcome(table, proficiency, tool?.def ?? null, rng)
+  const { itemId } = gatherOutcome(table, proficiency, hand, rng)
   const success = itemId !== null
 
-  // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다. 채집 간격만 도구의
-  // 몫(티어 배수 × 0.97^강화)이 있다 — 서버의 이 스탬프와 클라의 표시가 같은
-  // 함수(gatherIntervalMs) 하나를 부른다(§6-앞 10). 제작 스탬프는 불변이다(§3).
-  player.nextActionAt = now + gatherIntervalMs(proficiency, tool)
+  // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다. 채집 간격만 손의
+  // 몫(티어 배수 × 0.97^강화 × 속도증표)이 있다 — 서버의 이 스탬프와 클라의
+  // 표시가 같은 함수(gatherIntervalMs) 하나를 부른다(§6-앞 10). 제작 스탬프는
+  // 불변이다(§3).
+  player.nextActionAt = now + gatherIntervalMs(proficiency, hand)
 
   // ② 숙련 증가 — 성패 무관 무조건. 표 메타가 범위를 정한다(노드가 아니라
   // 표가 소유한다, 설계 §7-앞 3).

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { testTool } from '../testing/items.js'
 import type { GatherTableDef, ItemDef } from '../types.js'
+import { TOKEN_SIGHT_FACTOR, type GatherHand } from './gatherHand.js'
 import { gatherBracketFor, gatherOutcome } from './gatherTable.js'
+import { effectiveIntervalFactor, gatherToolProfile } from './toolProfile.js'
 
 // ---------------------------------------------------------------------------
 // 픽스처 — 실제 표가 아니라 경계가 한눈에 보이는 작은 표를 쓴다. 실물 표에 대한
@@ -23,9 +25,27 @@ const table: GatherTableDef = {
   ],
 }
 
-const copper: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' })
-const iron: ItemDef = { ...copper, id: 'iron_pickaxe', toolTier: 2 }
-const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
+const copperDef: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' })
+const ironDef: ItemDef = { ...copperDef, id: 'iron_pickaxe', toolTier: 2 }
+const mithrilDef: ItemDef = { ...copperDef, id: 'mithril_pickaxe', toolTier: 3 }
+
+/**
+ * 증표 없는 손 하나 — 그 도구만 든 손이다(null 이면 맨손).
+ *
+ * `gatherHandOf` 로 만들지 않고 리터럴로 짓는 이유: 이 스위트가 보는 것은
+ * **판정이 손의 프로필을 어떻게 쓰는가**이지 손을 어떻게 짓는가가 아니다.
+ * 짓는 쪽(도구 조회·증표 곱)은 gatherHand.test.ts 가 증명한다.
+ */
+const hand = (def: ItemDef | null): GatherHand => ({
+  tool: null,
+  profile: gatherToolProfile(def),
+  intervalFactor: effectiveIntervalFactor(def, 0),
+})
+
+const bare = hand(null)
+const copper = hand(copperDef)
+const iron = hand(ironDef)
+const mithril = hand(mithrilDef)
 
 /**
  * floor(rng × 100001) 이 정확히 `rawRoll` 이 되는 난수 — 밴드 소속과 도구 보정
@@ -139,22 +159,45 @@ describe('gatherOutcome — 맨손(null)', () => {
   it('밴드 밖은 roll ×1.45 다 — 같은 운이 도구가 없다는 이유로 더 나쁜 티어가 된다(§6-앞 3)', () => {
     // rawRoll 10000: 구리는 10000(첫 브라켓에서 shard), 맨손은 14500 — 같은
     // 브라켓·같은 운인데 배수가 티어를 깎는 것이 맨손 페널티의 형태다.
-    expect(gatherOutcome(table, 0, null, rawRollOf(10000))).toEqual({ itemId: 'shard', roll: 14500 })
+    expect(gatherOutcome(table, 0, bare, rawRollOf(10000))).toEqual({ itemId: 'shard', roll: 14500 })
   })
 
   it('최종 브라켓(실패 0%)에서도 맨손은 실패가 남는다 — 표 끝 100000 을 넘긴 몫은 실패다(§3, 도구의 영원한 존재 이유)', () => {
     // 최종 브라켓의 마지막 누적이 100000 이라 도구 손엔 어떤 roll 도 빈손이
     // 아니지만(위 §8-3 테스트), 맨손 ×1.45 는 rawRoll 68967 부터 100000 을
     // 넘긴다 — floor(68966×1.45)=100000(성공), floor(68967×1.45)=100002(실패).
-    expect(gatherOutcome(table, 501, null, rawRollOf(68966))).toEqual({ itemId: 'shard', roll: 100000 })
-    expect(gatherOutcome(table, 501, null, rawRollOf(68967))).toEqual({ itemId: null, roll: 100002 })
-    expect(gatherOutcome(table, 501, null, rawRollOf(100000))).toEqual({ itemId: null, roll: 145000 })
+    expect(gatherOutcome(table, 501, bare, rawRollOf(68966))).toEqual({ itemId: 'shard', roll: 100000 })
+    expect(gatherOutcome(table, 501, bare, rawRollOf(68967))).toEqual({ itemId: null, roll: 100002 })
+    expect(gatherOutcome(table, 501, bare, rawRollOf(100000))).toEqual({ itemId: null, roll: 145000 })
   })
 
   it('잭팟 밴드 안은 평감산 0 이라 rawRoll 이 그대로다 — 맨손도 잭팟은 원확률로 가능하다(원작 정신, §3)', () => {
     // 배타 규칙 덕에 밴드 안에서는 ×1.45 를 아예 안 겪는다 — 3 이 4.35 로
     // 불어나 gem(≤3)을 놓치는 일이 없다.
-    expect(gatherOutcome(table, 0, null, rawRollOf(3))).toEqual({ itemId: 'gem', roll: 3 })
-    expect(gatherOutcome(table, 0, null, rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
+    expect(gatherOutcome(table, 0, bare, rawRollOf(3))).toEqual({ itemId: 'gem', roll: 3 })
+    expect(gatherOutcome(table, 0, bare, rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
+  })
+})
+
+describe('gatherOutcome — 손에 실린 증표', () => {
+  /** 선별증표까지 든 손. 증표는 도구와 별개의 곱셈 축이라 rollFactor 에 곱으로 얹힌다(설계 §5). */
+  const withSight = (base: GatherHand): GatherHand => ({
+    ...base,
+    profile: { ...base.profile, rollFactor: base.profile.rollFactor * TOKEN_SIGHT_FACTOR },
+  })
+
+  it('선별증표는 밴드 밖 roll 을 ×0.95 로 낮춘다 — 판정이 손의 프로필을 그대로 읽는다는 증거', () => {
+    // rawRoll 10000: 구리 손은 10000(첫 브라켓에서 shard), 선별증표를 든 구리
+    // 손은 9500 이다. 이 한 줄이 "증표 효과가 판정에 닿는 유일한 문은 손"이라는
+    // 이음새를 지킨다 — 손에 곱해 두지 않으면 여기서 영원히 10000 이 나온다.
+    expect(gatherOutcome(table, 0, withSight(copper), rawRollOf(10_000))).toEqual({ itemId: 'shard', roll: 9500 })
+    // 맨손도 같은 축을 받는다 — 1.45×0.95 = 1.3775, floor(10000×1.3775)=13775.
+    expect(gatherOutcome(table, 0, withSight(bare), rawRollOf(10_000))).toEqual({ itemId: 'shard', roll: 13_775 })
+  })
+
+  it('선별증표도 잭팟 밴드 안에서는 아무 일도 하지 않는다 — 곱과 평감산의 배타는 증표에도 적용된다(§7-앞 13)', () => {
+    // 밴드 안(rawRoll ≤ 10)은 평감산만 쓰는 구간이라 rollFactor 가 아예 안 읽힌다.
+    expect(gatherOutcome(table, 0, withSight(copper), rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
+    expect(gatherOutcome(table, 0, withSight(mithril), rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 7 })
   })
 })

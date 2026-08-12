@@ -10,6 +10,7 @@ import {
   actionIntervalMs,
   CRAFT_TOOL_TIER_CHANCE_BONUS,
 } from './proficiency.js'
+import { TOKEN_SPEED_FACTOR, type GatherHand } from './gatherHand.js'
 import {
   ENHANCE_CAP,
   ENHANCE_INTERVAL_FACTOR,
@@ -23,10 +24,29 @@ const copper: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리
 const iron: ItemDef = { ...copper, id: 'iron_pickaxe', toolTier: 2 }
 const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
 
-/** 착용 정보 리터럴 — gatherIntervalMs 가 보는 것은 def 의 티어와 instance 의 강화 수치뿐이다. */
+/** 착용 정보 리터럴 — 간격이 보는 것은 def 의 티어와 instance 의 강화 수치뿐이다. */
 function info(def: ItemDef, enhanceLevel: number): EquippedToolInfo {
   return { def, instance: { instanceId: 'i1', itemId: def.id, enhanceLevel } }
 }
+
+/**
+ * 그 도구만 든 손(증표 없음). `gatherHandOf` 가 증표 없는 사람에게 내놓는 것과
+ * 같은 값이고, 그 등식 자체는 gatherHand.test.ts 가 증명한다 — 여기서는
+ * `gatherIntervalMs` 가 손의 배수를 어떻게 쓰는지만 본다.
+ */
+function hand(def: ItemDef | null, enhanceLevel = 0): GatherHand {
+  return {
+    tool: def ? info(def, enhanceLevel) : null,
+    profile: gatherToolProfile(def),
+    intervalFactor: effectiveIntervalFactor(def, enhanceLevel),
+  }
+}
+
+/** 속도증표까지 든 손 — 간격배수에만 ×0.9 가 얹힌다(설계 §5). */
+const withSpeedToken = (base: GatherHand): GatherHand => ({
+  ...base,
+  intervalFactor: base.intervalFactor * TOKEN_SPEED_FACTOR,
+})
 
 describe('gatherToolProfile', () => {
   it('맨손(null)은 roll ×1.45 · 간격 ×1.5 · 평감산 0 — 게이트 대신 페널티가 도구의 존재 이유다(§2·§6-앞 3)', () => {
@@ -95,7 +115,7 @@ describe('티어 대 강화의 불변식 — 강화가 승급의 드라마를 �
   })
 })
 
-describe('effectiveIntervalFactor — 자동 착용 비교와 화면 표기가 읽는 유효 간격배수(§6-앞 2·13)', () => {
+describe('effectiveIntervalFactor — 자동 착용 비교와 가방 칩이 읽는 도구 전용 배수(§6-앞 2·16)', () => {
   it('신품은 티어 배수 그대로이고, 강화는 ×0.97^n 이 곱으로 붙는다', () => {
     expect(effectiveIntervalFactor(copper, 0)).toBe(1.0)
     expect(effectiveIntervalFactor(iron, 0)).toBe(0.8)
@@ -107,7 +127,7 @@ describe('effectiveIntervalFactor — 자동 착용 비교와 화면 표기가 �
   })
 
   it('gatherIntervalMs 가 같은 배수를 읽는다 — 비교와 스탬프가 갈라지면 "낫다"고 착용한 도구가 실제로는 더 느릴 수 있다', () => {
-    expect(gatherIntervalMs(100, info(mithril, 3))).toBe(
+    expect(gatherIntervalMs(100, hand(mithril, 3))).toBe(
       Math.max(ACTION_INTERVAL_MIN_MS, Math.round(actionIntervalMs(100) * effectiveIntervalFactor(mithril, 3))),
     )
   })
@@ -115,30 +135,38 @@ describe('effectiveIntervalFactor — 자동 착용 비교와 화면 표기가 �
 
 describe('gatherIntervalMs', () => {
   it('맨손은 숙련 간격의 ×1.5 다 — 숙련 0 이면 500ms 가 아니라 750ms(§3)', () => {
-    expect(gatherIntervalMs(0, null)).toBe(750)
+    expect(gatherIntervalMs(0, hand(null))).toBe(750)
   })
 
   it('1티어 도구는 숙련 간격 그대로다 — 첫 도구의 체감은 맨손 페널티가 사라지는 것이다', () => {
-    expect(gatherIntervalMs(0, info(copper, 0))).toBe(500)
+    expect(gatherIntervalMs(0, hand(copper))).toBe(500)
   })
 
   it('강화 +1 마다 ×0.97 이 곱으로 붙는다 — 구리 +1 은 485ms, +5 는 429ms(§5)', () => {
-    expect(gatherIntervalMs(0, info(copper, 1))).toBe(
+    expect(gatherIntervalMs(0, hand(copper, 1))).toBe(
       Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR),
     )
-    expect(gatherIntervalMs(0, info(copper, ENHANCE_CAP))).toBe(
+    expect(gatherIntervalMs(0, hand(copper, ENHANCE_CAP))).toBe(
       Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR ** ENHANCE_CAP),
     )
+  })
+
+  it('속도증표를 든 손은 그만큼 더 짧다 — 간격의 세 소유자(티어·강화·증표)가 한 배수로 도착한다', () => {
+    // 구리 맨몸 500ms → 증표 450ms. 이 함수는 곱을 스스로 하지 않는다: 손이
+    // 이미 곱해 온 배수를 숙련 간격에 곱할 뿐이다.
+    expect(gatherIntervalMs(0, withSpeedToken(hand(copper)))).toBe(450)
+    expect(gatherIntervalMs(0, withSpeedToken(hand(null)))).toBe(675)
   })
 
   // 왜: 이 숫자는 숙련도 탭이 그대로 찍는다(§6-앞 13). 배수를 곱한 값을 반올림
   //     하지 않으면 강화 직후에 "행동 간격 429.3670128499999ms" 가 뜬다 —
   //     맨손도 홀수 기준선에서는 .5 가 남는다. actionIntervalMs 가 이미 정수를
   //     약속하므로, 간격을 만드는 이 함수도 같은 계약을 지켜야 한다.
-  it('간격은 언제나 정수다 — 강화한 도구도 맨손도 소수점 꼬리를 남기지 않는다', () => {
-    for (const tool of [null, info(copper, 1), info(copper, ENHANCE_CAP), info(iron, 3), info(mithril, 5)]) {
+  it('간격은 언제나 정수다 — 강화한 도구도 맨손도 증표를 든 손도 소수점 꼬리를 남기지 않는다', () => {
+    const hands = [hand(null), hand(copper, 1), hand(copper, ENHANCE_CAP), hand(iron, 3), hand(mithril, 5)]
+    for (const h of [...hands, ...hands.map(withSpeedToken)]) {
       for (const prof of [0, 1, 7, 123, 4_567, 98_765, 1_000_000]) {
-        expect(Number.isInteger(gatherIntervalMs(prof, tool))).toBe(true)
+        expect(Number.isInteger(gatherIntervalMs(prof, h))).toBe(true)
       }
     }
   })
@@ -148,10 +176,11 @@ describe('gatherIntervalMs', () => {
     // 80×0.6×0.97^5 ≈ 41.2ms 는 하한 아래다 — 하한을 곱 앞에 두는 구현
     // (max(50, base)×배수)이라면 41.2 가 그대로 나와 이 테스트가 깨진다.
     const prof = 398_107
-    expect(gatherIntervalMs(prof, info(mithril, 5))).toBe(50)
+    expect(gatherIntervalMs(prof, hand(mithril, 5))).toBe(50)
   })
 
-  it('숙련 최속(50ms)에서는 도구가 더 못 줄인다 — 종반 포화는 수용한다(§6-앞 6, "초당 20회"가 계속 참이다)', () => {
-    expect(gatherIntervalMs(10_000_000, info(mithril, 5))).toBe(50)
+  it('숙련 최속(50ms)에서는 도구도 증표도 더 못 줄인다 — 종반 포화는 수용한다(§6-앞 6, "초당 20회"가 계속 참이다)', () => {
+    expect(gatherIntervalMs(10_000_000, hand(mithril, 5))).toBe(50)
+    expect(gatherIntervalMs(10_000_000, withSpeedToken(hand(mithril, 5)))).toBe(50)
   })
 })

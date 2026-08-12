@@ -5,6 +5,7 @@ import {
   npcStateAt,
   onceKey,
   selectDialogue,
+  speakerPresence,
   type GameData,
   type PlayerState,
 } from '@nogada/shared'
@@ -32,9 +33,9 @@ export interface TalkOutcome {
 }
 
 /**
- * `not_here` 는 "맵에는 맞게 왔는데 그 사람이 지금 여기 없다" 다 — 실내로
- * 들어갔거나 길 위를 걷는 중이다. `wrong_map` 과 나누는 이유는 플레이어가 할
- * 일이 다르기 때문이다: 저쪽은 따라가면 되고, 이쪽은 기다리거나 다시 와야 한다.
+ * 앞의 셋은 현장 판정(`speakerPresence`, packages/shared)이 그대로 답한 것이다 —
+ * 그 셋의 뜻(특히 `not_here` 와 `wrong_map` 을 왜 나누는가)은 그 함수가 설명한다.
+ * `nothing_to_say` 만 이 서비스의 몫이다: 사람은 거기 있는데 할 말이 없는 경우다.
  */
 export type TalkErrorCode = 'unknown_speaker' | 'wrong_map' | 'not_here' | 'nothing_to_say'
 
@@ -56,50 +57,26 @@ export type TalkResult = { ok: true; outcome: TalkOutcome } | { ok: false; code:
 export function performTalk(args: PerformTalkArgs): TalkResult {
   const { data, speakerId, rng, now } = args
 
-  // speakerId 는 클라이언트가 그대로 보낸 문자열이다. data.speakers[speakerId] 로
-  // 바로 읽으면 "constructor" 같은 상속 키가 프로토타입 체인에서 값을 찾아
-  // truthy 를 반환한다 — gatherService 가 placements 에서 막는 것과 같은 구멍이다.
-  const speaker = Object.hasOwn(data.speakers, speakerId) ? data.speakers[speakerId] : undefined
-  if (!speaker) return { ok: false, code: 'unknown_speaker' }
+  // 현장 판정은 이 서비스의 것이 아니다 — talk·sell·buy 가 같은 술어를 부른다
+  // (§6-앞 3). 두 벌로 적으면 "말은 걸리는데 못 파는" 화면이 온다. 시각은
+  // 라우트가 넣어 준 것을 그대로 넘긴다: 여기서 Date.now() 를 다시 읽으면
+  // 판정에 쓰인 시각과 대화 이력에 적히는 시각이 갈라진다.
+  const presence = speakerPresence(data, speakerId, args.player, now)
+  if (presence !== 'ok') return { ok: false, code: presence }
 
   const player = structuredClone(args.player)
 
-  // 일과가 있는 화자는 speakers.csv 의 좌표에 있지 않다 — 그 사람의 자리는
-  // 시각이 정한다(설계 §5). 위 speakerId 검사를 통과했으므로 이것은 실재하는
-  // 화자 id 지만, 그래도 hasOwn 으로 읽는다: "constructor" 같은 이름의 화자가
-  // 있으면 프로토타입 체인의 값이 일과 행세를 한다.
+  // 대화 사실 place — 일과가 있는 화자가 지금 서 있는 지점의 id 다. 위 판정이
+  // 이미 npcStateAt 을 불렀지만 그 함수는 답을 코드 하나로 접어 돌려주므로,
+  // 지점 id 는 여기서 같은 시각으로 한 번 더 묻는다. npcStateAt 은 (일과,
+  // 지점, 길, 시각)의 순수 함수라 같은 `now` 면 반드시 같은 답이다 — 두 답이
+  // 갈라질 수 있는 것은 시각이 갈라질 때뿐이고, 그래서 `now` 를 인자로 받는다.
+  // 사실 공급자(buildFacts)가 스스로 계산하게 두면 그 보장이 사라진다.
   const schedule = Object.hasOwn(data.schedules, speakerId) ? data.schedules[speakerId] : undefined
-
-  // 대화 사실 place — 일과가 있는 화자가 지금 서 있는 지점의 id 다. 아래에서
-  // npcStateAt 을 이미 부르므로 여기서 받아 두고, 그 한 번의 답이 판정(여기
-  // 있는가)과 사실(어디에 있는가) 둘 다를 정한다. 사실 공급자가 스스로 다시
-  // 계산하면 두 답이 갈라질 수 있고, 그러면 "지금 여기 없다"고 거절한 자리의
-  // 대사가 다른 경로로 나온다.
-  let place: string | undefined
-
-  if (schedule) {
-    // 시각은 라우트가 넣어 준 것을 그대로 쓴다. 여기서 Date.now() 를 다시 읽으면
-    // 판정에 쓰인 시각과 대화 이력에 적히는 시각이 갈라지고, 테스트는 시간을
-    // 고정할 방법을 잃는다.
-    const state = npcStateAt(schedule, data.places, data.routes, now)
-
-    // 걷는 중에는 몸이 없고(통과 장식), 실내면 맵에 없다 — 둘 다 "여기 없다"다.
-    // 맵 검사보다 먼저 보는 이유: 길 위의 NPC 는 어느 맵에 있든 말이 걸리지
-    // 않으므로, 맵이 맞다는 이유로 통과시키면 걷는 사람과 대화가 열린다.
-    if (state.activity !== 'standing') return { ok: false, code: 'not_here' }
-    if (state.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
-
-    // standing 이면 지점 위이므로 placeId 가 있다. ?? undefined 는 그 불변식이
-    // 깨졌을 때 사실을 아예 안 내는 쪽을 고른 것이다 — 없는 사실은 조건이
-    // 거짓일 뿐이지만, 빈 문자열은 조건과 비교되는 값이 된다.
-    place = state.placeId ?? undefined
-  } else if (speaker.mapId !== player.location.mapId) {
-    // 이것이 대화 스펙이 남긴 구멍이다. 앞칸 판정은 클라이언트에만 있어서, 서버가
-    // 어느 맵인지 모르면 화자 id 하나로 맵 너머의 화자와 대화가 열린다 — 그리고
-    // 그 대화가 said·recent 에까지 남아 다시 되돌릴 수도 없다. gatherService 와
-    // 같은 검사이고 같은 근거다: 맵이 다르면 앞칸일 수가 없다.
-    return { ok: false, code: 'wrong_map' }
-  }
+  // standing 이면 지점 위이므로 placeId 가 있다. ?? undefined 는 그 불변식이
+  // 깨졌을 때 사실을 아예 안 내는 쪽을 고른 것이다 — 없는 사실은 조건이
+  // 거짓일 뿐이지만, 빈 문자열은 조건과 비교되는 값이 된다.
+  const place = schedule ? (npcStateAt(schedule, data.places, data.routes, now).placeId ?? undefined) : undefined
 
   // 사실을 먼저 모은다. 아래에서 이력을 갱신하므로, 순서가 바뀌면 이번 대화가
   // 이번 대화의 사실(talkedBefore·daysSinceLastTalk)을 바꿔 버린다 — 처음

@@ -23,19 +23,23 @@ import type {
   GameData,
   GatherTables,
   ItemDef,
+  PlayerState,
+  TokenEffect,
 } from '@nogada/shared'
 import {
   DECLARED_FACTS,
   EVENT_ORDER,
   ONCE_EVENTS,
+  TOKEN_EFFECTS,
   buildFacts,
   createRng,
   describeFactValueShape,
   emptyDialogueHistory,
   findFactSpec,
   gatherBracketFor,
+  gatherHandOf,
+  gatherIntervalMs,
   gatherOutcome,
-  gatherToolProfile,
   matchesCondition,
   onceKey,
   ruleMatches,
@@ -72,13 +76,15 @@ export interface GatherCommand {
   proficiency: number
   /** 없으면 맨손(§6-앞 17) — 도구 게이트가 없는 세계에서 가장 가난한 손이 기준선이다. */
   toolId: string | undefined
+  /** 없으면 증표 없는 손. 있으면 그 표의 계열 증표를 하나 쥔 손이다(설계 §5). */
+  tokenEffect: TokenEffect | undefined
   n: number
 }
 export type ContentCommand = DialogueCommand | FactsCommand | DeadCommand | WaitingCommand | GatherCommand
 
 const USAGE =
   '사용법: pnpm content dialogue <화자id> [--사실=값 ...] | pnpm content facts | pnpm content dead | pnpm content waiting' +
-  ' | pnpm content gather <표id> --prof=<숙련도> [--tool=<도구id>] [--n=<횟수>]'
+  ' | pnpm content gather <표id> --prof=<숙련도> [--tool=<도구id>] [--token=speed|sight] [--n=<횟수>]'
 
 /** gather 명령의 기본 시행 횟수 — 시뮬 테스트(gatherSimulation.test.ts)와 같은 N 이다. */
 const GATHER_DEFAULT_N = 100_000
@@ -190,9 +196,15 @@ export function parseArgs(argv: readonly string[], data: GameData): ContentComma
  * 질문 자체가 성립하지 않는다 — 기본값 0 을 깔면 "왜 상위 티어가 안 나오지"가
  * 도구 탓처럼 보인다.
  */
-function parseGatherOptions(args: readonly string[]): { proficiency: number; toolId: string | undefined; n: number } {
+function parseGatherOptions(args: readonly string[]): {
+  proficiency: number
+  toolId: string | undefined
+  tokenEffect: TokenEffect | undefined
+  n: number
+} {
   let proficiency: number | undefined
   let toolId: string | undefined
+  let tokenEffect: TokenEffect | undefined
   let n = GATHER_DEFAULT_N
 
   for (const arg of args) {
@@ -207,8 +219,18 @@ function parseGatherOptions(args: readonly string[]): { proficiency: number; too
       toolId = raw
       continue
     }
+    if (name === 'token') {
+      // 효과 이름으로 받는다(아이템 id 가 아니라) — 표를 정한 순간 계열이
+      // 정해지므로 그 계열의 증표는 효과마다 하나뿐이고, 작가가 여덟 개의
+      // id 를 외울 이유가 없다.
+      if (!(TOKEN_EFFECTS as readonly string[]).includes(raw)) {
+        throw new Error(`"--token=${raw}" 를 쓸 수 없다 — 증표 효과는 ${TOKEN_EFFECTS.join(', ')} 뿐이다`)
+      }
+      tokenEffect = raw as TokenEffect
+      continue
+    }
     if (name !== 'prof' && name !== 'n') {
-      throw new Error(`gather 는 "--${name}" 옵션을 모른다 — 쓸 수 있는 옵션: --prof, --tool, --n`)
+      throw new Error(`gather 는 "--${name}" 옵션을 모른다 — 쓸 수 있는 옵션: --prof, --tool, --token, --n`)
     }
     const value = Number(raw)
     if (!Number.isInteger(value) || value < 0) {
@@ -221,7 +243,7 @@ function parseGatherOptions(args: readonly string[]): { proficiency: number; too
   if (proficiency === undefined) {
     throw new Error(`--prof=<숙련도> 가 필요하다 — 무엇이 나오는가는 숙련 브라켓의 함수다.\n${USAGE}`)
   }
-  return { proficiency, toolId, n }
+  return { proficiency, toolId, tokenEffect, n }
 }
 
 // ---------------------------------------------------------------------------
@@ -565,16 +587,21 @@ export function runDialogueCommand(
 // ---------------------------------------------------------------------------
 
 /**
- * `pnpm content gather <표id> --prof=N [--tool=도구id] [--n=횟수]` 의 본체.
+ * `pnpm content gather <표id> --prof=N [--tool=도구id] [--token=speed|sight] [--n=횟수]` 의 본체.
  *
  * 대사 시뮬레이터와 같은 원칙이다: 새 판정을 만들지 않는다. 서버가 실제로 굴리는
  * `gatherOutcome`(packages/shared)을 고정 시드로 N 번 부르고 그 결과를 셀 뿐이다
  * (설계 §7-앞 12). 브라켓 선택도 엔진의 `gatherBracketFor` 를 그대로 쓴다 —
- * 여기서 브라켓을 다시 고르면 판정이 두 벌이 된다.
+ * 여기서 브라켓을 다시 고르면 판정이 두 벌이 된다. **손도 마찬가지다**: 도구와
+ * 증표를 여기서 곱하지 않고, 흉내 낸 플레이어를 `gatherHandOf` 에 통째로 넣어
+ * 게임과 같은 조회 경로를 지나게 한다.
  *
- * "표 기준" 열은 도구 보정 **전** 누적표의 폭이다. 좋은 도구를 주면 관측이 그
+ * "표 기준" 열은 손 보정 **전** 누적표의 폭이다. 좋은 도구를 주면 관측이 그
  * 열보다 위 티어로 쏠리고, --tool 을 생략하면 맨손(roll ×1.45)이라 아래 티어와
  * 실패로 쏠린다(§6-앞 17) — 맨손 vs 구리를 나란히 굴려 보는 것이 성공 기준 2 다.
+ * `--token=sight` 는 그 쏠림을 한 번 더 밀고, `--token=speed` 는 분포를 전혀
+ * 바꾸지 않는다(간격만 줄인다) — 그래서 머리글이 간격도 함께 찍는다. 안 그러면
+ * 속도증표를 준 작가가 똑같은 표를 보고 "안 먹혔다"고 읽는다.
  */
 export function runGatherCommand(
   data: GameData,
@@ -605,11 +632,33 @@ export function runGatherCommand(
     tool = found
   }
 
+  // 그 계열의 그 효과 증표. 여덟 종 중 (계열, 효과) 짝은 하나뿐이고, 그 유일성은
+  // 빌드 검증이 지킨다 — 없으면 items.csv 에 아직 안 적힌 것이므로 그렇게 말한다.
+  let token: ItemDef | null = null
+  if (cmd.tokenEffect !== undefined) {
+    const found = Object.values(data.items).find(
+      (item) => item.tokenEffect === cmd.tokenEffect && item.skill === table.skill,
+    )
+    if (!found) throw new Error(`${table.skill} 계열의 ${cmd.tokenEffect} 증표가 items.csv 에 없다`)
+    token = found
+  }
+
+  // 게임의 그 사람을 흉내 낸다 — 도구는 착용하고 증표는 가방에 하나 넣는다.
+  // 그래야 gatherHandOf 가 게임에서와 똑같이 (기술 일치·보유 여부를) 판정한다.
+  const simulated: PlayerState = { ...emptyPlayer(), skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 } }
+  simulated.skills[table.skill] = cmd.proficiency
+  if (tool) {
+    simulated.instances = [{ instanceId: 'sim', itemId: tool.id, enhanceLevel: 0 }]
+    simulated.equipped = { [table.skill]: 'sim' }
+  }
+  if (token) simulated.stacks = { [token.id]: 1 }
+  const hand = gatherHandOf(simulated, table.skill, data.items)
+
   const rng = createRng(opts.seed)
   const counts = new Map<string, number>()
   let failures = 0
   for (let i = 0; i < cmd.n; i++) {
-    const { itemId } = gatherOutcome(table, cmd.proficiency, tool, rng)
+    const { itemId } = gatherOutcome(table, cmd.proficiency, hand, rng)
     if (itemId === null) failures += 1
     else counts.set(itemId, (counts.get(itemId) ?? 0) + 1)
   }
@@ -617,7 +666,7 @@ export function runGatherCommand(
   const bracket = gatherBracketFor(table, cmd.proficiency)
   const bracketLabel = bracket.bracketMax === null ? '∞' : `≤${bracket.bracketMax.toLocaleString('ko-KR')}`
   const bracketIndex = table.brackets.indexOf(bracket) + 1
-  const profile = gatherToolProfile(tool)
+  const profile = hand.profile
 
   const out: string[] = []
   out.push(
@@ -625,10 +674,12 @@ export function runGatherCommand(
   )
   // 맨손 줄도 도구 줄과 같은 형태로 배수를 밝힌다 — ×1.45 가 화면에 찍혀야
   // "왜 상위 티어가 안 나오지"의 답이 도구의 부재임이 보인다.
-  const handLabel = tool ? `도구 ${tool.name}(${tool.id}, ${tool.toolTier}등급)` : '맨손(--tool 생략)'
+  const toolLabel = tool ? `도구 ${tool.name}(${tool.id}, ${tool.toolTier}등급)` : '맨손(--tool 생략)'
+  const handLabel = token ? `${toolLabel} + ${token.name}` : toolLabel
   out.push(
     `${handLabel} — roll ×${profile.rollFactor}` +
       (profile.jackpotFlat > 0 ? `, 잭팟 밴드(roll≤10) 평감산 −${profile.jackpotFlat}` : '') +
+      ` · 간격 ×${hand.intervalFactor} = ${gatherIntervalMs(cmd.proficiency, hand)}ms` +
       ` · N=${cmd.n.toLocaleString('ko-KR')} · 고정 시드`,
   )
   out.push('')

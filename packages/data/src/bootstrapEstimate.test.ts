@@ -4,12 +4,13 @@ import {
   actionIntervalMs,
   calcCraftSuccess,
   gatherBracketFor,
+  gatherHandOf,
   gatherIntervalMs,
-  gatherToolProfile,
   type GatherTableDef,
   type RecipeDef,
 } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
+import { emptyPlayer } from './emptyPlayer.js'
 import { loadGameData } from './load.js'
 import { loadGatherTables } from './loadGatherTables.js'
 
@@ -38,12 +39,19 @@ const data = loadGameData()
 const tables = loadGatherTables()
 
 /**
+ * 맨손 — 도구도 증표도 없는 사람의 손이고, 부트스트랩 시기의 손이 정확히 그것이다.
+ * 리터럴로 짓지 않고 실제 조회(gatherHandOf)를 태우는 이유는 이 추정이 게임과
+ * 같은 경로를 지나야 하기 때문이다(§7-앞 12).
+ */
+const bareHand = gatherHandOf(emptyPlayer(), 'mineral', data.items)
+
+/**
  * 맨손·해당 숙련의 브라켓에서 그 아이템이 나올 정확한 확률 — 근사식 대신
  * gatherOutcome 과 똑같은 두 갈래 식(잭팟 밴드는 평감산, 밖은 곱)으로 rawRoll
  * 전수를 센다(gatherSimulation.test.ts 의 §8-5 와 같은 방식, 같은 이유).
  */
 function exactBareHandItemProbability(table: GatherTableDef, proficiency: number, itemId: string): number {
-  const { rollFactor, jackpotFlat } = gatherToolProfile(null)
+  const { rollFactor, jackpotFlat } = bareHand.profile
   const bracket = gatherBracketFor(table, proficiency)
   let count = 0
   for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
@@ -109,7 +117,7 @@ describe('부트스트랩 시뮬 추정 — 최악 마을(재료 둘 다 맨손)
 
   // 채집 간격은 맨손(×1.5), 제작 간격은 도구 무관 — 서버 스탬프와 같은 함수다.
   const totalMs =
-    (oreAttempts + logAttempts) * gatherIntervalMs(0, null) +
+    (oreAttempts + logAttempts) * gatherIntervalMs(0, bareHand) +
     (ingotAttempts + 1 / chanceTool) * actionIntervalMs(0)
   const minutes = totalMs / 60_000
 
@@ -124,7 +132,7 @@ describe('부트스트랩 시뮬 추정 — 최악 마을(재료 둘 다 맨손)
     // 첫 도구의 이야기가 "만들기 어려움"이 아니라 "맨손으로 힘겹게 모음"이라는
     // 설계(§1·§2)의 수치 표현이다. 제작이 몸통이 되는 순간 도구는 채집이 아니라
     // 조합의 보상이 된다.
-    const gatherMs = (oreAttempts + logAttempts) * gatherIntervalMs(0, null)
+    const gatherMs = (oreAttempts + logAttempts) * gatherIntervalMs(0, bareHand)
     expect(gatherMs / totalMs).toBeGreaterThan(0.9)
   })
 

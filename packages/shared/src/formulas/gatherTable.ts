@@ -1,5 +1,5 @@
-import type { GatherBracketDef, GatherTableDef, ItemDef } from '../types.js'
-import { gatherToolProfile } from './toolProfile.js'
+import type { GatherBracketDef, GatherTableDef } from '../types.js'
+import type { GatherHand } from './gatherHand.js'
 
 /**
  * 표 기반 채집 판정 — 성공률이 아니라 **무엇이 나오는가**가 숙련의 함수다(설계 §2).
@@ -58,12 +58,15 @@ export interface GatherRollResult {
  * 채집 판정 한 번. rng 를 정확히 한 번 소비한다 — 소비 횟수가 흔들리면 같은
  * 시드의 재현이 무너진다(테스트·시뮬레이터가 그 성질에 기댄다).
  *
- * `tool` 은 null 이면 맨손이다(§6-앞 9). 보정 숫자는 gatherToolProfile 하나에서만
- * 온다 — 조용한 기본값 금지. "착용한 도구가 이 채집의 기술과 맞는가"는 호출자의
- * 몫이다: 서버는 equippedToolInfo 로 조회해 불일치를 null(맨손)로 만들어 넘긴다.
+ * `hand` 는 그 기술로 캐는 지금 이 손이다(gatherHandOf) — 도구와 증표가 이미
+ * 합쳐진 프로필로 도착하고, 이 함수는 `hand.profile` 만 읽는다. 보정 숫자를 여기서
+ * 다시 조회하지 않는 것이 요점이다: "착용한 도구가 이 채집의 기술과 맞는가"
+ * (equippedToolInfo)도 "그 기술의 선별증표를 가졌는가"(§5)도 손을 만드는 자리의
+ * 몫이고, 판정은 만들어진 손을 굴리기만 한다. 도구가 없으면 손의 프로필이 맨손
+ * 프로필(roll ×1.45)이다 — 게이트가 아니라 페널티다(§6-앞 9).
  *
  * 판정 순서:
- *   1. rawRoll = floor(rng × 100001) — 도구 보정 **전**의 원 roll. 밴드 소속은
+ *   1. rawRoll = floor(rng × 100001) — 손 보정 **전**의 원 roll. 밴드 소속은
  *      항상 이 값으로 가른다.
  *   2. rawRoll ≤ 10(잭팟 밴드) 이면 그 안에서 **평감산만** 적용한다:
  *      roll = max(0, rawRoll − jackpotFlat). 밴드 밖이면 **곱만** 적용한다:
@@ -78,10 +81,10 @@ export interface GatherRollResult {
 export function gatherOutcome(
   table: GatherTableDef,
   proficiency: number,
-  tool: ItemDef | null,
+  hand: GatherHand,
   rng: () => number,
 ): GatherRollResult {
-  const profile = gatherToolProfile(tool)
+  const profile = hand.profile
   const rawRoll = Math.floor(rng() * (GATHER_ROLL_MAX + 1))
   const roll =
     rawRoll <= JACKPOT_BAND_MAX

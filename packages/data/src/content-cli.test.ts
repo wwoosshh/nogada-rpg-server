@@ -107,10 +107,10 @@ describe('parseArgs', () => {
 
   it('gather 는 표 id 와 --prof 를 받고, --tool·--n 은 기본값이 있다', () => {
     expect(parseArgs(['gather', 'ice', '--prof=15000'], realData)).toEqual({
-      kind: 'gather', tableId: 'ice', proficiency: 15000, toolId: undefined, n: 100_000,
+      kind: 'gather', tableId: 'ice', proficiency: 15000, toolId: undefined, tokenEffect: undefined, n: 100_000,
     })
     expect(parseArgs(['gather', 'ice', '--prof=0', '--tool=iron_chisel', '--n=1000'], realData)).toEqual({
-      kind: 'gather', tableId: 'ice', proficiency: 0, toolId: 'iron_chisel', n: 1000,
+      kind: 'gather', tableId: 'ice', proficiency: 0, toolId: 'iron_chisel', tokenEffect: undefined, n: 1000,
     })
   })
 
@@ -126,6 +126,21 @@ describe('parseArgs', () => {
   it('gather 의 모르는 옵션과 정수 아닌 값을 거부한다', () => {
     expect(() => parseArgs(['gather', 'ice', '--prof=0', '--seed=3'], realData)).toThrow(/--seed/)
     expect(() => parseArgs(['gather', 'ice', '--prof=많이'], realData)).toThrow(/정수/)
+  })
+
+  it('gather 는 --token=speed|sight 를 받고 --tool 과 겹쳐 쓸 수 있다 — 증표는 도구와 별개의 축이다(설계 §5)', () => {
+    expect(parseArgs(['gather', 'ice', '--prof=25000', '--token=sight'], realData)).toEqual({
+      kind: 'gather', tableId: 'ice', proficiency: 25000, toolId: undefined, tokenEffect: 'sight', n: 100_000,
+    })
+    expect(parseArgs(['gather', 'ice', '--prof=25000', '--tool=iron_chisel', '--token=speed'], realData)).toEqual({
+      kind: 'gather', tableId: 'ice', proficiency: 25000, toolId: 'iron_chisel', tokenEffect: 'speed', n: 100_000,
+    })
+  })
+
+  it('없는 증표 효과는 거부하고 쓸 수 있는 효과를 말한다 — 아이템 id 를 넣어 보는 것이 첫 오해다', () => {
+    expect(() => parseArgs(['gather', 'ice', '--prof=0', '--token=ice_speed_token'], realData)).toThrow(
+      /speed, sight/,
+    )
   })
 
   it('명령이 아예 없으면 거부한다', () => {
@@ -529,7 +544,7 @@ describe('runWaitingCommand', () => {
 describe('runGatherCommand', () => {
   const realTables = loadGatherTables()
   const gatherCmd = (overrides: Partial<Parameters<typeof runGatherCommand>[2]> = {}) =>
-    ({ kind: 'gather', tableId: 'ice', proficiency: 0, toolId: undefined, n: 2000, ...overrides }) as const
+    ({ kind: 'gather', tableId: 'ice', proficiency: 0, toolId: undefined, tokenEffect: undefined, n: 2000, ...overrides }) as const
 
   it('실제 표의 분포를 아이템 이름과 실패 줄로 보여준다', () => {
     const out = runGatherCommand(realData, realTables, gatherCmd(), { seed: 1 })
@@ -569,6 +584,31 @@ describe('runGatherCommand', () => {
     const out = runGatherCommand(realData, realTables, gatherCmd({ toolId: 'iron_chisel' }), { seed: 1 })
     expect(out).toContain('×0.9')
     expect(out).toContain('−2')
+  })
+
+  it('--token=sight 는 그 계열 증표를 쥐여 roll 배수를 한 번 더 깎는다', () => {
+    const out = runGatherCommand(realData, realTables, gatherCmd({ toolId: 'copper_chisel', tokenEffect: 'sight' }), { seed: 1 })
+    // 구리(×1.0) × 선별(×0.95) = 0.95. 손 이름에 증표가 함께 찍혀야 작가가
+    // 무엇을 쥔 손인지 되짚을 수 있다.
+    expect(out).toContain('얼음 선별증표')
+    expect(out).toContain('roll ×0.95')
+  })
+
+  it('--token=speed 는 분포를 건드리지 않고 간격만 줄인다 — 그래서 머리글이 간격을 함께 찍는다', () => {
+    const 맨 = runGatherCommand(realData, realTables, gatherCmd({ toolId: 'copper_chisel' }), { seed: 1 })
+    const 속도 = runGatherCommand(realData, realTables, gatherCmd({ toolId: 'copper_chisel', tokenEffect: 'speed' }), { seed: 1 })
+    // 분포 줄(티어 표)은 글자 하나까지 같고, 다른 것은 머리글의 간격뿐이다.
+    const 분포 = (out: string) => out.split('\n').slice(2).join('\n')
+    expect(분포(속도)).toBe(분포(맨))
+    expect(맨).toContain('간격 ×1 = 500ms')
+    expect(속도).toContain('간격 ×0.9 = 450ms')
+  })
+
+  it('그 계열에 없는 증표는 거부한다 — 데이터에 없는 세계를 시뮬하지 않는다', () => {
+    const 표없는계열 = { ...realTables, ice: { ...realTables['ice']!, skill: 'crafting' as const } }
+    expect(() => runGatherCommand(realData, 표없는계열, gatherCmd({ tokenEffect: 'speed' }), { seed: 1 })).toThrow(
+      /crafting 계열의 speed 증표가 items.csv 에 없다/,
+    )
   })
 })
 

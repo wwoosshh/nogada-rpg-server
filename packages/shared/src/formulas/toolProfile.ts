@@ -1,5 +1,5 @@
-import type { EquippedToolInfo } from '../equipment.js'
 import type { ItemDef } from '../types.js'
+import type { GatherHand } from './gatherHand.js'
 import { ACTION_INTERVAL_MIN_MS, actionIntervalMs } from './proficiency.js'
 
 /**
@@ -63,10 +63,15 @@ export const HAMMER_ENHANCE_CHANCE_BONUS = 0.003
 /**
  * 유효 간격배수 — 티어(intervalFactor)와 강화(×0.97^n)를 곱한 한 숫자(§6-앞 2).
  *
- * 세 자리가 나눠 읽는다: 간격 스탬프(gatherIntervalMs), 제작 후 자동 착용 비교
- * (craftService — 원시 tier 비교는 강화 투자를 신품이 덮어쓴다), 화면의 배수 표기
- * (§6-앞 13). 비교가 이 식과 다른 식을 쓰면 "낫다"고 착용한 도구가 실제 스탬프에서는
- * 더 느릴 수 있다 — 그래서 gatherIntervalMs 도 이 함수를 거친다.
+ * **도구 전용이다. 증표를 여기 섞지 않는다**(§6-앞 16). 이 함수를 읽는 두
+ * 자리는 둘 다 "그 도구 하나의 값"을 묻는다: 제작 후 자동 착용 비교
+ * (craftService — 원시 tier 비교는 강화 투자를 신품이 덮어쓴다)와 가방 칩의
+ * 배수 표기("간격 −20%"). 증표는 어느 도구를 들었든 똑같이 붙는 별개의 축이라,
+ * 여기 섞으면 비교에는 상수 하나가 양변에 더 붙을 뿐이고 칩은 그 도구의 숫자를
+ * 말하기를 그만둔다 — 화면이 거짓말하기 시작한다.
+ *
+ * 손 전체의 간격배수(증표 포함)는 `GatherHand.intervalFactor` 이고, 그것을
+ * 만드는 자리는 `gatherHandOf` 하나다. 증표가 없으면 두 값은 정확히 같다.
  */
 export function effectiveIntervalFactor(def: ItemDef | null, enhanceLevel: number): number {
   return gatherToolProfile(def).intervalFactor * ENHANCE_INTERVAL_FACTOR ** enhanceLevel
@@ -74,7 +79,12 @@ export function effectiveIntervalFactor(def: ItemDef | null, enhanceLevel: numbe
 
 /**
  * 채집 한 번의 행동 간격 — 서버의 nextActionAt 스탬프와 클라의 숙련도 탭 표시가
- * 이 함수 하나를 부른다(§6-앞 10). null = 맨손(×1.5).
+ * 이 함수 하나를 부른다(§6-앞 10).
+ *
+ * 손(`GatherHand`)을 통째로 받는 이유는 간격의 소유자가 셋이기 때문이다: 도구
+ * 티어·강화 수치·속도증표. 셋의 곱은 `gatherHandOf` 에서 한 번만 일어나고
+ * (`hand.intervalFactor`), 여기서는 그것을 숙련 간격에 곱하기만 한다 — 이 함수가
+ * 스스로 조회하면 조회 경로가 두 벌이 되어 서버 스탬프와 화면이 갈라질 수 있다.
  *
  * 하한(ACTION_INTERVAL_MIN_MS)은 **배수를 전부 곱한 뒤에** 클램프한다(§6-앞 6) —
  * 그래야 "초당 20회" 문서가 계속 참이고, 종반의 도구 포화는 수용한다.
@@ -84,12 +94,6 @@ export function effectiveIntervalFactor(def: ItemDef | null, enhanceLevel: numbe
  * 그대로 찍는다. 밖에서 각자 반올림하면 화면과 서버 스탬프가 1ms 씩 어긋날 수
  * 있으므로, 간격을 만드는 이 한 자리가 정수 계약을 함께 지킨다(§6-앞 10).
  */
-export function gatherIntervalMs(proficiency: number, tool: EquippedToolInfo | null): number {
-  return Math.max(
-    ACTION_INTERVAL_MIN_MS,
-    Math.round(
-      actionIntervalMs(proficiency) *
-        effectiveIntervalFactor(tool?.def ?? null, tool?.instance.enhanceLevel ?? 0),
-    ),
-  )
+export function gatherIntervalMs(proficiency: number, hand: GatherHand): number {
+  return Math.max(ACTION_INTERVAL_MIN_MS, Math.round(actionIntervalMs(proficiency) * hand.intervalFactor))
 }
