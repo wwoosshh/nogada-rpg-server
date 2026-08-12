@@ -41,6 +41,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     nextActionAt: 0,
     celebrated: [],
     rewarded: [],
+    // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    weather: null,
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: '얼음채집장', x: 3, y: 1 },
     ...overrides,

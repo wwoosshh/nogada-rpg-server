@@ -126,6 +126,48 @@ describe('parseItems', () => {
     )
   })
 
+  it('useEffect·useValue 가 비어 있으면 쓸 수 없는 물건이다 — 재료 대부분이 그렇다', () => {
+    const items = parseItems([itemRow({ useEffect: '', useValue: '' })])
+    expect(items.copper_ore).not.toHaveProperty('useEffect')
+  })
+
+  it('두 칸이 아예 없는 CSV 도 읽는다 — 이 칸이 생기기 전의 행이 그대로 살아 있어야 한다', () => {
+    const row = itemRow()
+    expect('useEffect' in row).toBe(false)
+    expect(parseItems([row]).copper_ore).not.toHaveProperty('useEffect')
+  })
+
+  it('날씨 가루는 사용 효과를 싣는다 — 지속은 게임 분이고 종류는 효과 이름이 정한다', () => {
+    const items = parseItems([
+      itemRow({ id: 'rain_powder', name: '비 가루', icon: 'cloud_rain', price: '100', skill: 'ice', useEffect: 'rain', useValue: '60' }),
+    ])
+    expect(items.rain_powder?.useEffect).toEqual({ kind: 'weather', weather: 'rain', minutes: 60 })
+  })
+
+  it('useEffect 만 적으면 거부한다 — 얼마나 가는지 모르는 가루가 된다', () => {
+    expect(() => parseItems([itemRow({ useEffect: 'rain', useValue: '' })])).toThrow(
+      'items.csv[copper_ore]: useEffect 와 useValue 는 함께 적거나 함께 비워야 한다 (지금 useEffect="rain", useValue="")',
+    )
+  })
+
+  it('useValue 만 적으면 거부한다 — 무엇을 하는지 모르는 숫자가 된다', () => {
+    expect(() => parseItems([itemRow({ useEffect: '', useValue: '60' })])).toThrow(
+      'items.csv[copper_ore]: useEffect 와 useValue 는 함께 적거나 함께 비워야 한다 (지금 useEffect="", useValue="60")',
+    )
+  })
+
+  it('알 수 없는 useEffect 값을 거부한다 — 써도 아무 일도 안 일어나는 소모품이 된다', () => {
+    expect(() => parseItems([itemRow({ useEffect: 'storm', useValue: '60' })])).toThrow(
+      'items.csv[copper_ore].useEffect: useEffect "storm" 는 알 수 없다 (허용값: rain, snow)',
+    )
+  })
+
+  it('지속이 0 이하면 거부한다 — 쓰는 순간 이미 그친 가루다', () => {
+    expect(() => parseItems([itemRow({ useEffect: 'rain', useValue: '0' })])).toThrow(
+      'items.csv[copper_ore]: useValue "0" 는 1 이상이어야 한다',
+    )
+  })
+
   it('알 수 없는 toolSkill 값을 거부한다', () => {
     expect(() =>
       parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'minig', toolTier: '2', skill: '' })]),

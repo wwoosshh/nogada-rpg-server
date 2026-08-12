@@ -1,6 +1,7 @@
 import type { DialogueHistory, DialogueRule } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
 import type { Direction, TilePos } from './movement.js'
+import type { PlayerWeather, WeatherKind } from './weather.js'
 
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
 
@@ -128,6 +129,24 @@ export interface PlayerState {
    * 어디에 세울지에만 쓴다.
    */
   location: PlayerLocation
+  /**
+   * 지금 이 사람의 하늘. 가루를 쓴 적이 없거나 이미 그쳤으면 `null` 이다.
+   *
+   * **날씨는 전역이 아니라 개인 상태다**(설계 §6-앞 4). 전역으로 두면 가루 하나로
+   * 남의 세계를 바꾸는 권한이 생긴다 — 아무나 100원짜리 가루를 연타해 모든
+   * 플레이어의 하늘을 점거할 수 있고, 그때 "왜 내 하늘이 이런가"에 답할 수 있는
+   * 화면이 이 게임에는 없다. 개인 상태라면 그 하늘은 그것을 산 사람의 것이고,
+   * 대사도 그 사람에게만 달라진다.
+   *
+   * 만료는 저장된 타이머가 아니라 시각 비교다(`activeWeather`, weather.ts) —
+   * 그친 날씨를 지우러 오는 작업이 없으므로 만료된 값이 그대로 남아 있을 수
+   * 있고, 그것이 정상이다.
+   *
+   * 스키마에는 `.default(null)` 이 붙는다(protocol.ts) — gold·rewarded 와 정확히
+   * 같은 이유다. 이 필드가 생기기 전의 세이브에는 키가 통째로 없어서, 필수로
+   * 두면 그 플레이어가 숙련도·인벤토리·강화한 도구까지 통째로 버려진다.
+   */
+  weather: PlayerWeather | null
 }
 
 export interface ItemDef {
@@ -170,7 +189,26 @@ export interface ItemDef {
    * "무엇인가"이지 "얼마인가"가 아니다.
    */
   tokenEffect?: TokenEffect
+  /**
+   * 쓰면 무슨 일이 일어나는가. 없으면 **쓸 수 없다** — 재료는 대부분 그렇다.
+   *
+   * 이 칸 하나가 "사용"이라는 행위의 유일한 자격이다(서버의 `performUse`,
+   * 클라이언트의 [사용] 버튼). 증표가 새 `kind` 를 만들지 않은 것과 같은
+   * 이유로 여기도 선택 칸이다: `kind='consumable'` 을 만들면 가방 패널의
+   * `kind !== 'material'` 가드가 가루를 조용히 숨긴다.
+   */
+  useEffect?: UseEffect
 }
+
+/**
+ * 사용 효과. 지금은 날씨 하나뿐이지만 `kind` 를 두는 것은 훅을 위해서가 아니라
+ * **판정하는 쪽이 무엇을 받았는지 스스로 알아야 하기 때문**이다 — 포션·주문서가
+ * 붙는 날 `performUse` 가 분기해야 할 자리가 여기 하나로 드러난다.
+ *
+ * `minutes` 는 **게임 분**이다(실측 ms 가 아니다). 실측으로 옮기는 환산은
+ * `weatherEndsAt`(weather.ts) 하나가 소유한다.
+ */
+export type UseEffect = { kind: 'weather'; weather: WeatherKind; minutes: number }
 
 /** 증표가 무엇을 곱하는가. `speed` 는 채집 간격을, `sight` 는 표 굴림을 건드린다. */
 export type TokenEffect = 'speed' | 'sight'

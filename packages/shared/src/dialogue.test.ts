@@ -264,13 +264,16 @@ describe('findFactSpec', () => {
     // 지점·구운 경로와 시각에서 나오고, 서버가 같은 요청 안에서 이미 계산한다
     // (npcStateAt). 그래서 "공급자가 있다"의 뜻이 나머지와 조금 다르다: 일과가
     // 있는 화자에게만, 그것도 지점에 서 있을 때만 실제로 값이 들어온다.
+    // weather 는 place 와 또 다른 셋째 모양이다: 값이 플레이어 상태
+    // (player.weather)에서 오지만 **만료 전일 때만** 들어온다. "공급자가 있다"가
+    // "언제나 값이 있다"는 뜻이 아니라는 것을 place 에 이어 한 번 더 못박는다.
     expect(suppliedNames).toEqual([
-      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved', 'place',
+      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved', 'place', 'weather',
     ])
-    // 남은 여섯은 사정이 다르다 — 가리키는 값 자체를 만드는 스펙(날씨·호감도·
-    // 퀘스트)이 아직 없어서, 유도할 상태조차 없다.
+    // 남은 다섯은 사정이 다르다 — 가리키는 값 자체를 만드는 스펙(호감도·퀘스트)이
+    // 아직 없어서, 유도할 상태조차 없다.
     expect(unsuppliedNames).toEqual([
-      'weather', 'affinity', 'quest.', 'story', 'activity', 'location',
+      'affinity', 'quest.', 'story', 'activity', 'location',
     ])
   })
 

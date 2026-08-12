@@ -877,10 +877,23 @@ describe('validateGameData 의 대화 검사 — 값의 모양', () => {
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [
       unconditionalGreet(),
-      dRule({ id: 'w', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] }),
+      dRule({ id: 's', event: 'greet', conditions: [{ fact: 'story', op: '=', value: 3 }] }),
       dRule({ id: 'q', event: 'greet', conditions: [{ fact: 'quest.촌장', op: '=', value: 3 }] }),
     ]
     expect(validateGameData(data, baseTables()).some((v) => v.includes('모양'))).toBe(false)
+  })
+
+  it('없는 날씨를 건 조건을 잡아낸다 — 공급자가 생기면서 그 값의 목록도 정해졌다', () => {
+    // weather 는 오래 "모양이 정해지지 않은 사실" 쪽에 있었다(위 검사의 옛 예시가
+    // 그것이었다). 하늘이 될 수 있는 것은 rain·snow 둘뿐이므로 `weather=fog` 는
+    // 이제 오타이고, 안 막으면 그 대사는 어떤 상황에서도 안 나온다.
+    const data = baseData()
+    data.speakers = { 노인: testSpeaker }
+    data.dialogue = [
+      unconditionalGreet(),
+      dRule({ id: 'fog', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'fog' }] }),
+    ]
+    expect(validateGameData(data, baseTables()).some((v) => v.includes('weather') && v.includes('모양'))).toBe(true)
   })
 
   it('실제로 출하되는 대사 데이터는 값의 모양이 전부 맞는다', () => {
@@ -1622,6 +1635,28 @@ describe('validateGameData 의 증표 제약 검사', () => {
   })
 })
 
+// ---- 사용 효과 제약(설계 §6-앞 1·4) ----
+//
+// 쓰면 하나가 사라지는 물건은 스택이어야 한다. 도구는 인스턴스(강화 수치가 붙어
+// 개별 정체성을 갖는다)라 `stacks` 에 없고, 사용 판정이 소모할 개수 자체가 없다.
+
+describe('validateGameData 의 사용 효과 검사', () => {
+  it('사용 효과를 가진 도구를 잡아낸다 — 도구는 인스턴스라 소모될 수 없다', () => {
+    const data = registryData()
+    data.items.copper_pickaxe = {
+      ...data.items.copper_pickaxe!,
+      useEffect: { kind: 'weather', weather: 'rain', minutes: 60 },
+    }
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[copper_pickaxe]: 도구에 사용 효과가 붙어 있다 — 쓰면 하나가 사라지는데 도구는 스택이 아니라 인스턴스라 소모할 개수가 없다. items.csv 의 kind 를 material 로 두거나 useEffect·useValue 를 비운다',
+    )
+  })
+
+  it('실제로 출하되는 가루 4종은 이 제약을 지킨다', () => {
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
 // ---- 상점 진열은 획득·도달의 시드다(§6-앞 12) ----
 //
 // 이것이 없으면 증표 8종이 "채집으로도 제작으로도 획득할 수 없다"로 빌드를 세운다 —
@@ -1847,19 +1882,22 @@ describe('validateMapSpawns', () => {
 })
 
 describe('collectDialogueNotices', () => {
+  // 이 검사들이 오래 weather 를 예시로 썼다. 그 사실이 공급자를 얻으면서
+  // (설계 §6-앞 1~4) 예시는 아직 공급자가 없는 affinity 로 옮겼다 — 안내라는
+  // 장치 자체는 남은 다섯 사실을 위해 그대로 살아 있어야 한다.
   it('공급자가 없는 사실을 쓴 대사의 줄 수를 안내로 센다', () => {
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [
       unconditionalGreet(),
       dRule({
-        id: 'rain',
+        id: 'close',
         event: 'greet',
-        conditions: [{ fact: 'weather', op: '=', value: 'rain' }],
-        lines: ['이런 날엔 얼음이 잘 안 잡히지.'],
+        conditions: [{ fact: 'affinity', op: '>=', value: 30 }],
+        lines: ['자네와는 이제 편하게 말하지.'],
       }),
     ]
-    expect(collectDialogueNotices(data)).toContain('대사 1줄이 weather 를 기다린다')
+    expect(collectDialogueNotices(data)).toContain('대사 1줄이 affinity 를 기다린다')
   })
 
   it('같은 사실을 쓰는 규칙이 여럿이면 줄 수를 합산한다', () => {
@@ -1868,14 +1906,14 @@ describe('collectDialogueNotices', () => {
     data.dialogue = [
       unconditionalGreet(),
       dRule({
-        id: 'rain1', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }], lines: ['한 줄'],
+        id: 'close1', event: 'greet', conditions: [{ fact: 'affinity', op: '>=', value: 30 }], lines: ['한 줄'],
       }),
       dRule({
-        id: 'rain2', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'snow' }],
+        id: 'close2', event: 'greet', conditions: [{ fact: 'affinity', op: '>=', value: 60 }],
         lines: ['두 줄', '세 줄'],
       }),
     ]
-    expect(collectDialogueNotices(data)).toContain('대사 3줄이 weather 를 기다린다')
+    expect(collectDialogueNotices(data)).toContain('대사 3줄이 affinity 를 기다린다')
   })
 
   it('공급자가 있는 사실만 쓰면 안내가 없다', () => {
@@ -1885,16 +1923,17 @@ describe('collectDialogueNotices', () => {
     expect(collectDialogueNotices(data)).toEqual([])
   })
 
-  it('실제로 출하되는 대사 데이터가 기다리는 것은 weather 하나뿐이다', () => {
-    // 채집장노인.dlg 의 "@greet weather=rain" 규칙(대사 1줄)이 근거다 — 날씨
-    // 스펙이 아직 없으므로 이 대사는 지금 절대 나오지 않는다.
+  it('실제로 출하되는 대사 데이터에는 기다리는 줄이 하나도 없다 — 마지막 한 줄이 깨어났다', () => {
+    // 오래 "대사 1줄이 weather 를 기다린다" 였다(채집장노인.dlg 의
+    // "@greet weather=rain"). 날씨 가루가 그 사실의 공급자가 되면서 그 줄이
+    // 깨어났고, 목록이 비었다 — 그것이 이 아크가 한 일의 증거다.
     //
     // toContain 이 아니라 toEqual 로 목록 전체를 못박는다. 같은 파일의
-    // "@milestone justAchieved=ice_10000"(대사 2줄)이 오래 이 목록의 두 번째
-    // 줄이었는데, 그건 안내가 아니라 결함이었다 — 이 게임의 설계를 통째로
-    // 보여주는 유일한 콘텐츠가 나올 수 없는 상태였다. 목록을 통째로 단언해야
-    // 어떤 사실이 다시 이 목록으로 미끄러져도 조용히 지나가지 않는다.
+    // "@milestone justAchieved=ice_10000"(대사 2줄)이 오래 이 목록에 있었는데,
+    // 그건 안내가 아니라 결함이었다 — 이 게임의 설계를 통째로 보여주는 유일한
+    // 콘텐츠가 나올 수 없는 상태였다. 목록을 통째로 단언해야 어떤 사실이 다시
+    // 이 목록으로 미끄러져도 조용히 지나가지 않는다.
     const notices = collectDialogueNotices(loadRealGameData())
-    expect(notices).toEqual(['대사 1줄이 weather 를 기다린다'])
+    expect(notices).toEqual([])
   })
 })

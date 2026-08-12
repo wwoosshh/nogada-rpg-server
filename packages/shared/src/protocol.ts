@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { DEFAULT_APPEARANCE } from './appearance.js'
 import { emptyDialogueHistory } from './dialogue.js'
 import { SKILL_IDS, type PlayerLocation, type SkillId } from './types.js'
+import { WEATHER_KINDS } from './weather.js'
 
 export const ItemInstanceSchema = z.object({
   instanceId: z.string(),
@@ -66,6 +67,20 @@ const PlayerLocationSchema = z.object({
  */
 const defaultLocation = (): PlayerLocation => ({ mapId: '', x: 0, y: 0 })
 
+/**
+ * 저장된 하늘. 종류의 목록은 `WEATHER_KINDS`(weather.ts) 하나가 소유한다 —
+ * 여기 'rain'·'snow' 를 다시 적으면 날씨가 늘어나는 날 이 문만 옛 목록으로 남아
+ * 새 날씨를 쓴 세이브를 통째로 거부한다.
+ *
+ * `untilMs` 에 하한을 걸지 않는다. 이미 지난 시각은 "그친 날씨"라는 정상적인
+ * 상태이고(만료를 지우러 오는 작업이 없다), 그것을 거부하면 며칠 만에 돌아온
+ * 사람의 세이브가 읽히지 않는다.
+ */
+const PlayerWeatherSchema = z.object({
+  kind: z.enum(WEATHER_KINDS),
+  untilMs: z.number(),
+})
+
 export const PlayerStateSchema = z.object({
   id: z.string(),
   // 이름과 외형은 계정·캐릭터 생성에서 생긴 필드라, 그 전에 저장된 세이브에는
@@ -122,6 +137,18 @@ export const PlayerStateSchema = z.object({
   //
   // 그 "시작 칸"이 무엇인지는 여기서 정하지 않는다 — defaultLocation 참고.
   location: PlayerLocationSchema.default(defaultLocation),
+  // gold·rewarded 와 **정확히 같은 이유로** 기본값을 단다: 이 필드는 제작 확장
+  // 아크에서 생겼으므로 그 전에 저장된 플레이어에게는 키가 통째로 없고, 필수로
+  // 두면 readPlayers(store.ts)가 그 플레이어를 통째로 버린다 — 숙련도도
+  // 인벤토리도 강화한 도구도 넘긴 이정표도 같이. 가루를 쓴 적 없는 세이브는
+  // "지금 하늘에 아무 일도 없다"와 같은 뜻이라 null 이 마이그레이션 없이 맞는
+  // 답이다.
+  //
+  // 여기 기본값은 리터럴이어도 된다 — dialogueHistory·location 이 함수를 쓰는
+  // 이유(세이브 둘이 같은 객체를 물려받아 한쪽의 변경이 다른 쪽에 보인다)가
+  // null 에는 없다. 값을 고쳐 쓰는 곳도 없다: 날씨는 언제나 통째로 새 객체로
+  // 덮어써진다(useService).
+  weather: PlayerWeatherSchema.nullable().default(null),
 })
 
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })
@@ -151,6 +178,20 @@ export type EquipRequest = z.infer<typeof EquipRequestSchema>
  */
 export const EnhanceRequestSchema = z.object({ materialInstanceId: z.string().min(1) })
 export type EnhanceRequest = z.infer<typeof EnhanceRequestSchema>
+
+/**
+ * 사용 요청. 아이템 id 하나뿐이다.
+ *
+ * 개수는 담기지 않는다 — 거래(SellRequest)와 정반대의 이유다. 거래는 판정 대상의
+ * 크기를 사람만 알지만, 사용은 **언제나 하나**다: 둘을 한 번에 써도 두 번째가
+ * 첫 번째를 덮어쓸 뿐이라(남은 시간은 버려진다, useService) 개수를 받는 순간
+ * 요청 하나로 "돈만 배로 나가는" 조합을 표현할 수 있게 된다.
+ *
+ * 무슨 효과가 나는지도 담기지 않는다 — 그것은 아이템 정의(`useEffect`)가 정하는
+ * 판정이고, 요청이 고를 수 있게 하면 100원짜리 가루로 3시간짜리 하늘을 산다.
+ */
+export const UseRequestSchema = z.object({ itemId: z.string().min(1) })
+export type UseRequest = z.infer<typeof UseRequestSchema>
 
 /**
  * 대화 요청. 화자 id 하나뿐이다.

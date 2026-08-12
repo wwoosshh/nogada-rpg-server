@@ -116,6 +116,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     // 아직 아무 달인에게도 대금을 받지 않았다 — 대금 테스트가 여기에 값을 넣어
     // "이미 받은 사람"을 만든다.
     rewarded: [],
+    // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    weather: null,
     dialogueHistory: emptyDialogueHistory(),
     // 화자 둘 다 얼음채집장에 서 있으므로 기본 플레이어도 거기 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.

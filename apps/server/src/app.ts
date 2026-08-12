@@ -18,6 +18,7 @@ import { registerStateRoutes } from './routes/state.js'
 import { registerTalkRoutes } from './routes/talk.js'
 import { registerTimeRoutes } from './routes/time.js'
 import { registerTradeRoutes } from './routes/trade.js'
+import { registerUseRoutes } from './routes/use.js'
 import { JsonPersistence } from './state/jsonPersistence.js'
 import { CharacterStateError, type Persistence } from './state/persistence.js'
 import { PostgresPersistence } from './state/postgresPersistence.js'
@@ -133,6 +134,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     registerEnhanceRoutes(guarded, store)
     registerTalkRoutes(guarded, store, data)
     registerTradeRoutes(guarded, store, data)
+    registerUseRoutes(guarded, store, data)
     registerMoveRoutes(guarded, store, data)
   })
 

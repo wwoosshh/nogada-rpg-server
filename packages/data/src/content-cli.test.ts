@@ -374,23 +374,47 @@ describe('runDialogueCommand — 왜 안 나왔는가', () => {
   })
 
   it('공급자가 없어 영원히 안 맞는 조건과, 이번에 값을 안 준 조건을 다르게 말한다', () => {
-    // weather 는 공급자가 없어 실제 게임에서도 안 맞는다(빌드의 "안내" 와 같은 원인).
-    // daysSinceLastTalk 는 공급자가 있고 이번 시뮬레이션(빈 플레이어 — 이 화자와
-    // 말해 본 적이 없다)에서는 매길 값이 없었을 뿐이라, 작가가 인자 하나만 더
-    // 주면 바로 확인할 수 있다 — 서로 할 일이 다르다.
+    // affinity 는 공급자가 없어 실제 게임에서도 안 맞는다(빌드의 "안내" 와 같은
+    // 원인). daysSinceLastTalk 는 공급자가 있고 이번 시뮬레이션(빈 플레이어 —
+    // 이 화자와 말해 본 적이 없다)에서는 매길 값이 없었을 뿐이라, 작가가 인자
+    // 하나만 더 주면 바로 확인할 수 있다 — 서로 할 일이 다르다.
+    //
+    // 이 예시가 오래 weather 였다. 그 사실이 공급자를 얻으면서(설계 §6-앞 1~4)
+    // 아래 justAchieved 검사와 같은 자리로 옮겨 갔고, "아직 공급자가 없다" 쪽의
+    // 예시는 affinity 가 이어받았다.
+    const waitingOnAffinity = dRule({
+      id: 'close',
+      event: 'greet',
+      conditions: [{ fact: 'affinity', op: '>=', value: 30 }],
+      source: { file: '노인.dlg', line: 9 },
+    })
     const waitingOnLastTalk = dRule({
       id: 'ms',
       event: 'milestone',
       conditions: [{ fact: 'daysSinceLastTalk', op: '>=', value: 3 }],
     })
     const out = runDialogueCommand(
-      whyData([rainOnly, waitingOnLastTalk, bare1]),
+      whyData([waitingOnAffinity, waitingOnLastTalk, bare1]),
       '노인',
       {},
       { now: FIXED_NOW, seed: 0 },
     )
-    expect(out).toContain('weather=rain — weather 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다')
+    expect(out).toContain('affinity>=30 — affinity 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다')
     expect(out).toContain('daysSinceLastTalk>=3 — daysSinceLastTalk 에 값이 없다. 이번에 주지 않았다')
+  })
+
+  it('출하 데이터의 weather 를 "이번에 안 줬다" 로 진단한다 — 공급자가 생겼기 때문이다', () => {
+    // justAchieved 가 그랬듯(아래) weather 도 공급자를 얻었다. 그 전에는 이 줄이
+    // "이 사실을 채워 주는 곳이 아직 없다" 였고, 그건 작가에게 "네가 할 수 있는
+    // 일이 없다"는 뜻이었다. 이제는 `--weather=rain` 하나면 확인된다.
+    const out = runDialogueCommand(realData, '채집장노인', {}, { now: FIXED_NOW, seed: 0 })
+    expect(out).toContain('weather=rain — weather 에 값이 없다. 이번에 주지 않았다')
+    expect(out).not.toContain('weather 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다')
+  })
+
+  it('--weather=rain 오버라이드로 잠들어 있던 비 오는 날 대사를 볼 수 있다', () => {
+    const out = runDialogueCommand(realData, '채집장노인', { weather: 'rain' }, { now: FIXED_NOW, seed: 0 })
+    expect(out).toContain('"이런 날엔 얼음이 잘 안 잡히지."')
   })
 
   it('출하 데이터의 justAchieved 를 "이번에 안 줬다" 로 진단한다 — 공급자가 생겼기 때문이다', () => {
@@ -517,7 +541,7 @@ describe('runWaitingCommand', () => {
     const data: GameData = {
       ...emptyGameData(),
       dialogue: [
-        dRule({ id: 'a', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }], lines: ['한 줄'] }),
+        dRule({ id: 'a', event: 'greet', conditions: [{ fact: 'affinity', op: '>=', value: 30 }], lines: ['한 줄'] }),
       ],
     }
     const notices = collectDialogueNotices(data)
@@ -526,14 +550,20 @@ describe('runWaitingCommand', () => {
     for (const notice of notices) expect(out).toContain(notice)
   })
 
-  it('실제 출하 데이터에서 빌드의 안내와 정확히 같은 내용을 보여준다', () => {
+  it('실제 출하 데이터에서 빌드의 안내와 정확히 같은 내용을 보여준다 — 지금은 둘 다 비었다', () => {
+    // 오래 "대사 1줄이 weather 를 기다린다" 한 건이었다(채집장노인.dlg). 날씨
+    // 가루가 그 사실의 공급자가 되면서 그 줄이 깨어났고, 기다리는 대사가 하나도
+    // 남지 않았다.
+    //
+    // 그래서 이 검사는 "둘 다 비어서 공허하게 통과"할 수 없게 모양을 바꿨다:
+    // 목록이 같은지(= 빌드의 안내와 도구의 출력이 같은 계산인지)를 보는 대신,
+    // **비었을 때 도구가 무엇이라고 말하는지**까지 못박는다. 안내가 다시 생기면
+    // 위 검사가 그 내용의 일치를 지킨다.
     const data = loadGameData()
     const notices = collectDialogueNotices(data)
     const out = runWaitingCommand(data)
-    // 이 assertion 이 공허하게 통과하지 않도록(둘 다 비어서 그냥 통과) 못박아 둔다 —
-    // 채집장노인.dlg 의 weather=rain 규칙 때문에 실제로 최소 1건은 있어야 한다.
-    expect(notices.length).toBeGreaterThan(0)
-    for (const notice of notices) expect(out).toContain(notice)
+    expect(notices).toEqual([])
+    expect(out).toContain('없음')
   })
 
   it('기다리는 대사가 없으면 그렇다고 말한다', () => {

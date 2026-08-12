@@ -36,6 +36,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     dialogueHistory: emptyDialogueHistory(),
     // 이 판정들은 맵을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
     location: { mapId: 'world', x: 0, y: 0 },
+    // 가루를 쓴 적 없는 사람이다. 날씨를 보는 검사는 overrides 로 덮어 쓴다.
+    weather: null,
     ...overrides,
   }
 }
@@ -186,5 +188,34 @@ describe('buildFacts', () => {
     p.dialogueHistory.lastTalkAt['다른화자'] = NOW
     const facts = buildFacts({ speaker: SPEAKER, player: p, milestones: [], nowMs: NOW })
     expect(facts.talkedBefore).toBe(false)
+  })
+
+  // 왜: 이 세 검사가 weather 사실의 전부다. 잠들어 있던 대사(채집장노인.dlg 의
+  //     `@greet weather=rain`)가 깨어나는 자리이자, 그 대사가 다시 잠드는 자리다.
+  it('가루가 살아 있는 동안 weather 를 공급한다 — 잠든 대사가 깨어나는 유일한 경로다', () => {
+    const facts = buildFacts({
+      speaker: SPEAKER,
+      player: player({ weather: { kind: 'rain', untilMs: NOW + 1000 } }),
+      milestones: [],
+      nowMs: NOW,
+    })
+    expect(facts.weather).toBe('rain')
+  })
+
+  it('그친 뒤에는 weather 를 넣지 않는다 — 없는 사실이라야 조건이 거짓이다', () => {
+    // 값을 남겨 두고 'clear' 같은 자리표시를 넣으면, 비 조건을 부정으로 쓴
+    // 규칙이 그 자리표시와 비교되기 시작한다. 그치면 그냥 없어야 한다.
+    const facts = buildFacts({
+      speaker: SPEAKER,
+      player: player({ weather: { kind: 'rain', untilMs: NOW } }),
+      milestones: [],
+      nowMs: NOW,
+    })
+    expect(Object.hasOwn(facts, 'weather')).toBe(false)
+  })
+
+  it('가루를 쓴 적 없으면 weather 를 넣지 않는다', () => {
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
+    expect(Object.hasOwn(facts, 'weather')).toBe(false)
   })
 })

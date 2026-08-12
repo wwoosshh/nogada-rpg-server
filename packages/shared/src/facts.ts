@@ -12,17 +12,23 @@
  * packages/data/src/facts.test.ts 가 지킨다 — 어긋나도 타입 검사는 아무 말도
  * 하지 않기 때문이다.
  *
- * `weather`·`affinity`·`quest.*` 처럼 공급자가 없다고 선언된 사실은 여기서
- * **넣지 않는다.** 없는 사실은 어떤 연산자로도 거짓이라(matchesCondition), 그
- * 사실을 조건으로 건 대사는 자연히 잠들어 있고 빌드가 작가에게 그렇게
- * 안내한다. 자리를 채우려고 기본값(예: weather='clear')을 넣으면 그 안내가
- * 사라지면서, 아직 없는 스펙이 이미 있는 것처럼 굳어 버린다.
+ * `affinity`·`quest.*` 처럼 공급자가 없다고 선언된 사실은 여기서 **넣지
+ * 않는다.** 없는 사실은 어떤 연산자로도 거짓이라(matchesCondition), 그 사실을
+ * 조건으로 건 대사는 자연히 잠들어 있고 빌드가 작가에게 그렇게 안내한다.
+ * 자리를 채우려고 기본값(예: affinity=0)을 넣으면 그 안내가 사라지면서, 아직
+ * 없는 스펙이 이미 있는 것처럼 굳어 버린다.
+ *
+ * `weather` 는 그 자리에서 **걸어 나온 첫 사실**이다(설계 §6-앞 1~4). 값은
+ * 여기서 지어내지 않고 플레이어 상태(`player.weather`)에서 나오며, 그친 날씨는
+ * 여전히 넣지 않는다 — 같은 규범이 이제 "공급자가 없어서"가 아니라 "지금 비가
+ * 안 와서" 로 적용된다.
  */
 
 import type { Facts, FactValue } from './dialogue.js'
 import { achievedIds, type MilestoneDef } from './milestones.js'
 import { gameDaysBetween, gameTimeAt } from './time.js'
 import { SKILL_IDS, type PlayerState } from './types.js'
+import { activeWeather } from './weather.js'
 
 export interface FactSources {
   /**
@@ -130,6 +136,18 @@ export function buildFacts(sources: FactSources): Facts {
   // 부정으로 쓴 규칙(place!=여관앞)이 자리 개념이 없는 화자에게서 갑자기
   // 참이 된다.
   if (place !== undefined) facts.place = place
+
+  // 날씨는 place·daysSinceLastTalk 와 **같은 자세**다 — 없으면 넣지 않는다.
+  // 다만 여기서 "없다"는 두 가지를 한꺼번에 뜻한다: 가루를 쓴 적이 없거나(null),
+  // 썼지만 이미 그쳤거나(만료). 둘 다 결과가 같아야 한다 — 그친 하늘과 처음부터
+  // 맑은 하늘은 플레이어에게 같은 하늘이기 때문이다.
+  //
+  // 만료 판정에 쓰는 시각은 위 gameTimeAt 이 받은 것과 **같은 nowMs** 다. 여기서
+  // Date.now() 를 부르면 같은 요청 안에서 시각이 둘이 되고, 그러면 season·hour
+  // 를 계산한 순간과 날씨를 판정한 순간이 갈라진다 — 시뮬레이터(--now)가 과거·
+  // 미래의 하늘을 보여줄 수 없게 되는 것은 덤이다.
+  const weather = activeWeather(player.weather, nowMs)
+  if (weather !== undefined) facts.weather = weather
 
   return facts
 }

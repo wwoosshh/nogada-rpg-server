@@ -836,6 +836,20 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     }
   }
 
+  // 사용 효과 제약(설계 §6-앞 1·4): 쓰면 하나가 사라지는 물건은 **재료**여야 한다.
+  //
+  // 도구는 스택이 아니라 인스턴스로 산다(강화 수치가 붙어 개별 정체성이 생긴다).
+  // `performUse` 가 소모하는 것은 `stacks[itemId]` 하나이므로, 도구에 이 칸이
+  // 붙으면 화면은 [사용] 버튼을 그리는데 서버는 언제나 "가진 것이 없다"고
+  // 거절하는 물건이 된다 — 그 어긋남은 로그 어디에도 남지 않는다.
+  for (const item of Object.values(data.items)) {
+    if (item.useEffect && item.kind !== 'material') {
+      violations.push(
+        `items[${item.id}]: 도구에 사용 효과가 붙어 있다 — 쓰면 하나가 사라지는데 도구는 스택이 아니라 인스턴스라 소모할 개수가 없다. items.csv 의 kind 를 material 로 두거나 useEffect·useValue 를 비운다`,
+      )
+    }
+  }
+
   // 참조 무결성 검사가 이미 위반을 찾았다면 도달 가능성 검사(고정점 계산)는
   // 건너뛴다. 안 그러면 오타 하나가 그 아이템에 의존하는 나머지 전부를 "도달 불가"로
   // 도매금 처리해 진짜 원인이 N+1 줄의 소음에 파묻힌다.

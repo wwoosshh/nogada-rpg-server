@@ -70,6 +70,8 @@ export function createInitialPlayer(spec: NewCharacterSpec): PlayerState {
     // 이고, 그 숫자는 캐서 넘는 것이지 시작할 때 주어지는 것이 아니다.
     rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
+    // 하늘에는 아무 일도 없다 — 날씨는 얼음 계열의 가루를 만들어 써야 걸린다.
+    weather: null,
     // 시작 자리는 **고른 마을의** spawn 오브젝트가 유일한 출처다 — 좌표를 여기
     // 적으면 맵을 고쳐 그려도 따라오지 않는 숫자가 하나 생기고, 그 칸에 벽을 그린
     // 순간 그 마을을 고른 사람이 전부 벽 속에서 시작한다.

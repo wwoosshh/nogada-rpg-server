@@ -79,7 +79,7 @@ describe('gatherToolProfile', () => {
       instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
       equipped: { mineral: 'i1' },
       nextActionAt: 0, celebrated: [], rewarded: [], dialogueHistory: emptyDialogueHistory(),
-      location: { mapId: 'world', x: 0, y: 0 },
+      location: { mapId: 'world', x: 0, y: 0 }, weather: null,
     }
     const items = { copper_pickaxe: copper }
     const wrongSkillTool = equippedToolInfo(player, 'herb', items)

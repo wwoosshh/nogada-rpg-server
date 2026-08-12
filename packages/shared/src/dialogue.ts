@@ -14,6 +14,7 @@
  */
 
 import { SEASONS } from './time.js'
+import { WEATHER_KINDS } from './weather.js'
 
 /** 사실 하나의 값. 비교 연산의 의미를 좁게 유지하려고 원시값만 허용한다. */
 export type FactValue = string | number | boolean
@@ -135,10 +136,10 @@ export interface FactSpec {
  * 조건에 쓸 수 있는 사실 이름의 전체 목록.
  *
  * `season`·`hour`·`dayOfSeason`·`skill.*`·`milestone.*`·`talkedBefore`·
- * `daysSinceLastTalk`·`justAchieved`·`place` 는 지금 공급자가 있다(설계 문서 6.1).
- * `weather`·`affinity`·`quest.*`·`story`·`activity`·`location` 은 자리만
- * 만들어 뒀다(6.2) — 그 값을 만들 스펙(날씨·호감도·퀘스트) 자체가 아직
- * 없어서, 그 이름을 쓴 조건은 파싱은 되지만 절대 맞지 않는다.
+ * `daysSinceLastTalk`·`justAchieved`·`place`·`weather` 는 지금 공급자가 있다
+ * (설계 문서 6.1). `affinity`·`quest.*`·`story`·`activity`·`location` 은 자리만
+ * 만들어 뒀다(6.2) — 그 값을 만들 스펙(호감도·퀘스트) 자체가 아직 없어서, 그
+ * 이름을 쓴 조건은 파싱은 되지만 절대 맞지 않는다.
  *
  * `speaker` 가 이 목록에 없는 것은 실수가 아니다 — selectDialogue 는 화자를
  * facts 가 아니라 별도 매개변수로 받으므로(위 selectDialogue 문서 참고),
@@ -170,8 +171,16 @@ export const DECLARED_FACTS: readonly FactSpec[] = [
   // 연산자로도 거짓이라 그런 화자에게 place 를 건 대사는 자연히 잠든다.
   // 그게 옳다: 자리가 하나뿐인 사람에게 "어느 자리냐"는 물음은 뜻이 없다.
   { name: 'place', prefix: false, supplied: true, value: { kind: 'string' } },
-  // 아래 여섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
-  { name: 'weather', prefix: false, supplied: false, value: { kind: 'unspecified' } },
+  // weather 는 이 목록에서 **처음으로 공급자를 얻은** 미공급 사실이다(설계
+  // §6-앞 1~4). 값을 만드는 곳은 날씨 가루의 사용 판정(서버의 performUse)이고,
+  // buildFacts 가 만료 전인 동안만 그것을 싣는다 — 그쳤으면 넣지 않으므로,
+  // 이 사실을 건 대사는 비가 올 때만 깨어 있다가 다시 잠든다.
+  //
+  // 값의 모양도 이때 함께 정해졌다("그 스펙이 생길 때 정한다"는 아래 문단의
+  // 약속 그대로): 목록은 WEATHER_KINDS(weather.ts) 하나가 소유하고, 그래서
+  // `weather=fog` 같은 오타를 빌드가 잡는다.
+  { name: 'weather', prefix: false, supplied: true, value: { kind: 'enum', values: WEATHER_KINDS } },
+  // 아래 다섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
   { name: 'affinity', prefix: false, supplied: false, value: { kind: 'unspecified' } },
   { name: 'quest.', prefix: true, supplied: false, value: { kind: 'unspecified' } },
   { name: 'story', prefix: false, supplied: false, value: { kind: 'unspecified' } },

@@ -537,6 +537,90 @@ describe('POST /api/equip', () => {
   })
 })
 
+describe('POST /api/use', () => {
+  /**
+   * 사용 효과를 가진 아이템 하나. id 를 적지 않는 것은 상점 테스트와 같은 이유다 —
+   * 여기 이름을 박으면 items.csv 가 바뀔 때 이 배선 시험이 거짓말을 한다.
+   */
+  function usable(): ItemDef {
+    const item = Object.values(loadGameData().items)
+      .filter((def) => def.useEffect)
+      .sort((a, b) => a.id.localeCompare(b.id))[0]
+    if (!item) throw new Error('items.csv 에 사용 효과를 가진 아이템이 없다')
+    return item
+  }
+
+  /** 그 가루를 세이브에 직접 심고 그 위에 앱을 다시 세운다. 제작으로 만들려면 얼음 1,000 이 필요하다. */
+  async function withPowder(
+    count: number,
+    body: (me: TestPlayer, item: ItemDef) => Promise<void>,
+  ): Promise<void> {
+    const item = usable()
+    const before = await buildTestApp()
+    const me = await asPlayer(before)
+    const file = saveFileOf(before)
+
+    const raw = rawSaveOf(before)[me.id] as { stacks: Record<string, number> }
+    raw.stacks[item.id] = count
+    writeRawCharacter(file, me.id, raw)
+
+    const app = await buildTestApp({ dataFile: file })
+    await body(await asPlayer(app, { resume: me }), item)
+
+    await app.close()
+    // 임시 디렉터리를 지우는 것은 파일을 만든 쪽이다 — 나중에 닫는다.
+    await before.close()
+  }
+
+  it('가루를 쓰면 날씨가 실린 플레이어 통째를 돌려주고 그 상태가 저장된다', async () => {
+    await withPowder(2, async (me, item) => {
+      const res = await me.inject({ method: 'POST', url: '/api/use', payload: { itemId: item.id } })
+
+      expect(res.statusCode).toBe(200)
+      // 응답이 { player } 통째 관례를 지키는지 — 상태 응답과 같은 스키마다.
+      expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
+      const body = res.json() as { player: { weather: { kind: string; untilMs: number } | null } }
+      expect(body.player.weather?.kind).toBe(item.useEffect?.weather)
+      expect(body.player.weather?.untilMs).toBeGreaterThan(Date.now())
+
+      // 저장까지 갔는지 — 응답에만 있고 세이브에 없으면 새로고침이 되돌린다.
+      const state = await me.inject({ method: 'GET', url: '/api/state' })
+      const saved = state.json() as { player: { stacks: Record<string, number>; weather: unknown } }
+      expect(saved.player.stacks[item.id]).toBe(1)
+      expect(saved.player.weather).toEqual(body.player.weather)
+    })
+  })
+
+  it('가지고 있지 않으면 400 missing_items 다', async () => {
+    await withPowder(0, async (me, item) => {
+      const res = await me.inject({ method: 'POST', url: '/api/use', payload: { itemId: item.id } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toEqual({ code: 'missing_items' })
+    })
+  })
+
+  it('없는 아이템은 400 unknown_item 이다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    const res = await me.inject({ method: 'POST', url: '/api/use', payload: { itemId: 'ghost_powder' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'unknown_item' })
+
+    await app.close()
+  })
+
+  it('itemId 가 없으면 400 이다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    const res = await me.inject({ method: 'POST', url: '/api/use', payload: {} })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
 describe('POST /api/enhance', () => {
   it('예비 도구를 재료로 착용 도구가 +1 되고, 재료 인스턴스는 사라진 채 저장된다', async () => {
     const before = await buildTestApp()

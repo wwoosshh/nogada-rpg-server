@@ -122,6 +122,33 @@ describe('PlayerStateSchema', () => {
     expect(parsed.success && parsed.data.rewarded).toEqual(['ice_master'])
   })
 
+  // 왜: weather 는 제작 확장 아크에서 생긴 필드다. gold·rewarded 와 **정확히 같은
+  //     이유로** 기본값이 필요하다 — 필수로 두면 그 전에 저장된 세이브가
+  //     readPlayers 에서 통째로 버려진다. 가루를 쓴 적 없는 세이브는 "지금 하늘에
+  //     아무 일도 없다"와 같은 뜻이라 null 이 마이그레이션 없이 맞는 답이다.
+  it('weather 가 통째로 없는 옛 세이브를 맑은 하늘(null)로 받아들인다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.weather).toBeNull()
+  })
+
+  it('적혀 있는 날씨는 그대로 읽는다', () => {
+    const weather = { kind: 'snow', untilMs: 1_767_225_600_000 }
+    const parsed = PlayerStateSchema.safeParse({ ...validSave(), weather })
+
+    expect(parsed.success && parsed.data.weather).toEqual(weather)
+  })
+
+  // 왜: 모르는 날씨가 통과하면 그 값은 사실로 공급되고(facts.ts), 어떤 대사
+  //     조건과도 안 맞으면서 화면은 그릴 수 없는 하늘을 그리려 든다. 값의 목록은
+  //     WEATHER_KINDS 하나가 소유하고 세이브의 문도 그것으로 잠근다.
+  it('알 수 없는 날씨 종류가 든 세이브는 거부한다', () => {
+    const save = { ...validSave(), weather: { kind: 'storm', untilMs: 1 } }
+
+    expect(PlayerStateSchema.safeParse(save).success).toBe(false)
+  })
+
   // 왜: 기본값이 리터럴 하나뿐이면 세이브 둘이 **같은 배열**을 물려받을 수 있다.
   //     그러면 한 사람이 얼음 달인에게 받은 기록이 다른 사람에게도 "이미 받음"
   //     으로 보여 100만 골드가 조용히 사라진다 — 빈 이력이 파싱마다 새로

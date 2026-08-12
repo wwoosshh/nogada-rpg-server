@@ -116,9 +116,29 @@ function standingAtPlaceFacts(): Facts {
   return productionFacts(emptyPlayer(), NOW, placeId)
 }
 
+/**
+ * 날씨 가루를 방금 쓴 플레이어 — weather 가 나오는 유일한 조건이다(빈 플레이어의
+ * 하늘에는 아무 일도 없다).
+ *
+ * 위 두 픽스처와 같은 분업이다: 이 상태에 **도달하는** 경로가 실재하는지는
+ * apps/server/src/services/useService.test.ts 가 지킨다. 여기서 지키는 것은
+ * "그 상태를 주면 공급자가 weather 를 만든다" 하나뿐이다.
+ */
+function activeWeatherFacts(): Facts {
+  const player = emptyPlayer()
+  player.weather = { kind: 'rain', untilMs: NOW + 1000 }
+  return productionFacts(player)
+}
+
 /** 드리프트 검사가 보는 상태 전부. 사실 하나가 특정 상태에서만 나오면 그 상태를 여기 더한다. */
 function allProductionFacts(): Facts[] {
-  return [emptyPlayerFacts(), talkedBeforeFacts(), justAchievedFacts(), standingAtPlaceFacts()]
+  return [
+    emptyPlayerFacts(),
+    talkedBeforeFacts(),
+    justAchievedFacts(),
+    standingAtPlaceFacts(),
+    activeWeatherFacts(),
+  ]
 }
 
 describe('사실 공급자와 선언 목록', () => {
