@@ -100,7 +100,8 @@ export function toolGatherFactor(def: ItemDef): number      // 1티어 1.0 / 2�
 export function jackpotFlatBonus(def: ItemDef): number      // 1티어 0 / 2티어 2 / 3티어 3 (roll≤10 밴드 평감산)
 export interface GatherRollResult { itemId: string | null; roll: number }
 export function gatherOutcome(table: GatherTableDef, proficiency: number, tool: ItemDef, rng: () => number): GatherRollResult
-// roll = floor(rng()*100001*factor); roll<=10 이면 추가로 -jackpotFlatBonus (음수 방지 clamp 0)
+// rawRoll = floor(rng()*100001); rawRoll<=10(잭팟 밴드) 이면 roll = rawRoll - jackpotFlatBonus
+// (음수 방지 clamp 0), 아니면 roll = floor(rawRoll*factor) — 곱과 평감산은 배타적이다(스펙 §7-앞 13)
 // 브라켓: 첫 번째 bracketMax >= proficiency (∞=null 은 항상 매치, 마지막)
 // 티어: 첫 번째 cumulative >= roll... 정확한 부등호는 원작 준용: roll <= cumulative[i] 첫 매치. 어디에도 안 걸리면 실패.
 export function canGather(equippedTier: number): boolean    // > 0 — 맨손 거부 명시 조건 (§7-앞 8)

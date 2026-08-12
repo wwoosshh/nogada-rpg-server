@@ -7,15 +7,19 @@ import type { GatherBracketDef, GatherTableDef, ItemDef } from '../types.js'
  * 받지 못하므로(§7-앞 9) 이 판정을 미리 계산해 보여줄 수 없다 — 결과 표시만 한다.
  */
 
-/** roll 의 정의역 상한. roll = floor(rng × 100001 × factor) ∈ 0~100000. */
+/** roll 의 정의역 상한. roll ∈ 0~100000(밴드 안은 평감산, 밖은 도구 배수 — 아래). */
 export const GATHER_ROLL_MAX = 100000
 
 /**
- * 잭팟 밴드의 상한. 이 안(roll ≤ 10)에서는 도구 보정이 곱이 아니라 평감산이다 —
- * 곱 ×0.8 은 roll 3 을 2.4→2 로 겨우 낮추지만, 평감산 −3 은 0 으로 만든다.
- * 원작의 "상급 도구가 잭팟을 크게 띄우는" 감각의 보존이다(§7-앞 13).
+ * 잭팟 밴드의 상한 — **원 roll**(rawRoll = floor(rng × 100001), 도구 보정 전) 기준.
+ * 이 안(rawRoll ≤ 10)에서는 도구 보정이 곱이 아니라 평감산이고, 밖에서는 곱만
+ * 적용된다 — 둘은 배타적이다(gatherOutcome 참고). 곱 ×0.8 은 roll 3 을 2.4→2 로
+ * 겨우 낮추지만, 평감산 −3 은 0 으로 만든다 — 원작의 "상급 도구가 잭팟을 크게
+ * 띄우는" 감각의 보존이다(§7-앞 13). 밴드 판정을 곱 적용 후의 roll 로 하면(즉
+ * 두 보정을 스택하면) 이 배타성이 깨진다 — 그 회귀를 막으려고 export 해서
+ * 시뮬레이터(gatherSimulation.test.ts)가 같은 상수로 정확한 확률을 셀 수 있게 한다.
  */
-const JACKPOT_BAND_MAX = 10
+export const JACKPOT_BAND_MAX = 10
 
 /**
  * 도구 등급의 roll 보정 배수 — 구리(1) ×1.0 / 철(2) ×0.9 / 미스릴(3) ×0.8.
@@ -68,8 +72,13 @@ export interface GatherRollResult {
  * 시드의 재현이 무너진다(테스트·시뮬레이터가 그 성질에 기댄다).
  *
  * 판정 순서:
- *   1. roll = floor(rng × 100001 × factor) — 도구가 좋을수록 roll 이 낮아진다.
- *   2. roll ≤ 10(잭팟 밴드)이면 평감산을 더 빼고 0 아래로는 내려가지 않는다.
+ *   1. rawRoll = floor(rng × 100001) — 도구 보정 **전**의 원 roll. 밴드 소속은
+ *      항상 이 값으로 가른다.
+ *   2. rawRoll ≤ 10(잭팟 밴드) 이면 그 안에서 **평감산만** 적용한다:
+ *      roll = max(0, rawRoll − flat). 밴드 밖이면 **곱만** 적용한다:
+ *      roll = floor(rawRoll × factor). 곱과 평감산은 배타적이다 — 둘을 스택하면
+ *      (곱을 먼저 적용한 뒤 그 결과로 밴드를 판정하면) 상급 도구가 잭팟을 크게
+ *      띄우는 감각이 희석된다(§7-앞 13).
  *   3. 숙련 브라켓의 누적표에서 첫 번째 roll ≤ cumulative[i] 가 티어를 정한다.
  *      어디에도 안 걸리면 실패 — 성패 무관 숙련 증가는 호출자(서버)의 몫이다(§7-앞 7).
  */
@@ -79,8 +88,11 @@ export function gatherOutcome(
   tool: ItemDef,
   rng: () => number,
 ): GatherRollResult {
-  let roll = Math.floor(rng() * (GATHER_ROLL_MAX + 1) * toolGatherFactor(tool))
-  if (roll <= JACKPOT_BAND_MAX) roll = Math.max(0, roll - jackpotFlatBonus(tool))
+  const rawRoll = Math.floor(rng() * (GATHER_ROLL_MAX + 1))
+  const roll =
+    rawRoll <= JACKPOT_BAND_MAX
+      ? Math.max(0, rawRoll - jackpotFlatBonus(tool))
+      : Math.floor(rawRoll * toolGatherFactor(tool))
 
   const bracket = gatherBracketFor(table, proficiency)
   for (let i = 0; i < bracket.cumulative.length; i++) {

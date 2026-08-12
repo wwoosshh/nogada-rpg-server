@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { createRng, gatherOutcome, type GatherTableDef, type ItemDef } from '@nogada/shared'
+import {
+  createRng,
+  gatherOutcome,
+  GATHER_ROLL_MAX,
+  JACKPOT_BAND_MAX,
+  jackpotFlatBonus,
+  toolGatherFactor,
+  type GatherTableDef,
+  type ItemDef,
+} from '@nogada/shared'
 import { loadGameData } from './load.js'
 import { loadGatherTables } from './loadGatherTables.js'
 
@@ -126,12 +135,28 @@ describe('§8-4 네 표 전 티어가 실제로 드랍된다', () => {
 
 describe('§8-5 도구 등급이 희귀 티어를 체감되게 더 뽑는다', () => {
   // 얼음 ≤500000 브라켓(숙련 20만): 상위 두 티어(ice_gem + pure_ice_crystal)의
-  // 누적 상한이 10065 다. roll = floor(u×100001×factor) ≤ 10065 ⇔ u < 10066/(100001×factor)
-  // 이므로 분석 확률은 factor 에 정확히 반비례한다 — 철 +11%, 미스릴 +25%.
-  // (잭팟 평감산은 roll 을 낮출 뿐이라 이 상위 묶음의 경계를 넘나들지 않는다.)
+  // 누적 상한이 10065 다.
+  //
+  // §7-앞 13 의 배타 보정(gatherTable.ts) 아래서는 이 확률이 factor 에 정확히
+  // 반비례하지 않는다 — rawRoll ≤ JACKPOT_BAND_MAX(10) 구간은 곱이 아니라
+  // 평감산만 받고, rawRoll 이 정수이므로(연속均등이 아니라 이산 균등) 곱을
+  // 적용하는 밖 구간도 factor 별로 깔끔한 반비례가 아니다. 근사식 대신
+  // gatherOutcome 과 똑같은 두 갈래 식으로 rawRoll 100001 가지를 전수 세어
+  // "정확한" 확률을 낸다 — 근사가 실제 판정과 갈라질 여지를 아예 없앤다.
   const prof = 200_000
   const rareCut = 10_065
-  const pFor = (factor: number) => (rareCut + 1) / (DOMAIN * factor)
+
+  const exactRareCount = (tool: ItemDef): number => {
+    const factor = toolGatherFactor(tool)
+    const flat = jackpotFlatBonus(tool)
+    let count = 0
+    for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
+      const roll = rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - flat) : Math.floor(rawRoll * factor)
+      if (roll <= rareCut) count++
+    }
+    return count
+  }
+  const pFor = (tool: ItemDef) => exactRareCount(tool) / DOMAIN
 
   const rare = (tool: ItemDef): number => {
     const { counts } = simulate(tables['ice']!, prof, tool, N)
@@ -142,15 +167,15 @@ describe('§8-5 도구 등급이 희귀 티어를 체감되게 더 뽑는다', (
   const ironRare = rare(iron)
   const mithrilRare = rare(mithril)
 
-  it('구리·철·미스릴 각각이 분석 확률의 3σ 안이다', () => {
-    expectWithin3Sigma(copperRare, N, pFor(1.0))
-    expectWithin3Sigma(ironRare, N, pFor(0.9))
-    expectWithin3Sigma(mithrilRare, N, pFor(0.8))
+  it('구리·철·미스릴 각각이 정확한 전수 확률의 3σ 안이다', () => {
+    expectWithin3Sigma(copperRare, N, pFor(copper))
+    expectWithin3Sigma(ironRare, N, pFor(iron))
+    expectWithin3Sigma(mithrilRare, N, pFor(mithril))
   })
 
   it('철 > 구리, 미스릴 > 철 — 차이가 두 관측치의 합성 3σ 를 넘는 유의차다', () => {
     const sigma = (p: number) => Math.sqrt(N * p * (1 - p))
-    expect(ironRare - copperRare).toBeGreaterThan(3 * Math.hypot(sigma(pFor(1.0)), sigma(pFor(0.9))))
-    expect(mithrilRare - ironRare).toBeGreaterThan(3 * Math.hypot(sigma(pFor(0.9)), sigma(pFor(0.8))))
+    expect(ironRare - copperRare).toBeGreaterThan(3 * Math.hypot(sigma(pFor(copper)), sigma(pFor(iron))))
+    expect(mithrilRare - ironRare).toBeGreaterThan(3 * Math.hypot(sigma(pFor(iron)), sigma(pFor(mithril))))
   })
 })

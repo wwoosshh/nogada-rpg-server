@@ -638,7 +638,12 @@ export function runGatherCommand(
   const nameWidth = Math.max(...table.tiers.map((t) => (data.items[t.itemId]?.name ?? t.itemId).length))
 
   out.push(`  티어  ${'아이템'.padEnd(nameWidth, '　')}  표 기준%  관측%     (횟수)`)
-  let prev = 0
+  // 1티어의 폭은 roll 0..cum1 로 cum1+1 가지다(roll=0 도 그 티어에 든다) — prev
+  // 를 0 이 아니라 -1 로 시작해야 `cum - prev` 가 그 +1 을 셈에 넣는다. 0 으로
+  // 시작하면 1티어만 한 칸 좁게 세고, 그만큼이 표 전체 합에서 조용히 샌다
+  // (합이 100001/100001 이 아니라 100000/100001 이 된다) — 분모를 100000 으로
+  // 잘못 나눈 것과는 다른, 분자 쪽 펜스포스트 오류였다.
+  let prev = -1
   table.tiers.forEach((tier, i) => {
     const cum = bracket.cumulative[i] ?? prev
     const width = Math.max(0, cum - prev)

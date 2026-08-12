@@ -29,10 +29,12 @@ const iron: ItemDef = { ...copper, id: 'iron_pickaxe', toolTier: 2 }
 const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
 
 /**
- * floor(rng × 100001 × factor) 가 정확히 `roll` 이 되는 난수.
+ * floor(rng × 100001) 이 정확히 `rawRoll` 이 되는 난수 — 밴드 소속과 도구 보정
+ * **이전**의 원 roll 이다(gatherOutcome 은 이 값으로 밴드 안/밖을 가른 뒤에만
+ * 평감산 또는 곱을 적용한다 — 배타적이라 둘을 동시에 겪는 값은 없다).
  * +0.5 를 심어 두면 부동소수점 오차(±ε)가 floor 경계를 흔들지 못한다.
  */
-const rollOf = (roll: number, factor = 1) => () => (roll + 0.5) / (100001 * factor)
+const rawRollOf = (rawRoll: number) => () => (rawRoll + 0.5) / 100001
 
 describe('toolGatherFactor', () => {
   it('구리(1등급) ×1.0 / 철(2등급) ×0.9 / 미스릴(3등급) ×0.8 — 설계 §3.3·§7-앞 13', () => {
@@ -64,33 +66,33 @@ describe('gatherBracketFor', () => {
 
 describe('gatherOutcome — roll 과 티어', () => {
   it('roll 0 은 최상 티어다 — 숙련 0 의 첫 손질에도 잭팟이 열려 있다(설계 §1)', () => {
-    expect(gatherOutcome(table, 0, copper, rollOf(0))).toEqual({ itemId: 'gem', roll: 0 })
+    expect(gatherOutcome(table, 0, copper, rawRollOf(0))).toEqual({ itemId: 'gem', roll: 0 })
   })
 
   it('누적 상한과 같은 roll 은 그 티어다 — 부등호는 원작 준용 roll ≤ cum 첫 매치', () => {
-    expect(gatherOutcome(table, 0, copper, rollOf(3))).toEqual({ itemId: 'gem', roll: 3 })
-    expect(gatherOutcome(table, 0, copper, rollOf(4))).toEqual({ itemId: 'crystal', roll: 4 })
+    expect(gatherOutcome(table, 0, copper, rawRollOf(3))).toEqual({ itemId: 'gem', roll: 3 })
+    expect(gatherOutcome(table, 0, copper, rawRollOf(4))).toEqual({ itemId: 'crystal', roll: 4 })
   })
 
   it('마지막 누적을 넘는 roll 은 실패다 — 실패 질량은 표의 빈 꼬리다', () => {
-    expect(gatherOutcome(table, 0, copper, rollOf(60001))).toEqual({ itemId: null, roll: 60001 })
-    expect(gatherOutcome(table, 0, copper, rollOf(70000))).toEqual({ itemId: null, roll: 70000 })
+    expect(gatherOutcome(table, 0, copper, rawRollOf(60001))).toEqual({ itemId: null, roll: 60001 })
+    expect(gatherOutcome(table, 0, copper, rawRollOf(70000))).toEqual({ itemId: null, roll: 70000 })
   })
 
   it('브라켓 경계 — 숙련 500 은 첫 브라켓, 501 은 다음 브라켓의 표를 굴린다', () => {
     // roll 10000 은 첫 브라켓에서는 흔한 티어(≤60000), 다음 브라켓에서는
     // 최상 티어(≤15000)다 — 같은 roll 이 브라켓에 따라 다른 답을 내야
     // "표가 통째로 바뀐다"가 증명된다.
-    expect(gatherOutcome(table, 500, copper, rollOf(10000))).toEqual({ itemId: 'shard', roll: 10000 })
-    expect(gatherOutcome(table, 501, copper, rollOf(10000))).toEqual({ itemId: 'gem', roll: 10000 })
+    expect(gatherOutcome(table, 500, copper, rawRollOf(10000))).toEqual({ itemId: 'shard', roll: 10000 })
+    expect(gatherOutcome(table, 501, copper, rawRollOf(10000))).toEqual({ itemId: 'gem', roll: 10000 })
   })
 
   it('상한 밖 숙련은 ∞ 브라켓이 받는다', () => {
-    expect(gatherOutcome(table, 10_000_000, copper, rollOf(10000))).toEqual({ itemId: 'gem', roll: 10000 })
+    expect(gatherOutcome(table, 10_000_000, copper, rawRollOf(10000))).toEqual({ itemId: 'gem', roll: 10000 })
   })
 
   it('최종 브라켓의 마지막 누적이 100000 이면 최대 roll 도 실패가 아니다 — 실패 0%(§8-3)', () => {
-    expect(gatherOutcome(table, 501, copper, rollOf(100000))).toEqual({ itemId: 'shard', roll: 100000 })
+    expect(gatherOutcome(table, 501, copper, rawRollOf(100000))).toEqual({ itemId: 'shard', roll: 100000 })
   })
 })
 
@@ -104,24 +106,45 @@ describe('gatherOutcome — 도구 보정', () => {
     expect(gatherOutcome(table, 0, mithril, u)).toEqual({ itemId: 'shard', roll: 56000 })
   })
 
-  it('잭팟 밴드(roll ≤ 10) 안에서는 곱이 아니라 평감산이다 — 철 −2 가 티어를 바꾼다', () => {
-    // factor 적용 후 roll 5 → 5−2=3 → gem(≤3). 곱 보정만 있었다면 crystal 이었다.
-    expect(gatherOutcome(table, 0, iron, rollOf(5, 0.9))).toEqual({ itemId: 'gem', roll: 3 })
+  it('잭팟 밴드(rawRoll ≤ 10) 안에서는 곱이 아니라 평감산만 적용된다 — 철 −2 가 티어를 바꾼다', () => {
+    // rawRoll 5(밴드 안) → 곱은 아예 안 쓰고 평감산만: 5−2=3 → gem(≤3).
+    // 곱까지 스택했다면(구판) crystal 이었다 — 배타 적용이 이 테스트의 요점이다.
+    expect(gatherOutcome(table, 0, iron, rawRollOf(5))).toEqual({ itemId: 'gem', roll: 3 })
   })
 
-  it('미스릴은 −3 — 밴드 상한 roll 10 이 7 이 된다', () => {
-    expect(gatherOutcome(table, 0, mithril, rollOf(10, 0.8))).toEqual({ itemId: 'crystal', roll: 7 })
+  it('미스릴은 −3 — 밴드 상한 rawRoll 10 이 곱 없이 7 이 된다', () => {
+    expect(gatherOutcome(table, 0, mithril, rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 7 })
   })
 
-  it('밴드 밖(roll 11)은 평감산이 없다 — 잭팟 밴드는 정확히 roll ≤ 10 이다', () => {
-    expect(gatherOutcome(table, 0, mithril, rollOf(11, 0.8))).toEqual({ itemId: 'crystal', roll: 11 })
+  it('밴드 밖(rawRoll 11)은 평감산 없이 곱만 적용된다 — 잭팟 밴드는 정확히 rawRoll ≤ 10 이다', () => {
+    // rawRoll 11 은 밴드 밖이라 평감산은 아예 안 쓰고 곱만: floor(11×0.8)=8 → crystal.
+    // 스택 방식(구판)이었다면 평감산 없이 11 그대로였을 값이라, 8 이 나오는 것 자체가
+    // "밖에서는 곱이 있다"는 것과 "밴드 경계가 rawRoll 기준"이라는 것을 함께 증명한다.
+    expect(gatherOutcome(table, 0, mithril, rawRollOf(11))).toEqual({ itemId: 'crystal', roll: 8 })
   })
 
-  it('평감산은 0 아래로 내려가지 않는다 — roll 2 에 −3 은 0 이다', () => {
-    expect(gatherOutcome(table, 0, mithril, rollOf(2, 0.8))).toEqual({ itemId: 'gem', roll: 0 })
+  it('평감산은 0 아래로 내려가지 않는다 — rawRoll 2 에 −3 은 0 이다', () => {
+    expect(gatherOutcome(table, 0, mithril, rawRollOf(2))).toEqual({ itemId: 'gem', roll: 0 })
   })
 
-  it('구리(1등급)는 잭팟 평감산이 없다 — 밴드 안 roll 이 그대로 판정된다', () => {
-    expect(gatherOutcome(table, 0, copper, rollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
+  it('구리(1등급)는 잭팟 평감산이 없다 — 밴드 안 rawRoll 이 그대로 판정된다', () => {
+    expect(gatherOutcome(table, 0, copper, rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
+  })
+
+  it('잭팟 확률의 정확한 값(§7-앞 18): roll≤3 은 구리 4/100001, 철 6/100001(+50%), 미스릴 7/100001(+75%)', () => {
+    // 최상 티어(gem)는 이 픽스처에서 cumulative[0]=3 — roll≤3 이 곧 잭팟이다.
+    // 밴드(rawRoll 0~10) 안은 평감산만 받으므로 "roll≤3 이 되는 rawRoll" 은
+    // 정확히 0..flat+3 이다: 구리(flat 0) 0~3 = 4개, 철(flat 2) 0~5 = 6개,
+    // 미스릴(flat 3) 0~6 = 7개. 경계(마지막으로 걸리는 rawRoll과 그 다음)를
+    // 직접 굴려 못박는다 — 밴드 밖(rawRoll≥11)은 곱만 받아 floor(11×0.8)=8 이
+    // 최솟값이라 roll≤3 에 닿지 못한다(이미 위 두 테스트가 증명했다).
+    expect(gatherOutcome(table, 0, copper, rawRollOf(3)).roll).toBe(3) // 마지막으로 걸리는 값
+    expect(gatherOutcome(table, 0, copper, rawRollOf(4)).roll).toBe(4) // 그 다음은 밖
+
+    expect(gatherOutcome(table, 0, iron, rawRollOf(5)).roll).toBe(3) // 5−2=3, 마지막으로 걸림
+    expect(gatherOutcome(table, 0, iron, rawRollOf(6)).roll).toBe(4) // 6−2=4, 그 다음은 밖
+
+    expect(gatherOutcome(table, 0, mithril, rawRollOf(6)).roll).toBe(3) // 6−3=3, 마지막으로 걸림
+    expect(gatherOutcome(table, 0, mithril, rawRollOf(7)).roll).toBe(4) // 7−3=4, 그 다음은 밖
   })
 })
