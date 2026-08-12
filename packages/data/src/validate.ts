@@ -691,6 +691,11 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 해금이 정확히 그 경계에 오게 하는 것이 이 문턱의 존재 이유다. 곡선 자체는
   // @nogada/shared 의 actionIntervalMs 를 그대로 쓴다 — 여기서 다시 구현하면 두 번째
   // 진실 공급원이 생겨, 곡선이 바뀔 때 이 검사만 조용히 낡은 채로 남을 수 있다.
+  //
+  // 도구 배수(맨손 ×1.5 ~ 미스릴+5 ×0.52)가 생긴 뒤로 실제 채집 간격은 손에 따라
+  // 이 값의 위아래로 흩어진다(도구 루프 설계 §3). 그래도 이 검사가 보는 것은
+  // **맨손 기준선**이다 — 문턱은 도구를 무엇을 들었든 같은 자리에 있어야 하고,
+  // 도구는 그 자리를 옮기는 것이 아니라 그 자리까지 가는 길을 빠르게 하는 것이다.
   for (const milestone of data.milestones) {
     const effect = milestone.effect
     if (effect.kind !== 'repeat') continue
