@@ -16,10 +16,16 @@ const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
 
 export interface GatherOutcomeDto {
   success: boolean
-  chance: number
-  gained: RecipeInput | null
+  // chance 는 은퇴했다(설계 §7-앞 2, 채집 gathering-tiers G4) — 채집은 성공률이
+  // 아니라 표 기반 티어 판정이라 미리 보여줄 확률 자체가 없다(§7-앞 9).
+  /** 성공 시 뽑힌 아이템 1개. 수량은 항상 1 이다. */
+  gained: { itemId: string; count: 1 } | null
   skillGained: number
-  /** 이번 행동으로 새로 달성된 이정표. 실패·거부 경로에서는 항상 빈 배열이다. */
+  /**
+   * 이번 행동으로 새로 달성된 이정표. **실패한 채집도 여기 찰 수 있다** — 숙련
+   * 증가가 성패 무관 무조건이라(설계 §7-앞 7), 실패한 손질이 문턱을 넘기면
+   * achieved 가 찬다. 거부(요청 자체가 실패한) 경로에서만 이 필드가 없다.
+   */
   achieved: MilestoneDef[]
   player: PlayerState
 }

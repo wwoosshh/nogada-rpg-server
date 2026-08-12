@@ -1,10 +1,17 @@
-import { emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
+import {
+  emptyDialogueHistory,
+  type GameData,
+  type GatherTables,
+  type MilestoneDef,
+  type PlayerState,
+} from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { performGather } from './gatherService.js'
 
 const data: GameData = {
   items: {
     copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
+    mithril_ore: { id: 'mithril_ore', name: '미스릴 원석', kind: 'material', icon: 'ore_mithril' },
     copper_pickaxe: {
       id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
       toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
@@ -39,6 +46,25 @@ const data: GameData = {
   dialogue: [],
 }
 
+/**
+ * 표는 GameData 에 없다(설계 §7-앞 9) — 서비스가 별도로 주입받는다. 실제 CSV 값이
+ * 아니라 이 스위트 전용 단순화한 표를 쓴다: 최상 티어(mithril_ore, 누적 10)와
+ * 바닥 티어(copper_ore, 누적 20000)만 있는 무한 브라켓 하나. 20000 을 넘는 roll
+ * (전체의 약 80%)은 실패다 — 그래서 실패 시나리오를 굴리기 쉽다.
+ */
+const tables: GatherTables = {
+  mineral: {
+    id: 'mineral', skill: 'mineral', skillGainMin: 1, skillGainMax: 2,
+    tiers: [{ itemId: 'mithril_ore' }, { itemId: 'copper_ore' }],
+    brackets: [{ bracketMax: null, cumulative: [10, 20000] }],
+  },
+  herb: {
+    id: 'herb', skill: 'herb', skillGainMin: 1, skillGainMax: 2,
+    tiers: [{ itemId: 'rare_herb' }],
+    brackets: [{ bracketMax: null, cumulative: [50000] }],
+  },
+}
+
 function player(overrides: Partial<PlayerState> = {}): PlayerState {
   return {
     id: 'local',
@@ -59,14 +85,22 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
   }
 }
 
-/** 항상 성공시키는 난수 — 0 은 어떤 확률보다도 작다 */
-const alwaysSucceed = () => 0
-/** 항상 실패시키는 난수 — 0.999 는 상한 0.98 보다 크다 */
-const alwaysFail = () => 0.999
+/**
+ * roll = floor(rng()×100001×factor). 구리 곡괭이(1등급)는 factor ×1.0 이므로
+ * roll ≈ rng()×100001.
+ *
+ * roll=0 은 잭팟 밴드(roll≤10) 안이라 mineral 표의 cum1=10 에 걸려 **최상 티어**
+ * (mithril_ore)가 나온다 — 예전 이름 alwaysSucceed 는 "성공률 0.5 를 항상
+ * 이긴다"는 뜻이었지만, 표 모델에는 성공률이 없다. 지금 이 값이 뜻하는 것은
+ * "롤이 최솟값이라 최상 티어가 뽑힌다"이므로 이름도 그렇게 바꾼다.
+ */
+const jackpotRoll = () => 0
+/** roll ≈ 99,900 — mineral 표의 마지막 누적(20000)보다 커서 항상 실패한다. */
+const failRoll = () => 0.999
 
 describe('performGather', () => {
   it('없는 노드는 unknown_node 로 거부한다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'ghost-1', rng: alwaysSucceed, now: 0 })
+    const r = performGather({ player: player(), data, tables, instanceId: 'ghost-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'unknown_node' })
   })
 
@@ -80,8 +114,8 @@ describe('performGather', () => {
         'copper_vein-2': { instanceId: 'copper_vein-2', nodeId: 'copper_vein', mapId: '얼음채집장', x: 9, y: 3 },
       },
     }
-    const a = performGather({ player: player(), data: d, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
-    const b = performGather({ player: player(), data: d, instanceId: 'copper_vein-2', rng: alwaysSucceed, now: 0 })
+    const a = performGather({ player: player(), data: d, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const b = performGather({ player: player(), data: d, tables, instanceId: 'copper_vein-2', rng: jackpotRoll, now: 0 })
     if (!a.ok || !b.ok) throw new Error('둘 다 성공해야 한다')
     expect(a.outcome.gained).toEqual(b.outcome.gained)
   })
@@ -91,60 +125,69 @@ describe('performGather', () => {
   //     존재하지 않던 구멍이라 기존 검사 어느 것도 이걸 막지 않는다.
   it('다른 맵의 노드는 캘 수 없다', () => {
     const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
-    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
 
   it('없는 인스턴스는 unknown_node 로 거부한다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'nope-9', rng: alwaysSucceed, now: 0 })
+    const r = performGather({ player: player(), data, tables, instanceId: 'nope-9', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'unknown_node' })
   })
 
   it('다른 기술의 도구뿐이면 cannot_gather 로 거부한다', () => {
     // 광물 곡괭이만 착용한 채 약초 군락을 두드린다 — 맨손은 아니지만 그 기술의
-    // 도구가 아니므로 게이트(equippedToolTier > 0)가 닫혀 있다.
-    const r = performGather({ player: player(), data, instanceId: 'herb_patch-1', rng: alwaysSucceed, now: 0 })
+    // 도구가 아니므로 게이트(canGather — equippedToolTier > 0)가 닫혀 있다.
+    const r = performGather({ player: player(), data, tables, instanceId: 'herb_patch-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
   })
 
   it('심층 외형(deep) 노드도 같은 기술의 1등급 도구로 캘 수 있다 — 등급 게이트는 폐지됐다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'iron_vein-1', rng: alwaysSucceed, now: 0 })
+    const r = performGather({ player: player(), data, tables, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
     expect(r.ok).toBe(true)
+  })
+
+  it('심층 외형과 일반 외형은 같은 표를 굴린다 — 같은 roll 이면 같은 티어가 나온다', () => {
+    const normal = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const deep = performGather({ player: player(), data, tables, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    if (!normal.ok || !deep.ok) throw new Error('둘 다 성공해야 한다')
+    // 둘 다 copper_vein/iron_vein 이 가리키는 표가 'mineral' 로 같으므로, 같은
+    // roll(0)이면 같은 최상 티어(mithril_ore)가 나와야 한다.
+    expect(deep.outcome.gained).toEqual(normal.outcome.gained)
   })
 
   it('맨손이면 cannot_gather 로 거부한다', () => {
     const p = player({ instances: [], equipped: {} })
-    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
   })
 
   it('간격이 지나지 않았으면 too_fast 로 거부한다', () => {
     const p = player({ nextActionAt: 8000 })
-    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 5000 })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'too_fast' })
   })
 
   it('간격이 지났으면 채집할 수 있다', () => {
     const p = player({ nextActionAt: 5000 })
-    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 5000 })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
     expect(r.ok).toBe(true)
   })
 
   it('숙련도 0 이면 다음 행동까지 500ms 를 기다린다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 1000 })
+    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
 
   it('숙련도가 높으면 간격이 짧아진다', () => {
     const p = player({ skills: { ice: 0, wood: 0, mineral: 999_999, herb: 0, crafting: 0 } })
-    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 1000 })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 50)
   })
 
   it('실패해도 간격은 걸린다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysFail, now: 1000 })
+    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 1000 })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
@@ -154,41 +197,57 @@ describe('performGather', () => {
   // 이 시나리오 없이는 개별 거부 테스트만으로 순서를 구분할 수 없다.
   it('간격도 남아 있고 접근 자격도 없으면 cannot_gather 를 우선한다', () => {
     const p = player({ nextActionAt: 8000 })
-    const r = performGather({ player: p, data, instanceId: 'herb_patch-1', rng: alwaysSucceed, now: 5000 })
+    const r = performGather({ player: p, data, tables, instanceId: 'herb_patch-1', rng: jackpotRoll, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
   })
 
-  it('성공하면 산출물이 스택에 쌓이고 숙련도가 오른다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+  it('성공하면 뽑힌 아이템 1개가 스택에 쌓이고 숙련도가 오른다', () => {
+    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.success).toBe(true)
-    // rng()=0 은 수량 범위(일반 1~3)의 최솟값 1 을 뽑는다.
-    expect(r.outcome.gained).toEqual({ item: 'copper_ore', count: 1 })
-    expect(r.outcome.player.stacks.copper_ore).toBe(1)
+    // roll=0 은 잭팟 밴드 안이고 mineral 표의 cum1=10 에 걸려 최상 티어가 나온다.
+    expect(r.outcome.gained).toEqual({ itemId: 'mithril_ore', count: 1 })
+    expect(r.outcome.player.stacks.mithril_ore).toBe(1)
     expect(r.outcome.skillGained).toBeGreaterThan(0)
     expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
   })
 
-  it('실패하면 산출물이 없고 숙련도도 오르지 않는다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysFail, now: 0 })
+  // 예전에는 "실패하면 산출물이 없고 숙련도도 오르지 않는다"였다. 판정 순서가
+  // 바뀌었다(설계 §7-앞 7) — 숙련 증가는 성패 무관 무조건이다. 이 테스트가
+  // 그 반전을 못 박는다.
+  it('실패하면 산출물은 없지만 숙련도는 그대로 오른다', () => {
+    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 0 })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
     expect(r.outcome.success).toBe(false)
     expect(r.outcome.gained).toBeNull()
-    expect(r.outcome.skillGained).toBe(0)
+    expect(r.outcome.skillGained).toBeGreaterThan(0)
+    expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
     expect(r.outcome.player.stacks).toEqual({})
   })
 
+  it('표 메타(skillGainMin~Max)가 정한 범위(1~2)에서 성패와 무관하게 숙련이 오른다', () => {
+    const success = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const failure = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 0 })
+    if (!success.ok || !failure.ok) throw new Error('둘 다 요청 자체는 성공해야 한다')
+
+    for (const r of [success, failure]) {
+      expect(r.outcome.skillGained).toBeGreaterThanOrEqual(1)
+      expect(r.outcome.skillGained).toBeLessThanOrEqual(2)
+      expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
+    }
+  })
+
   it('이미 가진 재료에 누적한다', () => {
-    const p = player({ stacks: { copper_ore: 5 } })
-    const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+    const p = player({ stacks: { mithril_ore: 5 } })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
-    expect(r.outcome.player.stacks.copper_ore).toBe(6)
+    expect(r.outcome.player.stacks.mithril_ore).toBe(6)
   })
 
   it('다른 생활기술의 숙련도는 건드리지 않는다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.skills.ice).toBe(0)
     expect(r.outcome.player.skills.wood).toBe(0)
@@ -198,44 +257,9 @@ describe('performGather', () => {
 
   it('입력 플레이어 객체를 변경하지 않는다', () => {
     const p = player()
-    performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
+    performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     expect(p.stacks).toEqual({})
     expect(p.nextActionAt).toBe(0)
-  })
-
-  it('반환한 확률이 표시용 계산과 일치한다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
-    if (!r.ok) throw new Error('성공해야 한다')
-    expect(r.outcome.chance).toBeCloseTo(0.5)
-  })
-
-  // 증가치의 출처는 표 메타(gather_tables.csv 의 skillGainMin~Max, 전 표 1~2)다.
-  // 서버가 표를 주입받는 것은 G4 라서 지금은 같은 값(1~2)을 상수로 굴린다 —
-  // "표가 정한 값을 쓴다" 는 단언은 G4 의 픽스처 개조가 되살린다.
-  it('성공하면 숙련도가 1~2 오른다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
-    if (!r.ok) throw new Error('성공해야 한다')
-
-    expect(r.outcome.skillGained).toBeGreaterThanOrEqual(1)
-    expect(r.outcome.skillGained).toBeLessThanOrEqual(2)
-    expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
-  })
-
-  it('숙련도가 높으면 수량 보너스가 붙는다', () => {
-    const low = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
-    const high = performGather({
-      player: player({ skills: { ice: 0, wood: 0, mineral: 99_999, herb: 0, crafting: 0 } }),
-      data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
-    })
-    if (!low.ok || !high.ok) throw new Error('둘 다 성공해야 한다')
-    expect(high.outcome.gained!.count).toBeGreaterThan(low.outcome.gained!.count)
-  })
-
-  it('실패하면 숙련도가 오르지 않는다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysFail, now: 0 })
-    if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
-    expect(r.outcome.skillGained).toBe(0)
-    expect(r.outcome.player.skills.mineral).toBe(0)
   })
 })
 
@@ -250,15 +274,15 @@ describe('performGather — 이정표 달성', () => {
   }
   const dataWithMilestone: GameData = { ...data, milestones: [mineralMilestone] }
 
-  /** alwaysSucceed(rng() = 0)일 때 copper_vein 의 skillGained 은 항상 최솟값 1 이다. */
+  /** jackpotRoll(rng()=0)일 때 copper_vein 의 skillGained 은 항상 최솟값 1 이다. */
   function playerBelowThreshold(overrides: Partial<PlayerState> = {}): PlayerState {
     return player({ skills: { ice: 0, wood: 0, mineral: 4, herb: 0, crafting: 0 }, ...overrides })
   }
 
   it('성공한 채집이 문턱을 넘기면 outcome.achieved 에 그 이정표가 담긴다', () => {
     const r = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone,
-      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
     })
     if (!r.ok) throw new Error('성공해야 한다')
 
@@ -268,8 +292,8 @@ describe('performGather — 이정표 달성', () => {
 
   it('그 이정표 id 가 outcome.player.celebrated 에 들어간다', () => {
     const r = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone,
-      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
     })
     if (!r.ok) throw new Error('성공해야 한다')
 
@@ -278,14 +302,14 @@ describe('performGather — 이정표 달성', () => {
 
   it('다음 채집에서는 다시 담기지 않는다', () => {
     const first = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone,
-      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
     })
     if (!first.ok) throw new Error('성공해야 한다')
 
     const second = performGather({
-      player: first.outcome.player, data: dataWithMilestone,
-      instanceId: 'copper_vein-1', rng: alwaysSucceed, now: first.outcome.player.nextActionAt,
+      player: first.outcome.player, data: dataWithMilestone, tables,
+      instanceId: 'copper_vein-1', rng: jackpotRoll, now: first.outcome.player.nextActionAt,
     })
     if (!second.ok) throw new Error('성공해야 한다')
 
@@ -294,30 +318,34 @@ describe('performGather — 이정표 달성', () => {
     expect(second.outcome.player.celebrated).toEqual(['mineral-5'])
   })
 
-  it('실패한 채집은 숙련도를 올리지 않으므로 아무것도 담기지 않는다', () => {
+  // 이것이 이 태스크의 핵심 반전이다(설계 §7-앞 7). 예전에는 실패 경로가 달성
+  // 판정 자체를 하지 않았다 — 지금은 실패해도 숙련이 오르고(위 describe 참고),
+  // 그 상승이 문턱을 넘기면 축하가 침묵하면 안 된다.
+  it('실패한 채집도 숙련이 올라 문턱을 넘기면 achieved 에 담긴다 — 실패가 판정을 침묵시키지 않는다', () => {
     const r = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone,
-      instanceId: 'copper_vein-1', rng: alwaysFail, now: 0,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      instanceId: 'copper_vein-1', rng: failRoll, now: 0,
     })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
-    expect(r.outcome.achieved).toEqual([])
-    expect(r.outcome.player.celebrated).toEqual([])
+    expect(r.outcome.success).toBe(false)
+    expect(r.outcome.player.skills.mineral).toBeGreaterThanOrEqual(5) // 문턱을 넘었는지 전제부터 확인한다
+    expect(r.outcome.achieved.map((m) => m.id)).toEqual(['mineral-5'])
+    expect(r.outcome.player.celebrated).toEqual(['mineral-5'])
   })
 
-  it('이미 문턱을 넘었어도 실패한 채집은 축하하지 않는다', () => {
-    // 방어적 테스트: 실패 경로는 달성 판정 자체를 하지 않는다. 정상적인 플레이에서는
-    // 숙련도가 오를 때마다 즉시 축하하므로 이 상태(문턱 이상인데 미축하)가 나타날 수
-    // 없지만, 서비스 함수 하나만 놓고 보면 "실패하면 판정을 아예 안 한다"를 직접
-    // 증명해야 한다.
-    const p = player({ skills: { ice: 0, wood: 0, mineral: 5, herb: 0, crafting: 0 } })
+  it('이미 축하한 이정표는 실패한 채집이 숙련을 더 올려도 다시 담기지 않는다', () => {
+    const p = player({
+      skills: { ice: 0, wood: 0, mineral: 5, herb: 0, crafting: 0 },
+      celebrated: ['mineral-5'],
+    })
     const r = performGather({
-      player: p, data: dataWithMilestone, instanceId: 'copper_vein-1', rng: alwaysFail, now: 0,
+      player: p, data: dataWithMilestone, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 0,
     })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
     expect(r.outcome.achieved).toEqual([])
-    expect(r.outcome.player.celebrated).toEqual([])
+    expect(r.outcome.player.celebrated).toEqual(['mineral-5'])
   })
 
   it('거부당한 요청은 celebrated 를 건드리지 않는다', () => {
@@ -326,7 +354,7 @@ describe('performGather — 이정표 달성', () => {
       nextActionAt: 8000,
     })
     const r = performGather({
-      player: p, data: dataWithMilestone, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 5000,
+      player: p, data: dataWithMilestone, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000,
     })
     // too_fast 거부는 outcome 자체가 없다 — celebrated 를 실을 자리가 없다.
     expect(r).toEqual({ ok: false, code: 'too_fast' })

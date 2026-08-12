@@ -229,7 +229,7 @@ describe('GET /api/state', () => {
 })
 
 describe('POST /api/gather', () => {
-  it('구리 광맥 채집 요청을 처리한다', async () => {
+  it('구리 광맥 채집 요청을 처리한다 — 성패와 무관하게 숙련이 오른다', async () => {
     const app = await buildTestApp()
     const me = await asPlayer(app)
     await enterField(me)
@@ -241,8 +241,24 @@ describe('POST /api/gather', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    const body = res.json() as { chance: number; player: { id: string } }
-    expect(body.chance).toBeCloseTo(0.5)
+    const body = res.json() as {
+      success: boolean
+      gained: { itemId: string; count: number } | null
+      skillGained: number
+      player: { id: string; skills: { mineral: number } }
+    }
+    // chance 는 은퇴했다(설계 §7-앞 2) — 표가 무엇이 나오는지 정하지, 확률을 보여주지 않는다.
+    expect(body).not.toHaveProperty('chance')
+    // 성패는 서버 난수라 단정할 수 없지만, 숙련은 성패와 무관하게 오른다
+    // (설계 §7-앞 7). mineral 표(gather_tables.csv)의 skillGainMin~Max 는 1~2.
+    expect(body.skillGained).toBeGreaterThanOrEqual(1)
+    expect(body.skillGained).toBeLessThanOrEqual(2)
+    expect(body.player.skills.mineral).toBe(body.skillGained)
+    if (body.success) {
+      expect(body.gained).toEqual({ itemId: expect.any(String), count: 1 })
+    } else {
+      expect(body.gained).toBeNull()
+    }
     // 'local' 을 글자로 적지 않는다 — 신원이 헬퍼로 옮겨 갔으므로 기대값도 거기서 온다.
     expect(body.player.id).toBe(me.id)
 

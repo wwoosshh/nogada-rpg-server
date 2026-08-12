@@ -394,12 +394,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pushMilestones(set, outcome.achieved)
 
       if (outcome.success && outcome.gained) {
-        const name = labelOf(useGameStore.getState().data, outcome.gained.item)
+        // gained 의 필드명이 item → itemId 로 바뀌었다(서버 DTO 개조, G4). 그
+        // 자리를 채운 것 이상은 G7 의 몫이다 — 실패 문구가 "숙련은 올랐다"를
+        // 아직 말하지 않는 것도 그 일부다. // G7 이 표면을 다듬는다
+        const name = labelOf(useGameStore.getState().data, outcome.gained.itemId)
         pushAction(
           set,
           `${name} +${outcome.gained.count}`,
           'good',
-          outcome.gained.item,
+          outcome.gained.itemId,
           outcome.gained.count,
         )
       } else {

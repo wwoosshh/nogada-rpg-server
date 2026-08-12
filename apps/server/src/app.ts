@@ -1,6 +1,9 @@
 import { join } from 'node:path'
 import cors from '@fastify/cors'
 import { loadGameData } from '@nogada/data'
+// 별도 진입이다 — 배럴(index.ts)에 실리면 클라이언트 번들도 이 표를 받는다.
+// 브라켓 경계·잭팟 확률이 곧 숨은 문턱이라 그러면 F12 로 스포일된다(설계 §7-앞 9).
+import { loadGatherTables } from '@nogada/data/gather-tables'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { requireSession } from './auth/sessions.js'
 import { parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
@@ -47,6 +50,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   })
   const data = loadGameData()
+  // GameData 와 갈라서 온다(위 import 주석 참고) — data 처럼 한 번 읽어서
+  // 채집 라우트에 주입한다. 다른 라우트는 이 값을 받지 않는다.
+  const gatherTables = loadGatherTables()
   const store = options.persistence ?? (await openStore(options.dataFile))
 
   // 개발 중 클라이언트(Vite dev server)와 오리진이 다르므로 허용한다.
@@ -118,7 +124,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     registerMeRoutes(guarded, store, data)
     registerStateRoutes(guarded, store)
-    registerGatherRoutes(guarded, store, data)
+    registerGatherRoutes(guarded, store, data, gatherTables)
     registerCraftRoutes(guarded, store, data)
     registerTalkRoutes(guarded, store, data)
     registerMoveRoutes(guarded, store, data)
