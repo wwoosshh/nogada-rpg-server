@@ -14,20 +14,10 @@ export const SKILL_LABELS: Record<SkillId, string> = {
   crafting: '조합',
 }
 
-/**
- * 신규 플레이어가 지급받는 시작 도구 ID.
- * 게임 규칙이므로 여기 한 곳에 둔다 — `packages/data`의 도달 가능성 검증과
- * `createInitialPlayer` 가 같은 상수를 참조해 시작 장비를 정한다.
- *
- * 채집 4종은 도구가 없으면 아무것도 못 하므로 1등급 도구를 준다. 조합은 도구가
- * 접근 게이트가 아니라 성공률 보조라 시작 도구가 없다.
- */
-export const STARTING_TOOL_IDS: readonly string[] = [
-  'copper_chisel',
-  'copper_axe',
-  'copper_pickaxe',
-  'copper_sickle',
-] as const
+// STARTING_TOOL_IDS 는 은퇴했다(설계 §6-앞 8) — 시작 지급은 도구 4종이 아니라
+// 마을 하나의 도구 1개이고, 그 도구는 상수가 아니라 유도(equipment.ts 의
+// starterToolFor: "kind=tool ∧ toolTier=1 ∧ toolSkill=마을 기술")로 정해진다.
+// 유도가 성립하는지는 packages/data 의 빌드 검증이 지킨다.
 
 /**
  * 강화 수치가 붙는 순간 개별 정체성이 생겨 스택이 불가능하다.

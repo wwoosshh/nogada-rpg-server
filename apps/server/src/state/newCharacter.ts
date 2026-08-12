@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { loadGameData } from '@nogada/data'
+import { loadGameData, villageField } from '@nogada/data'
 import {
   SKILL_IDS,
-  STARTING_TOOL_IDS,
   emptyDialogueHistory,
+  starterToolFor,
   type ItemInstance,
   type PlayerState,
   type SkillId,
@@ -25,35 +25,33 @@ export interface NewCharacterSpec {
 }
 
 /**
- * 신규 플레이어. 시작 도구 하나로 코어 루프의 첫 바퀴를 시작할 수 있다.
+ * 신규 플레이어. 시작 마을 기술의 구리 도구 **하나**로 코어 루프의 첫 바퀴를 시작한다.
  *
- * 시작 장비는 `STARTING_TOOL_IDS` 가 유일한 출처다. 여기에 아이템 ID 를 다시 적으면
- * 진실 공급원이 둘로 갈라진다 — `packages/data` 의 빌드 타임 검증도 그 상수를 보고
- * "시작 도구가 실재하는 도구인가" 와 "무엇이 채집·제작으로 도달 가능한가" 를 판단한다.
+ * 4종 지급(구 STARTING_TOOL_IDS)이 1종으로 줄어든 이유(설계 §2): 첫 도구를
+ * **만드는** 순간이 있어야 한다 — 다 쥐고 시작하면 "맨손으로 힘겹게 모아 첫
+ * 도구를 만들자 채집이 빨라진다"는 첫날의 이야기 자체가 없다. 어느 도구인가는
+ * 여기 적지 않는다: 마을→기술은 세계의 생김새(villageField)가, 기술→도구는
+ * 카탈로그 유도(starterToolFor)가 정하고, 유도가 성립하는 데이터인지는
+ * `packages/data` 의 빌드 검증("채집 기술마다 1티어 도구 정확히 하나 +
+ * requiredSkill 0 레시피")이 먼저 지킨다.
  */
 export function createInitialPlayer(spec: NewCharacterSpec): PlayerState {
   const data = loadGameData()
-  const items = data.items
-  const instances: ItemInstance[] = []
-  const equipped: Partial<Record<SkillId, string>> = {}
-
-  for (const toolId of STARTING_TOOL_IDS) {
-    const def = items[toolId]
-    // packages/data 의 검증이 빌드 타임에 막아 주므로 여기 도달하면 데이터가 어긋난 것이다.
-    // 조용히 넘기면 곡괭이 없는 플레이어가 생겨 코어 루프가 시작부터 막힌다.
-    if (!def) throw new Error(`STARTING_TOOL_IDS: 존재하지 않는 아이템 "${toolId}"`)
-    if (!def.toolSkill) throw new Error(`STARTING_TOOL_IDS: "${toolId}" 에 toolSkill 이 없다`)
-
-    const instanceId = randomUUID()
-    instances.push({ instanceId, itemId: toolId, enhanceLevel: 0 })
-    equipped[def.toolSkill] = instanceId
-  }
-
-  const skills = Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>
 
   const village = data.maps[spec.village]
   // 라우트가 고를 수 있는 마을인지 먼저 본다 — 여기 닿았다면 검사를 건너뛴 것이다.
   if (!village) throw new Error(`시작 마을 "${spec.village}" 이 맵 등록부에 없다`)
+
+  const field = villageField(data, spec.village)
+  const starter = starterToolFor(field.skill, data.items)
+
+  const instanceId = randomUUID()
+  const instances: ItemInstance[] = [{ instanceId, itemId: starter.id, enhanceLevel: 0 }]
+  // 나머지 기술의 슬롯은 비워 둔다 — 빈 슬롯이 신규 캐릭터의 상태다(§4).
+  // 첫 도구 제작의 자동 착용이 그 빈 칸을 채우는 순간이 이 게임의 첫 드라마다(§1).
+  const equipped: Partial<Record<SkillId, string>> = { [field.skill]: instanceId }
+
+  const skills = Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>
 
   return {
     id: spec.id,

@@ -229,7 +229,11 @@ describe('GET /api/state', () => {
 })
 
 describe('POST /api/gather', () => {
-  it('구리 광맥 채집 요청을 처리한다 — 성패와 무관하게 숙련이 오른다', async () => {
+  // 이 스위트의 노드가 얼음 광맥인 이유: 시작 지급이 마을 도구 1개로 줄면서(T2 —
+  // 눈의마을 = 구리 정) 신규 캐릭터는 구리 광맥을 열 곡괭이가 없다. 맨손 채집
+  // 허용(cannot_gather 은퇴)은 T3 의 몫이라, 라우트 시험은 시작 도구가 여는
+  // 같은 맵(개발용 시험장)의 얼음 노드로 옮겼다.
+  it('얼음 광맥 채집 요청을 처리한다 — 성패와 무관하게 숙련이 오른다', async () => {
     const app = await buildTestApp()
     const me = await asPlayer(app)
     await enterField(me)
@@ -237,7 +241,7 @@ describe('POST /api/gather', () => {
     const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { instanceId: 'copper_vein-1' },
+      payload: { instanceId: 'ice_vein-1' },
     })
 
     expect(res.statusCode).toBe(200)
@@ -245,15 +249,15 @@ describe('POST /api/gather', () => {
       success: boolean
       gained: { itemId: string; count: number } | null
       skillGained: number
-      player: { id: string; skills: { mineral: number } }
+      player: { id: string; skills: { ice: number } }
     }
     // chance 는 은퇴했다(설계 §7-앞 2) — 표가 무엇이 나오는지 정하지, 확률을 보여주지 않는다.
     expect(body).not.toHaveProperty('chance')
     // 성패는 서버 난수라 단정할 수 없지만, 숙련은 성패와 무관하게 오른다
-    // (설계 §7-앞 7). mineral 표(gather_tables.csv)의 skillGainMin~Max 는 1~2.
+    // (설계 §7-앞 7). ice 표(gather_tables.csv)의 skillGainMin~Max 는 1~2.
     expect(body.skillGained).toBeGreaterThanOrEqual(1)
     expect(body.skillGained).toBeLessThanOrEqual(2)
-    expect(body.player.skills.mineral).toBe(body.skillGained)
+    expect(body.player.skills.ice).toBe(body.skillGained)
     if (body.success) {
       expect(body.gained).toEqual({ itemId: expect.any(String), count: 1 })
     } else {
@@ -273,7 +277,7 @@ describe('POST /api/gather', () => {
     const gather = await me.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { instanceId: 'copper_vein-1' },
+      payload: { instanceId: 'ice_vein-1' },
     })
     const outcome = gather.json() as { player: { nextActionAt: number } }
 
@@ -294,14 +298,14 @@ describe('POST /api/gather', () => {
     const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { instanceId: 'copper_vein-1' },
+      payload: { instanceId: 'ice_vein-1' },
     })
 
     expect(res.statusCode).toBe(200)
     const body = res.json() as { achieved: unknown }
     expect(Array.isArray(body.achieved)).toBe(true)
 
-    // mineral 숙련도의 가장 낮은 이정표(mineral_1000)도 1000 인데 copper_vein 채집
+    // ice 숙련도의 가장 낮은 이정표(ice_1000)도 1000 인데 ice_vein 채집
     // 한 번은 숙련도를 1~2 만 올리므로, 신규 플레이어는 이 한 번으로 어떤 문턱도
     // 넘지 못한다 — 빈 배열이 기대값이다. 그래도 이 필드가 서비스 계층을 넘어 HTTP
     // 응답까지 실제로 실려 오는지는 이 단정 없이는 아무도 확인하지 못했다.
@@ -315,11 +319,11 @@ describe('POST /api/gather', () => {
     const me = await asPlayer(app)
     await enterField(me)
 
-    await me.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
+    await me.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'ice_vein-1' } })
     const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { instanceId: 'copper_vein-1' },
+      payload: { instanceId: 'ice_vein-1' },
     })
 
     expect(res.statusCode).toBe(400)
@@ -346,7 +350,7 @@ describe('POST /api/gather', () => {
     await enterField(me)
 
     const gather = () =>
-      me.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'copper_vein-1' } })
+      me.inject({ method: 'POST', url: '/api/gather', payload: { instanceId: 'ice_vein-1' } })
     const [first, second] = await Promise.all([gather(), gather()])
 
     const codes = [first.statusCode, second.statusCode].sort()
@@ -367,7 +371,7 @@ describe('POST /api/gather', () => {
   })
 
   it('심층 노드도 같은 기술의 시작 도구로 캘 수 있다 — 등급 게이트는 폐지됐다(§7-앞 8)', async () => {
-    // 예전에는 iron_vein(tier 2)이 구리 곡괭이를 cannot_gather 로 거부했다.
+    // 예전에는 심층 노드(tier 2)가 1티어 시작 도구를 cannot_gather 로 거부했다.
     // 표 모델에서 심층은 같은 표의 다른 외형일 뿐이라 접근을 막지 않는다 —
     // 등급은 이제 확률 보정(G3)의 재료다.
     const app = await buildTestApp()
@@ -377,7 +381,7 @@ describe('POST /api/gather', () => {
     const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { instanceId: 'iron_vein-1' },
+      payload: { instanceId: 'deep_ice_vein-1' },
     })
 
     expect(res.statusCode).toBe(200)

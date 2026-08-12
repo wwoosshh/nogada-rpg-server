@@ -125,10 +125,13 @@ assets/licensed/
 | `herb_rare` | icon293 | 귀한 약초 |
 | `chisel_copper` | icon930 | 구리빛 정 |
 | `chisel_iron` | icon931 | 쇠빛 정 |
+| `chisel_mithril` | icon929 | 청회색 정 |
 | `axe_copper` | icon453 | 구리빛 도끼 |
 | `axe_iron` | icon452 | 쇠빛 도끼 |
+| `axe_mithril` | icon462 | 청회색 도끼 |
 | `sickle_copper` | icon459 | 구리빛 낫 |
 | `sickle_iron` | icon935 | 쇠빛 낫 |
+| `sickle_mithril` | icon460 | 청회색 낫 |
 | `crystal_pale` | icon918 | 옅은 청백색 결정 |
 | `gem_blue` | icon982 | 파란 보석 |
 | `gem_ice` | icon999 | 청록빛 보석 |
@@ -189,10 +192,11 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 43종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 39종을 쓴다
+# 아이템 아이콘 46종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 42종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
 # 없는 예비 배정. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
-# mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었다).
+# mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
+# axe_mithril·sickle_mithril 은 미스릴 정·도끼·낫(도구 루프 T2)의 것이다).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
@@ -218,10 +222,13 @@ herb_common:288
 herb_rare:293
 chisel_copper:930
 chisel_iron:931
+chisel_mithril:929
 axe_copper:453
 axe_iron:452
+axe_mithril:462
 sickle_copper:459
 sickle_iron:935
+sickle_mithril:460
 crystal_pale:918
 gem_blue:982
 gem_ice:999

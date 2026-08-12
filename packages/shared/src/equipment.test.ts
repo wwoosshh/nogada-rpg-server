@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
-import { equippedToolInfo, equippedToolTier } from './equipment.js'
-import type { GameData, PlayerState } from './types.js'
+import { equippedToolInfo, equippedToolTier, starterToolCandidates, starterToolFor } from './equipment.js'
+import type { GameData, ItemDef, PlayerState } from './types.js'
 
 const data: GameData = {
   items: {
@@ -136,5 +136,43 @@ describe('equippedToolTier', () => {
     })
     expect(equippedToolTier(p, data, 'mineral')).toBe(1)
     expect(equippedToolTier(p, data, 'crafting')).toBe(2)
+  })
+})
+
+describe('starterToolFor — 시작 도구는 상수가 아니라 유도다(§6-앞 8)', () => {
+  // 구 STARTING_TOOL_IDS 는 아이템 id 를 글자로 들고 있어서, CSV 에서 도구를
+  // 개명하면 상수만 낡았다. 유도("kind=tool ∧ toolTier=1 ∧ toolSkill=기술")는
+  // 카탈로그가 바뀌면 답도 함께 바뀐다 — 유도가 성립하지 않는 카탈로그는
+  // packages/data 의 빌드 검증이 막는다.
+
+  it('그 기술의 1티어 도구 하나를 유도한다', () => {
+    expect(starterToolFor('mineral', data.items)).toBe(data.items['copper_pickaxe'])
+  })
+
+  it('2티어 도구는 후보가 아니다 — 시작 지급은 언제나 가장 낮은 계단이다', () => {
+    // data.items 의 crafting 도구는 iron_hammer(2티어)뿐이라 후보가 0개다.
+    expect(() => starterToolFor('crafting', data.items)).toThrow('crafting')
+  })
+
+  it('그 기술의 1티어 도구가 없으면 던진다 — 조용히 맨손 캐릭터를 만들지 않는다', () => {
+    expect(() => starterToolFor('ice', data.items)).toThrow('ice')
+  })
+
+  it('1티어 도구가 둘이면 던진다 — 어느 것을 줄지 코드가 몰래 정하면 안 된다', () => {
+    const bronze: ItemDef = {
+      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
+      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
+    }
+    expect(() => starterToolFor('mineral', { ...data.items, bronze_pickaxe: bronze })).toThrow('2개')
+  })
+
+  it('starterToolCandidates 는 후보 전부를 돌려준다 — 빌드 검증이 이 목록으로 개수를 센다', () => {
+    const bronze: ItemDef = {
+      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
+      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
+    }
+    const items = { ...data.items, bronze_pickaxe: bronze }
+    expect(starterToolCandidates('mineral', items).map((t) => t.id)).toEqual(['copper_pickaxe', 'bronze_pickaxe'])
+    expect(starterToolCandidates('ice', items)).toEqual([])
   })
 })

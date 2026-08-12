@@ -1,5 +1,5 @@
 import { START_MAP_ID, loadGameData, startLocation, startVillages } from '@nogada/data'
-import { DEFAULT_APPEARANCE, STARTING_TOOL_IDS } from '@nogada/shared'
+import { DEFAULT_APPEARANCE, SKILL_IDS, type SkillId } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { createInitialPlayer } from './newCharacter.js'
 
@@ -7,26 +7,54 @@ import { createInitialPlayer } from './newCharacter.js'
 const born = (id: string, village = START_MAP_ID) =>
   createInitialPlayer({ id, name: '아무개', appearance: DEFAULT_APPEARANCE, village })
 
+/**
+ * 마을 → 시작 도구 대응(설계 §2). 코드는 이 표를 어디에도 적지 않고
+ * `villageField(마을).skill` → `starterToolFor` 로 유도한다 — 그래서 테스트가
+ * 이 표를 **글자로** 들고 있어야 한다. 유도의 어느 고리(전환표·노드 배치·
+ * items.csv 의 toolTier)가 바뀌어 약속이 조용히 달라지면 여기가 잡는다.
+ */
+const VILLAGE_STARTER: Record<string, { skill: SkillId; toolId: string }> = {
+  눈의마을: { skill: 'ice', toolId: 'copper_chisel' },
+  숲의마을: { skill: 'wood', toolId: 'copper_axe' },
+  북동쪽마을: { skill: 'mineral', toolId: 'copper_pickaxe' },
+  항구마을: { skill: 'herb', toolId: 'copper_sickle' },
+}
+
 describe('createInitialPlayer', () => {
   it('다섯 생활기술을 숙련도 0으로 시작한다', () => {
     expect(born('local').skills).toEqual({ ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 })
   })
 
-  it('STARTING_TOOL_IDS 의 도구를 인스턴스로 지급한다', () => {
-    const p = born('local')
-    expect(p.instances).toHaveLength(STARTING_TOOL_IDS.length)
-    expect(p.instances.map((i) => i.itemId)).toEqual([...STARTING_TOOL_IDS])
-    for (const instance of p.instances) expect(instance.enhanceLevel).toBe(0)
+  // 왜: 시작 지급이 4종에서 1종으로 줄었다(§2 — 첫 도구 "제작"의 순간을 만들려고).
+  //     마을의 채집장이 가르치는 기술의 도구 하나만 손에 쥐고, 나머지는 맨손으로
+  //     힘겹게 모아 첫 도구를 만드는 것이 첫날의 이야기다.
+  it('마을마다 그 마을 채집장 기술의 구리 도구 하나만 지급하고 착용시킨다', () => {
+    for (const [village, expected] of Object.entries(VILLAGE_STARTER)) {
+      const p = born('local', village)
+      expect(p.instances.map((i) => i.itemId)).toEqual([expected.toolId])
+      expect(p.instances[0]!.enhanceLevel).toBe(0)
+      expect(p.equipped[expected.skill]).toBe(p.instances[0]!.instanceId)
+    }
   })
 
-  it('지급한 도구를 해당 생활기술에 착용시킨다', () => {
-    const items = loadGameData().items
-    const p = born('local')
-
-    for (const instance of p.instances) {
-      const skill = items[instance.itemId]!.toolSkill!
-      expect(p.equipped[skill]).toBe(instance.instanceId)
+  // 왜: 빈 슬롯이 신규 캐릭터의 상태다(§4 — 해제 없음의 근거이자 §6-앞 16 의
+  //     "빈 칸 4"). 다른 기술 슬롯이 채워져 있으면 첫 도구 제작의 자동 착용이
+  //     "빈 칸이 채워지는" 드라마가 아니라 교체가 된다.
+  it('지급한 기술 외의 슬롯은 전부 비어 있다', () => {
+    for (const [village, expected] of Object.entries(VILLAGE_STARTER)) {
+      const p = born('local', village)
+      for (const skill of SKILL_IDS) {
+        if (skill !== expected.skill) expect(p.equipped[skill]).toBeUndefined()
+      }
     }
+  })
+
+  // 왜: 위 대응표는 마을 넷을 글자로 안다. 세계에 마을이 늘거나 이름이 바뀌면
+  //     이 표가 낡는데, 낡은 표로는 위 두 테스트가 새 마을을 그냥 지나친다 —
+  //     그래서 목록 자체가 표와 일치하는지 못박는다.
+  it('시작 마을 목록(startVillages)이 대응표의 마을들과 정확히 같다', () => {
+    const villages = startVillages(loadGameData()).map((m) => m.id)
+    expect([...villages].sort()).toEqual(Object.keys(VILLAGE_STARTER).sort())
   })
 
   it('인스턴스 ID 는 플레이어마다 다르다', () => {

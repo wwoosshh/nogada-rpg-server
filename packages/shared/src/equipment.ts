@@ -42,3 +42,33 @@ export function equippedToolInfo(
 export function equippedToolTier(player: PlayerState, data: GameData, skill: SkillId): number {
   return equippedToolInfo(player, skill, data.items)?.def.toolTier ?? 0
 }
+
+/**
+ * 그 기술의 시작 도구 **후보** — "kind=tool ∧ toolTier=1 ∧ toolSkill=그 기술"
+ * 유도(§6-앞 8)의 술어가 여기 한 번만 적힌다. 지급(starterToolFor)과
+ * packages/data 의 빌드 검증("채집 기술마다 정확히 하나")이 이 목록 하나를
+ * 나눠 읽는다 — 술어를 두 벌로 적으면 지급과 검증이 서로 다른 도구를 셀 수 있다.
+ */
+export function starterToolCandidates(skill: SkillId, items: Record<string, ItemDef>): ItemDef[] {
+  return Object.values(items).filter((item) => item.toolTier === 1 && toolMatchesSkill(item, skill))
+}
+
+/**
+ * 신규 캐릭터가 받는 그 기술의 시작 도구.
+ *
+ * 아이템 id 를 상수로 들고 있던 구 STARTING_TOOL_IDS 는 CSV 에서 도구를 개명하는
+ * 날 상수만 낡았다 — 유도는 카탈로그가 바뀌면 답도 함께 바뀐다. 후보가 정확히
+ * 하나가 아니면 던진다: 빌드 검증이 먼저 막아 주므로 여기 닿았다면 검증을
+ * 거치지 않은 데이터다. 조용히 첫 후보를 집으면 도구 둘이 경합하는 날에도
+ * 아무도 모른 채 어느 쪽이 지급될지 순서 운에 걸린다.
+ */
+export function starterToolFor(skill: SkillId, items: Record<string, ItemDef>): ItemDef {
+  const candidates = starterToolCandidates(skill, items)
+  if (candidates.length !== 1) {
+    const ids = candidates.map((tool) => tool.id).join(', ')
+    throw new Error(
+      `기술 "${skill}" 의 1티어 도구가 정확히 하나여야 하는데 [${ids}](${candidates.length}개)다 — items.csv 의 toolTier·toolSkill 을 정리한다`,
+    )
+  }
+  return candidates[0]!
+}

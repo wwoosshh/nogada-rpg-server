@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { DialogueRule, GameData, GatherTables, ItemDef, MilestoneDef, SpeakerDef } from '@nogada/shared'
+import type { DialogueRule, GameData, GatherTables, MilestoneDef, SpeakerDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseGatherTables } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
@@ -37,16 +37,20 @@ const mineralRepeatMilestone: MilestoneDef = {
 }
 
 /**
- * baseData() 의 copper_pickaxe 레시피(requiredSkill 3)를 싣는 recipes-이정표.
+ * baseData() 의 copper_hammer 레시피(requiredSkill 3)를 싣는 recipes-이정표.
  *
  * "requiredSkill > 0 인 레시피는 정확히 하나의 recipes-이정표에 실린다"(설계
  * §7-앞 5) 검사가 생기면서, 이게 없으면 이정표와 무관한 픽스처들까지 전부
  * 위반이 하나씩 더 생겨 정확한 개수를 기대하는 단언이 깨진다 —
  * mineralRepeatMilestone 과 같은 이유의 채움용이다.
+ *
+ * 요구치 있는 레시피가 곡괭이가 아니라 **망치**인 이유: 곡괭이는 채집 기술
+ * (mineral)의 시작 도구라 requiredSkill 0 레시피를 가져야 한다(§6-앞 8 의
+ * 유도 검사). 망치는 crafting 도구이고 crafting 은 노드가 없어 그 검사 밖이다.
  */
-const pickaxeRecipesMilestone: MilestoneDef = {
+const hammerRecipesMilestone: MilestoneDef = {
   id: 'crafting_3', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
-  name: '곡괭이를 만들 수 있다', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+  name: '망치를 만들 수 있다', announce: '', effect: { kind: 'recipes', ids: ['copper_hammer'] },
 }
 
 /**
@@ -67,30 +71,25 @@ function baseTables(): GatherTables {
 }
 
 /**
- * 시작 도구 4종(채집 기술별 1등급 도구) 전부를 포함해야 한다 — STARTING_TOOL_IDS 검사와
- * 획득 가능성 검사가 이 넷 모두를 항상 확인하므로, 하나라도 빠지면 그 자체로 위반이
- * 생겨 이 픽스처를 재사용하는 "정상 데이터" 전제가 깨진다.
+ * 유일한 채집 기술(mineral)의 시작 도구 유도(§6-앞 8)까지 통과하는 최소 데이터다:
+ * 1티어 광물 도구(copper_pickaxe)가 **정확히 하나** 있고 requiredSkill 0 레시피를
+ * 가진다. copper_hammer(1티어 crafting 도구)는 그 검사 대상이 아니면서(crafting
+ * 은 노드가 없다) requiredSkill 3 레시피라, recipes-이정표 검사들의 픽스처
+ * 역할을 한다. 구 시작 도구 4종(STARTING_TOOL_IDS)은 상수와 함께 은퇴했다 —
+ * 이제 도달 가능성의 시드는 도구가 아니라 맵에 놓인 노드다.
  */
 function baseData(): GameData {
   return {
     items: {
       copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
       copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
-      copper_chisel: {
-        id: 'copper_chisel', name: '구리 정', kind: 'tool',
-        toolSkill: 'ice', toolTier: 1, icon: 'pickaxe_copper',
-      },
-      copper_axe: {
-        id: 'copper_axe', name: '구리 도끼', kind: 'tool',
-        toolSkill: 'wood', toolTier: 1, icon: 'pickaxe_copper',
-      },
       copper_pickaxe: {
         id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
         toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
       },
-      copper_sickle: {
-        id: 'copper_sickle', name: '구리 낫', kind: 'tool',
-        toolSkill: 'herb', toolTier: 1, icon: 'pickaxe_copper',
+      copper_hammer: {
+        id: 'copper_hammer', name: '구리 망치', kind: 'tool',
+        toolSkill: 'crafting', toolTier: 1, icon: 'hammer_copper',
       },
     },
     nodes: {
@@ -105,8 +104,13 @@ function baseData(): GameData {
         skillGainMin: 10, skillGainMax: 20,
       },
       copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
+        id: 'copper_pickaxe', name: '구리 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
         inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
+        skillGainMin: 10, skillGainMax: 20,
+      },
+      copper_hammer: {
+        id: 'copper_hammer', name: '구리 망치', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
+        inputs: [{ item: 'copper_ingot', count: 2 }], output: { item: 'copper_hammer', count: 1 },
         skillGainMin: 10, skillGainMax: 20,
       },
     },
@@ -119,7 +123,7 @@ function baseData(): GameData {
     placements: {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
     },
-    milestones: [mineralRepeatMilestone, pickaxeRecipesMilestone],
+    milestones: [mineralRepeatMilestone, hammerRecipesMilestone],
     // 대화 검사 대상이 없는 픽스처다 — 화자·대사가 비어 있으면 "화자마다
     // 무조건 인사가 있어야 한다" 같은 대화 검사는 순회할 대상이 없어
     // 조용히 통과하고, 이 파일의 나머지(도달 가능성 등) 테스트를 방해하지
@@ -133,11 +137,11 @@ function baseData(): GameData {
 /**
  * 서로만 먹이는 제작 순환 — 철 원석은 철 주괴로만 만들어지는데, 그 철 주괴가
  * 하필 철 원석으로만 제작되고, 철 곡괭이는 그 주괴를 요구한다. 셋 다 레시피
- * 산출물이라 "획득 가능" 검사(참조 단계)는 통과하지만, 시작 도구에서 출발하는
- * 어떤 사슬도 이 순환에 진입할 수 없다.
+ * 산출물이라 "획득 가능" 검사(참조 단계)는 통과하지만, 놓인 노드의 표에서
+ * 출발하는 어떤 사슬도 이 순환에 진입할 수 없다.
  *
- * 노드 tier 게이트가 폐지된 표 모델에서 도달 가능성 검사가 잡아야 할 남은
- * 형태가 정확히 이것이다 — 채집은 기술별 시작 도구가 표 전체를 여니 막힐 수
+ * 도구 게이트까지 폐지된 세계(§6-앞 7)에서 도달 가능성 검사가 잡아야 할 남은
+ * 형태가 정확히 이것이다 — 채집은 맨손이 모든 놓인 노드의 표를 여니 막힐 수
  * 없고, 막히는 것은 레시피 사슬뿐이다.
  *
  * requiredSkill 을 전부 0 으로 두는 이유: 0 초과면 "recipes-이정표에 실려야
@@ -290,37 +294,40 @@ describe('validateGameData', () => {
     )
   })
 
-  it('시작 도구는 채집·제작 경로가 없어도 획득 가능한 것으로 본다', () => {
-    // copper_chisel 은 baseData() 안에서 어떤 노드의 산출물도, 어떤 레시피의 산출물도
-    // 아니다 — STARTING_TOOL_IDS 로 캐릭터 생성 시 바로 지급되는 것이 유일한 출처다.
-    // 이 시드가 없으면 매번 "채집으로도 제작으로도 획득할 수 없다"로 오탐된다.
-    expect(validateGameData(baseData(), baseTables())).not.toContain(
-      'items[copper_chisel]: 채집으로도 제작으로도 획득할 수 없다',
+  it('레시피 없는 시작 도구는 이제 오탐이 아니라 결손이다 — 지급이 유도가 되면서 시드 특례가 사라졌다', () => {
+    // 구 검사는 STARTING_TOOL_IDS 를 "획득 가능" 시드로 넣어 레시피 없는 시작
+    // 도구를 봐줬다. 유도된 시작 도구는 requiredSkill 0 레시피가 의무이므로
+    // (§6-앞 8 — 다른 마을 사람이 얻을 길이 그것뿐이다), 레시피를 지우면
+    // 획득 불가로 잡히는 것이 맞다.
+    const data = baseData()
+    delete data.recipes.copper_pickaxe
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[copper_pickaxe]: 채집으로도 제작으로도 획득할 수 없다',
     )
   })
 })
 
 describe('validateGameData 의 도달 가능성 검사', () => {
-  it('서로만 먹이는 레시피 순환은 시작 도구로 도달할 수 없다고 잡아낸다', () => {
+  it('서로만 먹이는 레시피 순환은 도달할 수 없다고 잡아낸다', () => {
     const violations = validateGameData(craftLockedData(), baseTables())
     // iron_ore ← iron_ingot ← iron_ore 의 상호 순환에, 그 주괴를 요구하는
     // iron_pickaxe 까지 걸려 있다 — 셋 다 레시피 산출물이라 "획득 가능" 검사는
-    // 통과하지만, 시작 도구에서 출발하는 어떤 사슬도 진입하지 못한다.
+    // 통과하지만, 놓인 노드의 표에서 출발하는 어떤 사슬도 진입하지 못한다.
     expect(violations).toContain(
-      'items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ore]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_ore]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ingot]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_ingot]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
   })
 
-  it('기술의 도구가 도달 가능하면 그 노드 표의 전 아이템이 도달 가능하다 — §7-앞 11', () => {
-    // 표에 아직 아무 노드도 산출한 적 없는 아이템(silver_like)을 끼워 넣는다.
-    // 등급 게이트가 폐지된 표 모델에서는 시작 도구(1등급 곡괭이) 하나로 그 표의
-    // 전 브라켓 전 아이템이 열려야 한다 — 브라켓은 그라인딩으로 언젠가 닿는다.
+  it('맵에 놓인 노드의 표 아이템은 무조건 도달 가능하다 — 맨손 채집이 시드다(§6-앞 7)', () => {
+    // 표에 아직 아무 레시피도 산출한 적 없는 아이템(silver_like)을 끼워 넣는다.
+    // 게이트가 없는 세계에서는 도구 유무와 무관하게 그 표의 전 브라켓 전
+    // 아이템이 열려야 한다 — 브라켓은 그라인딩으로 언젠가 닿는다.
     const data = baseData()
     data.items.silver_like = { id: 'silver_like', name: '은 비슷한 것', kind: 'material', icon: 'x' }
     const tables = baseTables()
@@ -330,8 +337,29 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     expect(validateGameData(data, tables)).toEqual([])
   })
 
+  it('그 기술의 도구가 노드 산출물로만 만들어지는 자급 구조도 도달 가능하다 — 시드는 도구가 아니라 배치다(§6-앞 7)', () => {
+    // 광물 도구(bronze_pickaxe)가 광물 노드의 산출물(copper_ore→copper_ingot)로만
+    // 만들어진다. 도구를 시드로 삼던 옛 계산(hasCoveringTool)은 "도구가 없으니
+    // 노드가 안 열리고, 노드가 안 열리니 도구를 못 만든다"는 순환으로 전부 도달
+    // 불가라 답했다 — 맨손이 노드를 여는 세계에는 그 순환이 애초에 없다.
+    const data = baseData()
+    delete data.items.copper_pickaxe
+    delete data.recipes.copper_pickaxe
+    data.items.bronze_pickaxe = {
+      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
+      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
+    }
+    data.recipes.bronze_pickaxe = {
+      id: 'bronze_pickaxe', name: '청동 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+      inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'bronze_pickaxe', count: 1 },
+      skillGainMin: 10, skillGainMax: 20,
+    }
+
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
   // '정상 데이터는 위반이 없다' (위 baseData 스위트)와 동일한 단언이라 여기서는 생략한다 —
-  // baseData 는 시작 도구만으로 전부 도달 가능하므로 그 테스트가 이미 이 사실을 검증한다.
+  // baseData 는 놓인 노드 하나에서 전부 도달 가능하므로 그 테스트가 이미 이 사실을 검증한다.
 
   it('실제로 출하되는 CSV 데이터는 도달 가능성 검사를 통과한다', () => {
     expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
@@ -357,11 +385,13 @@ describe('validateGameData 의 배치 검사', () => {
 describe('validateGameData 의 조합 부트스트랩 검사', () => {
   it('스킬의 모든 레시피가 requiredSkill 0 초과면 그 스킬은 영원히 부트스트랩할 수 없다고 잡아낸다', () => {
     const data = baseData()
-    // crafting 스킬의 두 레시피 중 requiredSkill 0 이던 copper_ingot 마저 1로 올린다.
-    // 조합 숙련도는 레시피 성공 경로(craftService)에서만 오르고 그 경로 자체가
-    // requiredSkill 게이트(canCraft) 뒤에 있으므로, crafting 레시피 전부가 1 이상을
-    // 요구하면 숙련도 0에서 시작하는 플레이어는 어떤 레시피도 영원히 열 수 없다.
+    // crafting 스킬에서 requiredSkill 0 이던 두 레시피(copper_ingot·copper_pickaxe)를
+    // 전부 1로 올린다. 조합 숙련도는 레시피 성공 경로(craftService)에서만 오르고
+    // 그 경로 자체가 requiredSkill 게이트(canCraft) 뒤에 있으므로, crafting 레시피
+    // 전부가 1 이상을 요구하면 숙련도 0에서 시작하는 플레이어는 어떤 레시피도
+    // 영원히 열 수 없다.
     data.recipes.copper_ingot!.requiredSkill = 1
+    data.recipes.copper_pickaxe!.requiredSkill = 1
 
     expect(validateGameData(data, baseTables())).toContain(
       'skills[crafting]: requiredSkill 0 인 레시피가 없어 영원히 부트스트랩할 수 없다',
@@ -390,78 +420,62 @@ describe('validateGameData 의 조기 반환', () => {
     ])
   })
 
-  it('STARTING_TOOL_IDS 항목이 가리키는 아이템이 없으면 그 사실 하나만 보고한다', () => {
-    // CSV에서 copper_pickaxe 를 renamed_pickaxe 로 참조까지 전부 일관되게 개명했지만
-    // 코드의 STARTING_TOOL_IDS 상수(copper_pickaxe)는 갱신을 놓친 상황을 재현한다.
-    // 고치지 않으면 시드가 빈 채로 도달 가능성 계산이 돌아 데이터의 모든 아이템이
-    // "도달 불가"로 잡힌다. 나머지 시작 도구 셋(chisel·axe·sickle)은 정상이라
-    // 노이즈 없이 이 위반 하나만 나와야 한다. copper_ingot 의 requiredSkill 이 0 인
-    // 것도 같은 이유다 — 1 이면 crafting 스킬에 부트스트랩 레시피가 없어져 그
-    // 위반까지 섞인다. milestones 에 mineral 의 repeat 이정표를 둔 것도 같은 이유다 —
-    // 없으면 이 데이터의 유일한 채집 기술(mineral)이 repeat 이정표 없음 위반을 더한다.
-    const data: GameData = {
-      items: {
-        copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
-        copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
-        copper_chisel: {
-          id: 'copper_chisel', name: '구리 정', kind: 'tool',
-          toolSkill: 'ice', toolTier: 1, icon: 'pickaxe_copper',
-        },
-        copper_axe: {
-          id: 'copper_axe', name: '구리 도끼', kind: 'tool',
-          toolSkill: 'wood', toolTier: 1, icon: 'pickaxe_copper',
-        },
-        copper_sickle: {
-          id: 'copper_sickle', name: '구리 낫', kind: 'tool',
-          toolSkill: 'herb', toolTier: 1, icon: 'pickaxe_copper',
-        },
-        renamed_pickaxe: {
-          id: 'renamed_pickaxe', name: '개명된 곡괭이', kind: 'tool',
-          toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-        },
-      },
-      nodes: {
-        copper_vein: {
-          id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
-        },
-      },
-      recipes: {
-        copper_ingot: {
-          id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
-          inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
-          skillGainMin: 10, skillGainMax: 20,
-        },
-        renamed_pickaxe: {
-          id: 'renamed_pickaxe', name: '개명된 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
-          inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'renamed_pickaxe', count: 1 },
-          skillGainMin: 10, skillGainMax: 20,
-        },
-      },
-      maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
-      transitions: [],
-      placements: {
-        'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
-      },
-      milestones: [mineralRepeatMilestone],
-      speakers: {},
-      places: {}, schedules: {}, routes: [],
-      dialogue: [],
-    }
+})
+
+// ---- 시작 도구 유도 검사(§6-앞 8) ----
+//
+// 시작 지급은 상수(구 STARTING_TOOL_IDS)가 아니라 유도다: villageField(마을).skill
+// → starterToolFor("kind=tool ∧ toolTier=1 ∧ toolSkill=그 기술"). 유도가 성립하지
+// 않는 카탈로그는 캐릭터 생성 런타임이 아니라 **빌드**에서 터져야 한다 — 채집
+// 기술마다 1티어 도구가 정확히 하나 있고, 그 도구에 requiredSkill 0 레시피가 있다.
+
+describe('validateGameData 의 시작 도구 유도 검사', () => {
+  it('채집 기술의 1티어 도구가 하나도 없으면 잡아낸다 — 그 마을의 새 캐릭터가 만들어지지 않는다', () => {
+    const data = baseData()
+    // 유일한 채집 기술(mineral)의 1티어 도구와 그 레시피를 함께 지운다 —
+    // 레시피만 남기면 "없는 아이템을 산출한다" 참조 위반이 섞여 이 검사
+    // 하나만 볼 수 없다.
+    delete data.items.copper_pickaxe
+    delete data.recipes.copper_pickaxe
 
     expect(validateGameData(data, baseTables())).toEqual([
-      'STARTING_TOOL_IDS: 존재하지 않는 아이템 "copper_pickaxe" 를 가리킨다',
+      'skills[mineral]: 1티어 도구가 정확히 하나여야 하는데 [](0개)다 — 시작 지급(starterToolFor)이 그 하나를 마을 도구로 유도한다. items.csv 의 toolTier·toolSkill 을 정리한다',
     ])
   })
 
-  it('STARTING_TOOL_IDS 항목이 도구가 아니면 그 사실 하나만 보고한다', () => {
+  it('채집 기술의 1티어 도구가 둘이면 잡아낸다 — 무엇을 줄지 정해지지 않는다', () => {
     const data = baseData()
-    // copper_pickaxe 를 material 로 바꾼다. output/재료 참조는 여전히 유효하므로
-    // (recipes.copper_pickaxe 는 그대로 이 id 를 산출한다) 다른 참조 무결성 위반은
-    // 섞이지 않고 "도구가 아니다" 검사 하나만 측정한다.
-    const notATool: ItemDef = { id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'material', icon: 'pickaxe_copper' }
-    data.items.copper_pickaxe = notATool
+    // 두 번째 곡괭이에도 requiredSkill 0 레시피를 준다 — 안 주면 "획득할 수
+    // 없다" 위반이 섞여 이 검사 하나만 볼 수 없다.
+    data.items.bronze_pickaxe = {
+      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
+      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
+    }
+    data.recipes.bronze_pickaxe = {
+      id: 'bronze_pickaxe', name: '청동 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+      inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'bronze_pickaxe', count: 1 },
+      skillGainMin: 10, skillGainMax: 20,
+    }
 
-    expect(validateGameData(data, baseTables())).toEqual(['STARTING_TOOL_IDS: "copper_pickaxe" 는 도구가 아니다'])
+    expect(validateGameData(data, baseTables())).toEqual([
+      'skills[mineral]: 1티어 도구가 정확히 하나여야 하는데 [copper_pickaxe,bronze_pickaxe](2개)다 — 시작 지급(starterToolFor)이 그 하나를 마을 도구로 유도한다. items.csv 의 toolTier·toolSkill 을 정리한다',
+    ])
+  })
+
+  it('시작 도구에 requiredSkill 0 레시피가 없으면 잡아낸다 — 다른 마을 사람이 영원히 못 만든다', () => {
+    const data = baseData()
+    data.recipes.copper_pickaxe!.requiredSkill = 5
+
+    const violations = validateGameData(data, baseTables())
+    expect(violations).toContain(
+      'items[copper_pickaxe]: mineral 의 시작 도구인데 requiredSkill 0 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0 레시피를 둔다',
+    )
+  })
+
+  it('1티어라도 채집 기술이 아닌 도구(망치)는 검사 대상이 아니다 — crafting 에는 노드가 없다', () => {
+    // baseData 의 copper_hammer 는 1티어 crafting 도구인데 레시피 requiredSkill 이
+    // 3 이다 — 채집 기술이었다면 위반이지만, 노드 없는 기술은 시작 지급이 없다.
+    expect(validateGameData(baseData(), baseTables())).toEqual([])
   })
 })
 
@@ -552,18 +566,18 @@ describe('validateGameData 의 이정표 검사', () => {
   })
 
   it('recipes 효과의 threshold 가 실제 레시피 requiredSkill 과 다르면 잡아낸다', () => {
-    // baseData() 의 copper_pickaxe 레시피는 requiredSkill 3 인데, 이 이정표는 999 를
+    // baseData() 의 copper_hammer 레시피는 requiredSkill 3 인데, 이 이정표는 999 를
     // 넘어야 열린다고 선언한다 — 목록이 플레이어에게 거짓 문턱을 보여주는 상황이다.
     const data = baseData()
     data.milestones = [
       ...data.milestones,
       {
         id: 'wrong_threshold', metric: { kind: 'skill', skill: 'crafting' }, threshold: 999,
-        name: '틀린 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+        name: '틀린 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_hammer'] },
       },
     ]
     expect(validateGameData(data, baseTables())).toContain(
-      'milestones[wrong_threshold]: 레시피 "copper_pickaxe" 의 requiredSkill(3) 이 이정표 threshold(999) 와 다르다',
+      'milestones[wrong_threshold]: 레시피 "copper_hammer" 의 requiredSkill(3) 이 이정표 threshold(999) 와 다르다',
     )
   })
 
@@ -575,7 +589,7 @@ describe('validateGameData 의 이정표 검사', () => {
       mineralRepeatMilestone,
       {
         id: 'right_threshold', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
-        name: '맞는 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+        name: '맞는 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_hammer'] },
       },
     ]
     expect(validateGameData(data, baseTables())).toEqual([])
@@ -590,9 +604,9 @@ describe('validateGameData 의 이정표 검사', () => {
 
   it('requiredSkill > 0 인데 어느 recipes 이정표에도 실리지 않은 레시피를 잡아낸다', () => {
     const data = baseData()
-    data.milestones = [mineralRepeatMilestone] // copper_pickaxe(requiredSkill 3)를 싣던 이정표를 뺀다
+    data.milestones = [mineralRepeatMilestone] // copper_hammer(requiredSkill 3)를 싣던 이정표를 뺀다
     expect(validateGameData(data, baseTables())).toContain(
-      'recipes[copper_pickaxe]: requiredSkill(3) 이 0 보다 큰데 어느 recipes 이정표에도 실리지 않았다 — 목록방에서 조용히 빠진다. milestones.csv 에 effectKind=recipes 로 싣는다',
+      'recipes[copper_hammer]: requiredSkill(3) 이 0 보다 큰데 어느 recipes 이정표에도 실리지 않았다 — 목록방에서 조용히 빠진다. milestones.csv 에 effectKind=recipes 로 싣는다',
     )
   })
 
@@ -602,16 +616,16 @@ describe('validateGameData 의 이정표 검사', () => {
       ...data.milestones,
       {
         id: 'crafting_3_dup', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
-        name: '중복 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+        name: '중복 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_hammer'] },
       },
     ]
     expect(validateGameData(data, baseTables())).toContain(
-      'recipes[copper_pickaxe]: recipes 이정표 [crafting_3,crafting_3_dup] 2개에 실렸다 — 정확히 하나여야 한다',
+      'recipes[copper_hammer]: recipes 이정표 [crafting_3,crafting_3_dup] 2개에 실렸다 — 정확히 하나여야 한다',
     )
   })
 
   it('requiredSkill 0 인 레시피는 이정표 없이도 통과한다 — 처음부터 열려 있는 문이다', () => {
-    // baseData 의 copper_ingot(requiredSkill 0)은 어느 recipes 이정표에도 없다.
+    // baseData 의 copper_ingot·copper_pickaxe(requiredSkill 0)는 어느 recipes 이정표에도 없다.
     expect(validateGameData(baseData(), baseTables())).toEqual([])
   })
 
@@ -1058,7 +1072,7 @@ describe('validateGameData 의 대화 검사 — 다른 데이터의 오타에 �
     const violations = validateGameData(data, baseTables())
     expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
     expect(violations).toContain(
-      'items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
   })
 })

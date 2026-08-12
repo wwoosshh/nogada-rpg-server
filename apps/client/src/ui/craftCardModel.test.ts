@@ -38,13 +38,22 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
   it('카테고리는 첫 등장 순서, 카드는 선언 순서다', () => {
     const sections = buildCraftCards(data, emptyPlayer(), {})
     expect(sections.map((s) => s.category)).toEqual(['제련', '도구'])
+    // 구리 4종은 copper_hammer 곁, 미스릴 위(§6-앞 15) — 카테고리 안에서
+    // 요구치가 낮은 문이 위에 오는 원작의 배치를 행 순서가 그대로 나른다.
     expect(sections[1]!.cards.map((c) => c.recipeId)).toEqual([
+      'copper_chisel',
+      'copper_axe',
+      'copper_pickaxe',
+      'copper_sickle',
       'copper_hammer',
       'iron_chisel',
       'iron_axe',
       'iron_pickaxe',
       'iron_sickle',
       'mithril_pickaxe',
+      'mithril_chisel',
+      'mithril_axe',
+      'mithril_sickle',
     ])
   })
 

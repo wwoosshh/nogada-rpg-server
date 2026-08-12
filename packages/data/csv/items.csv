@@ -38,3 +38,6 @@ silver_ingot,은 주괴,material,,,ingot_silver
 gold_ingot,금 주괴,material,,,ingot_gold
 mithril_ingot,미스릴 주괴,material,,,ingot_mithril
 mithril_pickaxe,미스릴 곡괭이,tool,mineral,3,pickaxe_reinforced
+mithril_chisel,미스릴 정,tool,ice,3,chisel_mithril
+mithril_axe,미스릴 도끼,tool,wood,3,axe_mithril
+mithril_sickle,미스릴 낫,tool,herb,3,sickle_mithril

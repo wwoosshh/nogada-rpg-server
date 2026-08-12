@@ -1,5 +1,9 @@
 id,name,skill,requiredSkill,baseChance,inputs,outputItem,outputCount,skillGainMin,skillGainMax,category
 copper_ingot,구리 주괴,crafting,0,0.6,copper_ore:2,copper_ingot,1,10,20,제련
+copper_chisel,구리 정,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_chisel,1,12,20,도구
+copper_axe,구리 도끼,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_axe,1,12,20,도구
+copper_pickaxe,구리 곡괭이,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_pickaxe,1,12,20,도구
+copper_sickle,구리 낫,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_sickle,1,12,20,도구
 copper_hammer,구리 망치,crafting,200,0.55,copper_ingot:2,copper_hammer,1,15,25,도구
 iron_chisel,철 정,crafting,500,0.5,copper_ingot:3|ice_shard:5,iron_chisel,1,20,35,도구
 iron_axe,철 도끼,crafting,500,0.5,copper_ingot:3|soft_log:5,iron_axe,1,20,35,도구
@@ -9,3 +13,6 @@ silver_ingot,은 주괴,crafting,1500,0.5,silver_ore:3,silver_ingot,1,25,40,제�
 gold_ingot,금 주괴,crafting,5000,0.45,gold_ore:3|sapphire_ore:1,gold_ingot,1,40,70,제련
 mithril_ingot,미스릴 주괴,crafting,10000,0.45,mithril_ore:3|silver_ingot:1|gold_ingot:1|ice_gem:1,mithril_ingot,1,60,100,제련
 mithril_pickaxe,미스릴 곡괭이,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_pickaxe,1,150,250,도구
+mithril_chisel,미스릴 정,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_chisel,1,150,250,도구
+mithril_axe,미스릴 도끼,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_axe,1,150,250,도구
+mithril_sickle,미스릴 낫,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_sickle,1,150,250,도구

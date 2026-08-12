@@ -3,13 +3,12 @@ import {
   EVENT_ORDER,
   ONCE_EVENTS,
   SKILL_IDS,
-  STARTING_TOOL_IDS,
   actionIntervalMs,
   describeFactValueShape,
   factValueFitsShape,
   findFactSpec,
   matchesCondition,
-  toolMatchesSkill,
+  starterToolCandidates,
 } from '@nogada/shared'
 import { dialogueLocation } from './dialogueParse.js'
 import { startVillages, villageField } from './maps.js'
@@ -214,17 +213,20 @@ export function findDeadDialogueRules(dialogue: readonly DialogueRule[]): DeadDi
 }
 
 /**
- * 시작 도구에서 출발해 고정점(fixpoint)까지 확장한 "도달 가능한 아이템" 집합을 구한다.
+ * 맵에 놓인 노드의 표에서 출발해 레시피 폐포까지 확장한 "도달 가능한 아이템" 집합.
  *
- * - 채집 노드: 이미 도달 가능한 도구 중 그 노드의 숙련(skill)에 맞는 것이
- *   하나라도 있으면, 그 노드가 가리키는 표의 **전 브라켓 전 아이템**이 도달
- *   가능해진다(설계 §7-앞 11). 등급은 보지 않는다 — 노드 tier 게이트가
- *   폐지되어(§7-앞 8) 등급은 접근이 아니라 확률 보정이고, 브라켓은 숙련도의
- *   함수인데 숙련은 성패 무관 매 시도 오르므로 그라인딩으로 언젠가 항상 닿는다
- *   (최상 티어의 잭팟은 숙련 0부터 열려 있기까지 하다).
+ * - 채집: **맵에 놓인 노드의 표 아이템은 무조건 도달 가능하다**(§6-앞 7 — 3차
+ *   재작성). 도구 게이트가 폐지되어 맨손이 모든 노드를 열므로 "그 기술의 도구가
+ *   도달 가능한가"(구 hasCoveringTool)는 더 이상 조건이 아니고, 도구 시드(구
+ *   STARTING_TOOL_IDS)도 함께 은퇴했다. 등급·브라켓을 보지 않는 이유는 그대로다:
+ *   등급은 접근이 아니라 확률 보정이고, 브라켓은 숙련도의 함수인데 숙련은 성패
+ *   무관 매 시도 오르므로 그라인딩으로 언젠가 항상 닿는다(최상 티어의 잭팟은
+ *   숙련 0부터 열려 있기까지 하다). 놓이지 않은 노드는 세지 않는다 — 게임에
+ *   없는 노드이고, 그 결손 자체는 배치 검사("맵 어디에도 놓이지 않았다")가
+ *   먼저 말한다.
  * - 레시피: 재료(inputs)가 전부 도달 가능해지면 산출물이 도달 가능해진다.
  *
- * 제작 숙련도도 일부러 보지 않는다 — 조합 숙련도는 `craftService` 의 성공
+ * 제작 숙련도는 일부러 보지 않는다 — 조합 숙련도는 `craftService` 의 성공
  * 경로에서만 오르고, 그 성공 경로 자체가 `canCraft` 의 requiredSkill 게이트
  * 뒤에 있다. 즉 숙련도를 올리려면 이미 그 레시피를 열 숙련도가 있어야 하는
  * 순환이라, "그라인딩하면 언젠가 도달한다"는 채집과 달리 제작에는 그냥
@@ -234,33 +236,24 @@ export function findDeadDialogueRules(dialogue: readonly DialogueRule[]): DeadDi
  * fixpoint 는 아이템 참조 사슬만 보고 "도달 가능"이라 오판한다.
  */
 function computeReachableItems(data: GameData, gatherTables: GatherTables): Set<string> {
-  const reachable = new Set<string>(STARTING_TOOL_IDS)
-  const tools = Object.values(data.items).filter((item) => item.kind === 'tool')
+  const reachable = new Set<string>()
 
+  const placedNodeIds = new Set(Object.values(data.placements).map((placement) => placement.nodeId))
+  for (const node of Object.values(data.nodes)) {
+    if (!placedNodeIds.has(node.id)) continue
+    // 없는 표를 가리키는 노드는 참조 검사가 이미 잡았고, 참조 위반이 있으면
+    // 이 계산 자체가 돌지 않는다(아래 조기 반환) — 그래도 이 함수는 그 경로를
+    // 거치지 않은 데이터로 불릴 수 있으니 조용히 건너뛴다.
+    const table = gatherTables[node.tableId]
+    if (!table) continue
+    for (const tier of table.tiers) reachable.add(tier.itemId)
+  }
+
+  // 노드 시드는 위에서 한 번에 끝났다 — 반복이 필요한 것은 레시피 폐포뿐이다
+  // (산출물이 다른 레시피의 재료가 되는 사슬).
   let changed = true
   while (changed) {
     changed = false
-
-    for (const node of Object.values(data.nodes)) {
-      // 없는 표를 가리키는 노드는 참조 검사가 이미 잡았고, 참조 위반이 있으면
-      // 이 계산 자체가 돌지 않는다(아래 조기 반환) — 그래도 이 함수는 그 경로를
-      // 거치지 않은 데이터로 불릴 수 있으니 조용히 건너뛴다.
-      const table = gatherTables[node.tableId]
-      if (!table) continue
-      // "그 기술의 도구인가"는 shared 의 toolMatchesSkill 하나가 정한다 — 서버의
-      // 착용 판정(equippedToolTier)과 같은 정의라, 여기서 도달 가능하다고 판단한
-      // 노드는 게임에서도 반드시 열린다. 등급 조건이 없는 것은 tier 게이트의
-      // 폐지(§7-앞 8)다.
-      const hasCoveringTool = tools.some((tool) => reachable.has(tool.id) && toolMatchesSkill(tool, node.skill))
-      if (!hasCoveringTool) continue
-      for (const tier of table.tiers) {
-        if (!reachable.has(tier.itemId)) {
-          reachable.add(tier.itemId)
-          changed = true
-        }
-      }
-    }
-
     for (const recipe of Object.values(data.recipes)) {
       if (reachable.has(recipe.output.item)) continue
       const allInputsReachable = recipe.inputs.every((input) => reachable.has(input.item))
@@ -391,15 +384,43 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     }
   }
 
-  // 시작 도구는 채집·제작을 거치지 않고 캐릭터 생성 시 바로 지급되므로 그 자체로
-  // "획득 가능"하다 — computeReachableItems 가 이미 이 상수로 reachable 을 시드하는
-  // 것과 같은 이유다. 시드하지 않으면 레시피가 없는 시작 도구(예: 되사서 못 만드는
-  // 최초 장비)가 매번 "채집으로도 제작으로도 획득할 수 없다"로 오탐된다.
-  //
+  // 시작 도구는 상수가 아니라 유도다(§6-앞 8): 캐릭터 생성(createInitialPlayer)은
+  // villageField(마을).skill 에 대해 starterToolFor 가 유도한 "1티어 ∧ 그 기술"
+  // 도구 하나를 지급한다. 유도가 성립하려면 채집 기술(노드가 존재하는 기술)마다
+  // 그런 도구가 **정확히 하나**여야 하고 — 없으면 그 마을의 캐릭터 생성이
+  // 런타임에 던지고, 둘이면 무엇을 줄지 정해지지 않는다 — 그 도구에
+  // requiredSkill 0 레시피가 있어야 한다: 자기 마을 것이 아닌 도구를 손에 넣는
+  // 길이 그 레시피뿐이기 때문이다(§2 의 부트스트랩 경로). 후보를 세는 술어는
+  // 지급이 쓰는 starterToolCandidates 그대로다 — 결손이 캐릭터 생성 런타임이
+  // 아니라 여기(빌드)에서 터지는 것이 이 검사의 존재 이유다.
+  const gatheringSkills = new Set(Object.values(data.nodes).map((node) => node.skill))
+  for (const skill of gatheringSkills) {
+    const candidates = starterToolCandidates(skill, data.items)
+    if (candidates.length !== 1) {
+      const ids = candidates.map((tool) => tool.id).join(',')
+      violations.push(
+        `skills[${skill}]: 1티어 도구가 정확히 하나여야 하는데 [${ids}](${candidates.length}개)다 — 시작 지급(starterToolFor)이 그 하나를 마을 도구로 유도한다. items.csv 의 toolTier·toolSkill 을 정리한다`,
+      )
+      continue
+    }
+    const starter = candidates[0]!
+    const hasFreeRecipe = Object.values(data.recipes).some(
+      (recipe) => recipe.output.item === starter.id && recipe.requiredSkill === 0,
+    )
+    if (!hasFreeRecipe) {
+      violations.push(
+        `items[${starter.id}]: ${skill} 의 시작 도구인데 requiredSkill 0 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0 레시피를 둔다`,
+      )
+    }
+  }
+
   // 채집으로 얻는 것은 노드가 가리키는 표의 전 아이템이다(설계 §7-앞 11) —
   // 노드는 이제 산출물을 직접 갖지 않는다. 없는 표(?? [])는 위 참조 검사가
-  // 이미 말했으므로 여기서 그림자 위반을 만들지 않는다.
-  const obtainable = new Set<string>(STARTING_TOOL_IDS)
+  // 이미 말했으므로 여기서 그림자 위반을 만들지 않는다. 시작 도구를 따로
+  // 시드하지 않는 이유(구 STARTING_TOOL_IDS 시드의 은퇴): 지급이 유도가 되면서
+  // 시작 도구도 requiredSkill 0 레시피를 가져야 하고(위 검사), 그러면 레시피
+  // 산출물로서 이미 여기 잡힌다 — 레시피 없는 시작 도구는 오탐이 아니라 결손이다.
+  const obtainable = new Set<string>()
   for (const node of Object.values(data.nodes)) {
     for (const tier of gatherTables[node.tableId]?.tiers ?? []) obtainable.add(tier.itemId)
   }
@@ -407,19 +428,6 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   for (const item of Object.values(data.items)) {
     if (!obtainable.has(item.id)) {
       violations.push(`items[${item.id}]: 채집으로도 제작으로도 획득할 수 없다`)
-    }
-  }
-
-  // STARTING_TOOL_IDS(코드 상수)가 실제 아이템 데이터와 어긋나지 않는지 미리 검사한다.
-  // computeReachableItems 는 이 상수를 시드로 그대로 믿기 때문에, 가리키는 아이템이
-  // 없거나 도구가 아니면 시드가 통째로 비어 데이터의 모든 아이템이 "도달 불가"로
-  // 잡힌다 — 예컨대 CSV에서 copper_pickaxe 를 개명하고 이 상수 갱신을 놓쳤을 때.
-  for (const toolId of STARTING_TOOL_IDS) {
-    const item = data.items[toolId]
-    if (!item) {
-      violations.push(`STARTING_TOOL_IDS: 존재하지 않는 아이템 "${toolId}" 를 가리킨다`)
-    } else if (item.kind !== 'tool') {
-      violations.push(`STARTING_TOOL_IDS: "${toolId}" 는 도구가 아니다`)
     }
   }
 
@@ -582,7 +590,7 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   for (const item of Object.values(data.items)) {
     if (!reachable.has(item.id)) {
       violations.push(
-        `items[${item.id}]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다`,
+        `items[${item.id}]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다`,
       )
     }
   }
@@ -662,8 +670,8 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 하나씩 있어야 한다. 하나도 없으면 그 기술은 영원히 자동 반복을 얻지 못한다는
   // 사실이 목록 어디에도 드러나지 않고, 여럿이면 어느 것이 "그" 반복 이정표인지
   // 목록에서 모호해진다. crafting 처럼 노드가 없는 기술은 이 검사 대상이 아니다 —
-  // 채집 노드 자체가 없으니 "채집 기술" 이 아니다.
-  const gatheringSkills = new Set(Object.values(data.nodes).map((node) => node.skill))
+  // 채집 노드 자체가 없으니 "채집 기술" 이 아니다. gatheringSkills 는 시작 도구
+  // 유도 검사가 위에서 같은 정의로 만들어 둔 것을 그대로 쓴다.
   for (const skill of gatheringSkills) {
     const repeatMilestones = data.milestones.filter((m) => {
       const effect = m.effect
