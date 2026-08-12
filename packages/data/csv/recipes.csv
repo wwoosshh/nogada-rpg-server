@@ -5,3 +5,6 @@ iron_chisel,철 정,crafting,500,0.5,copper_ingot:3|ice_shard:5,iron_chisel,1,20
 iron_axe,철 도끼,crafting,500,0.5,copper_ingot:3|soft_log:5,iron_axe,1,20,35,도구
 iron_pickaxe,철 곡괭이,crafting,500,0.5,copper_ingot:3|copper_ore:5,iron_pickaxe,1,20,35,도구
 iron_sickle,철 낫,crafting,500,0.5,copper_ingot:3|common_herb:5,iron_sickle,1,20,35,도구
+silver_ingot,은 주괴,crafting,1500,0.5,silver_ore:3,silver_ingot,1,25,40,제련
+gold_ingot,금 주괴,crafting,5000,0.45,gold_ore:3|sapphire_ore:1,gold_ingot,1,40,70,제련
+mithril_ingot,미스릴 주괴,crafting,10000,0.45,mithril_ore:3|silver_ingot:1|gold_ingot:1|ice_gem:1,mithril_ingot,1,60,100,제련

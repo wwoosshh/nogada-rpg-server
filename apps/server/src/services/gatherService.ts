@@ -9,9 +9,31 @@ import {
   yieldBonus,
   type GameData,
   type MilestoneDef,
+  type NodeDef,
   type PlayerState,
   type RecipeInput,
 } from '@nogada/shared'
+
+/**
+ * 임시 산출물 — 노드가 yieldItem 을 잃고 표(tableId)를 가리키게 됐지만, 표를
+ * 읽는 판정(gatherOutcome)과 서버의 표 주입은 다음 태스크의 것이다. 그때까지
+ * 옛 nodes.csv 가 노드마다 갖던 산출물을 기술·외형별로 보존해 행동이 변하지
+ * 않게 한다. // G4 가 표 판정으로 교체한다
+ */
+const LEGACY_YIELD: Record<string, string> = {
+  'ice:normal': 'ice_shard',
+  'ice:deep': 'pure_ice',
+  'wood:normal': 'soft_log',
+  'wood:deep': 'hard_log',
+  'mineral:normal': 'copper_ore',
+  'mineral:deep': 'iron_ore',
+  'herb:normal': 'common_herb',
+  'herb:deep': 'rare_herb',
+}
+
+function legacyYieldItem(node: NodeDef): string | undefined {
+  return LEGACY_YIELD[`${node.skill}:${node.variant}`]
+}
 
 export interface PerformGatherArgs {
   player: PlayerState
@@ -94,12 +116,16 @@ export function performGather(args: PerformGatherArgs): GatherResult {
     }
   }
 
-  const count = rollInt(rng, node.yieldMin, node.yieldMax) + yieldBonus(proficiency)
-  player.stacks[node.yieldItem] = (player.stacks[node.yieldItem] ?? 0) + count
+  // 임시 산출 — 옛 nodes.csv 의 수량(일반 1~3, 심층 1~2)과 증가치(전 노드 1~2)를
+  // 상수로 보존한다. 표가 정하는 진짜 판정은 G4 가 넣는다.
+  const yieldItem = legacyYieldItem(node)
+  if (!yieldItem) return { ok: false, code: 'unknown_node' }
+  const count = rollInt(rng, 1, node.variant === 'deep' ? 2 : 3) + yieldBonus(proficiency)
+  player.stacks[yieldItem] = (player.stacks[yieldItem] ?? 0) + count
 
   // 효율 배수는 아직 항상 1 이다. 식에 자리를 두는 이유는, 나중에 배수를 도입할 때
   // 저장된 숙련도의 의미나 증가 경로를 다시 손대지 않기 위해서다.
-  const skillGained = rollInt(rng, node.skillGainMin, node.skillGainMax) * EFFICIENCY_MULTIPLIER
+  const skillGained = rollInt(rng, 1, 2) * EFFICIENCY_MULTIPLIER
   player.skills[node.skill] += skillGained
 
   // 달성 판정은 숙련도가 오른 뒤에 한다. 이번 행동으로 넘긴 것을 이번 응답에 실어야
@@ -112,7 +138,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
     outcome: {
       success: true,
       chance,
-      gained: { item: node.yieldItem, count },
+      gained: { item: yieldItem, count },
       skillGained,
       achieved,
       player,

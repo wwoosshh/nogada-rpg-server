@@ -131,17 +131,57 @@ export interface NodeDef {
   id: string
   name: string
   skill: SkillId
-  /** 채집에 필요한 최소 도구 등급. 이 노드의 유일한 접근 게이트다. */
-  tier: number
-  /** 숙련도 0 일 때의 성공률 */
-  baseChance: number
-  yieldItem: string
-  yieldMin: number
-  yieldMax: number
-  /** 채집 1회당 숙련도 증가량의 범위. 원작은 등급과 무관하게 1~2 다. */
+  /**
+   * 이 노드가 굴리는 확률표의 id. 무엇이 나오는가는 노드가 아니라 표가 정한다.
+   *
+   * 표 자체는 GameData 에 없다 — 브라켓 경계와 잭팟 확률이 곧 숨은 문턱이라
+   * 클라이언트에 실으면 F12 로 스포일된다(설계 §7-앞 9). 빌드가 서버 전용
+   * 산출물(gather-tables.json)로 따로 굽고 서버만 읽는다.
+   */
+  tableId: string
+  /**
+   * 표시 전용 시각 변형. 판정에 쓰이지 않는다 — 마커 색의 출처다(설계 §7-앞 10).
+   * 같은 표를 공유하는 두 외형(원작의 광물 4색 노드와 같은 관습)이다.
+   */
+  variant: 'normal' | 'deep'
+}
+
+/** 채집 사다리의 한 단. 표의 tiers 순서가 곧 의미다 — 희귀 → 흔함. */
+export interface GatherTierDef {
+  itemId: string
+}
+
+/**
+ * 숙련 브라켓 하나의 누적 확률표.
+ *
+ * `cumulative[i]` 는 "roll ≤ 이 값이면 tiers[i]" 의 상한이다(오름차순, 최대
+ * 100000). 어느 값에도 안 걸리는 roll 은 실패다 — 마지막 누적과 100000 사이가
+ * 실패 질량이다.
+ */
+export interface GatherBracketDef {
+  /** 이 브라켓이 받는 숙련 상한(proficiency ≤ bracketMax). null = ∞(마지막 브라켓). */
+  bracketMax: number | null
+  cumulative: number[]
+}
+
+/**
+ * 채집 확률표 하나. 채집장(기술) 하나가 표 하나를 갖는다.
+ *
+ * 성패 무관 숙련 증가치(skillGainMin~Max)는 노드가 아니라 표가 소유한다
+ * (설계 §7-앞 3) — 같은 표를 공유하는 노드들이 다른 증가치를 가질 이유가 없다.
+ */
+export interface GatherTableDef {
+  id: string
+  skill: SkillId
   skillGainMin: number
   skillGainMax: number
+  /** 희귀 → 흔함 순서. brackets 의 cumulative 와 자리로 짝을 이룬다. */
+  tiers: GatherTierDef[]
+  /** 숙련 브라켓 오름차순. 마지막 하나만 bracketMax 가 null(∞)이다. */
+  brackets: GatherBracketDef[]
 }
+
+export type GatherTables = Record<string, GatherTableDef>
 
 export interface RecipeInput {
   item: string

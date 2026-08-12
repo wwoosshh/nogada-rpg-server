@@ -56,8 +56,9 @@ export function requireCell(row: Row, key: string, context: string): string {
  *
  * 기본 최솟값은 1 이다 — 이 CSV들의 정수 필드(등급, 개수, 숙련도 증가량)는
  * 전부 "몇 등급/몇 개/얼마나 늘어나는지"를 세는 값이라 0 이하가 의미 있는 경우가
- * 없다. 0을 그대로 통과시키면 예컨대 yieldMin=-1 이 실려서 rollInt 가 음수 개수를
- * 반환하는 식으로 나중에야 터진다.
+ * 없다. 0을 그대로 통과시키면 예컨대 outputCount=-1 이 실려서 rollInt 가 음수
+ * 개수를 반환하는 식으로 나중에야 터진다. (예외적으로 0 이 유효한 칸 — 채집표의
+ * 누적 상한 — 은 min 0 을 명시해 부른다.)
  */
 export function toInt(value: string, context: string, field: string, min = 1): number {
   const n = Number(value)
@@ -144,22 +145,27 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
   return out
 }
 
+/**
+ * 노드는 이제 표를 가리킬 뿐이다 — 무엇이 얼마나 나오는지는 전부 확률표
+ * (gather_tables 3파일)가 정하고, 노드에 남는 것은 자리(어느 기술·어느 표)와
+ * 외형(variant)뿐이다(설계 §3.2). tableId 가 실재하는 표인지는 표를 함께 보는
+ * validateGameData 가 검사한다.
+ */
 export function parseNodes(rows: Row[]): Record<string, NodeDef> {
   const out: Record<string, NodeDef> = {}
   for (const row of rows) {
     const id = requireCell(row, 'id', 'nodes.csv')
     const ctx = `nodes.csv[${id}]`
+    const variant = requireCell(row, 'variant', ctx)
+    if (variant !== 'normal' && variant !== 'deep') {
+      throw new Error(`${ctx}: variant "${variant}" 는 알 수 없다 (허용값: normal, deep)`)
+    }
     const def: NodeDef = {
       id,
       name: requireCell(row, 'name', ctx),
       skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
-      tier: toInt(requireCell(row, 'tier', ctx), ctx, 'tier'),
-      baseChance: toFloat(requireCell(row, 'baseChance', ctx), ctx, 'baseChance', 0.01, 1),
-      yieldItem: requireCell(row, 'yieldItem', ctx),
-      yieldMin: toInt(requireCell(row, 'yieldMin', ctx), ctx, 'yieldMin'),
-      yieldMax: toInt(requireCell(row, 'yieldMax', ctx), ctx, 'yieldMax'),
-      skillGainMin: toInt(requireCell(row, 'skillGainMin', ctx), ctx, 'skillGainMin'),
-      skillGainMax: toInt(requireCell(row, 'skillGainMax', ctx), ctx, 'skillGainMax'),
+      tableId: requireCell(row, 'tableId', ctx),
+      variant,
     }
     addUnique(out, id, def, 'nodes.csv')
   }

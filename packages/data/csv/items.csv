@@ -17,3 +17,23 @@ iron_axe,철 도끼,tool,wood,2,axe_iron
 iron_pickaxe,철 곡괭이,tool,mineral,2,pickaxe_iron
 iron_sickle,철 낫,tool,herb,2,sickle_iron
 copper_hammer,구리 망치,tool,crafting,1,hammer_copper
+ice_crystal,얼음 결정,material,,,crystal_pale
+pure_ice_crystal,맑은 얼음 결정,material,,,gem_blue
+ice_gem,얼음의 보석,material,,,gem_ice
+tea_leaf,찻잎,material,,,leaf_tea
+golden_leaf,금빛 잎,material,,,leaf_gold
+tree_fruit,나무 열매,material,,,fruit_red
+golden_fruit,금빛 열매,material,,,fruit_gold
+lavender,라벤더,material,,,flower_lavender
+lime,라임,material,,,fruit_lime
+sage,세이지,material,,,herb_sage
+aroma_herb,아로마,material,,,herb_aroma
+millennium_leaf,천년초 잎,material,,,herb_millennium
+silver_ore,은 원석,material,,,ore_silver
+gold_ore,금 원석,material,,,ore_gold
+sapphire_ore,사파이어 원석,material,,,ore_sapphire
+ruby_ore,루비 원석,material,,,ore_ruby
+mithril_ore,미스릴 원석,material,,,ore_mithril
+silver_ingot,은 주괴,material,,,ingot_silver
+gold_ingot,금 주괴,material,,,ingot_gold
+mithril_ingot,미스릴 주괴,material,,,ingot_mithril

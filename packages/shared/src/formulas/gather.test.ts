@@ -6,16 +6,12 @@ const copperVein: NodeDef = {
   id: 'copper_vein',
   name: '구리 광맥',
   skill: 'mineral',
-  tier: 1,
-  baseChance: 0.5,
-  yieldItem: 'copper_ore',
-  yieldMin: 1,
-  yieldMax: 3,
-  skillGainMin: 1,
-  skillGainMax: 2,
+  tableId: 'mineral',
+  variant: 'normal',
 }
 
-const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', tier: 2 }
+// 옛 "심층 노드" — 표 모델에서는 같은 표의 다른 외형일 뿐, 접근 게이트가 아니다.
+const ironVein: NodeDef = { ...copperVein, id: 'iron_vein', variant: 'deep' }
 
 const copperPickaxe: ItemDef = {
   id: 'copper_pickaxe',
@@ -27,16 +23,14 @@ const copperPickaxe: ItemDef = {
 }
 
 describe('toolCoversNode', () => {
-  it('도구 등급이 노드 등급보다 높으면 true 다', () => {
-    expect(toolCoversNode(2, copperVein)).toBe(true)
+  // 노드 tier 게이트는 폐지됐다(설계 §7-앞 8) — 남은 질문은 "도구가 있는가(>0)" 뿐이다.
+  // G3 이 판정을 교체하면서 이 함수를 은퇴시킨다.
+  it('도구가 있으면(등급 > 0) true 다', () => {
+    expect(toolCoversNode(1)).toBe(true)
   })
 
-  it('도구 등급이 노드 등급과 정확히 같으면 true 다', () => {
-    expect(toolCoversNode(1, copperVein)).toBe(true)
-  })
-
-  it('도구 등급이 노드 등급보다 낮으면 false 다', () => {
-    expect(toolCoversNode(1, ironVein)).toBe(false)
+  it('맨손(등급 0)이면 false 다', () => {
+    expect(toolCoversNode(0)).toBe(false)
   })
 })
 
@@ -51,35 +45,37 @@ describe('toolAppliesTo', () => {
     expect(toolAppliesTo(oreItem, copperVein)).toBe(false)
   })
 
-  it('등급이 노드에 못 미치면 false 다', () => {
-    expect(toolAppliesTo(copperPickaxe, ironVein)).toBe(false)
+  it('1등급 도구도 심층 외형(deep) 노드에 적용된다 — variant 는 표시일 뿐 게이트가 아니다', () => {
+    expect(toolAppliesTo(copperPickaxe, ironVein)).toBe(true)
   })
 
-  it('숙련 종류가 같고 등급이 정확히 일치하면 true 다', () => {
+  it('숙련 종류가 같으면 true 다', () => {
     expect(toolAppliesTo(copperPickaxe, copperVein)).toBe(true)
   })
 })
 
 describe('canGather', () => {
-  it('도구 등급과 숙련도를 모두 충족하면 채집할 수 있다', () => {
+  it('그 기술의 도구를 착용했으면 채집할 수 있다', () => {
     expect(canGather({ proficiency: 1, toolTier: 1, node: copperVein })).toBe(true)
   })
 
-  it('도구 등급이 모자라면 채집할 수 없다', () => {
-    expect(canGather({ proficiency: 99, toolTier: 1, node: ironVein })).toBe(false)
+  it('맨손(toolTier 0)이면 채집할 수 없다 — 숙련도가 아무리 높아도', () => {
+    expect(canGather({ proficiency: 999_999, toolTier: 0, node: copperVein })).toBe(false)
   })
 
-  it('숙련도가 0 이어도 도구 등급만 맞으면 채집할 수 있다', () => {
+  it('숙련도가 0 이어도 도구만 있으면 채집할 수 있다', () => {
     expect(canGather({ proficiency: 0, toolTier: 1, node: copperVein })).toBe(true)
   })
 })
 
+// calcGatherChance 는 임시다 — 노드가 baseChance 를 잃어 상수 0.5 에서 출발한다.
+// G3 이 표 기반 gatherOutcome 으로 교체하면서 이 함수와 테스트를 함께 은퇴시킨다.
 describe('calcGatherChance', () => {
-  it('도구 등급이 모자라면 0 이다', () => {
-    expect(calcGatherChance({ proficiency: 999_999, toolTier: 1, node: ironVein })).toBe(0)
+  it('맨손이면 0 이다', () => {
+    expect(calcGatherChance({ proficiency: 999_999, toolTier: 0, node: copperVein })).toBe(0)
   })
 
-  it('숙련도 0 이면 노드의 기본 성공률이다', () => {
+  it('숙련도 0 이면 기본 성공률 0.5 다', () => {
     expect(calcGatherChance({ proficiency: 0, toolTier: 1, node: copperVein })).toBeCloseTo(0.5)
   })
 

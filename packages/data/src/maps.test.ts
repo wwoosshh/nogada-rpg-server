@@ -5,10 +5,8 @@ import type { GameData, NodeDef } from '@nogada/shared'
 
 const NODES: Record<string, NodeDef> = {
   ice_vein: {
-    id: 'ice_vein', name: '얼음 광맥', skill: 'ice', tier: 1,
-    requiredSkill: 0, baseChance: 0.5, skillGainMin: 1, skillGainMax: 1,
-    yieldItem: 'ice_shard', yieldMin: 1, yieldMax: 1, actionIntervalMs: 500,
-  } as NodeDef,
+    id: 'ice_vein', name: '얼음 광맥', skill: 'ice', tableId: 'ice', variant: 'normal',
+  },
 }
 
 /** 게임이 맵마다 요구하는 것을 다 갖춘 최소 맵 — 타일셋, ground·walls, spawn. */

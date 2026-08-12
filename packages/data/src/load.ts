@@ -9,8 +9,11 @@ import generated from './generated/gamedata.json' with { type: 'json' }
  * 이후의 모든 호출과 다른 요청에 그대로 새어 나간다. strict mode(ESM)에서는
  * 동결된 속성에 대입하면 조용히 무시되지 않고 던지므로, 실수를 그 자리에서
  * 바로 드러낸다.
+ *
+ * export 하는 이유: 서버 전용 산출물을 읽는 loadGatherTables.ts 도 같은 이유로
+ * 같은 동결이 필요하다 — 두 벌로 적으면 한쪽만 고쳐져 갈라진다.
  */
-function deepFreeze<T>(value: T): T {
+export function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
     for (const key of Object.keys(value)) {
       deepFreeze((value as Record<string, unknown>)[key])

@@ -86,67 +86,35 @@ describe('parseItems', () => {
 })
 
 describe('parseNodes', () => {
-  it('숫자 필드를 숫자로 변환한다', () => {
-    const nodes = parseNodes([
-      {
-        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
-        baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
-        skillGainMin: '1', skillGainMax: '2',
-      },
-    ])
-    expect(nodes.copper_vein).toEqual({
-      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1,
-      baseChance: 0.5, yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
-      skillGainMin: 1, skillGainMax: 2,
-    })
-  })
-
-  it('알 수 없는 skill 값을 거부한다', () => {
-    expect(() =>
-      parseNodes([
-        {
-          id: 'copper_vein', name: '구리 광맥', skill: 'minig', tier: '1',
-          baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
-        },
-      ]),
-    ).toThrow('nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
-  })
-
   function validNodeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
-      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: '1',
-      baseChance: '0.5', yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
-      skillGainMin: '1', skillGainMax: '2',
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
       ...overrides,
     }
   }
 
-  it('tier 가 0 이하이면 거부한다', () => {
-    expect(() => parseNodes([validNodeRow({ tier: '0' })])).toThrow(
-      'nodes.csv[copper_vein]: tier "0" 는 1 이상이어야 한다',
+  it('표를 가리키는 노드를 파싱한다 — 산출물·수량·확률은 노드가 아니라 표의 것이다', () => {
+    const nodes = parseNodes([validNodeRow()])
+    expect(nodes.copper_vein).toEqual({
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
+    })
+  })
+
+  it('알 수 없는 skill 값을 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ skill: 'minig' })])).toThrow(
+      'nodes.csv[copper_vein]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)',
     )
   })
 
-  it('baseChance 가 범위를 벗어나면 던진다', () => {
-    expect(() =>
-      parseNodes([
-        {
-          id: 'bad', name: '나쁜 노드', skill: 'mineral', tier: '1', baseChance: '1.5',
-          yieldItem: 'copper_ore', yieldMin: '1', yieldMax: '3',
-        },
-      ]),
-    ).toThrow(/baseChance/)
-  })
-
-  it('yieldMin 이 음수이면 거부한다', () => {
-    expect(() => parseNodes([validNodeRow({ yieldMin: '-1' })])).toThrow(
-      'nodes.csv[copper_vein]: yieldMin "-1" 는 1 이상이어야 한다',
+  it('알 수 없는 variant 값을 거부한다 — 마커 색의 출처라 오타가 조용히 기본색이 되면 안 된다', () => {
+    expect(() => parseNodes([validNodeRow({ variant: 'depe' })])).toThrow(
+      'nodes.csv[copper_vein]: variant "depe" 는 알 수 없다 (허용값: normal, deep)',
     )
   })
 
-  it('yieldMax 가 0 이하이면 거부한다', () => {
-    expect(() => parseNodes([validNodeRow({ yieldMax: '0' })])).toThrow(
-      'nodes.csv[copper_vein]: yieldMax "0" 는 1 이상이어야 한다',
+  it('tableId 가 비어 있으면 거부한다 — 표 없는 노드는 아무것도 내놓지 못한다', () => {
+    expect(() => parseNodes([validNodeRow({ tableId: '' })])).toThrow(
+      'nodes.csv[copper_vein]: 필수 항목 "tableId" 가 비어 있다',
     )
   })
 

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGameData } from './load.js'
+import { loadGatherTables } from './loadGatherTables.js'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { validateGameData } from './validate.js'
 
@@ -14,7 +15,9 @@ import { validateGameData } from './validate.js'
  */
 describe('loadGameData', () => {
   it('빌드된 아티팩트는 검증을 통과한다', () => {
-    expect(validateGameData(loadGameData())).toEqual([])
+    // 표도 같은 빌드가 구운 산출물(gather-tables.json)이다 — 스테일 감지의 대상이
+    // gamedata.json 하나에서 두 산출물의 짝으로 넓어진다.
+    expect(validateGameData(loadGameData(), loadGatherTables())).toEqual([])
   })
 
   it('빌드된 아티팩트의 id 집합이 CSV 를 직접 파싱한 결과와 일치한다', () => {

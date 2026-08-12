@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import { parseSpeakers } from './speakers.js'
@@ -82,6 +83,15 @@ if (dialogueErrors.length > 0 || scheduleErrors.length > 0) fail([...dialogueErr
 const nodes = parseNodes(readCsv('nodes.csv'))
 const recipes = parseRecipes(readCsv('recipes.csv'))
 
+// 채집 확률표 — 세 CSV(메타·사다리·브라켓)를 조립한다. GameData 에 싣지 않는
+// 이유는 §7-앞 9: 브라켓 경계·잭팟 확률이 곧 숨은 문턱이라, 클라이언트 번들에
+// 실으면 F12 로 스포일된다. 아래에서 서버 전용 산출물로 따로 굽는다.
+const gatherTables = parseGatherTables(
+  readCsv('gather_tables.csv'),
+  readCsv('gather_tiers.csv'),
+  readCsv('gather_brackets.csv'),
+)
+
 /**
  * 맵 파일을 읽는다. **없는 파일에 던지지 않고 빈 문자열을 돌려준다.**
  *
@@ -136,8 +146,11 @@ const data: GameData = {
 
 // 화자 배치·시작 칸·전환·지점 검사는 맵을 봐야 해서 GameData 만으로는 할 수
 // 없다 — 그래서 validateGameData 와 나뉘어 있고, 여기서 합쳐 한 번에 보고한다.
+// 확률표 검사는 표와 GameData 양쪽을 봐야 해서(아이템·노드 참조) 또 나뉘어 있다.
+const gatherCheck = validateGatherTables(gatherTables, data)
 const violations = [
-  ...validateGameData(data),
+  ...validateGameData(data, gatherTables),
+  ...gatherCheck.violations,
   ...validateSpeakerPlacements(data, terrains),
   ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
@@ -158,6 +171,12 @@ data.routes = routes
 
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf8')
+
+// 확률표는 **서버 전용 산출물**이다(§7-앞 9) — gamedata.json(클라이언트가 통째로
+// 받아 가는 파일)에 넣지 않고 따로 굽는다. 읽는 문은 loadGatherTables() 하나이고
+// apps/server 만 import 한다. 클라이언트 번들에 브라켓 경계가 실리는 순간 숨은
+// 문턱 전부가 F12 로 스포일된다.
+writeFileSync(join(outDir, 'gather-tables.json'), JSON.stringify(gatherTables, null, 2), 'utf8')
 
 // 클라이언트가 이 파일을 실행 중에 받아 간다. gamedata.json 과 같은 생성 폴더에 둔다 —
 // 저장소에 커밋된 .json 을 두면 .tmx 와 어긋날 수 있고, 그것을 없애려고 이 단계를 만들었다.
@@ -183,12 +202,21 @@ for (const [id, json] of Object.entries(mapJson)) {
 console.log(
   `데이터 빌드 완료 — 아이템 ${Object.keys(data.items).length}, ` +
     `노드 ${Object.keys(data.nodes).length}, 레시피 ${Object.keys(data.recipes).length}, ` +
+    `채집표 ${Object.keys(gatherTables).length}, ` +
     `맵 ${Object.keys(data.maps).length}, ` +
     `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}, ` +
     `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}, ` +
     `전환 ${data.transitions.length}, ` +
     `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
 )
+
+// 표의 경고는 빌드를 막지 않는다 — 최종 브라켓에 실패가 남거나 첫 브라켓의
+// 잭팟이 사라진 것은 오타가 아니라 설계 의도에서 벗어난 "모양"이라, 작가가
+// 보고 판단할 일이다(§7-앞 5 의 경고 승격).
+if (gatherCheck.warnings.length > 0) {
+  console.log(`채집표 경고 — ${gatherCheck.warnings.length}건`)
+  for (const w of gatherCheck.warnings) console.log(`  - ${w}`)
+}
 
 // 공급자가 없는 사실(weather 등)을 쓴 대사는 빌드를 막지 않는다 — 작가가
 // 미리 써 둔 것이지 오타가 아니기 때문이다(설계 문서 6.3). 대신 여기서

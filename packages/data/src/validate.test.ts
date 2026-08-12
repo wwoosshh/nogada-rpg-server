@@ -2,8 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { DialogueRule, GameData, ItemDef, MilestoneDef, SpeakerDef } from '@nogada/shared'
+import type { DialogueRule, GameData, GatherTables, ItemDef, MilestoneDef, SpeakerDef } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseGatherTables } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
 import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
@@ -36,6 +37,36 @@ const mineralRepeatMilestone: MilestoneDef = {
 }
 
 /**
+ * baseData() 의 copper_pickaxe 레시피(requiredSkill 3)를 싣는 recipes-이정표.
+ *
+ * "requiredSkill > 0 인 레시피는 정확히 하나의 recipes-이정표에 실린다"(설계
+ * §7-앞 5) 검사가 생기면서, 이게 없으면 이정표와 무관한 픽스처들까지 전부
+ * 위반이 하나씩 더 생겨 정확한 개수를 기대하는 단언이 깨진다 —
+ * mineralRepeatMilestone 과 같은 이유의 채움용이다.
+ */
+const pickaxeRecipesMilestone: MilestoneDef = {
+  id: 'crafting_3', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
+  name: '곡괭이를 만들 수 있다', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+}
+
+/**
+ * baseData() 의 유일한 노드(copper_vein)가 가리키는 최소 확률표.
+ *
+ * validateGameData 가 표를 두 번째 인자로 받게 되면서(도달 가능성이 "노드 →
+ * 표 → 아이템" 사슬을 읽는다) 모든 호출부가 표를 함께 넘긴다. 티어 하나·∞
+ * 브라켓 하나 — 도달 가능성 계산이 요구하는 최소 형태다.
+ */
+function baseTables(): GatherTables {
+  return {
+    mineral: {
+      id: 'mineral', skill: 'mineral', skillGainMin: 1, skillGainMax: 2,
+      tiers: [{ itemId: 'copper_ore' }],
+      brackets: [{ bracketMax: null, cumulative: [60000] }],
+    },
+  }
+}
+
+/**
  * 시작 도구 4종(채집 기술별 1등급 도구) 전부를 포함해야 한다 — STARTING_TOOL_IDS 검사와
  * 획득 가능성 검사가 이 넷 모두를 항상 확인하므로, 하나라도 빠지면 그 자체로 위반이
  * 생겨 이 픽스처를 재사용하는 "정상 데이터" 전제가 깨진다.
@@ -64,9 +95,7 @@ function baseData(): GameData {
     },
     nodes: {
       copper_vein: {
-        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-        yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
-        skillGainMin: 1, skillGainMax: 2,
+        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
       },
     },
     recipes: {
@@ -90,7 +119,7 @@ function baseData(): GameData {
     placements: {
       'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
     },
-    milestones: [mineralRepeatMilestone],
+    milestones: [mineralRepeatMilestone, pickaxeRecipesMilestone],
     // 대화 검사 대상이 없는 픽스처다 — 화자·대사가 비어 있으면 "화자마다
     // 무조건 인사가 있어야 한다" 같은 대화 검사는 순회할 대상이 없어
     // 조용히 통과하고, 이 파일의 나머지(도달 가능성 등) 테스트를 방해하지
@@ -102,90 +131,43 @@ function baseData(): GameData {
 }
 
 /**
- * 광석(iron_ore)이 등급 2 채집 노드에서만 나오는데, 그 노드를 캘 유일한 방법인
- * 등급 2 도구(iron_pickaxe)가 하필 그 광석으로만 제작되는 순환 — 계획서 초안의
- * CSV 설계가 갖고 있던 결함을 그대로 축소 재현한 픽스처. 실제로 출하된 CSV는
- * iron_pickaxe 를 구리만으로 제작해 이 데드락을 피해 간다.
+ * 서로만 먹이는 제작 순환 — 철 원석은 철 주괴로만 만들어지는데, 그 철 주괴가
+ * 하필 철 원석으로만 제작되고, 철 곡괭이는 그 주괴를 요구한다. 셋 다 레시피
+ * 산출물이라 "획득 가능" 검사(참조 단계)는 통과하지만, 시작 도구에서 출발하는
+ * 어떤 사슬도 이 순환에 진입할 수 없다.
  *
- * copper_chisel·copper_axe·copper_sickle 은 이 데드락과 무관하지만, STARTING_TOOL_IDS
- * 검사가 넷 모두의 존재를 요구하므로 빠지면 그 자체로 위반이 생겨 참조 무결성
- * 검사에서 조기 반환되고 만다 — 그러면 이 테스트가 실제로 보려는 도달 가능성
- * 위반이 계산되지 않는다. 같은 이유로 copper_ingot 의 requiredSkill 도 0 이다 —
- * 부트스트랩 검사 위반까지 섞이면 똑같이 조기 반환되어 도달 가능성 위반을 가린다.
+ * 노드 tier 게이트가 폐지된 표 모델에서 도달 가능성 검사가 잡아야 할 남은
+ * 형태가 정확히 이것이다 — 채집은 기술별 시작 도구가 표 전체를 여니 막힐 수
+ * 없고, 막히는 것은 레시피 사슬뿐이다.
+ *
+ * requiredSkill 을 전부 0 으로 두는 이유: 0 초과면 "recipes-이정표에 실려야
+ * 한다"(설계 §7-앞 5) 위반이 함께 나와, 이 픽스처가 보려는 도달 가능성 위반이
+ * 소음에 섞인다.
  */
-function deadlockedTierData(): GameData {
-  return {
-    items: {
-      copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
-      copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
-      iron_ore: { id: 'iron_ore', name: '철 원석', kind: 'material', icon: 'ore_iron' },
-      iron_ingot: { id: 'iron_ingot', name: '철 주괴', kind: 'material', icon: 'ingot_iron' },
-      copper_chisel: {
-        id: 'copper_chisel', name: '구리 정', kind: 'tool',
-        toolSkill: 'ice', toolTier: 1, icon: 'pickaxe_copper',
-      },
-      copper_axe: {
-        id: 'copper_axe', name: '구리 도끼', kind: 'tool',
-        toolSkill: 'wood', toolTier: 1, icon: 'pickaxe_copper',
-      },
-      copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-        toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-      },
-      copper_sickle: {
-        id: 'copper_sickle', name: '구리 낫', kind: 'tool',
-        toolSkill: 'herb', toolTier: 1, icon: 'pickaxe_copper',
-      },
-      iron_pickaxe: {
-        id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
-        toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
-      },
-    },
-    nodes: {
-      copper_vein: {
-        id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-        yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
-        skillGainMin: 1, skillGainMax: 2,
-      },
-      iron_vein: {
-        id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
-        yieldItem: 'iron_ore', yieldMin: 1, yieldMax: 3,
-        skillGainMin: 1, skillGainMax: 2,
-      },
-    },
-    recipes: {
-      copper_ingot: {
-        id: 'copper_ingot', name: '구리 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
-        inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
-        skillGainMin: 10, skillGainMax: 20,
-      },
-      copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 3, baseChance: 0.6,
-        inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'copper_pickaxe', count: 1 },
-        skillGainMin: 10, skillGainMax: 20,
-      },
-      iron_ingot: {
-        id: 'iron_ingot', name: '철 주괴', category: '제련', skill: 'crafting', requiredSkill: 10, baseChance: 0.5,
-        inputs: [{ item: 'iron_ore', count: 2 }], output: { item: 'iron_ingot', count: 1 },
-        skillGainMin: 10, skillGainMax: 20,
-      },
-      iron_pickaxe: {
-        id: 'iron_pickaxe', name: '철 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 12, baseChance: 0.5,
-        inputs: [{ item: 'iron_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
-        skillGainMin: 10, skillGainMax: 20,
-      },
-    },
-    maps: { world: { id: 'world', name: '얼음 채집장', file: 'world.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } } },
-    transitions: [],
-    placements: {
-      'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: 'world', x: 0, y: 0 },
-      'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: 'world', x: 1, y: 0 },
-    },
-    milestones: [],
-    speakers: {},
-    places: {}, schedules: {}, routes: [],
-    dialogue: [],
+function craftLockedData(): GameData {
+  const data = baseData()
+  data.items.iron_ore = { id: 'iron_ore', name: '철 원석', kind: 'material', icon: 'ore_iron' }
+  data.items.iron_ingot = { id: 'iron_ingot', name: '철 주괴', kind: 'material', icon: 'ingot_iron' }
+  data.items.iron_pickaxe = {
+    id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
+    toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
   }
+  data.recipes.iron_ingot = {
+    id: 'iron_ingot', name: '철 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+    inputs: [{ item: 'iron_ore', count: 2 }], output: { item: 'iron_ingot', count: 1 },
+    skillGainMin: 10, skillGainMax: 20,
+  }
+  data.recipes.iron_ore = {
+    id: 'iron_ore', name: '철 원석 환원', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+    inputs: [{ item: 'iron_ingot', count: 1 }], output: { item: 'iron_ore', count: 1 },
+    skillGainMin: 10, skillGainMax: 20,
+  }
+  data.recipes.iron_pickaxe = {
+    id: 'iron_pickaxe', name: '철 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+    inputs: [{ item: 'iron_ingot', count: 3 }], output: { item: 'iron_pickaxe', count: 1 },
+    skillGainMin: 10, skillGainMax: 20,
+  }
+  return data
 }
 
 /** dialogue/ 아래 모든 .dlg 파일을 읽어 하나의 배열로 합친다. build.ts 와 같은 방식이다. */
@@ -209,6 +191,18 @@ function loadRealMaps(): ParsedMaps {
     readRealCsv('maps.csv'),
     (file) => readFileSync(join(mapsDir, file), 'utf8'),
     parseNodes(readRealCsv('nodes.csv')),
+  )
+}
+
+/** 실제로 출하되는 확률표 3 CSV 를 그대로 파싱한다. build.ts 와 같은 경로다. */
+function loadRealTables(): GatherTables {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const csvDir = join(here, '..', 'csv')
+  const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+  return parseGatherTables(
+    readRealCsv('gather_tables.csv'),
+    readRealCsv('gather_tiers.csv'),
+    readRealCsv('gather_brackets.csv'),
   )
 }
 
@@ -240,21 +234,21 @@ function loadRealGameData(): GameData {
 
 describe('validateGameData', () => {
   it('정상 데이터는 위반이 없다', () => {
-    expect(validateGameData(baseData())).toEqual([])
+    expect(validateGameData(baseData(), baseTables())).toEqual([])
   })
 
-  it('없는 아이템을 산출하는 노드를 잡아낸다', () => {
+  it('존재하지 않는 표를 가리키는 노드를 잡아낸다', () => {
     const data = baseData()
-    data.nodes.copper_vein!.yieldItem = 'ghost_ore'
-    expect(validateGameData(data)).toContain(
-      'nodes[copper_vein]: 존재하지 않는 아이템 "ghost_ore" 를 산출한다',
+    data.nodes.copper_vein!.tableId = 'ghost_table'
+    expect(validateGameData(data, baseTables())).toContain(
+      'nodes[copper_vein]: 존재하지 않는 표 "ghost_table" 를 가리킨다 — gather_tables.csv 의 tableId 중 하나여야 한다',
     )
   })
 
   it('없는 아이템을 재료로 쓰는 레시피를 잡아낸다', () => {
     const data = baseData()
     data.recipes.copper_ingot!.inputs = [{ item: 'ghost_ore', count: 1 }]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'recipes[copper_ingot]: 존재하지 않는 재료 "ghost_ore" 를 요구한다',
     )
   })
@@ -262,60 +256,36 @@ describe('validateGameData', () => {
   it('없는 아이템을 산출하는 레시피를 잡아낸다', () => {
     const data = baseData()
     data.recipes.copper_ingot!.output = { item: 'ghost_bar', count: 1 }
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'recipes[copper_ingot]: 존재하지 않는 아이템 "ghost_bar" 를 산출한다',
     )
   })
 
-  it('yieldMin 이 yieldMax 보다 큰 노드를 잡아낸다', () => {
-    const data = baseData()
-    data.nodes.copper_vein!.yieldMin = 5
-    expect(validateGameData(data)).toContain('nodes[copper_vein]: yieldMin 이 yieldMax 보다 크다')
-  })
-
-  it('baseChance 가 1 을 넘는 노드를 잡아낸다', () => {
-    const data = baseData()
-    data.nodes.copper_vein!.baseChance = 1.5
-    expect(validateGameData(data)).toContain('nodes[copper_vein]: baseChance 가 0 초과 1 미만이 아니다')
-  })
-
-  // 설계 문서 §6.4: baseChance 는 0 초과 "1 미만" 이다. 1 이면 숙련도와 무관하게 항상
-  // 성공하는 판정이 되어, 판정이 살아 있게 한다는 성공률 하한(MIN_SUCCESS_CHANCE)의
-  // 취지와 어긋난다.
-  it('baseChance 가 정확히 1 인 노드를 잡아낸다', () => {
-    const data = baseData()
-    data.nodes.copper_vein!.baseChance = 1
-    expect(validateGameData(data)).toContain('nodes[copper_vein]: baseChance 가 0 초과 1 미만이 아니다')
-  })
-
-  it('skillGainMin 이 skillGainMax 보다 큰 노드를 잡아낸다', () => {
-    const data = baseData()
-    data.nodes.copper_vein!.skillGainMin = 5
-    expect(validateGameData(data)).toContain('nodes[copper_vein]: skillGainMin 이 skillGainMax 보다 크다')
-  })
+  // 노드의 수치 검사(yield·baseChance·skillGain)는 그 칸들이 확률표로 이사하면서
+  // 함께 떠났다 — 표 쪽의 순증가·칸 수·범위 검사는 gatherTables.test.ts 가 지킨다.
 
   it('baseChance 가 0 초과 1 미만이 아닌 레시피를 잡아낸다', () => {
     const data = baseData()
     data.recipes.copper_ingot!.baseChance = 1
-    expect(validateGameData(data)).toContain('recipes[copper_ingot]: baseChance 가 0 초과 1 미만이 아니다')
+    expect(validateGameData(data, baseTables())).toContain('recipes[copper_ingot]: baseChance 가 0 초과 1 미만이 아니다')
   })
 
   it('skillGainMin 이 skillGainMax 보다 큰 레시피를 잡아낸다', () => {
     const data = baseData()
     data.recipes.copper_ingot!.skillGainMin = 25
-    expect(validateGameData(data)).toContain('recipes[copper_ingot]: skillGainMin 이 skillGainMax 보다 크다')
+    expect(validateGameData(data, baseTables())).toContain('recipes[copper_ingot]: skillGainMin 이 skillGainMax 보다 크다')
   })
 
   it('자기 자신을 재료로 쓰는 레시피를 잡아낸다', () => {
     const data = baseData()
     data.recipes.copper_ingot!.inputs = [{ item: 'copper_ingot', count: 1 }]
-    expect(validateGameData(data)).toContain('recipes[copper_ingot]: 산출물을 자기 재료로 쓴다')
+    expect(validateGameData(data, baseTables())).toContain('recipes[copper_ingot]: 산출물을 자기 재료로 쓴다')
   })
 
   it('어떤 노드로도 얻을 수 없고 어떤 레시피로도 만들 수 없는 아이템을 잡아낸다', () => {
     const data = baseData()
     data.items.orphan = { id: 'orphan', name: '고아', kind: 'material', icon: 'x' }
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'items[orphan]: 채집으로도 제작으로도 획득할 수 없다',
     )
   })
@@ -324,35 +294,47 @@ describe('validateGameData', () => {
     // copper_chisel 은 baseData() 안에서 어떤 노드의 산출물도, 어떤 레시피의 산출물도
     // 아니다 — STARTING_TOOL_IDS 로 캐릭터 생성 시 바로 지급되는 것이 유일한 출처다.
     // 이 시드가 없으면 매번 "채집으로도 제작으로도 획득할 수 없다"로 오탐된다.
-    expect(validateGameData(baseData())).not.toContain(
+    expect(validateGameData(baseData(), baseTables())).not.toContain(
       'items[copper_chisel]: 채집으로도 제작으로도 획득할 수 없다',
     )
   })
 })
 
 describe('validateGameData 의 도달 가능성 검사', () => {
-  it('상위 등급 도구가 자신과 같은 등급의 채집으로만 나오는 재료를 요구하면 순환을 잡아낸다', () => {
-    const violations = validateGameData(deadlockedTierData())
-    // iron_pickaxe(등급2)는 iron_ingot 으로 제작되고, iron_ingot 은 iron_ore 로 제작되고,
-    // iron_ore 는 등급2 채집 노드에서만 나오는데, 그 노드를 캘 유일한 등급2 도구가
-    // 바로 iron_pickaxe 자신이다 — 시작 도구(copper_pickaxe, 등급1)로는 아무도
-    // 이 순환에 진입할 수 없다.
+  it('서로만 먹이는 레시피 순환은 시작 도구로 도달할 수 없다고 잡아낸다', () => {
+    const violations = validateGameData(craftLockedData(), baseTables())
+    // iron_ore ← iron_ingot ← iron_ore 의 상호 순환에, 그 주괴를 요구하는
+    // iron_pickaxe 까지 걸려 있다 — 셋 다 레시피 산출물이라 "획득 가능" 검사는
+    // 통과하지만, 시작 도구에서 출발하는 어떤 사슬도 진입하지 못한다.
     expect(violations).toContain(
-      'items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)',
+      'items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ore]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)',
+      'items[iron_ore]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ingot]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)',
+      'items[iron_ingot]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
+  })
+
+  it('기술의 도구가 도달 가능하면 그 노드 표의 전 아이템이 도달 가능하다 — §7-앞 11', () => {
+    // 표에 아직 아무 노드도 산출한 적 없는 아이템(silver_like)을 끼워 넣는다.
+    // 등급 게이트가 폐지된 표 모델에서는 시작 도구(1등급 곡괭이) 하나로 그 표의
+    // 전 브라켓 전 아이템이 열려야 한다 — 브라켓은 그라인딩으로 언젠가 닿는다.
+    const data = baseData()
+    data.items.silver_like = { id: 'silver_like', name: '은 비슷한 것', kind: 'material', icon: 'x' }
+    const tables = baseTables()
+    tables.mineral!.tiers = [{ itemId: 'silver_like' }, { itemId: 'copper_ore' }]
+    tables.mineral!.brackets = [{ bracketMax: null, cumulative: [3, 60000] }]
+
+    expect(validateGameData(data, tables)).toEqual([])
   })
 
   // '정상 데이터는 위반이 없다' (위 baseData 스위트)와 동일한 단언이라 여기서는 생략한다 —
   // baseData 는 시작 도구만으로 전부 도달 가능하므로 그 테스트가 이미 이 사실을 검증한다.
 
   it('실제로 출하되는 CSV 데이터는 도달 가능성 검사를 통과한다', () => {
-    expect(validateGameData(loadRealGameData())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
   })
 })
 
@@ -363,11 +345,11 @@ describe('validateGameData 의 배치 검사', () => {
     // CSV 에는 있지만 맵에는 없는 노드라, 플레이어가 닿을 방법이 없다.
     data.placements = {}
 
-    expect(validateGameData(data)).toContain('nodes[copper_vein]: 맵 어디에도 놓이지 않았다')
+    expect(validateGameData(data, baseTables())).toContain('nodes[copper_vein]: 맵 어디에도 놓이지 않았다')
   })
 
   it('실제로 출하되는 CSV 데이터는 노드마다 맵에 최소 한 번 놓여 있다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
     expect(violations).toEqual([])
   })
 })
@@ -381,7 +363,7 @@ describe('validateGameData 의 조합 부트스트랩 검사', () => {
     // 요구하면 숙련도 0에서 시작하는 플레이어는 어떤 레시피도 영원히 열 수 없다.
     data.recipes.copper_ingot!.requiredSkill = 1
 
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'skills[crafting]: requiredSkill 0 인 레시피가 없어 영원히 부트스트랩할 수 없다',
     )
   })
@@ -389,7 +371,7 @@ describe('validateGameData 의 조합 부트스트랩 검사', () => {
   it('실제로 출하되는 CSV 데이터는 스킬마다 requiredSkill 0 인 레시피를 갖고 있다', () => {
     // skills[...] 접두사는 이 검사와 "채집 기술마다 repeat 이정표가 정확히 하나"
     // 검사가 공유한다 — 부트스트랩만 걸러 보려면 메시지 내용까지 좁혀야 한다.
-    const violations = validateGameData(loadRealGameData()).filter(
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter(
       (v) => v.startsWith('skills[') && v.includes('부트스트랩'),
     )
     expect(violations).toEqual([])
@@ -403,7 +385,7 @@ describe('validateGameData 의 조기 반환', () => {
     // 그걸 재료로 쓰는 copper_pickaxe 까지 도달 불가로 잡혀 오타 하나가 3줄이 된다.
     data.recipes.copper_ingot!.inputs = [{ item: 'ghost_ore', count: 1 }]
 
-    expect(validateGameData(data)).toEqual([
+    expect(validateGameData(data, baseTables())).toEqual([
       'recipes[copper_ingot]: 존재하지 않는 재료 "ghost_ore" 를 요구한다',
     ])
   })
@@ -440,9 +422,7 @@ describe('validateGameData 의 조기 반환', () => {
       },
       nodes: {
         copper_vein: {
-          id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-          yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3,
-          skillGainMin: 1, skillGainMax: 2,
+          id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
         },
       },
       recipes: {
@@ -468,7 +448,7 @@ describe('validateGameData 의 조기 반환', () => {
       dialogue: [],
     }
 
-    expect(validateGameData(data)).toEqual([
+    expect(validateGameData(data, baseTables())).toEqual([
       'STARTING_TOOL_IDS: 존재하지 않는 아이템 "copper_pickaxe" 를 가리킨다',
     ])
   })
@@ -481,7 +461,7 @@ describe('validateGameData 의 조기 반환', () => {
     const notATool: ItemDef = { id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'material', icon: 'pickaxe_copper' }
     data.items.copper_pickaxe = notATool
 
-    expect(validateGameData(data)).toEqual(['STARTING_TOOL_IDS: "copper_pickaxe" 는 도구가 아니다'])
+    expect(validateGameData(data, baseTables())).toEqual(['STARTING_TOOL_IDS: "copper_pickaxe" 는 도구가 아니다'])
   })
 })
 
@@ -497,7 +477,7 @@ describe('validateGameData 의 이정표 검사', () => {
         name: '고스트', announce: '', effect: { kind: 'title' },
       },
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'milestones[every_ghost]: 존재하지 않는 이정표 "nope" 를 가리킨다',
     )
   })
@@ -513,7 +493,7 @@ describe('validateGameData 의 이정표 검사', () => {
       { id: 'a', metric: { kind: 'every', of: ['b'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
       { id: 'b', metric: { kind: 'every', of: ['a'] }, threshold: 1, name: 'B', announce: '', effect: { kind: 'title' } },
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('순환'))).toBe(true)
   })
 
@@ -528,7 +508,7 @@ describe('validateGameData 의 이정표 검사', () => {
       { id: 'b', metric: { kind: 'every', of: ['c'] }, threshold: 1, name: 'B', announce: '', effect: { kind: 'title' } },
       { id: 'c', metric: { kind: 'every', of: ['a'] }, threshold: 1, name: 'C', announce: '', effect: { kind: 'title' } },
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('순환'))).toBe(true)
   })
 
@@ -537,7 +517,7 @@ describe('validateGameData 의 이정표 검사', () => {
     data.milestones = [
       { id: 'a', metric: { kind: 'every', of: ['a'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('순환'))).toBe(true)
   })
 
@@ -551,7 +531,7 @@ describe('validateGameData 의 이정표 검사', () => {
       { id: 'a', metric: { kind: 'every', of: ['c'] }, threshold: 1, name: 'A', announce: '', effect: { kind: 'title' } },
       { id: 'b', metric: { kind: 'every', of: ['c'] }, threshold: 1, name: 'B', announce: '', effect: { kind: 'title' } },
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('순환'))).toBe(false)
   })
 
@@ -566,7 +546,7 @@ describe('validateGameData 의 이정표 검사', () => {
         name: '불가능', announce: '', effect: { kind: 'title' },
       },
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'milestones[impossible]: threshold(2) 가 of 길이(1) 보다 크다 — 영원히 달성할 수 없다',
     )
   })
@@ -582,27 +562,63 @@ describe('validateGameData 의 이정표 검사', () => {
         name: '틀린 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
       },
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'milestones[wrong_threshold]: 레시피 "copper_pickaxe" 의 requiredSkill(3) 이 이정표 threshold(999) 와 다르다',
     )
   })
 
   it('recipes 효과의 threshold 가 레시피 requiredSkill 과 같으면 위반이 없다', () => {
+    // baseData 의 채움용 이정표(crafting_3)를 빼고 넣는다 — 그대로 두면 같은
+    // 레시피가 두 이정표에 실려 "정확히 하나" 검사(§7-앞 5)에 걸린다.
     const data = baseData()
     data.milestones = [
-      ...data.milestones,
+      mineralRepeatMilestone,
       {
         id: 'right_threshold', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
         name: '맞는 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
       },
     ]
-    expect(validateGameData(data)).toEqual([])
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  // ---- requiredSkill > 0 레시피 ⊆ recipes-이정표 (역방향, 설계 §7-앞 5) ----
+  //
+  // 기존 검사는 이정표 → 레시피 방향만 봤다(threshold == requiredSkill). 반대
+  // 방향이 비면, 요구치 있는 레시피를 만들고 이정표에 싣는 것을 잊었을 때 그
+  // 레시피가 목록방에서 조용히 빠진다 — 원작의 "잠긴 것까지 보이는 목록"이
+  // 말없이 구멍 나는 자리다.
+
+  it('requiredSkill > 0 인데 어느 recipes 이정표에도 실리지 않은 레시피를 잡아낸다', () => {
+    const data = baseData()
+    data.milestones = [mineralRepeatMilestone] // copper_pickaxe(requiredSkill 3)를 싣던 이정표를 뺀다
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_pickaxe]: requiredSkill(3) 이 0 보다 큰데 어느 recipes 이정표에도 실리지 않았다 — 목록방에서 조용히 빠진다. milestones.csv 에 effectKind=recipes 로 싣는다',
+    )
+  })
+
+  it('한 레시피가 recipes 이정표 여럿에 실리면 잡아낸다', () => {
+    const data = baseData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'crafting_3_dup', metric: { kind: 'skill', skill: 'crafting' }, threshold: 3,
+        name: '중복 문턱', announce: '', effect: { kind: 'recipes', ids: ['copper_pickaxe'] },
+      },
+    ]
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_pickaxe]: recipes 이정표 [crafting_3,crafting_3_dup] 2개에 실렸다 — 정확히 하나여야 한다',
+    )
+  })
+
+  it('requiredSkill 0 인 레시피는 이정표 없이도 통과한다 — 처음부터 열려 있는 문이다', () => {
+    // baseData 의 copper_ingot(requiredSkill 0)은 어느 recipes 이정표에도 없다.
+    expect(validateGameData(baseData(), baseTables())).toEqual([])
   })
 
   it('채집 기술에 repeat 이정표가 없으면 잡아낸다', () => {
     const data = baseData()
     data.milestones = [] // mineral 채집 기술(baseData 의 유일한 노드가 쓰는 기술)의 repeat 이정표가 없다
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 [](0개)다',
     )
   })
@@ -616,7 +632,7 @@ describe('validateGameData 의 이정표 검사', () => {
         name: '광물이 손에 또 익다', announce: '', effect: { kind: 'repeat', skill: 'mineral' },
       },
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'skills[mineral]: repeat 이정표가 정확히 1개여야 하는데 [mineral_repeat,mineral_repeat_2](2개)다',
     )
   })
@@ -626,13 +642,13 @@ describe('validateGameData 의 이정표 검사', () => {
     // 따라잡을 수 없어지는 200ms 지점)이 아니다.
     const data = baseData()
     data.milestones = [{ ...mineralRepeatMilestone, threshold: 100 }]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'milestones[mineral_repeat]: threshold(100) 의 행동 간격이 200ms 가 아니라 350ms 다 — 자동 반복 해금 문턱은 연타로 따라잡을 수 없어지는 지점이어야 한다',
     )
   })
 
   it('실제로 출하되는 CSV 데이터는 이정표 검사를 통과한다', () => {
-    expect(validateGameData(loadRealGameData())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
   })
 })
 
@@ -667,11 +683,11 @@ describe('validateGameData 의 대화 검사 — 선언되지 않은 사실', ()
       unconditionalGreet(),
       dRule({ id: 'typo', event: 'greet', conditions: [{ fact: 'affinty', op: '=', value: 30 }] }),
     ]
-    expect(validateGameData(data)).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
+    expect(validateGameData(data, baseTables())).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
   })
 
   it('실제로 출하되는 대사 데이터는 전부 선언된 사실만 쓴다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('선언되지 않은 사실'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('선언되지 않은 사실'))
     expect(violations).toEqual([])
   })
 })
@@ -688,7 +704,7 @@ describe('validateGameData 의 대화 검사 — 값의 모양', () => {
       unconditionalGreet(),
       dRule({ id: 'tue', event: 'greet', conditions: [{ fact: 'season', op: '=', value: '화요일' }] }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('season=화요일') && v.includes('spring, summer, autumn, winter'))).toBe(
       true,
     )
@@ -701,7 +717,7 @@ describe('validateGameData 의 대화 검사 — 값의 모양', () => {
       unconditionalGreet(),
       dRule({ id: 'one', event: 'greet', conditions: [{ fact: 'milestone.mineral_repeat', op: '=', value: 1 }] }),
     ]
-    expect(validateGameData(data).some((v) => v.includes('true 또는 false'))).toBe(true)
+    expect(validateGameData(data, baseTables()).some((v) => v.includes('true 또는 false'))).toBe(true)
   })
 
   it('숫자 사실에 문자열을 건 조건을 잡아낸다', () => {
@@ -711,7 +727,7 @@ describe('validateGameData 의 대화 검사 — 값의 모양', () => {
       unconditionalGreet(),
       dRule({ id: 'dawn', event: 'greet', conditions: [{ fact: 'hour', op: '<', value: '아침' }] }),
     ]
-    expect(validateGameData(data).some((v) => v.includes('hour') && v.includes('숫자여야 한다'))).toBe(true)
+    expect(validateGameData(data, baseTables()).some((v) => v.includes('hour') && v.includes('숫자여야 한다'))).toBe(true)
   })
 
   it('공급자가 없어 값 모양이 아직 정해지지 않은 사실은 따지지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
@@ -722,11 +738,11 @@ describe('validateGameData 의 대화 검사 — 값의 모양', () => {
       dRule({ id: 'w', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] }),
       dRule({ id: 'q', event: 'greet', conditions: [{ fact: 'quest.촌장', op: '=', value: 3 }] }),
     ]
-    expect(validateGameData(data).some((v) => v.includes('모양'))).toBe(false)
+    expect(validateGameData(data, baseTables()).some((v) => v.includes('모양'))).toBe(false)
   })
 
   it('실제로 출하되는 대사 데이터는 값의 모양이 전부 맞는다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('모양'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('모양'))
     expect(violations).toEqual([])
   })
 })
@@ -737,7 +753,7 @@ describe('validateGameData 의 대화 검사 — 무조건 인사', () => {
     data.speakers = { 노인: testSpeaker }
     // greet 이 전부 조건부라 weather 가 비 오는 상태가 아니면 노인은 할 말이 없다.
     data.dialogue = [dRule({ id: 'rain', event: 'greet', conditions: [{ fact: 'weather', op: '=', value: 'rain' }] })]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'dialogue[노인]: @greet 무조건 규칙이 없다 — 말을 걸어도 아무 일도 안 일어날 수 있다',
     )
   })
@@ -747,13 +763,13 @@ describe('validateGameData 의 대화 검사 — 무조건 인사', () => {
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = []
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('무조건 규칙이 없다'))).toBe(false)
     expect(violations).toContain('speakers[노인]: 대사 파일이 없다')
   })
 
   it('실제로 출하되는 화자는 전부 무조건 인사가 있다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('무조건 규칙이 없다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('무조건 규칙이 없다'))
     expect(violations).toEqual([])
   })
 })
@@ -777,7 +793,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'dialogue[노인] 노인.dlg:1행: 조건 "season=spring" 과 "season=summer" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다',
     )
   })
@@ -798,7 +814,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('"skill.ice>=100" 과 "skill.ice<50" 가 동시에 참일 수 없다'))).toBe(true)
   })
 
@@ -816,7 +832,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('"quest.촌장=3" 과 "quest.촌장!=3" 가 동시에 참일 수 없다'))).toBe(true)
   })
 
@@ -835,7 +851,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(true)
   })
 
@@ -853,7 +869,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(false)
   })
 
@@ -872,7 +888,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(false)
   })
 
@@ -895,12 +911,12 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.filter((v) => v.startsWith('dialogue['))).toEqual([])
   })
 
   it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('동시에 참일 수 없다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('동시에 참일 수 없다'))
     expect(violations).toEqual([])
   })
 })
@@ -927,7 +943,7 @@ describe('validateGameData 의 대화 검사 — 크기 범위 경계값(양 끝
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('동시에 참일 수 없다'))).toBe(false)
   })
 
@@ -945,7 +961,7 @@ describe('validateGameData 의 대화 검사 — 크기 범위 경계값(양 끝
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('"skill.ice>100" 과 "skill.ice<=100" 가 동시에 참일 수 없다'))).toBe(
       true,
     )
@@ -965,7 +981,7 @@ describe('validateGameData 의 대화 검사 — 크기 범위 경계값(양 끝
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('"skill.ice>=100" 과 "skill.ice<100" 가 동시에 참일 수 없다'))).toBe(
       true,
     )
@@ -985,7 +1001,7 @@ describe('validateGameData 의 대화 검사 — 크기 범위 경계값(양 끝
         ],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('"skill.ice>100" 과 "skill.ice<100" 가 동시에 참일 수 없다'))).toBe(true)
   })
 })
@@ -998,13 +1014,13 @@ describe('validateGameData 의 대화 검사 — 사건 이름', () => {
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [unconditionalGreet(), dRule({ id: 'typo', event: 'greeet', conditions: [] })]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'dialogue[노인] 노인.dlg:1행: 알 수 없는 사건 "greeet" — 쓸 수 있는 사건은 story, quest, milestone, greet 이다',
     )
   })
 
   it('실제로 출하되는 대사 데이터의 사건 이름은 전부 알려진 것이다', () => {
-    const violations = validateGameData(loadRealGameData()).filter((v) => v.includes('알 수 없는 사건'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('알 수 없는 사건'))
     expect(violations).toEqual([])
   })
 })
@@ -1015,14 +1031,16 @@ describe('validateGameData 의 대화 검사 — 다른 데이터의 오타에 �
     // 오타 하나가 대사 위반 전부를 조용히 덮는다 — 작가는 한 가지를 고치고
     // 다시 빌드해서야 두 번째 파도를 만난다.
     const data = baseData()
-    data.nodes.copper_vein!.yieldItem = 'ghost_ore'
+    data.nodes.copper_vein!.tableId = 'ghost_table'
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [
       unconditionalGreet(),
       dRule({ id: 'typo', event: 'greet', conditions: [{ fact: 'affinty', op: '=', value: 30 }] }),
     ]
-    const violations = validateGameData(data)
-    expect(violations).toContain('nodes[copper_vein]: 존재하지 않는 아이템 "ghost_ore" 를 산출한다')
+    const violations = validateGameData(data, baseTables())
+    expect(violations).toContain(
+      'nodes[copper_vein]: 존재하지 않는 표 "ghost_table" 를 가리킨다 — gather_tables.csv 의 tableId 중 하나여야 한다',
+    )
     expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
   })
 
@@ -1031,15 +1049,17 @@ describe('validateGameData 의 대화 검사 — 다른 데이터의 오타에 �
     // 오염된다"를 막으려고 있는 것인데, 대사 위반에는 그 오염 관계가 없다 —
     // 그것 때문에 건너뛰면 대사 오타 하나가 아이템 데드락을 덮어 똑같이
     // 두 번 빌드하게 만든다.
-    const data = deadlockedTierData()
+    const data = craftLockedData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = [
       unconditionalGreet(),
       dRule({ id: 'typo', event: 'greet', conditions: [{ fact: 'affinty', op: '=', value: 30 }] }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
-    expect(violations).toContain('items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)')
+    expect(violations).toContain(
+      'items[iron_pickaxe]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
+    )
   })
 })
 
@@ -1048,18 +1068,18 @@ describe('validateGameData 의 대화 검사 — 화자·대사 파일 대응', 
     const data = baseData()
     data.speakers = { 노인: testSpeaker }
     data.dialogue = []
-    expect(validateGameData(data)).toContain('speakers[노인]: 대사 파일이 없다')
+    expect(validateGameData(data, baseTables())).toContain('speakers[노인]: 대사 파일이 없다')
   })
 
   it('화자가 없는 대사 파일을 잡아낸다', () => {
     const data = baseData()
     data.speakers = {}
     data.dialogue = [unconditionalGreet()]
-    expect(validateGameData(data)).toContain('dialogue[노인]: 화자 정의(speakers.csv)가 없다')
+    expect(validateGameData(data, baseTables())).toContain('dialogue[노인]: 화자 정의(speakers.csv)가 없다')
   })
 
   it('실제로 출하되는 데이터는 화자·대사 파일이 서로 대응한다', () => {
-    const violations = validateGameData(loadRealGameData()).filter(
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter(
       (v) => v.includes('대사 파일이 없다') || v.includes('화자 정의'),
     )
     expect(violations).toEqual([])
@@ -1074,7 +1094,7 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
       unconditionalGreet(),
       dRule({ id: 'ghost', event: 'milestone', conditions: [{ fact: 'milestone.ice_10000', op: '=', value: true }] }),
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'dialogue[노인] 노인.dlg:1행: 존재하지 않는 이정표 "ice_10000" 를 가리킨다',
     )
   })
@@ -1086,7 +1106,7 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
       unconditionalGreet(),
       dRule({ id: 'ghost', event: 'greet', conditions: [{ fact: 'skill.mining', op: '>=', value: 10 }] }),
     ]
-    expect(validateGameData(data)).toContain('dialogue[노인] 노인.dlg:1행: 존재하지 않는 기술 "mining" 를 가리킨다')
+    expect(validateGameData(data, baseTables())).toContain('dialogue[노인] 노인.dlg:1행: 존재하지 않는 기술 "mining" 를 가리킨다')
   })
 
   it('justAchieved 가 존재하지 않는 이정표를 가리키면 잡아낸다', () => {
@@ -1103,7 +1123,7 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
         conditions: [{ fact: 'justAchieved', op: '=', value: 'ice_99999' }],
       }),
     ]
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'dialogue[노인] 노인.dlg:1행: justAchieved 가 존재하지 않는 이정표 "ice_99999" 를 가리킨다',
     )
   })
@@ -1119,12 +1139,12 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
         conditions: [{ fact: 'justAchieved', op: '=', value: 'mineral_repeat' }],
       }),
     ]
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, baseTables())
     expect(violations.some((v) => v.includes('justAchieved'))).toBe(false)
   })
 
   it('실제로 출하되는 대사 데이터는 전부 존재하는 이정표·기술만 가리킨다', () => {
-    const violations = validateGameData(loadRealGameData()).filter(
+    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter(
       (v) => v.includes('존재하지 않는 이정표') || v.includes('존재하지 않는 기술'),
     )
     expect(violations).toEqual([])
@@ -1140,7 +1160,7 @@ describe('validateGameData 의 대화 검사 — 한 번만 하는 말의 조건
 
   /** 이 검사가 낸 위반만 고른다 — 다른 검사의 위반과 섞이면 무엇을 봤는지 흐려진다. */
   const onceViolations = (data: GameData): string[] =>
-    validateGameData(data).filter((v) => v.includes('한 번만 하는 말'))
+    validateGameData(data, baseTables()).filter((v) => v.includes('한 번만 하는 말'))
 
   function withRule(rule: DialogueRule): GameData {
     const data = baseData()
@@ -1301,7 +1321,7 @@ describe('validateSpeakerPlacements', () => {
     const data = baseData()
     data.speakers = { 노인: { ...testSpeaker, mapId: '오타맵' } }
     expect(validateSpeakerPlacements(data, terrains)).toEqual([])
-    expect(validateGameData(data)).toContain(
+    expect(validateGameData(data, baseTables())).toContain(
       'speakers[노인]: 없는 맵 "오타맵" 에 놓였다 — maps.csv 의 id 중 하나여야 한다',
     )
   })

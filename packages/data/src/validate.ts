@@ -1,4 +1,4 @@
-import type { Condition, DialogueRule, FactValue, GameData, MapDef, MilestoneDef } from '@nogada/shared'
+import type { Condition, DialogueRule, FactValue, GameData, GatherTables, MapDef, MilestoneDef } from '@nogada/shared'
 import {
   EVENT_ORDER,
   ONCE_EVENTS,
@@ -216,25 +216,24 @@ export function findDeadDialogueRules(dialogue: readonly DialogueRule[]): DeadDi
 /**
  * 시작 도구에서 출발해 고정점(fixpoint)까지 확장한 "도달 가능한 아이템" 집합을 구한다.
  *
- * - 채집 노드: 이미 도달 가능한 도구 중 그 노드의 숙련(skill)과 같고 등급(toolTier)이
- *   노드 등급(tier) 이상인 것이 하나라도 있으면, 그 노드의 산출물이 도달 가능해진다.
+ * - 채집 노드: 이미 도달 가능한 도구 중 그 노드의 숙련(skill)에 맞는 것이
+ *   하나라도 있으면, 그 노드가 가리키는 표의 **전 브라켓 전 아이템**이 도달
+ *   가능해진다(설계 §7-앞 11). 등급은 보지 않는다 — 노드 tier 게이트가
+ *   폐지되어(§7-앞 8) 등급은 접근이 아니라 확률 보정이고, 브라켓은 숙련도의
+ *   함수인데 숙련은 성패 무관 매 시도 오르므로 그라인딩으로 언젠가 항상 닿는다
+ *   (최상 티어의 잭팟은 숙련 0부터 열려 있기까지 하다).
  * - 레시피: 재료(inputs)가 전부 도달 가능해지면 산출물이 도달 가능해진다.
  *
- * 숙련도는 일부러 보지 않는다 — 다만 그 이유가 채집과 제작에서 다르다.
- *
- * 채집은 도구 등급만이 접근 게이트이고 숙련도는 게이트가 아니므로, 그라인딩으로
- * 언젠가 항상 도달한다 (도구 등급만이 아무리 그라인딩해도 못 넘는 하드 게이트다).
- *
- * 제작은 다르다 — 조합 숙련도는 `craftService` 의 성공 경로에서만 오르고, 그
- * 성공 경로 자체가 `canCraft` 의 requiredSkill 게이트 뒤에 있다. 즉 숙련도를
- * 올리려면 이미 그 레시피를 열 숙련도가 있어야 하는 순환이라, "그라인딩하면
- * 언젠가 도달한다"는 채집과 달리 제작에는 그냥 성립하지 않는다. 이 함수가 그래도
- * requiredSkill 을 보지 않아도 되는 이유는, 스킬마다 requiredSkill 0 인 레시피가
- * 최소 하나 있어야 한다는 것을 별도 규칙(아래 validateGameData)이 보장하기
- * 때문이다 — 그 보장이 없으면 이 fixpoint 는 아이템 참조 사슬만 보고 "도달
- * 가능"이라 오판한다.
+ * 제작 숙련도도 일부러 보지 않는다 — 조합 숙련도는 `craftService` 의 성공
+ * 경로에서만 오르고, 그 성공 경로 자체가 `canCraft` 의 requiredSkill 게이트
+ * 뒤에 있다. 즉 숙련도를 올리려면 이미 그 레시피를 열 숙련도가 있어야 하는
+ * 순환이라, "그라인딩하면 언젠가 도달한다"는 채집과 달리 제작에는 그냥
+ * 성립하지 않는다. 이 함수가 그래도 requiredSkill 을 보지 않아도 되는 이유는,
+ * 스킬마다 requiredSkill 0 인 레시피가 최소 하나 있어야 한다는 것을 별도
+ * 규칙(아래 validateGameData)이 보장하기 때문이다 — 그 보장이 없으면 이
+ * fixpoint 는 아이템 참조 사슬만 보고 "도달 가능"이라 오판한다.
  */
-function computeReachableItems(data: GameData): Set<string> {
+function computeReachableItems(data: GameData, gatherTables: GatherTables): Set<string> {
   const reachable = new Set<string>(STARTING_TOOL_IDS)
   const tools = Object.values(data.items).filter((item) => item.kind === 'tool')
 
@@ -243,11 +242,18 @@ function computeReachableItems(data: GameData): Set<string> {
     changed = false
 
     for (const node of Object.values(data.nodes)) {
-      if (reachable.has(node.yieldItem)) continue
+      // 없는 표를 가리키는 노드는 참조 검사가 이미 잡았고, 참조 위반이 있으면
+      // 이 계산 자체가 돌지 않는다(아래 조기 반환) — 그래도 이 함수는 그 경로를
+      // 거치지 않은 데이터로 불릴 수 있으니 조용히 건너뛴다.
+      const table = gatherTables[node.tableId]
+      if (!table) continue
       const hasCoveringTool = tools.some((tool) => reachable.has(tool.id) && toolAppliesTo(tool, node))
-      if (hasCoveringTool) {
-        reachable.add(node.yieldItem)
-        changed = true
+      if (!hasCoveringTool) continue
+      for (const tier of table.tiers) {
+        if (!reachable.has(tier.itemId)) {
+          reachable.add(tier.itemId)
+          changed = true
+        }
       }
     }
 
@@ -317,8 +323,13 @@ function findEveryCycle(milestones: readonly MilestoneDef[]): string | null {
  * 위반 목록을 반환하며 빈 배열이면 통과다.
  *
  * 수천 행 CSV의 오타를 런타임이 아니라 빌드 타임에 잡는 것이 목적이다.
+ *
+ * `gatherTables` 를 따로 받는 이유: 확률표는 GameData 에 싣지 않지만(클라이언트
+ * 번들 금지, 설계 §7-앞 9) 노드가 표를, 표가 아이템을 가리키므로 도달 가능성은
+ * 양쪽을 다 봐야 계산된다. 표 자체의 검사(누적 순증가, ∞ 브라켓 등)는
+ * validateGatherTables(gatherTables.ts)의 몫이다.
  */
-export function validateGameData(data: GameData): string[] {
+export function validateGameData(data: GameData, gatherTables: GatherTables): string[] {
   const violations: string[] = []
   const hasItem = (id: string): boolean => Object.hasOwn(data.items, id)
 
@@ -327,17 +338,13 @@ export function validateGameData(data: GameData): string[] {
   const placedNodeIds = new Set(Object.values(data.placements).map((p) => p.nodeId))
 
   for (const node of Object.values(data.nodes)) {
-    if (!hasItem(node.yieldItem)) {
-      violations.push(`nodes[${node.id}]: 존재하지 않는 아이템 "${node.yieldItem}" 를 산출한다`)
-    }
-    if (node.yieldMin > node.yieldMax) {
-      violations.push(`nodes[${node.id}]: yieldMin 이 yieldMax 보다 크다`)
-    }
-    if (node.baseChance <= 0 || node.baseChance >= 1) {
-      violations.push(`nodes[${node.id}]: baseChance 가 0 초과 1 미만이 아니다`)
-    }
-    if (node.skillGainMin > node.skillGainMax) {
-      violations.push(`nodes[${node.id}]: skillGainMin 이 skillGainMax 보다 크다`)
+    // 없는 표를 가리키는 노드는 참조 위반이다 — 아래 도달 가능성 검사가 그 표의
+    // 아이템 목록을 읽으므로, 여기서 잡아야 오타 하나가 "그 표의 아이템 전부
+    // 도달 불가" 라는 그림자 위반으로 불어나지 않는다(조기 반환의 대상).
+    if (!Object.hasOwn(gatherTables, node.tableId)) {
+      violations.push(
+        `nodes[${node.id}]: 존재하지 않는 표 "${node.tableId}" 를 가리킨다 — gather_tables.csv 의 tableId 중 하나여야 한다`,
+      )
     }
     if (!placedNodeIds.has(node.id)) {
       violations.push(`nodes[${node.id}]: 맵 어디에도 놓이지 않았다`)
@@ -384,8 +391,14 @@ export function validateGameData(data: GameData): string[] {
   // "획득 가능"하다 — computeReachableItems 가 이미 이 상수로 reachable 을 시드하는
   // 것과 같은 이유다. 시드하지 않으면 레시피가 없는 시작 도구(예: 되사서 못 만드는
   // 최초 장비)가 매번 "채집으로도 제작으로도 획득할 수 없다"로 오탐된다.
+  //
+  // 채집으로 얻는 것은 노드가 가리키는 표의 전 아이템이다(설계 §7-앞 11) —
+  // 노드는 이제 산출물을 직접 갖지 않는다. 없는 표(?? [])는 위 참조 검사가
+  // 이미 말했으므로 여기서 그림자 위반을 만들지 않는다.
   const obtainable = new Set<string>(STARTING_TOOL_IDS)
-  for (const node of Object.values(data.nodes)) obtainable.add(node.yieldItem)
+  for (const node of Object.values(data.nodes)) {
+    for (const tier of gatherTables[node.tableId]?.tiers ?? []) obtainable.add(tier.itemId)
+  }
   for (const recipe of Object.values(data.recipes)) obtainable.add(recipe.output.item)
   for (const item of Object.values(data.items)) {
     if (!obtainable.has(item.id)) {
@@ -561,10 +574,12 @@ export function validateGameData(data: GameData): string[] {
   // 도매금 처리해 진짜 원인이 N+1 줄의 소음에 파묻힌다.
   if (referenceViolations > 0) return violations
 
-  const reachable = computeReachableItems(data)
+  const reachable = computeReachableItems(data, gatherTables)
   for (const item of Object.values(data.items)) {
     if (!reachable.has(item.id)) {
-      violations.push(`items[${item.id}]: 시작 도구로는 도달할 수 없다 (도구 등급 게이트에 막힘)`)
+      violations.push(
+        `items[${item.id}]: 시작 도구로는 도달할 수 없다 — 어느 채집 표에도 없고, 재료가 전부 도달 가능한 레시피도 없다`,
+      )
     }
   }
 
@@ -613,6 +628,29 @@ export function validateGameData(data: GameData): string[] {
           `milestones[${milestone.id}]: 레시피 "${recipeId}" 의 requiredSkill(${recipe.requiredSkill}) 이 이정표 threshold(${milestone.threshold}) 와 다르다`,
         )
       }
+    }
+  }
+
+  // 역방향 검사(설계 §7-앞 5): requiredSkill > 0 인 레시피는 **정확히 하나**의
+  // recipes-이정표에 실려야 한다. 위 검사는 이정표 → 레시피 방향(threshold 가
+  // 맞는가)만 보므로, 요구치 있는 레시피를 만들고 이정표에 싣는 것을 잊으면
+  // 아무도 말하지 않는다 — 그 레시피는 목록방에서 조용히 빠지고, 플레이어는
+  // 문이 있는 줄도 모른 채 지나간다. 여럿에 실리는 것도 막는다 — 목록에 같은
+  // 문이 두 번 열리는 것으로 보인다.
+  for (const recipe of Object.values(data.recipes)) {
+    if (recipe.requiredSkill <= 0) continue
+    const carriers = data.milestones.filter((m) => {
+      const effect = m.effect
+      return effect.kind === 'recipes' && effect.ids.includes(recipe.id)
+    })
+    if (carriers.length === 0) {
+      violations.push(
+        `recipes[${recipe.id}]: requiredSkill(${recipe.requiredSkill}) 이 0 보다 큰데 어느 recipes 이정표에도 실리지 않았다 — 목록방에서 조용히 빠진다. milestones.csv 에 effectKind=recipes 로 싣는다`,
+      )
+    } else if (carriers.length > 1) {
+      violations.push(
+        `recipes[${recipe.id}]: recipes 이정표 [${carriers.map((m) => m.id).join(',')}] ${carriers.length}개에 실렸다 — 정확히 하나여야 한다`,
+      )
     }
   }
 

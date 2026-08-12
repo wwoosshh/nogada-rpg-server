@@ -8,8 +8,7 @@ import { parseMilestones } from './milestones.js'
 
 const nodes: Record<string, NodeDef> = {
   copper_vein: {
-    id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-    yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 3, skillGainMin: 1, skillGainMax: 2,
+    id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
   },
 }
 
@@ -186,10 +185,11 @@ describe('parseMilestones — 실제 출하 CSV', () => {
     expect(() => parseMilestones(readRealCsv('milestones.csv'), realNodes, realRecipes)).not.toThrow()
   })
 
-  it('행 27개를 만든다', () => {
+  it('행 30개를 만든다', () => {
     const realNodes = parseNodes(readRealCsv('nodes.csv'))
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
     const result = parseMilestones(readRealCsv('milestones.csv'), realNodes, realRecipes)
-    expect(result).toHaveLength(27)
+    // 27 → 30: 주괴 3종(은·금·미스릴)의 recipes-이정표가 채집 티어 아크에서 늘었다.
+    expect(result).toHaveLength(30)
   })
 })

@@ -12,21 +12,16 @@ const data: GameData = {
   },
   nodes: {
     copper_vein: {
-      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2,
-      skillGainMin: 1, skillGainMax: 2,
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
     },
+    // 심층 외형 — 표 모델에서 같은 표의 다른 외형일 뿐, 접근 게이트가 아니다.
     iron_vein: {
-      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tier: 2, baseChance: 0.4,
-      yieldItem: 'copper_ore', yieldMin: 1, yieldMax: 1,
-      skillGainMin: 1, skillGainMax: 2,
+      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tableId: 'mineral', variant: 'deep',
     },
-    // 숙련도 증가가 데이터에서 오는지 확인용. 증가량이 의도적으로 1이 아니므로
-    // gatherService.ts 를 hardcoded +1 로 되돌린 경우를 감지한다.
-    mithril_vein: {
-      id: 'mithril_vein', name: '미스릴 광맥', skill: 'mineral', tier: 1, baseChance: 0.5,
-      yieldItem: 'copper_ore', yieldMin: 2, yieldMax: 2,
-      skillGainMin: 7, skillGainMax: 7,
+    // 플레이어의 도구(광물)와 기술이 다른 노드 — 맨손이 아니어도 cannot_gather 인
+    // 경우(엉뚱한 기술의 도구)를 확인한다.
+    herb_patch: {
+      id: 'herb_patch', name: '약초 군락', skill: 'herb', tableId: 'herb', variant: 'normal',
     },
   },
   recipes: {},
@@ -36,7 +31,7 @@ const data: GameData = {
   placements: {
     'copper_vein-1': { instanceId: 'copper_vein-1', nodeId: 'copper_vein', mapId: '얼음채집장', x: 3, y: 3 },
     'iron_vein-1': { instanceId: 'iron_vein-1', nodeId: 'iron_vein', mapId: '얼음채집장', x: 5, y: 3 },
-    'mithril_vein-1': { instanceId: 'mithril_vein-1', nodeId: 'mithril_vein', mapId: '얼음채집장', x: 7, y: 3 },
+    'herb_patch-1': { instanceId: 'herb_patch-1', nodeId: 'herb_patch', mapId: '얼음채집장', x: 7, y: 3 },
   },
   milestones: [],
   speakers: {},
@@ -105,9 +100,16 @@ describe('performGather', () => {
     expect(r).toEqual({ ok: false, code: 'unknown_node' })
   })
 
-  it('도구 등급이 모자라면 cannot_gather 로 거부한다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'iron_vein-1', rng: alwaysSucceed, now: 0 })
+  it('다른 기술의 도구뿐이면 cannot_gather 로 거부한다', () => {
+    // 광물 곡괭이만 착용한 채 약초 군락을 두드린다 — 맨손은 아니지만 그 기술의
+    // 도구가 아니므로 게이트(equippedToolTier > 0)가 닫혀 있다.
+    const r = performGather({ player: player(), data, instanceId: 'herb_patch-1', rng: alwaysSucceed, now: 0 })
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
+  })
+
+  it('심층 외형(deep) 노드도 같은 기술의 1등급 도구로 캘 수 있다 — 등급 게이트는 폐지됐다', () => {
+    const r = performGather({ player: player(), data, instanceId: 'iron_vein-1', rng: alwaysSucceed, now: 0 })
+    expect(r.ok).toBe(true)
   })
 
   it('맨손이면 cannot_gather 로 거부한다', () => {
@@ -152,7 +154,7 @@ describe('performGather', () => {
   // 이 시나리오 없이는 개별 거부 테스트만으로 순서를 구분할 수 없다.
   it('간격도 남아 있고 접근 자격도 없으면 cannot_gather 를 우선한다', () => {
     const p = player({ nextActionAt: 8000 })
-    const r = performGather({ player: p, data, instanceId: 'iron_vein-1', rng: alwaysSucceed, now: 5000 })
+    const r = performGather({ player: p, data, instanceId: 'herb_patch-1', rng: alwaysSucceed, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'cannot_gather' })
   })
 
@@ -161,8 +163,9 @@ describe('performGather', () => {
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.success).toBe(true)
-    expect(r.outcome.gained).toEqual({ item: 'copper_ore', count: 2 })
-    expect(r.outcome.player.stacks.copper_ore).toBe(2)
+    // rng()=0 은 수량 범위(일반 1~3)의 최솟값 1 을 뽑는다.
+    expect(r.outcome.gained).toEqual({ item: 'copper_ore', count: 1 })
+    expect(r.outcome.player.stacks.copper_ore).toBe(1)
     expect(r.outcome.skillGained).toBeGreaterThan(0)
     expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
   })
@@ -181,7 +184,7 @@ describe('performGather', () => {
     const p = player({ stacks: { copper_ore: 5 } })
     const r = performGather({ player: p, data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
-    expect(r.outcome.player.stacks.copper_ore).toBe(7)
+    expect(r.outcome.player.stacks.copper_ore).toBe(6)
   })
 
   it('다른 생활기술의 숙련도는 건드리지 않는다', () => {
@@ -206,21 +209,16 @@ describe('performGather', () => {
     expect(r.outcome.chance).toBeCloseTo(0.5)
   })
 
-  it('성공하면 노드가 정한 만큼 숙련도가 오른다', () => {
+  // 증가치의 출처는 표 메타(gather_tables.csv 의 skillGainMin~Max, 전 표 1~2)다.
+  // 서버가 표를 주입받는 것은 G4 라서 지금은 같은 값(1~2)을 상수로 굴린다 —
+  // "표가 정한 값을 쓴다" 는 단언은 G4 의 픽스처 개조가 되살린다.
+  it('성공하면 숙련도가 1~2 오른다', () => {
     const r = performGather({ player: player(), data, instanceId: 'copper_vein-1', rng: alwaysSucceed, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.skillGained).toBeGreaterThanOrEqual(1)
     expect(r.outcome.skillGained).toBeLessThanOrEqual(2)
     expect(r.outcome.player.skills.mineral).toBe(r.outcome.skillGained)
-  })
-
-  it('데이터 정의 숙련도 증가를 적용한다', () => {
-    const r = performGather({ player: player(), data, instanceId: 'mithril_vein-1', rng: alwaysSucceed, now: 0 })
-    if (!r.ok) throw new Error('성공해야 한다')
-
-    expect(r.outcome.skillGained).toBe(7)
-    expect(r.outcome.player.skills.mineral).toBe(7)
   })
 
   it('숙련도가 높으면 수량 보너스가 붙는다', () => {

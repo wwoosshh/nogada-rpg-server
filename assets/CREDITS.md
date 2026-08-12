@@ -129,6 +129,24 @@ assets/licensed/
 | `axe_iron` | icon452 | 쇠빛 도끼 |
 | `sickle_copper` | icon459 | 구리빛 낫 |
 | `sickle_iron` | icon935 | 쇠빛 낫 |
+| `crystal_pale` | icon918 | 옅은 청백색 결정 |
+| `gem_blue` | icon982 | 파란 보석 |
+| `gem_ice` | icon999 | 청록빛 보석 |
+| `leaf_tea` | icon289 | 초록 잎 |
+| `leaf_gold` | icon290 | 금빛 잎 |
+| `fruit_red` | icon304 | 붉은 열매 |
+| `fruit_gold` | icon305 | 금빛 열매 |
+| `flower_lavender` | icon301 | 분홍 꽃 |
+| `fruit_lime` | icon306 | 초록 열매 |
+| `herb_sage` | icon294 | 청록 잎 다발 |
+| `herb_aroma` | icon296 | 뿌리 달린 초록 허브 |
+| `herb_millennium` | icon297 | 붉은 잎 허브 |
+| `ore_silver` | icon969 | 은빛 광석 덩어리 |
+| `ore_gold` | icon970 | 주황빛 광석 덩어리 |
+| `ore_sapphire` | icon909 | 파란 보석 원석 |
+| `ore_ruby` | icon910 | 붉은 보석 원석 |
+| `ingot_silver` | icon960 | 파란빛 주괴 |
+| `ingot_gold` | icon965 | 금빛 주괴 |
 
 재질별 색 구분은 팩에 있는 그림을 그대로 쓴 것이라 등급 간 대비가 약하다. 실제로 구분이 안 되면
 **아이콘을 더 찾기보다 M2 의 팔레트 스왑을 앞당기는 쪽이 맞다** — 같은 실루엣에 색만 다른 편이
@@ -171,9 +189,11 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 25종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 18종만 쓴다
-# (ore_mithril·ingot_iron·ingot_mithril·plate_reinforced·pickaxe_reinforced·
-# hammer_iron·hammer_mithril 은 아직 쓰는 아이템이 없는 예비 배정).
+# 아이템 아이콘 43종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 38종을 쓴다
+# (ingot_iron·plate_reinforced·pickaxe_reinforced·hammer_iron·hammer_mithril 은
+# 아직 쓰는 아이템이 없는 예비 배정. ore_mithril·ingot_mithril 은 mithril_ore·
+# mithril_ingot 이 재사용하며 주인을 얻었다. pickaxe_reinforced 는 G5 의
+# mithril_pickaxe 가 재사용할 예정이라 그때까지는 예비다).
 SRC="assets/licensed/icons_8.13.20/fullcolor/individual_32x32"
 while IFS=: read -r name num; do
   cp "$SRC/icon${num}.png" "apps/client/public/icons/${name}.png"
@@ -203,6 +223,24 @@ axe_copper:453
 axe_iron:452
 sickle_copper:459
 sickle_iron:935
+crystal_pale:918
+gem_blue:982
+gem_ice:999
+leaf_tea:289
+leaf_gold:290
+fruit_red:304
+fruit_gold:305
+flower_lavender:301
+fruit_lime:306
+herb_sage:294
+herb_aroma:296
+herb_millennium:297
+ore_silver:969
+ore_gold:970
+ore_sapphire:909
+ore_ruby:910
+ingot_silver:960
+ingot_gold:965
 ICONS
 ```
 

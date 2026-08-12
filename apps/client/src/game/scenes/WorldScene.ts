@@ -859,7 +859,9 @@ export class WorldScene extends Phaser.Scene {
         y: placement.y * TILE + TILE / 2,
         instanceId: placement.instanceId,
         label: def.name,
-        tier: def.tier,
+        // 노드에서 tier 가 사라지고 variant(표시 전용)가 남았다 — 옛 색 배치
+        // (일반 1, 심층 2)를 보존하는 임시 대응이다. G7 이 variant 색으로 교체한다.
+        tier: def.variant === 'deep' ? 2 : 1,
       })
     }
   }

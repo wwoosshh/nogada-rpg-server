@@ -350,7 +350,10 @@ describe('POST /api/gather', () => {
     await app.close()
   })
 
-  it('도구 등급이 모자란 노드는 400 을 반환한다', async () => {
+  it('심층 노드도 같은 기술의 시작 도구로 캘 수 있다 — 등급 게이트는 폐지됐다(§7-앞 8)', async () => {
+    // 예전에는 iron_vein(tier 2)이 구리 곡괭이를 cannot_gather 로 거부했다.
+    // 표 모델에서 심층은 같은 표의 다른 외형일 뿐이라 접근을 막지 않는다 —
+    // 등급은 이제 확률 보정(G3)의 재료다.
     const app = await buildTestApp()
     const me = await asPlayer(app)
     await enterField(me)
@@ -361,8 +364,7 @@ describe('POST /api/gather', () => {
       payload: { instanceId: 'iron_vein-1' },
     })
 
-    expect(res.statusCode).toBe(400)
-    expect(res.json()).toEqual({ code: 'cannot_gather' })
+    expect(res.statusCode).toBe(200)
 
     await app.close()
   })

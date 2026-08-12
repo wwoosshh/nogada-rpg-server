@@ -179,7 +179,7 @@ describe('parseFactOverrides', () => {
         }),
       ],
     }
-    const violations = validateGameData(data)
+    const violations = validateGameData(data, {})
     expect(violations.some((v) => v.includes('존재하지 않는 기술 "zzz"'))).toBe(true)
     expect(violations.some((v) => v.includes('존재하지 않는 이정표 "없는것"'))).toBe(true)
 
@@ -460,7 +460,7 @@ describe('runDeadCommand', () => {
 
     // dead 명령이 검증과 다른 계산을 하면 여기서 어긋난다 — 같은 데이터에 같은
     // 위반을 내야 "두 곳에 따로 구현하지 않는다"는 브리프의 요구가 지켜진다.
-    const buildViolations = validateGameData(data).filter((v) => v.includes('동시에 참일 수 없다'))
+    const buildViolations = validateGameData(data, {}).filter((v) => v.includes('동시에 참일 수 없다'))
     expect(buildViolations).toEqual([
       'dialogue[노인] 노인.dlg:7행: 조건 "skill.ice>=100" 과 "skill.ice<50" 가 동시에 참일 수 없다 — 이 규칙은 어떤 상황에서도 나오지 않는다. 조건 하나를 지우거나 규칙을 둘로 나눈다',
     ])
