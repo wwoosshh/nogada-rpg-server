@@ -394,9 +394,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       pushMilestones(set, outcome.achieved)
 
       if (outcome.success && outcome.gained) {
-        // gained 의 필드명이 item → itemId 로 바뀌었다(서버 DTO 개조, G4). 그
-        // 자리를 채운 것 이상은 G7 의 몫이다 — 실패 문구가 "숙련은 올랐다"를
-        // 아직 말하지 않는 것도 그 일부다. // G7 이 표면을 다듬는다
+        // gained 의 필드명이 item → itemId 로 바뀌었다(서버 DTO 개조, G4) — 표가
+        // 무엇을 골랐는지 이름으로 보여준다("얼음 결정 +1"). 확률표 자체는
+        // 클라이언트에 없어도(§7-앞 9) 결과 하나의 이름 정도는 GameData 가 이미 안다.
         const name = labelOf(useGameStore.getState().data, outcome.gained.itemId)
         pushAction(
           set,
@@ -406,7 +406,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
           outcome.gained.count,
         )
       } else {
-        pushAction(set, '실패', 'bad', 'gather-fail', 1)
+        // 실패해도 숙련은 무조건 오른다(설계 §7-앞 7) — "실패" 문구는 그대로 두고
+        // 그 사실을 함께 싣는다. groupKey 를 이번 판정의 skillGained 값으로 가르는
+        // 이유: FloatingTextGroup 의 실패 누적(×N, "실패는 몇 번인지가 정보다")은
+        // 같은 숫자가 반복될 때만 뜻이 있다 — 값이 다른 실패를 한 글자에 묶으면
+        // "숙련 +2" 라고 써 놓고 실제로는 +1 세 번이 섞인 경우를 감춘다.
+        pushAction(set, `실패 · 숙련 +${outcome.skillGained}`, 'bad', `gather-fail-${outcome.skillGained}`, 1)
       }
     } catch (err) {
       // 행동 간격은 조용히 넘긴다. 아직 다음 행동 시각이 안 된 상태에서 누르는
