@@ -1,6 +1,7 @@
 import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
+  equippedToolInfo,
   equippedToolTier,
   type CreateCharacterRequest,
   type GameData,
@@ -207,6 +208,8 @@ interface GameStore {
   craft: (recipeId: string) => Promise<void>
   talk: (speakerId: string) => Promise<void>
   move: (x: number, y: number) => Promise<void>
+  equip: (instanceId: string) => Promise<void>
+  enhance: (materialInstanceId: string) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
   setOpenPanel: (panel: OpenPanel) => void
 }
@@ -516,6 +519,43 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
+  /**
+   * 착용 — 가방의 예비 도구 칩 [착용] 버튼이 부른다(설계 §6-앞 12).
+   *
+   * 채집·제작과 달리 too_fast 가 올 수 없다(서버가 행동 간격을 검사하지 않는다,
+   * §6-앞 11) — 그래서 그 코드를 따로 거르지 않는다. 성공해도 머리 위 글자는
+   * 띄우지 않는다: 결과는 슬롯 그림이 그 자리에서 즉시 말하고, 가방 패널이
+   * 열려 있는 동안 세계 위 글자는 어차피 보이지도 않는다.
+   */
+  equip: async (instanceId) => {
+    try {
+      const { player } = await GameClient.equip(instanceId)
+      applyPlayer(set, player)
+    } catch (err) {
+      if (isNetworkFailure(err)) {
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
+        return
+      }
+      pushAction(set, describeError(err), 'bad')
+      console.error(err)
+    }
+  },
+
+  /** 강화 — 가방의 예비 도구 칩 [강화] 버튼이 부른다. equip 과 같은 자세(정리 행위, 실패만 알린다). */
+  enhance: async (materialInstanceId) => {
+    try {
+      const { player } = await GameClient.enhance(materialInstanceId)
+      applyPlayer(set, player)
+    } catch (err) {
+      if (isNetworkFailure(err)) {
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
+        return
+      }
+      pushAction(set, describeError(err), 'bad')
+      console.error(err)
+    }
+  },
+
   // 톱니 클릭 자체는 게임 상태가 아니지만, App.tsx 를 건드리지 않고 React ->
   // Phaser 로 "메뉴를 열어라"를 전달할 통로가 이 스토어뿐이라 여기 둔다.
   // openPanel 을 'menu' 로 함께 덮는다 — 열려 있던 가방·제작(DOM) 패널은 그
@@ -679,6 +719,19 @@ function describeError(err: unknown): string {
       return '재료 부족'
     case 'too_fast':
       return '너무 빠릅니다'
+    // 아래 다섯은 착용·강화(equip·enhance) 전용 코드다(설계 §6-앞 11). 가방의
+    // 버튼 조건(같은 itemId 착용 중일 때만 강화 노출 등)이 대부분 막지만,
+    // 여러 탭·경합 요청은 화면이 못 막으므로 서버 거절도 말이 있어야 한다.
+    case 'unknown_instance':
+      return '존재하지 않는 도구'
+    case 'not_a_tool':
+      return '도구가 아니다'
+    case 'material_equipped':
+      return '착용 중인 도구는 재료가 될 수 없다'
+    case 'no_target':
+      return '강화할 착용 도구가 없다'
+    case 'enhance_cap':
+      return '더 강화할 수 없다'
     default:
       return `오류: ${err.code}`
   }
@@ -703,8 +756,9 @@ export function selectCraftChance(recipeId: string): number {
   return calcCraftSuccess({
     proficiency: player.skills[recipe.skill],
     toolTier: equippedToolTier(player, data, recipe.skill),
-    // enhanceLevel 0: T4 가 실값(착용 망치의 강화 수치)을 잇는다.
-    enhanceLevel: 0,
+    // 착용 망치의 실제 강화 수치 — calcCraftSuccess 는 서버 판정과 같은 함수라
+    // (설계 §6-앞 10) 여기 넣는 숫자가 곧 화면의 예상 성공률이다.
+    enhanceLevel: equippedToolInfo(player, recipe.skill, data.items)?.instance.enhanceLevel ?? 0,
     recipe,
   })
 }

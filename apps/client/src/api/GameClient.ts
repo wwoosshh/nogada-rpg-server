@@ -259,4 +259,24 @@ export const GameClient = {
       method: 'POST',
       body: JSON.stringify({ x, y }),
     }),
+
+  /**
+   * 착용 — 지목한 인스턴스를 그 도구의 기술 슬롯에 끼운다(교체). 행동 간격을
+   * 검사도 소비도 않는 정리 행위라(설계 §6-앞 11) 응답도 `{ player }` 뿐이다.
+   */
+  equip: (instanceId: string) =>
+    request<{ player: PlayerState }>('/api/equip', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId }),
+    }),
+
+  /**
+   * 강화 — 예비 인스턴스(재료)를 소모해 같은 itemId 의 착용 중 인스턴스를 +1
+   * 한다. 대상은 요청에 없다 — "같은 itemId 의 착용 인스턴스"를 서버가 스스로 찾는다.
+   */
+  enhance: (materialInstanceId: string) =>
+    request<{ player: PlayerState }>('/api/enhance', {
+      method: 'POST',
+      body: JSON.stringify({ materialInstanceId }),
+    }),
 }

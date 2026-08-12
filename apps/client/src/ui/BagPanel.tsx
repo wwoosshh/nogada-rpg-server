@@ -1,6 +1,33 @@
-import { SKILL_IDS, SKILL_LABELS, type ItemInstance, type SkillId } from '@nogada/shared'
+import {
+  effectiveIntervalFactor,
+  hammerChanceBonus,
+  SKILL_IDS,
+  SKILL_LABELS,
+  type ItemDef,
+  type ItemInstance,
+  type SkillId,
+} from '@nogada/shared'
 import { useGameStore } from '../store/gameStore.js'
 import { ItemIcon } from './ItemIcon.js'
+
+/**
+ * 도구 하나가 화면에 말할 속도 축 한 줄(§6-앞 13) — 채집 기술은 간격 절감률,
+ * 조합(망치)은 성공률 보너스다(간격은 채집 도구만의 축이므로, §3). 둘 다
+ * shared 의 공식(effectiveIntervalFactor·hammerChanceBonus)을 그대로 옮겨
+ * 적을 뿐이라 서버 판정·다른 화면(craftCardModel, 숙련도 탭)과 다른 숫자가
+ * 뜰 수 없다. def 는 호출자가 "착용/예비 도구가 실제로 있다"를 확인한 뒤에만
+ * 넘긴다 — 빈 슬롯에는 말할 속도가 없다.
+ */
+function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): string {
+  if (skill === 'crafting') {
+    const bonusPct = hammerChanceBonus(def.toolTier ?? 0, enhanceLevel) * 100
+    return `성공률 +${bonusPct.toFixed(1)}%p`
+  }
+  const cutPct = Math.round((1 - effectiveIntervalFactor(def, enhanceLevel)) * 100)
+  // 신품 구리(1티어, 미강화)는 배수가 정확히 1.0 이라 절감이 0 이다 — "−0%"
+  // 대신 말로 적어 부호 오독을 막는다.
+  return cutPct > 0 ? `간격 −${cutPct}%` : '간격 변화 없음'
+}
 
 /**
  * 가방 전면 패널(DOM). TopBar 가 마운트한다 — App.tsx 가 불가침이라 게임 중
@@ -12,10 +39,16 @@ import { ItemIcon } from './ItemIcon.js'
  * 5칸이 "무엇을 차고 있는가"를 칸으로 말하고, 착용 안 된 도구는 슬롯 아래
  * 예비 줄로 물러난다. 재료는 리스트 유지 — 이건 사용자가 승인한 문법이다.
  *
- * **v1 은 보기 전용이다** — 슬롯도 예비 칩도 눌러서 되는 일이 없다. 서버에
- * 수동 착용 API 가 없어서다(설계 §5 훅). 그래서 어느 것도 `<button>` 이
- * 아니고, 눌림·hover 어포던스를 일부러 주지 않는다(설계 §8-앞 13) —
- * 죽은 버튼으로 읽히면 사용자가 눌러보고 실망한다.
+ * **예비 도구 칩만 버튼이다** — v1 이 이 파일에 적어 두었던 "보기 전용" 전제는
+ * 서버에 수동 착용 API 가 없던 시절의 것이었다(설계 §5 훅). 도구 루프 설계가
+ * 그 API 를 만들면서 §6-앞 12 가 이 전제를 **예비 칩 한 곳에 한해** 의식적으로
+ * 기각한다 — 죽은 버튼 금지 규범(설계 §8-앞 13)은 "될 수 없는 조작을 버튼으로
+ * 보여주지 말라"는 것이지 "될 수 있는 조작을 숨기라"는 뜻이 아니었다. 그래서
+ * 예비 칩은 `착용` 버튼을 상시, `강화` 버튼을 같은 itemId 를 착용 중일 때만
+ * 얻는다(비활성 노출은 여전히 금지 — 조건을 못 채우면 버튼 자체를 그리지
+ * 않는다). **장비 슬롯과 재료 리스트는 여전히 버튼이 아니다** — 슬롯은 착용
+ * 결과를 비추는 자리이지 조작하는 자리가 아니고(조작은 예비 칩에서 온다),
+ * 재료는 애초에 눌러서 될 일이 없다.
  */
 export function BagPanel(): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === 'bag')
@@ -37,6 +70,15 @@ export function BagPanel(): JSX.Element | null {
   // 순서(획득 순) 그대로 — 훑어보는 자리가 매번 바뀌면 안 된다.
   const equippedIds = new Set(Object.values(player.equipped))
   const spares = player.instances.filter((inst) => !equippedIds.has(inst.instanceId))
+
+  // 강화 버튼의 노출 조건(같은 itemId 착용 중)을 itemId 집합으로 미리 계산한다
+  // (§6-앞 12) — 대상이 없는 강화는 서버가 no_target 으로 거절하니, 그 조건을
+  // 화면이 먼저 걸러야 "눌러도 매번 거절만 돌아오는" 죽은 버튼이 생기지 않는다.
+  const equippedItemIds = new Set(
+    Object.values(player.equipped)
+      .map((instanceId) => player.instances.find((inst) => inst.instanceId === instanceId)?.itemId)
+      .filter((itemId): itemId is string => itemId !== undefined),
+  )
 
   // 재료는 items.csv 선언 순서(= data.items 의 키 순서)로 고정한다 — 제작
   // 패널의 행이 흔들리면 안 되는 것과 같은 이유. 수량 0(스택에 키가 아예
@@ -69,6 +111,7 @@ export function BagPanel(): JSX.Element | null {
           <ul className="bag__slots">
             {SKILL_IDS.map((skill) => {
               const inst = slotOf(skill)
+              const def = inst !== undefined ? data.items[inst.itemId] : undefined
               return (
                 <li
                   key={skill}
@@ -81,6 +124,11 @@ export function BagPanel(): JSX.Element | null {
                     )}
                   </div>
                   <span className="bag__slot-label">{SKILL_LABELS[skill]}</span>
+                  {inst !== undefined && def !== undefined && (
+                    <span className="bag__slot-speed">
+                      {toolSpeedLabel(skill, def, inst.enhanceLevel)}
+                    </span>
+                  )}
                 </li>
               )
             })}
@@ -89,17 +137,53 @@ export function BagPanel(): JSX.Element | null {
             <>
               <h3 className="bag__section">예비 도구</h3>
               <ul className="bag__spares">
-                {spares.map((inst) => (
-                  <li key={inst.instanceId} className="bag__spare">
-                    <ItemIcon itemId={inst.itemId} />
-                    <span className="bag__spare-name">
-                      {data.items[inst.itemId]?.name ?? inst.itemId}
-                    </span>
-                    {inst.enhanceLevel > 0 && (
-                      <span className="bag__enhance">+{inst.enhanceLevel}</span>
-                    )}
-                  </li>
-                ))}
+                {spares.map((inst) => {
+                  const def = data.items[inst.itemId]
+                  const canEnhance = equippedItemIds.has(inst.itemId)
+                  const speedLabel =
+                    def !== undefined && def.toolSkill !== undefined
+                      ? toolSpeedLabel(def.toolSkill, def, inst.enhanceLevel)
+                      : null
+                  return (
+                    <li key={inst.instanceId} className="bag__spare">
+                      <div className="bag__spare-info">
+                        <ItemIcon itemId={inst.itemId} />
+                        <div className="bag__spare-text">
+                          <span className="bag__spare-name-row">
+                            <span className="bag__spare-name">{def?.name ?? inst.itemId}</span>
+                            {inst.enhanceLevel > 0 && (
+                              <span className="bag__enhance">+{inst.enhanceLevel}</span>
+                            )}
+                          </span>
+                          {speedLabel !== null && (
+                            <span className="bag__spare-speed">{speedLabel}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="bag__spare-actions">
+                        {/* 착용은 상시 — 예비는 정의상 미착용이니 대상이 늘 유효하다(§4). */}
+                        <button
+                          type="button"
+                          className="bag__spare-btn"
+                          onClick={() => void useGameStore.getState().equip(inst.instanceId)}
+                        >
+                          착용
+                        </button>
+                        {/* 강화는 같은 itemId 를 착용 중일 때만 그린다 — 비활성 노출 금지
+                            (설계 §8-앞 13, §6-앞 12). */}
+                        {canEnhance && (
+                          <button
+                            type="button"
+                            className="bag__spare-btn bag__spare-btn--enhance"
+                            onClick={() => void useGameStore.getState().enhance(inst.instanceId)}
+                          >
+                            강화
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             </>
           )}

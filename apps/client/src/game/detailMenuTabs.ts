@@ -1,6 +1,8 @@
 import {
   achievedIds,
   actionIntervalMs,
+  equippedToolInfo,
+  gatherIntervalMs,
   metricValue,
   milestoneRatio,
   SKILL_IDS,
@@ -131,11 +133,22 @@ function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLin
   return lines
 }
 
-/** 숙련도 탭의 내용. 다섯 기술의 현재 숙련도와 그 숙련도에서의 행동 간격 — 둘 다 서버와 같은 공식(actionIntervalMs)으로 계산한다. */
-function buildSkillLines(_data: GameData, player: PlayerState): ScrollListLine[] {
+/**
+ * 숙련도 탭의 내용. 다섯 기술의 현재 숙련도와 그 숙련도에서의 행동 간격.
+ *
+ * 채집 네 기술(ice·wood·mineral·herb)은 착용 도구까지 반영한 `gatherIntervalMs`
+ * 로 찍는다 — `actionIntervalMs` 만 쓰던 예전 값은 도구 효과(§3)가 간격 축에
+ * 생긴 뒤로 거짓말이 됐다(§6-앞 13, 서버 스탬프와 같은 함수를 불러야 이 숫자가
+ * 참이다). 조합은 도구 축이 성공률이지 간격이 아니므로(§3) `actionIntervalMs`
+ * 그대로 — 착용 망치가 이 숫자를 바꾸지 않는다.
+ */
+function buildSkillLines(data: GameData, player: PlayerState): ScrollListLine[] {
   return SKILL_IDS.map((skill) => {
     const value = player.skills[skill]
-    const interval = actionIntervalMs(value)
+    const interval =
+      skill === 'crafting'
+        ? actionIntervalMs(value)
+        : gatherIntervalMs(value, equippedToolInfo(player, skill, data.items))
     return {
       text: `${SKILL_LABELS[skill]}   숙련도 ${fmt(value)}   행동 간격 ${interval}ms`,
       color: LABEL_COLOR,

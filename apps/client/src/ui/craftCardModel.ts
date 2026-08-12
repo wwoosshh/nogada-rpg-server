@@ -1,6 +1,7 @@
 import {
   calcCraftSuccess,
   canCraft,
+  equippedToolInfo,
   equippedToolTier,
   isAchieved,
   SKILL_LABELS,
@@ -96,8 +97,9 @@ function toCraftContext(data: GameData, player: PlayerState, recipe: RecipeDef):
   return {
     proficiency: player.skills[recipe.skill],
     toolTier: equippedToolTier(player, data, recipe.skill),
-    // enhanceLevel 0: T4 가 실값(착용 망치의 강화 수치)을 잇는다.
-    enhanceLevel: 0,
+    // 착용 망치의 실제 강화 수치 — calcCraftSuccess 안에서 서버와 같은 식으로
+    // 보너스가 붙으므로(설계 §6-앞 10), 카드의 성공률이 곧 서버 판정과 같아진다.
+    enhanceLevel: equippedToolInfo(player, recipe.skill, data.items)?.instance.enhanceLevel ?? 0,
     recipe,
   }
 }
