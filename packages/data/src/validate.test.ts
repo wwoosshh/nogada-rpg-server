@@ -402,7 +402,22 @@ describe('validateGameData 의 조합 부트스트랩 검사', () => {
     data.recipes.copper_pickaxe!.requiredSkill = 1
 
     expect(validateGameData(data, baseTables())).toContain(
-      'skills[crafting]: requiredSkill 0 인 레시피가 없어 영원히 부트스트랩할 수 없다',
+      'skills[crafting]: requiredSkill 0 이면서 계열 문턱도 없는 레시피가 없어 영원히 부트스트랩할 수 없다',
+    )
+  })
+
+  // 왜: 계열 문턱(§6-앞 9)은 requiredSkill 0 인 레시피도 "채집 N 을 먼저 하라"로
+  //     닫는다 — 문턱 뒤에 있는 문을 부트스트랩으로 세면, 조합 0 짜리 문이 전부
+  //     문턱 뒤로 옮겨간 날 이 검사가 초록인 채로 숙련도가 0 에 갇힌다.
+  it('계열 문턱이 걸린 requiredSkill 0 레시피는 부트스트랩으로 세지 않는다', () => {
+    const data = baseData()
+    data.recipes.copper_ingot!.gateSkill = 'mineral'
+    data.recipes.copper_ingot!.gateValue = 1000
+    data.recipes.copper_pickaxe!.gateSkill = 'mineral'
+    data.recipes.copper_pickaxe!.gateValue = 1000
+
+    expect(validateGameData(data, baseTables())).toContain(
+      'skills[crafting]: requiredSkill 0 이면서 계열 문턱도 없는 레시피가 없어 영원히 부트스트랩할 수 없다',
     )
   })
 
@@ -569,7 +584,19 @@ describe('validateGameData 의 시작 도구 유도 검사', () => {
 
     const violations = validateGameData(data, baseTables())
     expect(violations).toContain(
-      'items[copper_pickaxe]: mineral 의 시작 도구인데 requiredSkill 0 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0 레시피를 둔다',
+      'items[copper_pickaxe]: mineral 의 시작 도구인데 requiredSkill 0 이면서 계열 문턱도 없는 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0·문턱 없는 레시피를 둔다',
+    )
+  })
+
+  // 왜: 광물 도구를 만들려고 광물을 1,000 캐야 한다면 그 도구가 필요한 이유와
+  //     조건이 같은 것을 요구하는 순환이다 — 문턱 뒤의 레시피는 공짜 문이 아니다.
+  it('시작 도구 레시피에 계열 문턱이 걸려 있으면 공짜 레시피로 세지 않는다', () => {
+    const data = baseData()
+    data.recipes.copper_pickaxe!.gateSkill = 'mineral'
+    data.recipes.copper_pickaxe!.gateValue = 1000
+
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[copper_pickaxe]: mineral 의 시작 도구인데 requiredSkill 0 이면서 계열 문턱도 없는 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0·문턱 없는 레시피를 둔다',
     )
   })
 

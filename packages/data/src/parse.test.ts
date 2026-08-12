@@ -284,4 +284,52 @@ describe('parseRecipes', () => {
       'recipes.csv: 중복된 id "copper_ingot"',
     )
   })
+
+  // 왜: 문턱 칸 한 쌍은 "그 계열을 얼마나 캐 봤는가"를 묻는 두 번째 문이다
+  //     (§6-앞 9) — 비워 두면 지금까지처럼 조합 하나만이 문이다.
+  it('gateSkill·gateValue 가 비어 있으면 계열 문턱이 없다', () => {
+    const recipe = parseRecipes([validRecipeRow({ gateSkill: '', gateValue: '' })]).copper_ingot!
+    expect(recipe.gateSkill).toBeUndefined()
+    expect(recipe.gateValue).toBeUndefined()
+  })
+
+  it('gateSkill·gateValue 를 함께 적으면 계열 문턱이 실린다', () => {
+    const recipe = parseRecipes([validRecipeRow({ gateSkill: 'ice', gateValue: '1000' })]).copper_ingot!
+    expect(recipe.gateSkill).toBe('ice')
+    expect(recipe.gateValue).toBe(1000)
+  })
+
+  // 왜: 한쪽만 적힌 행을 통과시키면 저자는 문턱을 걸었다고 믿는데 게임에는
+  //     문이 없거나(값 없음) 무엇의 숫자인지 모르는 문이 선다(기술 없음).
+  it('gateSkill 만 적으면 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ gateSkill: 'ice', gateValue: '' })])).toThrow(
+      'recipes.csv[copper_ingot]: gateSkill 과 gateValue 는 함께 적거나 함께 비워야 한다 (지금 gateSkill="ice", gateValue="")',
+    )
+  })
+
+  it('gateValue 만 적으면 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ gateSkill: '', gateValue: '1000' })])).toThrow(
+      'recipes.csv[copper_ingot]: gateSkill 과 gateValue 는 함께 적거나 함께 비워야 한다 (지금 gateSkill="", gateValue="1000")',
+    )
+  })
+
+  it('알 수 없는 gateSkill 을 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ gateSkill: 'icce', gateValue: '1000' })])).toThrow(
+      'recipes.csv[copper_ingot].gateSkill: skill "icce" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)',
+    )
+  })
+
+  // 왜: 조합은 이미 requiredSkill 이 지키는 문이다 — gateSkill=crafting 은 같은
+  //     숙련을 두 숫자로 재는 문이 되어 화면이 어느 쪽을 말할지 정할 수 없다.
+  it('gateSkill 이 crafting 이면 거부한다 — 문턱은 채집 계열의 것이다', () => {
+    expect(() => parseRecipes([validRecipeRow({ gateSkill: 'crafting', gateValue: '1000' })])).toThrow(
+      'recipes.csv[copper_ingot]: gateSkill 은 채집 계열이어야 한다 — 조합 숙련도는 이미 requiredSkill 이 지키는 문이다',
+    )
+  })
+
+  it('gateValue 가 0 이하이면 거부한다', () => {
+    expect(() => parseRecipes([validRecipeRow({ gateSkill: 'ice', gateValue: '0' })])).toThrow(
+      'recipes.csv[copper_ingot]: gateValue "0" 는 1 이상이어야 한다',
+    )
+  })
 })

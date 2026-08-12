@@ -45,6 +45,20 @@ export interface CraftCardMaterial {
  */
 export type CraftCardState = 'ready' | 'no_materials' | 'locked'
 
+/**
+ * 잠긴 카드가 말할 **하나의** 숫자 — 지금 모자란 쪽의 `현재/필요`.
+ *
+ * 문이 둘이 된 뒤로도(조합 요구치 + 계열 문턱, §6-앞 9) 화면이 말하는 숫자는
+ * 하나다: 두 개를 나란히 적으면 어느 쪽을 채워야 하는지가 흐려진다. 어느 쪽을
+ * 고르는지는 lockedGateOf 가 정한다.
+ */
+export interface CraftCardGate {
+  /** 그 숫자가 무엇의 숙련도인지 — '조합' 또는 계열 이름('얼음' 등). */
+  skillLabel: string
+  have: number
+  need: number
+}
+
 export interface CraftCard {
   recipeId: string
   /** 산출 개수가 1 을 넘으면 이름에 ×N 을 붙인다 — 옛 nameLabel 그대로. */
@@ -59,11 +73,11 @@ export interface CraftCard {
   state: CraftCardState
   /** 성공률(반올림 %). 잠긴 레시피는 calcCraftSuccess 정의상 0. */
   chancePct: number
-  /** 지금의 조합 숙련도 — 잠긴 카드의 `현재/필요` 중 현재. */
-  proficiency: number
-  requiredSkill: number
-  /** 요구치 옆에 붙는 기술 이름(현재는 전부 '조합') — 옛 헤더 문구의 것. */
-  skillLabel: string
+  /**
+   * 잠긴 이유의 숫자. 열린 카드는 null — 말할 문턱이 없다.
+   * (state === 'locked' 와 정확히 같은 조건이다: 둘 다 canCraft 하나에서 나온다.)
+   */
+  lockedGate: CraftCardGate | null
   materials: CraftCardMaterial[]
   tally: CraftCardTally
 }
@@ -93,8 +107,14 @@ function materialStatus(
   })
 }
 
-function toCraftContext(data: GameData, player: PlayerState, recipe: RecipeDef): CraftContext {
-  return {
+/**
+ * 화면이 판정에 넘기는 값 한 벌 — 스토어의 셀렉터(selectCraftChance)도 이것을
+ * 부른다. 여기 한 벌뿐이어야 하는 이유: 문턱이 하나 더 생긴 지금, 두 벌로
+ * 적으면 한쪽만 계열 숙련을 안 넘겨 같은 레시피를 화면 A 는 열렸다고, 화면 B 는
+ * 잠겼다고 말하는 날이 온다.
+ */
+export function toCraftContext(data: GameData, player: PlayerState, recipe: RecipeDef): CraftContext {
+  const ctx: CraftContext = {
     proficiency: player.skills[recipe.skill],
     toolTier: equippedToolTier(player, data, recipe.skill),
     // 착용 망치의 실제 강화 수치 — calcCraftSuccess 안에서 서버와 같은 식으로
@@ -102,6 +122,29 @@ function toCraftContext(data: GameData, player: PlayerState, recipe: RecipeDef):
     enhanceLevel: equippedToolInfo(player, recipe.skill, data.items)?.instance.enhanceLevel ?? 0,
     recipe,
   }
+  // 계열 문턱이 걸린 레시피는 그 계열 채집 숙련도까지 넘긴다 — 서버(craftService)가
+  // 넘기는 것과 같은 숫자다(§6-앞 9).
+  if (recipe.gateSkill) ctx.gateProficiency = player.skills[recipe.gateSkill]
+  return ctx
+}
+
+/**
+ * 잠긴 카드가 말할 숫자를 고른다 — **모자란 쪽**이다.
+ *
+ * 둘 다 모자라면 **계열을 먼저** 말한다: 그것이 진짜 문턱이기 때문이다. 조합
+ * 숙련은 아무 레시피나 반복하면 오르지만, 계열 숙련은 그 계열을 캐야 오르고
+ * 그 숫자가 재료 드랍 브라켓까지 정한다(§6-앞 9). 조합 숫자를 먼저 말하면
+ * 그것만 채우고 돌아온 사람이 또 잠긴 문을 만난다.
+ *
+ * canCraft 가 false 라고 말한 뒤에만 부른다 — 그래서 계열이 찼다면 모자란 것은
+ * 조합이라는 소거법이 성립한다(판정을 여기서 다시 하지 않는 이유이기도 하다).
+ */
+function lockedGateOf(player: PlayerState, recipe: RecipeDef, proficiency: number): CraftCardGate {
+  const { gateSkill, gateValue } = recipe
+  if (gateSkill !== undefined && gateValue !== undefined && player.skills[gateSkill] < gateValue) {
+    return { skillLabel: SKILL_LABELS[gateSkill], have: player.skills[gateSkill], need: gateValue }
+  }
+  return { skillLabel: SKILL_LABELS[recipe.skill], have: proficiency, need: recipe.requiredSkill }
 }
 
 /**
@@ -133,7 +176,9 @@ function buildCard(
   tally: CraftCardTally,
 ): CraftCard {
   const ctx = toCraftContext(data, player, recipe)
-  const skillOpen = canCraft(ctx)
+  // 잠김 여부와 "말할 숫자"가 같은 판정(canCraft) 하나에서 나온다 — 따로 물으면
+  // 언젠가 잠기지 않은 카드가 문턱을 말하거나 그 반대가 된다.
+  const lockedGate = canCraft(ctx) ? null : lockedGateOf(player, recipe, ctx.proficiency)
   const materials = materialStatus(data, player, recipe)
   const materialsReady = materials.every((m) => m.ok)
 
@@ -147,11 +192,9 @@ function buildCard(
     ownedOutput:
       (player.stacks[recipe.output.item] ?? 0) +
       player.instances.filter((i) => i.itemId === recipe.output.item).length,
-    state: !skillOpen ? 'locked' : materialsReady ? 'ready' : 'no_materials',
+    state: lockedGate ? 'locked' : materialsReady ? 'ready' : 'no_materials',
     chancePct: Math.round(calcCraftSuccess(ctx) * 100),
-    proficiency: ctx.proficiency,
-    requiredSkill: recipe.requiredSkill,
-    skillLabel: SKILL_LABELS[recipe.skill],
+    lockedGate,
     materials,
     tally,
   }

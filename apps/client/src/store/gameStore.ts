@@ -1,7 +1,6 @@
 import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
-  equippedToolInfo,
   equippedToolTier,
   type CreateCharacterRequest,
   type GameData,
@@ -23,6 +22,7 @@ import {
 import { clearToken, readToken, writeToken } from '../api/sessionToken.js'
 import type { DetailMenuTab } from '../game/detailMenuTabs.js'
 import { syncClock } from '../time/clock.js'
+import { toCraftContext } from '../ui/craftCardModel.js'
 import {
   describeServerError,
   SERVER_UNREACHABLE,
@@ -939,12 +939,8 @@ export function selectCraftChance(recipeId: string): number {
   const { player, data } = useGameStore.getState()
   const recipe = data.recipes[recipeId]
   if (!player || !recipe) return 0
-  return calcCraftSuccess({
-    proficiency: player.skills[recipe.skill],
-    toolTier: equippedToolTier(player, data, recipe.skill),
-    // 착용 망치의 실제 강화 수치 — calcCraftSuccess 는 서버 판정과 같은 함수라
-    // (설계 §6-앞 10) 여기 넣는 숫자가 곧 화면의 예상 성공률이다.
-    enhanceLevel: equippedToolInfo(player, recipe.skill, data.items)?.instance.enhanceLevel ?? 0,
-    recipe,
-  })
+  // 판정에 넘기는 값 한 벌은 카드 모델의 toCraftContext 하나에서 나온다 — 여기
+  // 사본을 두면 문턱이 하나 더 생길 때마다(§6-앞 9 의 계열 숙련이 그랬다) 한쪽만
+  // 고쳐져 같은 레시피의 성공률이 패널과 셀렉터에서 갈라진다.
+  return calcCraftSuccess(toCraftContext(data, player, recipe))
 }

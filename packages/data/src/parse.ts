@@ -231,6 +231,36 @@ function requireCategory(row: Row, context: string): string {
   return trimmed
 }
 
+/**
+ * 계열 문턱 두 칸(`gateSkill`,`gateValue`)을 읽어 레시피에 붙인다 —
+ * 문을 여는 두 번째 숫자다(설계 §6-앞 9·10).
+ *
+ * **둘은 함께 있거나 함께 없어야 한다.** 한쪽만 적힌 행을 통과시키면 저자는
+ * 문턱을 걸었다고 믿는데 게임에는 문이 없거나(값 없음) 무엇의 숫자인지 모르는
+ * 문(기술 없음)이 선다 — 그 어긋남은 화면 어디에도 흔적을 남기지 않는다.
+ */
+function applyGate(def: RecipeDef, row: Row, ctx: string): void {
+  const gateSkill = optionalCell(row, 'gateSkill')
+  const gateValue = optionalCell(row, 'gateValue')
+  if ((gateSkill === undefined) !== (gateValue === undefined)) {
+    throw new Error(
+      `${ctx}: gateSkill 과 gateValue 는 함께 적거나 함께 비워야 한다 (지금 gateSkill="${gateSkill ?? ''}", gateValue="${gateValue ?? ''}")`,
+    )
+  }
+  if (gateSkill === undefined || gateValue === undefined) return
+
+  // 오류 문구에 칸 이름을 실어 준다 — 그냥 ctx 로 부르면 `skill` 칸을 지적하는
+  // 것처럼 읽혀서, 멀쩡한 칸을 들여다보게 만든다.
+  const skill = toSkillId(gateSkill, `${ctx}.gateSkill`)
+  if (skill === 'crafting') {
+    throw new Error(
+      `${ctx}: gateSkill 은 채집 계열이어야 한다 — 조합 숙련도는 이미 requiredSkill 이 지키는 문이다`,
+    )
+  }
+  def.gateSkill = skill
+  def.gateValue = toInt(gateValue, ctx, 'gateValue')
+}
+
 export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
   const out: Record<string, RecipeDef> = {}
   for (const row of rows) {
@@ -252,6 +282,7 @@ export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
       skillGainMin: toInt(requireCell(row, 'skillGainMin', ctx), ctx, 'skillGainMin'),
       skillGainMax: toInt(requireCell(row, 'skillGainMax', ctx), ctx, 'skillGainMax'),
     }
+    applyGate(def, row, ctx)
     addUnique(out, id, def, 'recipes.csv')
   }
   return out

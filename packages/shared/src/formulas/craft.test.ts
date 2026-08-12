@@ -25,6 +25,16 @@ const fixtureHighRequiredSkillRecipe: RecipeDef = {
   requiredSkill: 500,
 }
 
+// 계열 문턱이 걸린 합성 픽스처 — 조합 500 과 얼음 채집 1,000 을 **둘 다** 요구한다.
+// 출하 CSV 17행은 전부 문턱 칸이 비어 있으므로(C1), 두 문을 가진 레시피는
+// 여기서 지어내야만 그릴 수 있다.
+const fixtureIceGatedRecipe: RecipeDef = {
+  ...fixtureHighRequiredSkillRecipe,
+  id: 'fixture_ice_gated_recipe',
+  gateSkill: 'ice',
+  gateValue: 1000,
+}
+
 describe('canCraft', () => {
   it('숙련도를 충족하면 제작할 수 있다', () => {
     expect(canCraft({ proficiency: 1, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })).toBe(true)
@@ -33,11 +43,55 @@ describe('canCraft', () => {
   it('숙련도가 모자라면 제작할 수 없다', () => {
     expect(canCraft({ proficiency: 499, toolTier: 3, enhanceLevel: 0, recipe: fixtureHighRequiredSkillRecipe })).toBe(false)
   })
+
+  // 왜: 조합 25,000 인 사람이 얼음을 오늘 처음 캐면 그 재료는 0.01% 드랍이다 —
+  //     조합만 보면 "열렸다"고 말해 놓고 11시간짜리 벽을 숨기게 된다(§6-앞 9).
+  it('조합은 넘었어도 계열 채집 숙련이 모자라면 열리지 않는다', () => {
+    expect(
+      canCraft({ proficiency: 25_000, toolTier: 0, enhanceLevel: 0, gateProficiency: 999, recipe: fixtureIceGatedRecipe }),
+    ).toBe(false)
+  })
+
+  // 왜: 두 번째 숫자가 첫 번째를 대신하는 것이 아니다 — 계열을 아무리 캤어도
+  //     조합 요구치는 그대로 남는다.
+  it('계열은 넘었어도 조합이 모자라면 열리지 않는다', () => {
+    expect(
+      canCraft({ proficiency: 499, toolTier: 0, enhanceLevel: 0, gateProficiency: 50_000, recipe: fixtureIceGatedRecipe }),
+    ).toBe(false)
+  })
+
+  it('둘 다 넘으면 열린다', () => {
+    expect(
+      canCraft({ proficiency: 500, toolTier: 0, enhanceLevel: 0, gateProficiency: 1000, recipe: fixtureIceGatedRecipe }),
+    ).toBe(true)
+  })
+
+  // 왜(회귀): 출하된 17행은 문턱 칸이 비어 있다 — 계열 숙련이 0 이든 뭐든
+  //     예전과 똑같이 조합 하나만이 문이어야 한다.
+  it('문턱이 없는 레시피는 계열 숙련을 아예 보지 않는다', () => {
+    expect(canCraft({ proficiency: 1, toolTier: 0, enhanceLevel: 0, gateProficiency: 0, recipe: copperIngot })).toBe(true)
+    expect(canCraft({ proficiency: 1, toolTier: 0, enhanceLevel: 0, recipe: copperIngot })).toBe(true)
+  })
+
+  // 왜: 문턱 있는 레시피를 판정하면서 계열 숙련을 안 넘긴 호출자는 버그다.
+  //     그 버그가 문을 **여는** 쪽으로 기울면 서버가 못 막은 제작이 통과한다 —
+  //     닫는 쪽으로 기울면 화면이 이상해질 뿐이라, 안전한 쪽을 고른다.
+  it('계열 숙련을 빠뜨린 호출은 문을 닫는다', () => {
+    expect(canCraft({ proficiency: 25_000, toolTier: 0, enhanceLevel: 0, recipe: fixtureIceGatedRecipe })).toBe(false)
+  })
 })
 
 describe('calcCraftSuccess', () => {
   it('제작 불가 조건에서는 0 을 반환한다', () => {
     expect(calcCraftSuccess({ proficiency: 499, toolTier: 3, enhanceLevel: 0, recipe: fixtureHighRequiredSkillRecipe })).toBe(0)
+  })
+
+  // 왜: 화면의 예상치와 서버 판정이 같은 함수라, 계열로 잠긴 카드도 "0%" 라고
+  //     말해야 한다 — 조합만 넘겼다고 성공률을 그리면 못 만드는 문에 숫자가 붙는다.
+  it('계열 문턱으로 잠긴 레시피도 0 을 반환한다', () => {
+    expect(
+      calcCraftSuccess({ proficiency: 25_000, toolTier: 3, enhanceLevel: 5, gateProficiency: 0, recipe: fixtureIceGatedRecipe }),
+    ).toBe(0)
   })
 
   it('망치 없이 요구 숙련도만 만족하면 기본 확률이다', () => {

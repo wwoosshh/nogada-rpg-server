@@ -63,9 +63,21 @@ function exactBareHandItemProbability(table: GatherTableDef, proficiency: number
   return count / (GATHER_ROLL_MAX + 1)
 }
 
-/** 갓 열린 레시피의 성공률 — 숙련도가 요구치와 정확히 같은, 망치도 강화도 없는 손. */
+/**
+ * 갓 열린 레시피의 성공률 — 숙련도가 요구치와 정확히 같은, 망치도 강화도 없는 손.
+ *
+ * 계열 문턱(§6-앞 9)도 "갓 열린" 자리에 둔다: 문턱 숫자를 그대로 넘겨야
+ * 문이 방금 열린 순간의 성공률이 나온다 — 안 넘기면 canCraft 가 닫혀 0 이 되고,
+ * 이 추정 전체가 조용히 "영원히 못 만든다"로 바뀐다.
+ */
 function freshChance(recipe: RecipeDef): number {
-  return calcCraftSuccess({ proficiency: recipe.requiredSkill, toolTier: 0, enhanceLevel: 0, recipe })
+  return calcCraftSuccess({
+    proficiency: recipe.requiredSkill,
+    toolTier: 0,
+    enhanceLevel: 0,
+    gateProficiency: recipe.gateValue ?? 0,
+    recipe,
+  })
 }
 
 /**

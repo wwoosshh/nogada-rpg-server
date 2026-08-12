@@ -40,14 +40,16 @@ const fmt = (n: number): string => n.toLocaleString('ko-KR')
  * 두는 이유: 컴팩트한 행에서도 문이 요구치를 말해야 한다(원작 장치).
  */
 function RowMark({ card }: { card: CraftCard }): JSX.Element {
-  if (card.state === 'locked') {
+  // 문이 둘이라도(조합·계열) 행이 적는 숫자는 지금 모자란 하나다 — 어느 쪽인지는
+  // 카드 모델이 골라 lockedGate 로 건네준다(§6-앞 9).
+  if (card.lockedGate) {
     return (
       <span className="craft__row-req">
         {/* 설계 §8-뒤: 잠긴 행은 🔒+요구치다. 자물쇠는 장식이라 aria-hidden —
             잠김이라는 사실은 이미 숫자 앞 글리프가 아니라 이 span 자체가
             읽는 사람에게 말한다(aria-label 없이도 화면낭독기는 다음 텍스트를 읽는다). */}
         <span aria-hidden="true">🔒</span>
-        {fmt(card.proficiency)}/{fmt(card.requiredSkill)}
+        {fmt(card.lockedGate.have)}/{fmt(card.lockedGate.need)}
       </span>
     )
   }
@@ -128,11 +130,13 @@ function RecipeDetail({ card }: { card: CraftCard }): JSX.Element {
         {/* 고정 상태 슬롯 — 성공률 또는 요구치 중 하나가 상주한다. 잠긴
             상세에서는 요구치 카운터가 가장 밝은 요소다(§8-앞 11): 흐림은
             위(craft__info--locked)의 아이콘·이름·재료까지만이다. */}
-        {locked ? (
+        {card.lockedGate ? (
           <p className="craft__stat">
-            {card.skillLabel} 숙련도{' '}
+            {/* 얼음 레시피가 얼음 숙련으로 잠겼으면 "얼음 숙련도 300/1,000" 이다 —
+                조합 숫자만 적으면 열렸다고 말해 놓고 진짜 벽을 숨기게 된다. */}
+            {card.lockedGate.skillLabel} 숙련도{' '}
             <span className="craft__req">
-              {fmt(card.proficiency)}/{fmt(card.requiredSkill)}
+              {fmt(card.lockedGate.have)}/{fmt(card.lockedGate.need)}
             </span>
           </p>
         ) : (

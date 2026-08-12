@@ -20,12 +20,32 @@ export interface CraftContext {
    * 같은 함수라는 규범(§6-앞 10) — 밖에서 더하면 언젠가 둘이 갈라진다.
    */
   enhanceLevel: number
+  /**
+   * `recipe.gateSkill` 계열의 **채집** 숙련도. 문턱 없는 레시피에서는 안 본다.
+   *
+   * 선택 칸인데도 없을 때 0 으로 읽는 이유: 문턱 있는 레시피를 판정하면서 이
+   * 숫자를 안 넘긴 호출자는 버그인데, 그 버그가 문을 **여는** 쪽으로 기울면
+   * 서버가 못 막은 제작이 통과한다. 닫는 쪽으로 기울면 화면이 이상해질 뿐이다.
+   */
+  gateProficiency?: number
   recipe: RecipeDef
 }
 
-/** 제작은 도구 게이트가 없다. 조합 숙련도가 레시피를 연다. */
+/**
+ * 제작은 도구 게이트가 없다. 문을 여는 것은 **숫자 둘**이다(설계 §6-앞 9) —
+ * 조합 숙련도(`requiredSkill`)와 그 계열의 채집 숙련도(`gateValue`).
+ *
+ * 두 번째 숫자가 필요한 이유: 조합 숙련만 보면 같은 레시피가 플레이 순서에 따라
+ * 0.2분과 11시간이 된다. 조합 25,000 인 사람도 얼음을 오늘 처음 캐면 그 재료는
+ * 0.01% 드랍이라, "열렸다"고 말해 놓고 벽을 숨기는 문이 된다.
+ *
+ * 문턱이 없는 레시피(gateValue 없음)는 지금까지처럼 조합 하나만이 문이다 —
+ * 출하된 17행이 전부 그쪽이다.
+ */
 export function canCraft(ctx: CraftContext): boolean {
-  return ctx.proficiency >= ctx.recipe.requiredSkill
+  if (ctx.proficiency < ctx.recipe.requiredSkill) return false
+  if (ctx.recipe.gateValue === undefined) return true
+  return (ctx.gateProficiency ?? 0) >= ctx.recipe.gateValue
 }
 
 /**

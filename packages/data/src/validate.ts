@@ -395,13 +395,20 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 레시피가 하나도 없으면 그 숙련도는 영원히 0에 머물러 어떤 레시피도 못 연다.
   // 이 상태는 위 도달 가능성 계산으로는 잡히지 않는다 — 그 계산은 아이템 참조
   // 사슬만 보고 requiredSkill 은 아예 보지 않기 때문이다.
+  //
+  // 계열 문턱(gateValue, §6-앞 9)이 걸린 레시피는 requiredSkill 이 0 이라도
+  // 부트스트랩이 아니다 — 그 문은 채집 숙련 N 을 요구하므로 "처음부터 열려
+  // 있는 문"이 아니다. 세지 않으면 조합 0 짜리 문이 전부 문턱 뒤로 옮겨간 날
+  // 이 검사가 초록인 채로 숙련도가 영원히 0 에 갇힌다.
   const skillsUsedByRecipes = new Set(Object.values(data.recipes).map((recipe) => recipe.skill))
   for (const skill of skillsUsedByRecipes) {
     const hasBootstrapRecipe = Object.values(data.recipes).some(
-      (recipe) => recipe.skill === skill && recipe.requiredSkill === 0,
+      (recipe) => recipe.skill === skill && recipe.requiredSkill === 0 && recipe.gateValue === undefined,
     )
     if (!hasBootstrapRecipe) {
-      violations.push(`skills[${skill}]: requiredSkill 0 인 레시피가 없어 영원히 부트스트랩할 수 없다`)
+      violations.push(
+        `skills[${skill}]: requiredSkill 0 이면서 계열 문턱도 없는 레시피가 없어 영원히 부트스트랩할 수 없다`,
+      )
     }
   }
 
@@ -425,12 +432,16 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
       continue
     }
     const starter = candidates[0]!
+    // 문턱(gateValue)이 걸린 레시피는 "공짜 레시피"가 아니다 — 남의 마을 도구를
+    // 만들려고 그 계열을 먼저 1,000 캐야 한다면, 그 도구로 캐려던 계열이 바로
+    // 그 계열인 경우 부트스트랩이 다시 순환한다.
     const hasFreeRecipe = Object.values(data.recipes).some(
-      (recipe) => recipe.output.item === starter.id && recipe.requiredSkill === 0,
+      (recipe) =>
+        recipe.output.item === starter.id && recipe.requiredSkill === 0 && recipe.gateValue === undefined,
     )
     if (!hasFreeRecipe) {
       violations.push(
-        `items[${starter.id}]: ${skill} 의 시작 도구인데 requiredSkill 0 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0 레시피를 둔다`,
+        `items[${starter.id}]: ${skill} 의 시작 도구인데 requiredSkill 0 이면서 계열 문턱도 없는 레시피가 없다 — 다른 마을에서 시작한 사람이 이 도구를 영원히 얻지 못한다. recipes.csv 에 requiredSkill 0·문턱 없는 레시피를 둔다`,
       )
     }
   }

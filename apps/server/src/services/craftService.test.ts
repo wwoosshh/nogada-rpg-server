@@ -49,6 +49,13 @@ const data: GameData = {
       inputs: [{ item: 'copper_ingot', count: 2 }], output: { item: 'iron_hammer', count: 1 },
       skillGainMin: 20, skillGainMax: 35,
     },
+    // 계열 문턱이 걸린 레시피 — 조합은 누구나 열려 있고(0) 얼음 채집 1,000 이
+    // 문이다(§6-앞 9). 출하 CSV 17행은 아직 문턱이 비어 있어 이 경우는 픽스처로만 있다.
+    ice_powder: {
+      id: 'ice_powder', name: '얼음 가루', category: '조제', skill: 'crafting', requiredSkill: 0, baseChance: 0.95,
+      inputs: [{ item: 'copper_ore', count: 2 }], output: { item: 'copper_ingot', count: 1 },
+      skillGainMin: 10, skillGainMax: 20, gateSkill: 'ice', gateValue: 1000,
+    },
   },
   // 제작 판정은 맵을 보지 않는다 — 등록부와 전환이 GameData 의 필수 칸이라 비운 채로 둔다.
   maps: {},
@@ -122,6 +129,21 @@ describe('performCraft', () => {
     const p = player({ stacks: { copper_ingot: 3 } })
     const r = performCraft({ player: p, data, recipeId: 'iron_pickaxe', rng: alwaysSucceed, newId: nextId, now: 0 })
     expect(r).toEqual({ ok: false, code: 'level_too_low' })
+  })
+
+  // 왜: 판정의 주인은 서버다 — 화면이 두 숫자를 다 그려도, 계열 숙련이 모자란
+  //     제작 요청을 실제로 막는 것은 여기다(§6-앞 9).
+  it('계열 문턱이 있는 레시피는 그 계열 숙련이 모자라면 level_too_low 로 거부한다', () => {
+    const p = player({ skills: { ice: 999, wood: 0, mineral: 0, herb: 0, crafting: 25000 }, stacks: { copper_ore: 2 } })
+    const r = performCraft({ player: p, data, recipeId: 'ice_powder', rng: alwaysSucceed, newId: nextId, now: 0 })
+    expect(r).toEqual({ ok: false, code: 'level_too_low' })
+  })
+
+  it('계열 숙련이 문턱에 닿으면 제작된다', () => {
+    const p = player({ skills: { ice: 1000, wood: 0, mineral: 0, herb: 0, crafting: 0 }, stacks: { copper_ore: 2 } })
+    const r = performCraft({ player: p, data, recipeId: 'ice_powder', rng: alwaysSucceed, newId: nextId, now: 0 })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.outcome.success).toBe(true)
   })
 
   it('재료가 모자라면 missing_materials 로 거부한다', () => {

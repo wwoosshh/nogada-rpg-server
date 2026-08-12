@@ -8,6 +8,7 @@ import {
   hammerChanceBonus,
   newlyAchieved,
   rollInt,
+  type CraftContext,
   type EquippedToolInfo,
   type GameData,
   type ItemDef,
@@ -93,12 +94,15 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   const proficiency = player.skills[recipe.skill]
   // 등급은 정의에, 강화 수치는 인스턴스에 있다 — 성공률은 둘 다 먹으므로 한 쌍으로 읽는다.
   const hammer = equippedToolInfo(player, recipe.skill, data.items)
-  const ctx = {
+  const ctx: CraftContext = {
     proficiency,
     toolTier: hammer?.def.toolTier ?? 0,
     enhanceLevel: hammer?.instance.enhanceLevel ?? 0,
     recipe,
   }
+  // 문턱이 걸린 레시피는 그 계열 채집 숙련도까지 봐야 판정이 선다(§6-앞 9) —
+  // 판정의 주인은 서버이므로, 화면이 무엇을 그리든 이 숫자가 문을 연다.
+  if (recipe.gateSkill) ctx.gateProficiency = player.skills[recipe.gateSkill]
 
   if (!canCraft(ctx)) return { ok: false, code: 'level_too_low' }
 

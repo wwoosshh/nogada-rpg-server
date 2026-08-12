@@ -1,5 +1,5 @@
 import { emptyPlayer, loadGameData } from '@nogada/data'
-import { calcCraftSuccess, equippedToolTier, type PlayerState } from '@nogada/shared'
+import { calcCraftSuccess, equippedToolTier, type GameData, type PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import {
   buildCraftCards,
@@ -17,10 +17,36 @@ import {
 
 const data = loadGameData()
 
-/** 조합 숙련도와 재료만 다른 플레이어. 카드 판정이 보는 것이 이 둘뿐이다. */
+/** 조합 숙련도와 재료만 다른 플레이어. 문턱 없는 레시피의 판정이 보는 것이 이 둘뿐이다. */
 function playerWith(crafting: number, stacks: Record<string, number> = {}): PlayerState {
   const p = emptyPlayer()
   return { ...p, skills: { ...p.skills, crafting }, stacks }
+}
+
+/** 조합과 얼음 숙련을 함께 쥔 플레이어 — 문이 둘인 레시피는 두 숫자를 다 본다. */
+function playerWithIce(crafting: number, ice: number): PlayerState {
+  const p = emptyPlayer()
+  return { ...p, skills: { ...p.skills, crafting, ice } }
+}
+
+/**
+ * 계열 문턱이 걸린 합성 레시피를 얹은 데이터.
+ *
+ * 출하 recipes.csv 17행은 전부 문턱 칸이 비어 있으므로(C1), 두 문을 가진 카드는
+ * 여기서 지어내야만 그릴 수 있다. 아이템은 실물을 가리켜 이름·아이콘 조회가
+ * 실제와 같은 길을 타게 한다.
+ */
+const gatedData: GameData = {
+  ...data,
+  recipes: {
+    ...data.recipes,
+    fixture_ice_powder: {
+      id: 'fixture_ice_powder', name: '픽스처 얼음 가루', category: '조제', skill: 'crafting',
+      requiredSkill: 200, baseChance: 0.95,
+      inputs: [{ item: 'ice_shard', count: 10 }], output: { item: 'pure_ice', count: 1 },
+      skillGainMin: 10, skillGainMax: 20, gateSkill: 'ice', gateValue: 1000,
+    },
+  },
 }
 
 function findCard(sections: CraftCardSection[], recipeId: string) {
@@ -93,9 +119,46 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
     const sections = buildCraftCards(data, playerWith(180), {})
     const hammer = findCard(sections, 'copper_hammer')
     expect(hammer.state).toBe('locked')
-    expect(hammer.proficiency).toBe(180)
-    expect(hammer.requiredSkill).toBe(200)
-    expect(hammer.skillLabel).toBe('조합')
+    expect(hammer.lockedGate).toEqual({ skillLabel: '조합', have: 180, need: 200 })
+  })
+
+  it('열린 카드에는 말할 문턱이 없다 — lockedGate 는 null 이다', () => {
+    const sections = buildCraftCards(data, playerWith(0, { copper_ore: 2 }), {})
+    expect(findCard(sections, 'copper_ingot').lockedGate).toBeNull()
+  })
+
+  // 왜: 조합만 넘긴 사람에게 "열렸다"고 말하면 그 재료가 0.01% 드랍이라는
+  //     사실을 카드가 숨긴다 — 잠근 쪽의 숫자를 그대로 말해야 한다(§6-앞 9).
+  it('계열 숙련이 모자라면 그 계열의 숫자를 말한다', () => {
+    const sections = buildCraftCards(gatedData, playerWithIce(25_000, 300), {})
+    const card = findCard(sections, 'fixture_ice_powder')
+    expect(card.state).toBe('locked')
+    expect(card.lockedGate).toEqual({ skillLabel: '얼음', have: 300, need: 1000 })
+  })
+
+  // 왜: 둘 다 모자랄 때 조합 숫자를 먼저 말하면, 그것만 채우고 온 사람이 다시
+  //     잠긴 문을 만난다. 진짜 문턱은 계열이다 — 재료 드랍 브라켓까지 그 숫자가 정한다.
+  it('둘 다 모자라면 계열을 먼저 말한다', () => {
+    const sections = buildCraftCards(gatedData, playerWithIce(0, 0), {})
+    expect(findCard(sections, 'fixture_ice_powder').lockedGate).toEqual({
+      skillLabel: '얼음', have: 0, need: 1000,
+    })
+  })
+
+  it('계열은 찼고 조합만 모자라면 조합 숫자를 말한다', () => {
+    const sections = buildCraftCards(gatedData, playerWithIce(150, 50_000), {})
+    expect(findCard(sections, 'fixture_ice_powder').lockedGate).toEqual({
+      skillLabel: '조합', have: 150, need: 200,
+    })
+  })
+
+  // 왜: 화면이 보내지 않기로 한 판단과 서버 판정이 갈라지면, 반복 제작이 매
+  //     tick 거부 응답만 받아 오는 상태가 된다.
+  it('계열이 모자라면 canAffordCraft 도 보내지 않는다', () => {
+    const iceReady = { ...playerWithIce(25_000, 300), stacks: { ice_shard: 10 } }
+    expect(canAffordCraft(gatedData, iceReady, 'fixture_ice_powder')).toBe(false)
+    const gateOpen = { ...playerWithIce(25_000, 1000), stacks: { ice_shard: 10 } }
+    expect(canAffordCraft(gatedData, gateOpen, 'fixture_ice_powder')).toBe(true)
   })
 
   // 왜: 반복 200회 동안 시선이 쉴 곳이 올라가는 보유 숫자다(§8-앞 4) —
