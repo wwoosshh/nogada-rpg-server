@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { GameData, GatherTables, ItemDef, NodeDef } from '@nogada/shared'
+import { testItem } from '@nogada/shared/testing'
 import { parseCsv } from './parse.js'
 import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { loadGatherTables } from './loadGatherTables.js'
@@ -42,10 +43,6 @@ function parsedIce(): GatherTables {
   )
 }
 
-function item(id: string): ItemDef {
-  return { id, name: id, kind: 'material', icon: id }
-}
-
 function node(id: string, skill: NodeDef['skill'], tableId: string): NodeDef {
   return { id, name: id, skill, tableId, variant: 'normal' }
 }
@@ -62,7 +59,7 @@ function gameDataWith(items: ItemDef[], nodes: NodeDef[]): GameData {
 
 /** parsedIce() 의 표를 온전히 받치는 최소 세계 — 위반 0건의 기준선이다. */
 function healthyData(): GameData {
-  return gameDataWith([item('ice_gem'), item('ice_shard')], [node('ice_vein', 'ice', 'ice')])
+  return gameDataWith([testItem('ice_gem'), testItem('ice_shard')], [node('ice_vein', 'ice', 'ice')])
 }
 
 describe('parseGatherTables — 구조', () => {
@@ -230,14 +227,14 @@ describe('validateGatherTables — 위반', () => {
   })
 
   it('존재하지 않는 아이템을 가리키는 티어를 잡아낸다', () => {
-    const data = gameDataWith([item('ice_shard')], [node('ice_vein', 'ice', 'ice')])
+    const data = gameDataWith([testItem('ice_shard')], [node('ice_vein', 'ice', 'ice')])
     expect(validateGatherTables(parsedIce(), data).violations).toContain(
       'gather[ice] 티어 1: 존재하지 않는 아이템 "ice_gem" 을 가리킨다',
     )
   })
 
   it('어느 노드도 가리키지 않는 고아 표를 잡아낸다', () => {
-    const data = gameDataWith([item('ice_gem'), item('ice_shard')], [])
+    const data = gameDataWith([testItem('ice_gem'), testItem('ice_shard')], [])
     expect(validateGatherTables(parsedIce(), data).violations).toContain(
       'gather[ice]: 어느 노드도 이 표를 가리키지 않는다 — 플레이어가 닿을 방법이 없는 표다',
     )
@@ -247,7 +244,7 @@ describe('validateGatherTables — 위반', () => {
     // 표의 기술은 하나(meta.skill)다. 다른 기술의 노드가 같은 표를 가리키면 그
     // 노드의 채집이 엉뚱한 기술의 숙련 브라켓을 굴리게 된다.
     const data = gameDataWith(
-      [item('ice_gem'), item('ice_shard')],
+      [testItem('ice_gem'), testItem('ice_shard')],
       [node('ice_vein', 'ice', 'ice'), node('odd_tree', 'wood', 'ice')],
     )
     expect(validateGatherTables(parsedIce(), data).violations).toContain(

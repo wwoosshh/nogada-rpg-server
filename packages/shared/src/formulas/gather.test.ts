@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { testItem, testTool } from '../testing/items.js'
 import type { ItemDef } from '../types.js'
 import { toolMatchesSkill } from './gather.js'
 
-const copperPickaxe: ItemDef = {
-  id: 'copper_pickaxe',
+const copperPickaxe: ItemDef = testTool('copper_pickaxe', 'mineral', 1, {
   name: '구리 곡괭이',
-  kind: 'tool',
-  toolSkill: 'mineral',
-  toolTier: 1,
   icon: 'pickaxe_copper',
-}
+})
 
 describe('toolMatchesSkill', () => {
   it('숙련 종류가 다르면 false 다', () => {
@@ -18,7 +15,7 @@ describe('toolMatchesSkill', () => {
   })
 
   it('도구가 아닌 아이템이면 false 다', () => {
-    const oreItem: ItemDef = { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' }
+    const oreItem: ItemDef = testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' })
     expect(toolMatchesSkill(oreItem, 'mineral')).toBe(false)
   })
 

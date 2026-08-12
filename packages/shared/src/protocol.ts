@@ -81,6 +81,15 @@ export const PlayerStateSchema = z.object({
   appearance: z.string().default(DEFAULT_APPEARANCE),
   skills: z.object(skillsShape).strict(),
   stacks: z.record(z.string(), z.number().int().min(0)),
+  // dialogueHistory·location 과 **정확히 같은 이유로** 기본값을 단다: 이 필드는
+  // 경제 아크에서 생겼으므로 그 전에 저장된 플레이어에게는 키가 통째로 없고,
+  // 필수로 두면 readPlayers(store.ts)가 그 플레이어를 통째로 버린다 — 숙련도도
+  // 인벤토리도 강화한 도구도 넘긴 이정표도 같이. 돈이 없는 세이브는 "아직
+  // 아무것도 팔아 보지 않았다"와 같은 뜻이라 0 이 맞는 답이다.
+  //
+  // `.min(0)` 인 이유는 stacks 와 같다 — 음수 잔고는 어떤 경로로도 생기지 않으므로
+  // (매수는 잔액을 먼저 본다) 있다면 손으로 고친 것이거나 버그가 쓴 것이다.
+  gold: z.number().int().min(0).default(0),
   instances: z.array(ItemInstanceSchema),
   equipped: z.record(z.string(), z.string()),
   nextActionAt: z.number(),

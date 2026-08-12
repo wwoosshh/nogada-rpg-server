@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { testTool } from '../testing/items.js'
 import type { GatherTableDef, ItemDef } from '../types.js'
 import { gatherBracketFor, gatherOutcome } from './gatherTable.js'
 
@@ -22,9 +23,7 @@ const table: GatherTableDef = {
   ],
 }
 
-const copper: ItemDef = {
-  id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-}
+const copper: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' })
 const iron: ItemDef = { ...copper, id: 'iron_pickaxe', toolTier: 2 }
 const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
 

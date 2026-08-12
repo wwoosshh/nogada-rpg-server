@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { equippedToolInfo, type EquippedToolInfo } from '../equipment.js'
+import { testItem, testTool } from '../testing/items.js'
 import type { ItemDef, PlayerState } from '../types.js'
 import { emptyDialogueHistory } from '../dialogue.js'
 import { hammerChanceBonus } from './craft.js'
@@ -18,9 +19,7 @@ import {
   HAMMER_ENHANCE_CHANCE_BONUS,
 } from './toolProfile.js'
 
-const copper: ItemDef = {
-  id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-}
+const copper: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' })
 const iron: ItemDef = { ...copper, id: 'iron_pickaxe', toolTier: 2 }
 const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
 
@@ -41,7 +40,7 @@ describe('gatherToolProfile', () => {
   })
 
   it('도구가 아니거나 티어가 없는 정의는 맨손 프로필이다 — 조용한 ×1.0 기본값 금지(§6-앞 9)', () => {
-    const ore: ItemDef = { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' }
+    const ore: ItemDef = testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' })
     const tierless: ItemDef = { ...copper, id: 'broken_tool', toolTier: undefined }
     expect(gatherToolProfile(ore)).toEqual(gatherToolProfile(null))
     expect(gatherToolProfile(tierless)).toEqual(gatherToolProfile(null))
@@ -55,6 +54,8 @@ describe('gatherToolProfile', () => {
       id: 'local', name: '아무개', appearance: 'player',
       skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
       stacks: {},
+      // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
+      gold: 0,
       instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
       equipped: { mineral: 'i1' },
       nextActionAt: 0, celebrated: [], dialogueHistory: emptyDialogueHistory(),

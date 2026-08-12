@@ -30,6 +30,9 @@ export function emptyPlayer(): PlayerState {
     appearance: DEFAULT_APPEARANCE,
     skills: Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>,
     stacks: {},
+    // 한 번도 팔아 본 적 없는 사람이다 — 숙련도 0 과 같은 성격의 "아직 아무것도
+    // 하지 않았다"이고, 신규 캐릭터(createInitialPlayer)의 시작 골드와 같은 값이다.
+    gold: 0,
     instances: [],
     equipped: {},
     nextActionAt: 0,

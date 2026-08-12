@@ -1,4 +1,5 @@
 import { emptyDialogueHistory, type ItemDef, type PlayerState } from '@nogada/shared'
+import { testItem, testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { performEnhance, performEquip } from './equipService.js'
 
@@ -7,23 +8,16 @@ import { performEnhance, performEquip } from './equipService.js'
  * 받는 것이 서비스의 계약이라, 픽스처도 지도만 만든다.
  */
 const items: Record<string, ItemDef> = {
-  copper_pickaxe: {
-    id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-    toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-  },
-  iron_pickaxe: {
-    id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
-    toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
-  },
-  copper_axe: {
-    id: 'copper_axe', name: '구리 도끼', kind: 'tool',
-    toolSkill: 'wood', toolTier: 1, icon: 'axe_copper',
-  },
-  copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
+  copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
+  iron_pickaxe: testTool('iron_pickaxe', 'mineral', 2, { name: '철 곡괭이', icon: 'pickaxe_iron' }),
+  copper_axe: testTool('copper_axe', 'wood', 1, { name: '구리 도끼', icon: 'axe_copper' }),
+  copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
   // kind=tool 인데 toolSkill 이 빠진 정의 — §6-앞 11 이 경고한 optional 함정.
   // 검증이 이런 행을 막지만, 서비스는 검증을 거치지 않은 데이터 앞에서도
-  // equipped['undefined'] 유령 슬롯을 만들면 안 된다.
-  skillless_tool: { id: 'skillless_tool', name: '기술 없는 도구', kind: 'tool', toolTier: 1, icon: 'tool_broken' },
+  // equipped['undefined'] 유령 슬롯을 만들면 안 된다. **testTool 을 쓰지 않는 것이
+  // 의도다** — 도구인데 toolSkill 이 없는 정의를 일부러 만드는 자리라, 정상 도구를
+  // 만드는 길과 다르게 적어야 그 일부러가 눈에 띈다.
+  skillless_tool: testItem('skillless_tool', { name: '기술 없는 도구', kind: 'tool', toolTier: 1, icon: 'tool_broken' }),
 }
 
 function player(overrides: Partial<PlayerState> = {}): PlayerState {
@@ -34,6 +28,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    gold: 0,
     // 착용 중인 구리 곡괭이 하나 + 예비 철 곡괭이 하나 — 교체·강화 시나리오의 기본 무대다.
     instances: [
       { instanceId: 'worn', itemId: 'copper_pickaxe', enhanceLevel: 0 },

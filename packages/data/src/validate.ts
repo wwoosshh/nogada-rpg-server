@@ -1,4 +1,13 @@
-import type { Condition, DialogueRule, FactValue, GameData, GatherTables, MapDef, MilestoneDef } from '@nogada/shared'
+import type {
+  Condition,
+  DialogueRule,
+  FactValue,
+  GameData,
+  GatherTables,
+  MapDef,
+  MilestoneDef,
+  SkillId,
+} from '@nogada/shared'
 import {
   EVENT_ORDER,
   ONCE_EVENTS,
@@ -8,6 +17,7 @@ import {
   factValueFitsShape,
   findFactSpec,
   matchesCondition,
+  sellPrice,
   starterToolCandidates,
 } from '@nogada/shared'
 import { dialogueLocation } from './dialogueParse.js'
@@ -577,6 +587,66 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
       if (condition.op === '=') continue
       violations.push(
         `${at(rule)}: 한 번만 하는 말(@${rule.event})의 조건에 = 아닌 연산자를 썼다: "${conditionText(condition)}" — 한 번만 하는 말은 조건에 건 사실의 "지금 값"까지 함께 기억해 두었다가 그 값이 달라지면 다시 말한다. = 이 아닌 조건은 값이 달라져도 계속 맞으므로, 그 사실이 바뀔 때마다 같은 말을 처음부터 다시 하게 된다. ${onceRewriteHint(condition, data)}`,
+      )
+    }
+  }
+
+  // ---- 값 검사 ----
+  //
+  // 대화 검사와 같은 자리에 있다(참조 위반 계수를 센 뒤, 조기 반환보다 앞).
+  // 가격은 아이템 참조 사슬과 무관하므로 오타가 이 계산을 오염시키지 않고,
+  // 반대로 이 위반이 도달 가능성 검사를 막아서도 안 된다.
+
+  // 돈복사 금지(설계 §6-앞 6): 산출물을 팔아 얻는 돈이 재료를 팔아 얻는 돈보다
+  // 크면, 캐서 만들어 파는 순환 하나가 무한 골드 루프가 된다(스펙의 구리 주괴는
+  // 입력 원가의 31배였다 — 조합 숙련 0 에 열리는 레시피 하나로 분당 86,000G).
+  // 새 레시피·새 가격마다 사람이 검산하는 것은 언젠가 반드시 빠지므로 빌드가 센다.
+  for (const recipe of Object.values(data.recipes)) {
+    const output = data.items[recipe.output.item]
+    // 없는 아이템을 가리키는 레시피는 위 참조 검사가 이미 말했다 — 여기서 또
+    // 세면 오타 하나가 위반 둘이 되어 진짜 원인이 흐려진다.
+    if (!output) continue
+
+    let inputValue = 0
+    let unknownInput = false
+    for (const input of recipe.inputs) {
+      const def = data.items[input.item]
+      if (!def) {
+        unknownInput = true
+        break
+      }
+      inputValue += sellPrice(def) * input.count
+    }
+    if (unknownInput) continue
+
+    const outputValue = sellPrice(output) * recipe.output.count
+    // 등호는 통과다 — 본전인 레시피는 골드를 만들지 않으므로 막을 이유가 없다.
+    if (outputValue > inputValue) {
+      violations.push(
+        `recipes[${recipe.id}]: 산출물 매도가(${outputValue})가 재료 매도가 합계(${inputValue})보다 크다 — 만들어서 팔기만 해도 골드가 불어난다(돈복사). items.csv 에서 "${output.name}" 의 price 를 낮추거나 recipes.csv 에서 재료를 늘린다`,
+      )
+    }
+  }
+
+  // 사다리 소속 일치(설계 §6-앞 10): items.csv 의 skill 은 "어느 상점이 이것을
+  // 사 주는가"를 정하고, 채집표는 "이것이 실제로 어느 사다리에서 나오는가"를
+  // 안다. 둘이 갈라지면 얼음 채집장에서 캔 것을 얼음상점이 안 사 주는 화면이
+  // 되는데, 그 원인은 화면에서 되짚을 수 없다 — 소속이 서버 전용 산출물에만
+  // 있어서 사람이 눈으로 대조할 곳도 없다.
+  //
+  // 표의 티어가 아닌 아이템(주괴·증표)은 대상이 아니다. 사다리 밖이라 대조할
+  // 상대가 없을 뿐이고, 그 skill 값 자체가 실재하는 기술인지는 parseItems 의
+  // toSkillId 가 이미 본다.
+  const ladderSkillOf = new Map<string, SkillId>()
+  for (const table of Object.values(gatherTables)) {
+    for (const tier of table.tiers) ladderSkillOf.set(tier.itemId, table.skill)
+  }
+  for (const item of Object.values(data.items)) {
+    if (!item.skill) continue
+    const ladder = ladderSkillOf.get(item.id)
+    if (ladder && ladder !== item.skill) {
+      violations.push(
+        `items[${item.id}]: skill 이 "${item.skill}" 인데 채집표에서는 "${ladder}" 사다리의 티어다 — 캔 곳과 팔 곳이 갈라진다. items.csv 의 skill 을 "${ladder}" 로 고친다`,
       )
     }
   }

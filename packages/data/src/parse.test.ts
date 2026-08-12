@@ -31,21 +31,32 @@ describe('parseCsv', () => {
 })
 
 describe('parseItems', () => {
+  /** 출하 items.csv 와 같은 칸을 가진 한 행. 그 테스트가 보는 칸만 덮어쓴다. */
+  function itemRow(overrides: Record<string, string> = {}): Record<string, string> {
+    return {
+      id: 'copper_ore', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '',
+      icon: 'ore_copper', price: '80', skill: 'mineral', ...overrides,
+    }
+  }
+
   it('재료는 도구 필드가 없다', () => {
-    const items = parseItems([
-      { id: 'copper_ore', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '', icon: 'ore_copper' },
-    ])
+    const items = parseItems([itemRow()])
     expect(items.copper_ore).toEqual({
       id: 'copper_ore',
       name: '구리 원석',
       kind: 'material',
       icon: 'ore_copper',
+      price: 80,
+      skill: 'mineral',
     })
   })
 
   it('도구는 숙련 종류와 등급을 갖는다', () => {
     const items = parseItems([
-      { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: '2', icon: 'pickaxe_iron' },
+      itemRow({
+        id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: '2',
+        icon: 'pickaxe_iron', price: '0', skill: '',
+      }),
     ])
     expect(items.iron_pickaxe).toEqual({
       id: 'iron_pickaxe',
@@ -54,34 +65,59 @@ describe('parseItems', () => {
       toolSkill: 'mineral',
       toolTier: 2,
       icon: 'pickaxe_iron',
+      price: 0,
     })
+  })
+
+  it('price 0 을 받아들인다 — 도구 13종이 그 값이고 "팔 수 없다"는 뜻이다', () => {
+    const items = parseItems([itemRow({ price: '0' })])
+    expect(items.copper_ore?.price).toBe(0)
+  })
+
+  it('price 가 비어 있으면 거부한다 — "0원"과 "안 적음"이 뭉치면 죽은 아이템 검사가 무의미해진다', () => {
+    expect(() => parseItems([itemRow({ price: '' })])).toThrow(
+      'items.csv[copper_ore]: 필수 항목 "price" 가 비어 있다',
+    )
+  })
+
+  it('price 가 음수면 거부한다 — 팔면 돈을 내는 물건은 없다', () => {
+    expect(() => parseItems([itemRow({ price: '-1' })])).toThrow(
+      'items.csv[copper_ore]: price "-1" 는 0 이상이어야 한다',
+    )
+  })
+
+  it('skill 칸이 비어 있으면 계열이 없다 — 도구가 그렇다', () => {
+    const items = parseItems([itemRow({ skill: '' })])
+    expect(items.copper_ore).not.toHaveProperty('skill')
+  })
+
+  it('알 수 없는 skill 값을 거부한다 — 오타는 어느 상점도 사 주지 않는 물건을 만든다', () => {
+    expect(() => parseItems([itemRow({ skill: 'minning' })])).toThrow(
+      'items.csv[copper_ore]: skill "minning" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)',
+    )
   })
 
   it('알 수 없는 toolSkill 값을 거부한다', () => {
     expect(() =>
-      parseItems([
-        { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'minig', toolTier: '2', icon: 'pickaxe_iron' },
-      ]),
+      parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'minig', toolTier: '2', skill: '' })]),
     ).toThrow('items.csv[iron_pickaxe]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
   })
 
   it('toolTier 가 0 이하이면 거부한다', () => {
     expect(() =>
-      parseItems([
-        { id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool', toolSkill: 'mineral', toolTier: '0', icon: 'pickaxe_iron' },
-      ]),
+      parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'mineral', toolTier: '0', skill: '' })]),
     ).toThrow('items.csv[iron_pickaxe]: toolTier "0" 는 1 이상이어야 한다')
   })
 
   it('중복된 id 를 거부한다', () => {
-    const row = { id: 'copper_ore', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '', icon: 'ore_copper' }
+    const row = itemRow()
     expect(() => parseItems([row, row])).toThrow('items.csv: 중복된 id "copper_ore"')
   })
 
   it('정수형 id 를 거부한다 — Record 키 순서가 JSON 왕복에서 깨진다', () => {
-    expect(() =>
-      parseItems([{ id: '2', name: '구리 원석', kind: 'material', toolSkill: '', toolTier: '', icon: 'ore_copper' }]),
-    ).toThrow('items.csv[2]: id "2" 는 숫자만으로 만들 수 없다 — 목록 순서가 깨진다')
+    expect(() => parseItems([itemRow({ id: '2' })])).toThrow(
+      'items.csv[2]: id "2" 는 숫자만으로 만들 수 없다 — 목록 순서가 깨진다',
+    )
   })
 })
 

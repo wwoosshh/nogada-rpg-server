@@ -80,6 +80,31 @@ describe('PlayerStateSchema', () => {
     expect(PlayerStateSchema.safeParse(save).success).toBe(true)
   })
 
+  // 왜: gold 는 경제 아크에서 생긴 필드다. dialogueHistory·location 과 **정확히
+  //     같은 이유로** 기본값이 필요하다 — 필수로 두면 그 전에 저장된 세이브가
+  //     readPlayers 에서 통째로 버려지고, 숙련도도 강화한 도구도 함께 사라진다.
+  //     돈이 없는 세이브는 "아직 아무것도 팔아 보지 않았다"와 같은 뜻이라 0 이
+  //     마이그레이션 없이 맞는 답이다.
+  it('gold 가 통째로 없는 옛 세이브를 0 원으로 받아들인다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.gold).toBe(0)
+  })
+
+  it('적혀 있는 골드는 그대로 읽는다', () => {
+    const parsed = PlayerStateSchema.safeParse({ ...validSave(), gold: 12345 })
+
+    expect(parsed.success && parsed.data.gold).toBe(12345)
+  })
+
+  // 왜: 음수 골드는 어떤 경로로도 생길 수 없다(매수는 잔액을 먼저 본다). 세이브에
+  //     그런 값이 있다면 손으로 고쳤거나 버그가 쓴 것이고, 둘 다 조용히 읽어
+  //     들이면 안 된다 — stacks 의 min(0) 과 같은 부류의 게이트다.
+  it('음수 골드는 거부한다 — 빚은 이 게임의 상태가 아니다', () => {
+    expect(PlayerStateSchema.safeParse({ ...validSave(), gold: -1 }).success).toBe(false)
+  })
+
   it('파싱할 때마다 새 빈 이력을 만든다 — 세이브 둘이 같은 배열을 공유하면 안 된다', () => {
     const first = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())
     const second = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())

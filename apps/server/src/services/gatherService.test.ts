@@ -8,21 +8,16 @@ import {
   type MilestoneDef,
   type PlayerState,
 } from '@nogada/shared'
+import { testItem, testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { performGather } from './gatherService.js'
 
 const data: GameData = {
   items: {
-    copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
-    mithril_ore: { id: 'mithril_ore', name: '미스릴 원석', kind: 'material', icon: 'ore_mithril' },
-    copper_pickaxe: {
-      id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    },
-    copper_sickle: {
-      id: 'copper_sickle', name: '구리 낫', kind: 'tool',
-      toolSkill: 'herb', toolTier: 1, icon: 'sickle_copper',
-    },
+    copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
+    mithril_ore: testItem('mithril_ore', { name: '미스릴 원석', icon: 'ore_mithril', price: 22000, skill: 'mineral' }),
+    copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
+    copper_sickle: testTool('copper_sickle', 'herb', 1, { name: '구리 낫', icon: 'sickle_copper' }),
   },
   nodes: {
     copper_vein: {
@@ -80,6 +75,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    gold: 0,
     instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
     equipped: { mineral: 'i1' },
     nextActionAt: 0,

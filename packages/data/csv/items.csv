@@ -1,43 +1,43 @@
-id,name,kind,toolSkill,toolTier,icon
-ice_shard,얼음 조각,material,,,shard_ice
-pure_ice,맑은 얼음,material,,,crystal_ice
-soft_log,무른 통나무,material,,,log_soft
-hard_log,단단한 통나무,material,,,log_hard
-copper_ore,구리 원석,material,,,ore_copper
-iron_ore,철 원석,material,,,ore_iron
-common_herb,흔한 약초,material,,,herb_common
-rare_herb,귀한 약초,material,,,herb_rare
-copper_ingot,구리 주괴,material,,,ingot_copper
-copper_chisel,구리 정,tool,ice,1,chisel_copper
-copper_axe,구리 도끼,tool,wood,1,axe_copper
-copper_pickaxe,구리 곡괭이,tool,mineral,1,pickaxe_copper
-copper_sickle,구리 낫,tool,herb,1,sickle_copper
-iron_chisel,철 정,tool,ice,2,chisel_iron
-iron_axe,철 도끼,tool,wood,2,axe_iron
-iron_pickaxe,철 곡괭이,tool,mineral,2,pickaxe_iron
-iron_sickle,철 낫,tool,herb,2,sickle_iron
-copper_hammer,구리 망치,tool,crafting,1,hammer_copper
-ice_crystal,얼음 결정,material,,,crystal_pale
-pure_ice_crystal,맑은 얼음 결정,material,,,gem_blue
-ice_gem,얼음의 보석,material,,,gem_ice
-tea_leaf,찻잎,material,,,leaf_tea
-golden_leaf,금빛 잎,material,,,leaf_gold
-tree_fruit,나무 열매,material,,,fruit_red
-golden_fruit,금빛 열매,material,,,fruit_gold
-lavender,라벤더,material,,,flower_lavender
-lime,라임,material,,,fruit_lime
-sage,세이지,material,,,herb_sage
-aroma_herb,아로마,material,,,herb_aroma
-millennium_leaf,천년초 잎,material,,,herb_millennium
-silver_ore,은 원석,material,,,ore_silver
-gold_ore,금 원석,material,,,ore_gold
-sapphire_ore,사파이어 원석,material,,,ore_sapphire
-ruby_ore,루비 원석,material,,,ore_ruby
-mithril_ore,미스릴 원석,material,,,ore_mithril
-silver_ingot,은 주괴,material,,,ingot_silver
-gold_ingot,금 주괴,material,,,ingot_gold
-mithril_ingot,미스릴 주괴,material,,,ingot_mithril
-mithril_pickaxe,미스릴 곡괭이,tool,mineral,3,pickaxe_reinforced
-mithril_chisel,미스릴 정,tool,ice,3,chisel_mithril
-mithril_axe,미스릴 도끼,tool,wood,3,axe_mithril
-mithril_sickle,미스릴 낫,tool,herb,3,sickle_mithril
+id,name,kind,toolSkill,toolTier,icon,price,skill
+ice_shard,얼음 조각,material,,,shard_ice,50,ice
+pure_ice,맑은 얼음,material,,,crystal_ice,150,ice
+soft_log,무른 통나무,material,,,log_soft,30,wood
+hard_log,단단한 통나무,material,,,log_hard,400,wood
+copper_ore,구리 원석,material,,,ore_copper,80,mineral
+iron_ore,철 원석,material,,,ore_iron,100,mineral
+common_herb,흔한 약초,material,,,herb_common,60,herb
+rare_herb,귀한 약초,material,,,herb_rare,850,herb
+copper_ingot,구리 주괴,material,,,ingot_copper,100,mineral
+copper_chisel,구리 정,tool,ice,1,chisel_copper,0,
+copper_axe,구리 도끼,tool,wood,1,axe_copper,0,
+copper_pickaxe,구리 곡괭이,tool,mineral,1,pickaxe_copper,0,
+copper_sickle,구리 낫,tool,herb,1,sickle_copper,0,
+iron_chisel,철 정,tool,ice,2,chisel_iron,0,
+iron_axe,철 도끼,tool,wood,2,axe_iron,0,
+iron_pickaxe,철 곡괭이,tool,mineral,2,pickaxe_iron,0,
+iron_sickle,철 낫,tool,herb,2,sickle_iron,0,
+copper_hammer,구리 망치,tool,crafting,1,hammer_copper,0,
+ice_crystal,얼음 결정,material,,,crystal_pale,400,ice
+pure_ice_crystal,맑은 얼음 결정,material,,,gem_blue,2000,ice
+ice_gem,얼음의 보석,material,,,gem_ice,24000,ice
+tea_leaf,찻잎,material,,,leaf_tea,180,wood
+golden_leaf,금빛 잎,material,,,leaf_gold,800,wood
+tree_fruit,나무 열매,material,,,fruit_red,3200,wood
+golden_fruit,금빛 열매,material,,,fruit_gold,6500,wood
+lavender,라벤더,material,,,flower_lavender,130,herb
+lime,라임,material,,,fruit_lime,140,herb
+sage,세이지,material,,,herb_sage,290,herb
+aroma_herb,아로마,material,,,herb_aroma,3250,herb
+millennium_leaf,천년초 잎,material,,,herb_millennium,25000,herb
+silver_ore,은 원석,material,,,ore_silver,200,mineral
+gold_ore,금 원석,material,,,ore_gold,1100,mineral
+sapphire_ore,사파이어 원석,material,,,ore_sapphire,300,mineral
+ruby_ore,루비 원석,material,,,ore_ruby,360,mineral
+mithril_ore,미스릴 원석,material,,,ore_mithril,22000,mineral
+silver_ingot,은 주괴,material,,,ingot_silver,450,mineral
+gold_ingot,금 주괴,material,,,ingot_gold,1620,mineral
+mithril_ingot,미스릴 주괴,material,,,ingot_mithril,23000,mineral
+mithril_pickaxe,미스릴 곡괭이,tool,mineral,3,pickaxe_reinforced,0,
+mithril_chisel,미스릴 정,tool,ice,3,chisel_mithril,0,
+mithril_axe,미스릴 도끼,tool,wood,3,axe_mithril,0,
+mithril_sickle,미스릴 낫,tool,herb,3,sickle_mithril,0,

@@ -135,7 +135,18 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
       name: requireCell(row, 'name', ctx),
       kind,
       icon: requireCell(row, 'icon', ctx),
+      // min 0 을 **명시해서** 부른다 — toInt 의 기본 최솟값은 1 이고, 그대로
+      // 두면 도구 13종의 price=0(팔 수 없다)이 전부 거절된다. 그리고 requireCell
+      // 이라 빈 칸은 통과하지 못한다: "0원"과 "안 적음"이 같은 값으로 뭉치면
+      // 값을 빠뜨린 행이 조용히 "팔 수 없는 물건"이 된다(설계 §6-앞 15).
+      price: toInt(requireCell(row, 'price', ctx), ctx, 'price', 0),
     }
+    // 계열은 선택 칸이다 — 도구는 팔 수 없으니 상점 계열을 물을 일이 없어 비운다.
+    // 적혀 있으면 실재하는 기술이어야 한다(오타는 그 아이템을 어느 상점도 사 주지
+    // 않는 물건으로 만든다). 그 계열이 채집 사다리와 어긋나는지는 표를 함께 보는
+    // validateGameData 의 몫이다.
+    const skill = optionalCell(row, 'skill')
+    if (skill !== undefined) def.skill = toSkillId(skill, ctx)
     if (kind === 'tool') {
       def.toolSkill = toSkillId(requireCell(row, 'toolSkill', ctx), ctx)
       def.toolTier = toInt(requireCell(row, 'toolTier', ctx), ctx, 'toolTier')

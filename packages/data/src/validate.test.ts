@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DialogueRule, GameData, GatherTables, MilestoneDef, SpeakerDef } from '@nogada/shared'
+import { testItem, testTool } from '@nogada/shared/testing'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseGatherTables } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
@@ -81,16 +82,13 @@ function baseTables(): GatherTables {
 function baseData(): GameData {
   return {
     items: {
-      copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
-      copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
-      copper_pickaxe: {
-        id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-        toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-      },
-      copper_hammer: {
-        id: 'copper_hammer', name: '구리 망치', kind: 'tool',
-        toolSkill: 'crafting', toolTier: 1, icon: 'hammer_copper',
-      },
+      // 값은 출하 items.csv 의 그것이다 — 돈복사 금지 검사(산출 매도 ≤ 입력 매도합)가
+      // 이 픽스처의 구리 레시피를 그대로 보므로, 임의의 숫자를 넣으면 정상 픽스처가
+      // 그 검사에 걸려 이 파일의 여러 .toEqual([]) 단언이 무너진다.
+      copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
+      copper_ingot: testItem('copper_ingot', { name: '구리 주괴', icon: 'ingot_copper', price: 100, skill: 'mineral' }),
+      copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
+      copper_hammer: testTool('copper_hammer', 'crafting', 1, { name: '구리 망치', icon: 'hammer_copper' }),
     },
     nodes: {
       copper_vein: {
@@ -150,12 +148,11 @@ function baseData(): GameData {
  */
 function craftLockedData(): GameData {
   const data = baseData()
-  data.items.iron_ore = { id: 'iron_ore', name: '철 원석', kind: 'material', icon: 'ore_iron' }
-  data.items.iron_ingot = { id: 'iron_ingot', name: '철 주괴', kind: 'material', icon: 'ingot_iron' }
-  data.items.iron_pickaxe = {
-    id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
-    toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
-  }
+  data.items.iron_ore = testItem('iron_ore', { name: '철 원석', icon: 'ore_iron', price: 100, skill: 'mineral' })
+  // 철 주괴의 값이 철 원석 2개의 매도합(100)을 넘지 않는다 — 이 픽스처가 보려는
+  // 것은 도달 가능성이지 돈복사가 아니라, 그 검사에 걸리면 위반이 섞여 흐려진다.
+  data.items.iron_ingot = testItem('iron_ingot', { name: '철 주괴', icon: 'ingot_iron', price: 100, skill: 'mineral' })
+  data.items.iron_pickaxe = testTool('iron_pickaxe', 'mineral', 2, { name: '철 곡괭이', icon: 'pickaxe_iron' })
   data.recipes.iron_ingot = {
     id: 'iron_ingot', name: '철 주괴', category: '제련', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
     inputs: [{ item: 'iron_ore', count: 2 }], output: { item: 'iron_ingot', count: 1 },
@@ -288,7 +285,7 @@ describe('validateGameData', () => {
 
   it('어떤 노드로도 얻을 수 없고 어떤 레시피로도 만들 수 없는 아이템을 잡아낸다', () => {
     const data = baseData()
-    data.items.orphan = { id: 'orphan', name: '고아', kind: 'material', icon: 'x' }
+    data.items.orphan = testItem('orphan', { name: '고아', icon: 'x' })
     expect(validateGameData(data, baseTables())).toContain(
       'items[orphan]: 채집으로도 제작으로도 획득할 수 없다',
     )
@@ -329,7 +326,7 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     // 게이트가 없는 세계에서는 도구 유무와 무관하게 그 표의 전 브라켓 전
     // 아이템이 열려야 한다 — 브라켓은 그라인딩으로 언젠가 닿는다.
     const data = baseData()
-    data.items.silver_like = { id: 'silver_like', name: '은 비슷한 것', kind: 'material', icon: 'x' }
+    data.items.silver_like = testItem('silver_like', { name: '은 비슷한 것', icon: 'x', price: 200, skill: 'mineral' })
     const tables = baseTables()
     tables.mineral!.tiers = [{ itemId: 'silver_like' }, { itemId: 'copper_ore' }]
     tables.mineral!.brackets = [{ bracketMax: null, cumulative: [3, 60000] }]
@@ -345,10 +342,7 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     const data = baseData()
     delete data.items.copper_pickaxe
     delete data.recipes.copper_pickaxe
-    data.items.bronze_pickaxe = {
-      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    }
+    data.items.bronze_pickaxe = testTool('bronze_pickaxe', 'mineral', 1, { name: '청동 곡괭이', icon: 'pickaxe_copper' })
     data.recipes.bronze_pickaxe = {
       id: 'bronze_pickaxe', name: '청동 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
       inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'bronze_pickaxe', count: 1 },
@@ -422,6 +416,88 @@ describe('validateGameData 의 조기 반환', () => {
 
 })
 
+// ---- 돈복사 금지(§6-앞 6) ----
+//
+// 산출물을 팔아 얻는 돈이 재료를 팔아 얻는 돈보다 크면 그 레시피 하나가 무한
+// 골드 루프가 된다(스펙이 잡아낸 구리 주괴 31배가 그것이었다). 사람이 새 레시피가
+// 생길 때마다 손으로 검산하는 것은 언젠가 반드시 빠지므로 빌드가 대신 센다.
+
+describe('validateGameData 의 돈복사 검사', () => {
+  it('산출물 매도가가 재료 매도가 합계보다 크면 잡아낸다', () => {
+    const data = baseData()
+    // 구리 주괴는 구리 원석 2개(매도 40×2=80)로 만들어진다 — 매도가가 250 이 되면
+    // 캐고 만들어 파는 것만으로 골드가 불어난다.
+    data.items.copper_ingot = { ...data.items.copper_ingot!, price: 500 }
+
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_ingot]: 산출물 매도가(250)가 재료 매도가 합계(80)보다 크다 — 만들어서 팔기만 해도 골드가 불어난다(돈복사). items.csv 에서 "구리 주괴" 의 price 를 낮추거나 recipes.csv 에서 재료를 늘린다',
+    )
+  })
+
+  // 왜: 부등식이 ≤ 이지 < 가 아니다. 딱 본전인 레시피는 골드를 만들지 않으므로
+  //     막을 이유가 없고, < 로 두면 정상 데이터가 이유 없이 걸린다.
+  it('산출물 매도가가 재료 매도가 합계와 같으면 통과한다 — 본전은 돈복사가 아니다', () => {
+    const data = baseData()
+    data.items.copper_ingot = { ...data.items.copper_ingot!, price: 160 }
+
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  // 왜: 산출 수량을 안 곱하면 "여러 개 나오는 레시피"가 검사를 통째로 빠져나간다 —
+  //     돈복사는 값보다 수량으로 만들어지는 것이 더 흔하다.
+  it('산출 수량을 곱해서 센다 — 하나씩은 본전이어도 여럿 나오면 돈복사다', () => {
+    const data = baseData()
+    data.items.copper_ingot = { ...data.items.copper_ingot!, price: 160 }
+    data.recipes.copper_ingot!.output = { item: 'copper_ingot', count: 2 }
+
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_ingot]: 산출물 매도가(160)가 재료 매도가 합계(80)보다 크다 — 만들어서 팔기만 해도 골드가 불어난다(돈복사). items.csv 에서 "구리 주괴" 의 price 를 낮추거나 recipes.csv 에서 재료를 늘린다',
+    )
+  })
+
+  it('실제로 출하되는 CSV 데이터에는 돈복사 레시피가 없다', () => {
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
+// ---- 사다리 소속 일치(§6-앞 10) ----
+//
+// items.csv 의 skill 은 "어느 상점이 이것을 사 주는가"를 정하고, 채집표는 "이것이
+// 실제로 어느 사다리에서 나오는가"를 안다. 둘이 갈라지면 얼음 채집장에서 캔 것을
+// 얼음상점이 안 사 주는 화면이 되는데, 그 원인을 화면에서 되짚을 방법이 없다.
+
+describe('validateGameData 의 사다리 소속 검사', () => {
+  it('선언한 계열이 그 아이템이 실제로 나오는 표의 계열과 다르면 잡아낸다', () => {
+    const data = baseData()
+    data.items.copper_ore = { ...data.items.copper_ore!, skill: 'ice' }
+
+    expect(validateGameData(data, baseTables())).toContain(
+      'items[copper_ore]: skill 이 "ice" 인데 채집표에서는 "mineral" 사다리의 티어다 — 캔 곳과 팔 곳이 갈라진다. items.csv 의 skill 을 "mineral" 로 고친다',
+    )
+  })
+
+  // 왜: 주괴는 어느 표의 티어도 아니다(캐는 것이 아니라 만드는 것이다). 사다리
+  //     소속을 물을 대상이 아니므로 mineral 로 적어 광물상점이 사 주게 한다 —
+  //     이 검사가 표 밖의 아이템까지 건드리면 그 결정을 되돌리게 된다. skill 값
+  //     자체가 실재하는 기술인지는 parseItems 의 toSkillId 가 이미 본다.
+  it('표의 티어가 아닌 아이템(주괴)은 검사 대상이 아니다', () => {
+    const data = baseData()
+    data.items.copper_ingot = { ...data.items.copper_ingot!, skill: 'ice' }
+
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('계열을 적지 않은 아이템(도구)은 검사 대상이 아니다', () => {
+    const data = baseData()
+    expect(data.items.copper_pickaxe!.skill).toBeUndefined()
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+
+  it('실제로 출하되는 CSV 데이터는 사다리 소속이 전부 일치한다', () => {
+    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
 // ---- 시작 도구 유도 검사(§6-앞 8) ----
 //
 // 시작 지급은 상수(구 STARTING_TOOL_IDS)가 아니라 유도다: villageField(마을).skill
@@ -447,10 +523,7 @@ describe('validateGameData 의 시작 도구 유도 검사', () => {
     const data = baseData()
     // 두 번째 곡괭이에도 requiredSkill 0 레시피를 준다 — 안 주면 "획득할 수
     // 없다" 위반이 섞여 이 검사 하나만 볼 수 없다.
-    data.items.bronze_pickaxe = {
-      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    }
+    data.items.bronze_pickaxe = testTool('bronze_pickaxe', 'mineral', 1, { name: '청동 곡괭이', icon: 'pickaxe_copper' })
     data.recipes.bronze_pickaxe = {
       id: 'bronze_pickaxe', name: '청동 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
       inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'bronze_pickaxe', count: 1 },

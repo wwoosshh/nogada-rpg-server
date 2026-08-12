@@ -1,19 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
 import { equippedToolInfo, equippedToolTier, starterToolCandidates, starterToolFor } from './equipment.js'
+import { testItem, testTool } from './testing/items.js'
 import type { GameData, ItemDef, PlayerState } from './types.js'
 
 const data: GameData = {
   items: {
-    copper_pickaxe: {
-      id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    },
-    iron_hammer: {
-      id: 'iron_hammer', name: '철 망치', kind: 'tool',
-      toolSkill: 'crafting', toolTier: 2, icon: 'hammer_iron',
-    },
-    copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
+    copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
+    iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
+    copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
   },
   nodes: {},
   recipes: {},
@@ -37,6 +32,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    gold: 0,
     instances: [],
     equipped: {},
     nextActionAt: 0,
@@ -159,18 +156,12 @@ describe('starterToolFor — 시작 도구는 상수가 아니라 유도다(§6-
   })
 
   it('1티어 도구가 둘이면 던진다 — 어느 것을 줄지 코드가 몰래 정하면 안 된다', () => {
-    const bronze: ItemDef = {
-      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    }
+    const bronze: ItemDef = testTool('bronze_pickaxe', 'mineral', 1, { name: '청동 곡괭이', icon: 'pickaxe_copper' })
     expect(() => starterToolFor('mineral', { ...data.items, bronze_pickaxe: bronze })).toThrow('2개')
   })
 
   it('starterToolCandidates 는 후보 전부를 돌려준다 — 빌드 검증이 이 목록으로 개수를 센다', () => {
-    const bronze: ItemDef = {
-      id: 'bronze_pickaxe', name: '청동 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    }
+    const bronze: ItemDef = testTool('bronze_pickaxe', 'mineral', 1, { name: '청동 곡괭이', icon: 'pickaxe_copper' })
     const items = { ...data.items, bronze_pickaxe: bronze }
     expect(starterToolCandidates('mineral', items).map((t) => t.id)).toEqual(['copper_pickaxe', 'bronze_pickaxe'])
     expect(starterToolCandidates('ice', items)).toEqual([])

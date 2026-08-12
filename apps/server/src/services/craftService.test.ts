@@ -1,41 +1,24 @@
 import { calcCraftSuccess, emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
+import { testItem, testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { performCraft } from './craftService.js'
 
 const data: GameData = {
   items: {
-    copper_ore: { id: 'copper_ore', name: '구리 원석', kind: 'material', icon: 'ore_copper' },
-    copper_ingot: { id: 'copper_ingot', name: '구리 주괴', kind: 'material', icon: 'ingot_copper' },
-    copper_pickaxe: {
-      id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
-    },
-    iron_pickaxe: {
-      id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
-    },
+    copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
+    copper_ingot: testItem('copper_ingot', { name: '구리 주괴', icon: 'ingot_copper', price: 100, skill: 'mineral' }),
+    copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
+    iron_pickaxe: testTool('iron_pickaxe', 'mineral', 2, { name: '철 곡괭이', icon: 'pickaxe_iron' }),
     // 3등급 — auto-equip 비교가 2등급 전용이 아니라 임의 등급 간 비교라는 것을
     // 이 픽스처로 못박는다(G5).
-    mithril_pickaxe: {
-      id: 'mithril_pickaxe', name: '미스릴 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 3, icon: 'pickaxe_reinforced',
-    },
+    mithril_pickaxe: testTool('mithril_pickaxe', 'mineral', 3, { name: '미스릴 곡괭이', icon: 'pickaxe_reinforced' }),
     // 합성 4등급 — 실제 카탈로그에 없다. 간격 프로필 버킷(toolProfile 의 tier≥3)
     // 이 미스릴과 같아 신품 유효배수가 0.6 으로 **동률**이다: 원시 tier 비교
     // (4>3)와 유효배수 비교(§6-앞 2)가 서로 다른 답을 내는 유일한 픽스처라,
     // "동률·열세면 교체하지 않는다"를 이것으로만 못박을 수 있다.
-    legend_pickaxe: {
-      id: 'legend_pickaxe', name: '전설 곡괭이', kind: 'tool',
-      toolSkill: 'mineral', toolTier: 4, icon: 'pickaxe_legend',
-    },
-    copper_hammer: {
-      id: 'copper_hammer', name: '구리 망치', kind: 'tool',
-      toolSkill: 'crafting', toolTier: 1, icon: 'hammer_copper',
-    },
-    iron_hammer: {
-      id: 'iron_hammer', name: '철 망치', kind: 'tool',
-      toolSkill: 'crafting', toolTier: 2, icon: 'hammer_iron',
-    },
+    legend_pickaxe: testTool('legend_pickaxe', 'mineral', 4, { name: '전설 곡괭이', icon: 'pickaxe_legend' }),
+    copper_hammer: testTool('copper_hammer', 'crafting', 1, { name: '구리 망치', icon: 'hammer_copper' }),
+    iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
   },
   nodes: {},
   recipes: {
@@ -85,6 +68,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    gold: 0,
     instances: [{ instanceId: 'pick1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],
     equipped: { mineral: 'pick1' },
     nextActionAt: 0,
