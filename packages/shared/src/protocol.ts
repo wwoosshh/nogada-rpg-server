@@ -119,6 +119,25 @@ export const CraftRequestSchema = z.object({ recipeId: z.string().min(1) })
 export type CraftRequest = z.infer<typeof CraftRequestSchema>
 
 /**
+ * 착용 요청. 인스턴스 하나뿐이다 — 어느 슬롯에 낄지는 담기지 않는다(§6-앞 11).
+ *
+ * 슬롯은 그 도구의 toolSkill 이 정한다(§4). 클라이언트가 슬롯을 고를 수 있게
+ * 하는 순간 요청 하나로 곡괭이를 허브 슬롯에 끼울 수 있다 — TalkRequest 가
+ * 규칙 id 를 담지 않는 것과 같은 이유다.
+ */
+export const EquipRequestSchema = z.object({ instanceId: z.string().min(1) })
+export type EquipRequest = z.infer<typeof EquipRequestSchema>
+
+/**
+ * 강화 요청. **재료** 인스턴스 하나뿐이다 — 대상은 담기지 않는다(§6-앞 11).
+ *
+ * 대상은 "같은 itemId 의 착용 중 인스턴스"라는 규칙(§5)이 정한다. 대상까지
+ * 받으면 규칙 밖의 조합(다른 itemId 로의 강화)을 요청이 표현할 수 있게 된다.
+ */
+export const EnhanceRequestSchema = z.object({ materialInstanceId: z.string().min(1) })
+export type EnhanceRequest = z.infer<typeof EnhanceRequestSchema>
+
+/**
  * 대화 요청. 화자 id 하나뿐이다.
  *
  * 어떤 줄이 나올지는 요청에 담기지 않는다 — 그것은 서버가 정하는 판정이고,

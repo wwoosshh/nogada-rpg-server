@@ -9,6 +9,8 @@ import { requireSession } from './auth/sessions.js'
 import { parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCraftRoutes } from './routes/craft.js'
+import { registerEnhanceRoutes } from './routes/enhance.js'
+import { registerEquipRoutes } from './routes/equip.js'
 import { registerGatherRoutes } from './routes/gather.js'
 import { registerMeRoutes } from './routes/me.js'
 import { registerMoveRoutes } from './routes/move.js'
@@ -126,6 +128,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     registerStateRoutes(guarded, store)
     registerGatherRoutes(guarded, store, data, gatherTables)
     registerCraftRoutes(guarded, store, data)
+    registerEquipRoutes(guarded, store, data)
+    registerEnhanceRoutes(guarded, store)
     registerTalkRoutes(guarded, store, data)
     registerMoveRoutes(guarded, store, data)
   })

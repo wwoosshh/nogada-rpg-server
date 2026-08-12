@@ -2,14 +2,21 @@ import {
   actionIntervalMs,
   calcCraftSuccess,
   canCraft,
+  CRAFT_TOOL_TIER_CHANCE_BONUS,
   EFFICIENCY_MULTIPLIER,
-  equippedToolTier,
+  ENHANCE_INTERVAL_FACTOR,
+  equippedToolInfo,
+  gatherToolProfile,
+  HAMMER_ENHANCE_CHANCE_BONUS,
   newlyAchieved,
   rollInt,
+  type EquippedToolInfo,
   type GameData,
+  type ItemDef,
   type MilestoneDef,
   type PlayerState,
   type RecipeInput,
+  type SkillId,
 } from '@nogada/shared'
 
 export interface PerformCraftArgs {
@@ -46,6 +53,34 @@ function spend(player: PlayerState, item: string, count: number): void {
   else delete player.stacks[item]
 }
 
+/** 망치가 성공률에 더하는 양. 등급과 강화가 같은 축(성공률)에 쌓인다. */
+function hammerBonus(def: ItemDef, enhanceLevel: number): number {
+  return (def.toolTier ?? 0) * CRAFT_TOOL_TIER_CHANCE_BONUS + enhanceLevel * HAMMER_ENHANCE_CHANCE_BONUS
+}
+
+/** 채집 도구의 유효 간격배수. 작을수록 빠르다 — 등급과 강화가 곱으로 쌓인다. */
+function effectiveIntervalFactor(def: ItemDef, enhanceLevel: number): number {
+  return gatherToolProfile(def).intervalFactor * ENHANCE_INTERVAL_FACTOR ** enhanceLevel
+}
+
+/**
+ * 새로 만든 도구가 착용 중인 것보다 **실제로 나은가**(§6-앞 2).
+ *
+ * 등급 숫자만 견주면(옛 코드) 강화가 보이지 않아, 만강 도구를 더 느린 신품이
+ * 덮어쓰고 그 투자가 조용히 사라진다. 그래서 등급이 아니라 그 도구가 내는
+ * 효과로 견준다 — 축은 기술마다 다르다. 망치는 성공률(등급·강화가 더하기로
+ * 쌓인다), 채집 도구는 간격(곱하기로 쌓이고 작을수록 빠르다).
+ *
+ * 동률이면 바꾸지 않는다. 나아지는 것이 없는데 강화 수치만 0 으로 잃는다.
+ */
+function isBetterTool(skill: SkillId, next: ItemDef, current: EquippedToolInfo | null): boolean {
+  if (!current) return true
+  if (skill === 'crafting') return hammerBonus(next, 0) > hammerBonus(current.def, current.instance.enhanceLevel)
+  return (
+    effectiveIntervalFactor(next, 0) < effectiveIntervalFactor(current.def, current.instance.enhanceLevel)
+  )
+}
+
 /**
  * 제작 판정. 성패를 서버가 결정하고 재료 차감까지 마친 상태를 돌려준다.
  *
@@ -59,9 +94,14 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
 
   const player = structuredClone(args.player)
   const proficiency = player.skills[recipe.skill]
-  const toolTier = equippedToolTier(player, data, recipe.skill)
-  // enhanceLevel 0: T3 이 실값(착용 망치 인스턴스의 강화 수치)을 잇는다.
-  const ctx = { proficiency, toolTier, enhanceLevel: 0, recipe }
+  // 등급은 정의에, 강화 수치는 인스턴스에 있다 — 성공률은 둘 다 먹으므로 한 쌍으로 읽는다.
+  const hammer = equippedToolInfo(player, recipe.skill, data.items)
+  const ctx = {
+    proficiency,
+    toolTier: hammer?.def.toolTier ?? 0,
+    enhanceLevel: hammer?.instance.enhanceLevel ?? 0,
+    recipe,
+  }
 
   if (!canCraft(ctx)) return { ok: false, code: 'level_too_low' }
 
@@ -113,9 +153,10 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
       player.instances.push({ instanceId, itemId: recipe.output.item, enhanceLevel: 0 })
 
       const skill = outputDef.toolSkill
-      const tier = outputDef.toolTier ?? 0
-      if (skill && tier > equippedToolTier(player, data, skill)) {
-        // 더 좋은 도구를 만들면 바로 착용시킨다. M1 에서 장비창 UI 를 생략하기 위한 결정이다.
+      if (skill && isBetterTool(skill, outputDef, equippedToolInfo(player, skill, data.items))) {
+        // 더 나은 도구를 만들면 바로 착용시킨다. 수동 착용(POST /api/equip)이 생긴
+        // 지금도 남는 이유는 첫 도구의 순간이다 — 만들자마자 손에 쥐어야 다음
+        // 채집이 바로 빨라지는 것을 몸으로 안다.
         player.equipped[skill] = instanceId
         autoEquipped = true
       }

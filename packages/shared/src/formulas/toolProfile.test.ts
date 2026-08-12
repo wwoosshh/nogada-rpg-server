@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { equippedToolInfo, type EquippedToolInfo } from '../equipment.js'
 import type { ItemDef, PlayerState } from '../types.js'
 import { emptyDialogueHistory } from '../dialogue.js'
+import { actionIntervalMs } from './proficiency.js'
 import {
   ENHANCE_CAP,
   ENHANCE_INTERVAL_FACTOR,
+  effectiveIntervalFactor,
   gatherIntervalMs,
   gatherToolProfile,
 } from './toolProfile.js'
@@ -70,6 +72,24 @@ describe('티어 대 강화의 불변식 — 강화가 승급의 드라마를 �
   it('철을 +5 로 만강해도 신품 미스릴이 더 빠르다 — 0.6 < 0.8×0.97^5(≈0.687)', () => {
     expect(gatherToolProfile(mithril).intervalFactor).toBeLessThan(
       gatherToolProfile(iron).intervalFactor * maxEnhance,
+    )
+  })
+})
+
+describe('effectiveIntervalFactor — 자동 착용 비교와 화면 표기가 읽는 유효 간격배수(§6-앞 2·13)', () => {
+  it('신품은 티어 배수 그대로이고, 강화는 ×0.97^n 이 곱으로 붙는다', () => {
+    expect(effectiveIntervalFactor(copper, 0)).toBe(1.0)
+    expect(effectiveIntervalFactor(iron, 0)).toBe(0.8)
+    expect(effectiveIntervalFactor(copper, 5)).toBeCloseTo(0.97 ** 5)
+  })
+
+  it('null(맨손)은 ×1.5 다 — 빈 슬롯과의 비교가 이 값으로 성립해 첫 도구가 자연히 착용된다', () => {
+    expect(effectiveIntervalFactor(null, 0)).toBe(1.5)
+  })
+
+  it('gatherIntervalMs 가 같은 배수를 읽는다 — 비교와 스탬프가 갈라지면 "낫다"고 착용한 도구가 실제로는 더 느릴 수 있다', () => {
+    expect(gatherIntervalMs(100, info(mithril, 3))).toBe(
+      Math.max(50, actionIntervalMs(100) * effectiveIntervalFactor(mithril, 3)),
     )
   })
 })

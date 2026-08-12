@@ -16,6 +16,10 @@ const data: GameData = {
       id: 'copper_pickaxe', name: '구리 곡괭이', kind: 'tool',
       toolSkill: 'mineral', toolTier: 1, icon: 'pickaxe_copper',
     },
+    copper_sickle: {
+      id: 'copper_sickle', name: '구리 낫', kind: 'tool',
+      toolSkill: 'herb', toolTier: 1, icon: 'sickle_copper',
+    },
   },
   nodes: {
     copper_vein: {
@@ -25,8 +29,8 @@ const data: GameData = {
     iron_vein: {
       id: 'iron_vein', name: '철 광맥', skill: 'mineral', tableId: 'mineral', variant: 'deep',
     },
-    // 플레이어의 도구(광물)와 기술이 다른 노드 — 맨손이 아니어도 cannot_gather 인
-    // 경우(엉뚱한 기술의 도구)를 확인한다.
+    // 플레이어의 기본 도구(광물)와 기술이 다른 노드 — "엉뚱한 기술의 도구 =
+    // 맨손"(§6-앞 9)이 서비스 경로에서 지켜지는지 확인하는 무대다.
     herb_patch: {
       id: 'herb_patch', name: '약초 군락', skill: 'herb', tableId: 'herb', variant: 'normal',
     },
@@ -97,6 +101,11 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
 const jackpotRoll = () => 0
 /** roll ≈ 99,900 — mineral 표의 마지막 누적(20000)보다 커서 항상 실패한다. */
 const failRoll = () => 0.999
+/**
+ * rawRoll = 40000. herb 표(누적 50000)에서 도구만이 성패를 가르는 주사위다:
+ * 1티어 도구 ×1.0 → 40000 ≤ 50000 성공, 맨손 ×1.45 → 58000 > 50000 실패.
+ */
+const herbEdgeRoll = () => 0.4
 
 describe('performGather', () => {
   it('없는 노드는 unknown_node 로 거부한다', () => {
@@ -134,11 +143,27 @@ describe('performGather', () => {
     expect(r).toEqual({ ok: false, code: 'unknown_node' })
   })
 
-  it('다른 기술의 도구뿐이면 cannot_gather 로 거부한다', () => {
-    // 광물 곡괭이만 착용한 채 약초 군락을 두드린다 — 맨손은 아니지만 그 기술의
-    // 도구가 아니므로 거부된다. (이 거부 자체가 T3 에서 은퇴한다 — 맨손 허용.)
-    const r = performGather({ player: player(), data, tables, instanceId: 'herb_patch-1', rng: jackpotRoll, now: 0 })
-    expect(r).toEqual({ ok: false, code: 'cannot_gather' })
+  it('엉뚱한 기술의 도구는 맨손으로 친다 — roll ×1.45 가 같은 주사위를 실패로 만든다(§6-앞 9)', () => {
+    // 허브 슬롯에 곡괭이(광물 도구)가 꽂힌 극단 상태다. equippedToolInfo 가 이
+    // 불일치를 null(맨손)로 만들어 판정에 넘기는지를 서비스 경로에서 본다 —
+    // 게이트로 거부하던 옛 cannot_gather 는 은퇴했다(§2).
+    const p = player({ equipped: { herb: 'i1' } })
+    const r = performGather({ player: p, data, tables, instanceId: 'herb_patch-1', rng: herbEdgeRoll, now: 0 })
+    if (!r.ok) throw new Error('맨손 채집은 거부가 아니다')
+    expect(r.outcome.success).toBe(false)
+    // 간격도 맨손 배수다 — 엉뚱한 도구가 페널티만 피해 가면 규범이 반쪽이 된다.
+    expect(r.outcome.player.nextActionAt).toBe(750)
+  })
+
+  it('같은 주사위라도 그 기술의 도구가 있으면 성공한다 — 착용 도구가 판정(gatherOutcome)까지 실제로 닿는다', () => {
+    const p = player({
+      instances: [{ instanceId: 's1', itemId: 'copper_sickle', enhanceLevel: 0 }],
+      equipped: { herb: 's1' },
+    })
+    const r = performGather({ player: p, data, tables, instanceId: 'herb_patch-1', rng: herbEdgeRoll, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.success).toBe(true)
+    expect(r.outcome.gained).toEqual({ itemId: 'rare_herb', count: 1 })
   })
 
   it('심층 외형(deep) 노드도 같은 기술의 1등급 도구로 캘 수 있다 — 등급 게이트는 폐지됐다', () => {
@@ -155,10 +180,24 @@ describe('performGather', () => {
     expect(deep.outcome.gained).toEqual(normal.outcome.gained)
   })
 
-  it('맨손이면 cannot_gather 로 거부한다', () => {
+  it('맨손이어도 캘 수 있다 — 게이트가 아니라 페널티다(§2): 간격 ×1.5, 잭팟은 원확률', () => {
     const p = player({ instances: [], equipped: {} })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
-    expect(r).toEqual({ ok: false, code: 'cannot_gather' })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
+    if (!r.ok) throw new Error('맨손 채집은 거부가 아니다')
+    // 잭팟 밴드는 평감산만 적용되고 맨손의 평감산은 0 이다(§3) — roll 0 그대로
+    // 최상 티어가 나온다. 맨손 잭팟이 원확률로 열려 있다는 원작 정신의 증거다.
+    expect(r.outcome.gained).toEqual({ itemId: 'mithril_ore', count: 1 })
+    // 간격 스탬프는 gatherIntervalMs 의 몫이다(§6-앞 10) — 숙련 0 의 500ms 에 ×1.5.
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 750)
+  })
+
+  it('강화된 도구는 간격 스탬프가 짧아진다 — 스탬프가 ×0.97^강화 를 실제로 읽는다(§6-앞 10)', () => {
+    const p = player({ instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: 5 }] })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    // 구리(×1.0) +5 → 500 × 0.97^5 ≈ 429.4ms. actionIntervalMs(0)=500 그대로라면
+    // (스탬프가 강화를 안 읽는다면) 1500 이 나와 이 테스트가 깨진다.
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 500 * 0.97 ** 5)
   })
 
   it('간격이 지나지 않았으면 too_fast 로 거부한다', () => {
@@ -192,13 +231,14 @@ describe('performGather', () => {
     expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
 
-  // 검사 순서 자체를 못 박는다: 간격도 안 지나고 접근 자격도 없는 상황에서
-  // cannot_gather 가 나와야 접근 자격이 간격보다 먼저 검사된다는 것이 증명된다.
-  // 이 시나리오 없이는 개별 거부 테스트만으로 순서를 구분할 수 없다.
-  it('간격도 남아 있고 접근 자격도 없으면 cannot_gather 를 우선한다', () => {
-    const p = player({ nextActionAt: 8000 })
-    const r = performGather({ player: p, data, tables, instanceId: 'herb_patch-1', rng: jackpotRoll, now: 5000 })
-    expect(r).toEqual({ ok: false, code: 'cannot_gather' })
+  // 검사 순서 자체를 못 박는다: 간격도 안 지나고 맵도 다른 상황에서 wrong_map
+  // 이 나와야 맵 검사가 간격보다 먼저라는 것이 증명된다. too_fast 로 답하면
+  // "조금 있다 다시 두드리면 된다"는 거짓 안내가 된다 — 어느 때 두드려도 닿지
+  // 않는 노드다. (도구 자격 검사는 은퇴했다 — 맨손 허용, §2.)
+  it('간격도 남아 있고 맵도 다르면 wrong_map 을 우선한다', () => {
+    const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 }, nextActionAt: 8000 })
+    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
+    expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
 
   it('성공하면 뽑힌 아이템 1개가 스택에 쌓이고 숙련도가 오른다', () => {

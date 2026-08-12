@@ -1,16 +1,14 @@
 import {
-  actionIntervalMs,
   EFFICIENCY_MULTIPLIER,
+  equippedToolInfo,
+  gatherIntervalMs,
   gatherOutcome,
   newlyAchieved,
   rollInt,
-  toolMatchesSkill,
   type GameData,
   type GatherTables,
-  type ItemDef,
   type MilestoneDef,
   type PlayerState,
-  type SkillId,
 } from '@nogada/shared'
 
 export interface PerformGatherArgs {
@@ -42,22 +40,11 @@ export interface GatherOutcome {
   player: PlayerState
 }
 
-export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'cannot_gather' | 'too_fast'
+// cannot_gather 는 은퇴했다(§2 — 맨손 채집 허용): 도구는 접근 게이트가 아니라
+// 페널티의 부재이고, 맨손의 숫자(roll ×1.45·간격 ×1.5)는 gatherToolProfile 이 진다.
+export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'too_fast'
 
 export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; code: GatherErrorCode }
-
-/**
- * 그 기술에 착용된 도구의 정의. "맨손"과 "엉뚱한 기술의 도구"가 같은 함수
- * 하나(toolMatchesSkill) 위에서 갈린다.
- * T3 이 shared 의 equippedToolInfo(정의+인스턴스 쌍)로 교체한다 — 간격 스탬프에
- * 강화 수치가 필요해지는 그때 함께 잇는다.
- */
-function equippedTool(player: PlayerState, data: GameData, skill: SkillId): ItemDef | undefined {
-  const instanceId = player.equipped[skill]
-  const instance = instanceId ? player.instances.find((i) => i.instanceId === instanceId) : undefined
-  const def = instance ? data.items[instance.itemId] : undefined
-  return def && toolMatchesSkill(def, skill) ? def : undefined
-}
 
 /**
  * 채집 판정. 표 기반 티어 판정(gatherOutcome, packages/shared)이 유일한 판정
@@ -94,23 +81,18 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   if (placement.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
 
   const proficiency = player.skills[node.skill]
-  const tool = equippedTool(player, data, node.skill)
+  // 그 기술에 착용된 도구 — 없거나 **엉뚱한 기술의 도구면 null(맨손)** 이다
+  // (§6-앞 9, 그 규범은 equippedToolInfo 가 지킨다). 게이트는 없다(§2): 맨손도
+  // 캐되 프로필(roll ×1.45·간격 ×1.5)이 페널티를 진다.
+  const tool = equippedToolInfo(player, node.skill, data.items)
 
-  // 검사 순서: 대상 존재 → 같은 맵 → 접근 자격 → 간격 → 난수.
+  // 검사 순서: 대상 존재 → 같은 맵 → 간격 → 난수. (도구 자격 검사는 은퇴했다.)
   //
-  // 맵 검사가 자격보다 앞인 이유는, 맵이 다르면 도구를 아무리 갖춰도 닿을 수
-  // 없기 때문이다 — cannot_gather 로 답하면 "도구가 모자라구나" 로 읽힌다.
+  // 맵 검사가 간격보다 앞인 이유는, 맵이 다르면 언제 두드려도 닿을 수 없기
+  // 때문이다 — too_fast 로 답하면 "조금 있다 다시 두드리면 된다"로 읽힌다.
   //
   // 간격 검사가 난수보다 앞인 이유는, 거부된 요청이 시드를 소비하면 연타로 판정
-  // 결과를 흔들 수 있기 때문이다. 자격 검사보다 뒤인 이유는, 캘 수 없는 노드를
-  // 두드리는 것이 간격까지 잡아먹으면 안 되기 때문이다 — 자격 미달은 조작
-  // 실수이지 속도 위반이 아니다.
-  //
-  // canGather 는 shared 에서 은퇴했다(도구 루프 설계 §2 — 맨손 채집 허용).
-  // 서버 경로의 맨손 허용·cannot_gather 은퇴·간격 스탬프(gatherIntervalMs)는
-  // T3 이 잇는다 — 여기서는 기존 거부 동작만 그대로 남긴다.
-  if (!tool || (tool.toolTier ?? 0) <= 0) return { ok: false, code: 'cannot_gather' }
-
+  // 결과를 흔들 수 있기 때문이다.
   if (now < player.nextActionAt) return { ok: false, code: 'too_fast' }
 
   const table = tables[node.tableId]
@@ -118,11 +100,13 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 막으므로 여기 오면 데이터가 깨진 것이다 — unknown_node 와 같은 성격의 방어다.
   if (!table) return { ok: false, code: 'unknown_node' }
 
-  const { itemId } = gatherOutcome(table, proficiency, tool, rng)
+  const { itemId } = gatherOutcome(table, proficiency, tool?.def ?? null, rng)
   const success = itemId !== null
 
-  // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다.
-  player.nextActionAt = now + actionIntervalMs(proficiency)
+  // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다. 채집 간격만 도구의
+  // 몫(티어 배수 × 0.97^강화)이 있다 — 서버의 이 스탬프와 클라의 표시가 같은
+  // 함수(gatherIntervalMs) 하나를 부른다(§6-앞 10). 제작 스탬프는 불변이다(§3).
+  player.nextActionAt = now + gatherIntervalMs(proficiency, tool)
 
   // ② 숙련 증가 — 성패 무관 무조건. 표 메타가 범위를 정한다(노드가 아니라
   // 표가 소유한다, 설계 §7-앞 3).

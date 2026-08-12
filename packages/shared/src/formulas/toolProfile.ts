@@ -53,6 +53,18 @@ export const ENHANCE_INTERVAL_FACTOR = 0.97
 export const HAMMER_ENHANCE_CHANCE_BONUS = 0.005
 
 /**
+ * 유효 간격배수 — 티어(intervalFactor)와 강화(×0.97^n)를 곱한 한 숫자(§6-앞 2).
+ *
+ * 세 자리가 나눠 읽는다: 간격 스탬프(gatherIntervalMs), 제작 후 자동 착용 비교
+ * (craftService — 원시 tier 비교는 강화 투자를 신품이 덮어쓴다), 화면의 배수 표기
+ * (§6-앞 13). 비교가 이 식과 다른 식을 쓰면 "낫다"고 착용한 도구가 실제 스탬프에서는
+ * 더 느릴 수 있다 — 그래서 gatherIntervalMs 도 이 함수를 거친다.
+ */
+export function effectiveIntervalFactor(def: ItemDef | null, enhanceLevel: number): number {
+  return gatherToolProfile(def).intervalFactor * ENHANCE_INTERVAL_FACTOR ** enhanceLevel
+}
+
+/**
  * 채집 한 번의 행동 간격 — 서버의 nextActionAt 스탬프와 클라의 숙련도 탭 표시가
  * 이 함수 하나를 부른다(§6-앞 10). null = 맨손(×1.5).
  *
@@ -60,10 +72,9 @@ export const HAMMER_ENHANCE_CHANCE_BONUS = 0.005
  * 그래야 "초당 20회" 문서가 계속 참이고, 종반의 도구 포화는 수용한다.
  */
 export function gatherIntervalMs(proficiency: number, tool: EquippedToolInfo | null): number {
-  const profile = gatherToolProfile(tool?.def ?? null)
-  const enhance = tool?.instance.enhanceLevel ?? 0
   return Math.max(
     ACTION_INTERVAL_MIN_MS,
-    actionIntervalMs(proficiency) * profile.intervalFactor * ENHANCE_INTERVAL_FACTOR ** enhance,
+    actionIntervalMs(proficiency) *
+      effectiveIntervalFactor(tool?.def ?? null, tool?.instance.enhanceLevel ?? 0),
   )
 }

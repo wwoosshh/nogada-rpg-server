@@ -1,4 +1,4 @@
-import { emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
+import { calcCraftSuccess, emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { performCraft } from './craftService.js'
 
@@ -14,11 +14,27 @@ const data: GameData = {
       id: 'iron_pickaxe', name: '철 곡괭이', kind: 'tool',
       toolSkill: 'mineral', toolTier: 2, icon: 'pickaxe_iron',
     },
-    // 3등급 — auto-equip 비교 로직(tier > equippedToolTier)이 2등급 전용이 아니라
-    // 임의 등급 간 비교라는 것을 이 픽스처로 못박는다(G5).
+    // 3등급 — auto-equip 비교가 2등급 전용이 아니라 임의 등급 간 비교라는 것을
+    // 이 픽스처로 못박는다(G5).
     mithril_pickaxe: {
       id: 'mithril_pickaxe', name: '미스릴 곡괭이', kind: 'tool',
       toolSkill: 'mineral', toolTier: 3, icon: 'pickaxe_reinforced',
+    },
+    // 합성 4등급 — 실제 카탈로그에 없다. 간격 프로필 버킷(toolProfile 의 tier≥3)
+    // 이 미스릴과 같아 신품 유효배수가 0.6 으로 **동률**이다: 원시 tier 비교
+    // (4>3)와 유효배수 비교(§6-앞 2)가 서로 다른 답을 내는 유일한 픽스처라,
+    // "동률·열세면 교체하지 않는다"를 이것으로만 못박을 수 있다.
+    legend_pickaxe: {
+      id: 'legend_pickaxe', name: '전설 곡괭이', kind: 'tool',
+      toolSkill: 'mineral', toolTier: 4, icon: 'pickaxe_legend',
+    },
+    copper_hammer: {
+      id: 'copper_hammer', name: '구리 망치', kind: 'tool',
+      toolSkill: 'crafting', toolTier: 1, icon: 'hammer_copper',
+    },
+    iron_hammer: {
+      id: 'iron_hammer', name: '철 망치', kind: 'tool',
+      toolSkill: 'crafting', toolTier: 2, icon: 'hammer_iron',
     },
   },
   nodes: {},
@@ -37,6 +53,18 @@ const data: GameData = {
       id: 'mithril_pickaxe', name: '미스릴 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 25000, baseChance: 0.4,
       inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'mithril_pickaxe', count: 1 },
       skillGainMin: 150, skillGainMax: 250,
+    },
+    // 자동 착용 비교 시나리오 전용 — 요구 숙련도 0 으로 두어 비교 이외의 조건이
+    // 시나리오에 끼어들지 않게 한다.
+    legend_pickaxe: {
+      id: 'legend_pickaxe', name: '전설 곡괭이', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 3 }], output: { item: 'legend_pickaxe', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
+    },
+    iron_hammer: {
+      id: 'iron_hammer', name: '철 망치', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 2 }], output: { item: 'iron_hammer', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
     },
   },
   // 제작 판정은 맵을 보지 않는다 — 등록부와 전환이 GameData 의 필수 칸이라 비운 채로 둔다.
@@ -204,6 +232,26 @@ describe('performCraft', () => {
     expect(r.outcome.player.equipped.mineral).toBe('newmithril')
   })
 
+  it('착용 망치의 강화 수치가 성공률 판정에 실제로 들어간다(§6-앞 10)', () => {
+    const p = player({
+      stacks: { copper_ore: 5 },
+      instances: [{ instanceId: 'h1', itemId: 'copper_hammer', enhanceLevel: 5 }],
+      equipped: { crafting: 'h1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    const recipe = data.recipes.copper_ingot!
+    // 예상치와 판정이 같은 함수(calcCraftSuccess)라는 규범 — 서비스가 강화 0 을
+    // 넘기면(옛 코드) 아래 두 단정 중 첫째가 깨진다. +5 는 +2.5%p 차이다.
+    expect(r.outcome.chance).toBe(
+      calcCraftSuccess({ proficiency: 0, toolTier: 1, enhanceLevel: 5, recipe }),
+    )
+    expect(r.outcome.chance).not.toBe(
+      calcCraftSuccess({ proficiency: 0, toolTier: 1, enhanceLevel: 0, recipe }),
+    )
+  })
+
   it('제작에 실패하면 도구를 만들지도 착용하지도 않는다', () => {
     const r = performCraft({
       player: smithReadyForIronPickaxe(), data, recipeId: 'iron_pickaxe',
@@ -283,6 +331,84 @@ describe('performCraft', () => {
     expect(p.nextActionAt).toBe(initialNextActionAt)
     expect(p.stacks).toEqual(initialStacks)
     expect(p.skills).toEqual(initialSkills)
+  })
+})
+
+describe('performCraft — 자동 착용은 원시 tier 가 아니라 유효 효과로 견준다(§6-앞 2)', () => {
+  it('tier 가 높아도 유효 간격배수가 나쁘면 교체하지 않는다 — 신품이 강화 투자를 덮어쓰지 못한다', () => {
+    // 착용 미스릴 +5 의 유효배수 0.6×0.97^5 ≈ 0.515, 신품 전설(4티어)은 0.6 —
+    // 신품이 더 느리다. 원시 tier 비교(4>3)였다면 여기서 교체가 일어난다.
+    const p = player({
+      stacks: { copper_ingot: 3 },
+      instances: [{ instanceId: 'm1', itemId: 'mithril_pickaxe', enhanceLevel: 5 }],
+      equipped: { mineral: 'm1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'legend_pickaxe', rng: alwaysSucceed, newId: () => 'legend1', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.mineral).toBe('m1')
+    // 착용만 안 될 뿐 인스턴스는 생긴다 — 예비 도구(강화 재료)의 정상 경로다.
+    expect(r.outcome.player.instances).toContainEqual({
+      instanceId: 'legend1', itemId: 'legend_pickaxe', enhanceLevel: 0,
+    })
+  })
+
+  it('유효배수가 동률이면 교체하지 않는다', () => {
+    // 신품 미스릴(0.6) 착용 중 신품 전설(0.6) — 티어 숫자만 다르고 배수는 같다.
+    const p = player({
+      stacks: { copper_ingot: 3 },
+      instances: [{ instanceId: 'm1', itemId: 'mithril_pickaxe', enhanceLevel: 0 }],
+      equipped: { mineral: 'm1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'legend_pickaxe', rng: alwaysSucceed, newId: () => 'legend1', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.mineral).toBe('m1')
+  })
+
+  it('만강 구리도 신품 철에는 자리를 내준다 — 티어 불변식(§6-앞 1)이 승급의 드라마를 지킨다', () => {
+    // 배포 상수에서 철 0.8 < 구리+5 0.97^5≈0.859 — 유효배수 비교로도 교체가 맞다.
+    // 이 사실이 흔들리는 날(상수 조정)은 toolProfile 의 불변식 테스트가 먼저 깨진다.
+    const p = smithReadyForIronPickaxe({
+      instances: [{ instanceId: 'c1', itemId: 'copper_pickaxe', enhanceLevel: 5 }],
+      equipped: { mineral: 'c1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'iron_pickaxe', rng: alwaysSucceed, newId: () => 'newpick', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.mineral).toBe('newpick')
+  })
+
+  it('망치는 성공률 보너스로 견준다 — 만강 구리 망치(+4.5%p)를 신품 철 망치(+4.0%p)가 덮지 않는다', () => {
+    // 망치의 효과 축은 간격이 아니라 성공률이다(§5): 간격배수로 견주면 숫자는
+    // 나오지만 아무 효과도 재지 않은 수고, 원시 tier(2>1)로 견주면 강화 투자를
+    // 신품이 덮어쓴다 — 채집 도구의 §6-앞 2 와 같은 사고가 축만 바꿔 재발한다.
+    const p = player({
+      stacks: { copper_ingot: 2 },
+      instances: [{ instanceId: 'h1', itemId: 'copper_hammer', enhanceLevel: 5 }],
+      equipped: { crafting: 'h1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'iron_hammer', rng: alwaysSucceed, newId: () => 'newhammer', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.crafting).toBe('h1')
+  })
+
+  it('신품끼리는 더 나은 망치를 착용한다 — 등급이 곧 보너스 차이다', () => {
+    const p = player({
+      stacks: { copper_ingot: 2 },
+      instances: [{ instanceId: 'h1', itemId: 'copper_hammer', enhanceLevel: 0 }],
+      equipped: { crafting: 'h1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'iron_hammer', rng: alwaysSucceed, newId: () => 'newhammer', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.crafting).toBe('newhammer')
   })
 })
 

@@ -670,9 +670,9 @@ function labelOf(data: GameData, itemId: string): string {
 
 function describeError(err: unknown): string {
   if (!(err instanceof ApiError)) return '서버에 연결할 수 없습니다'
+  // cannot_gather 문구('도구나 숙련도 부족')는 은퇴했다 — 맨손 채집이 허용되면서
+  // (도구 루프 설계 §2) 서버가 그 코드를 더는 보내지 않는다.
   switch (err.code) {
-    case 'cannot_gather':
-      return '도구나 숙련도 부족'
     case 'level_too_low':
       return '숙련도 부족'
     case 'missing_materials':

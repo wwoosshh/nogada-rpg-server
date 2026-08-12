@@ -229,10 +229,10 @@ describe('GET /api/state', () => {
 })
 
 describe('POST /api/gather', () => {
-  // 이 스위트의 노드가 얼음 광맥인 이유: 시작 지급이 마을 도구 1개로 줄면서(T2 —
-  // 눈의마을 = 구리 정) 신규 캐릭터는 구리 광맥을 열 곡괭이가 없다. 맨손 채집
-  // 허용(cannot_gather 은퇴)은 T3 의 몫이라, 라우트 시험은 시작 도구가 여는
-  // 같은 맵(개발용 시험장)의 얼음 노드로 옮겼다.
+  // 이 스위트의 노드가 얼음 광맥인 이유: 시작 지급이 마을 도구 1개(눈의마을 =
+  // 구리 정)라, 신규 캐릭터의 도구가 실제로 여는 노드가 얼음이다. 맨손 채집도
+  // 허용되지만(도구 루프 설계 §2 — 페널티일 뿐 게이트가 아니다) 라우트 시험은
+  // 도구를 든 기본 경로를 본다 — 맨손·엉뚱한 도구는 서비스 테스트의 몫이다.
   it('얼음 광맥 채집 요청을 처리한다 — 성패와 무관하게 숙련이 오른다', async () => {
     const app = await buildTestApp()
     const me = await asPlayer(app)
@@ -371,9 +371,9 @@ describe('POST /api/gather', () => {
   })
 
   it('심층 노드도 같은 기술의 시작 도구로 캘 수 있다 — 등급 게이트는 폐지됐다(§7-앞 8)', async () => {
-    // 예전에는 심층 노드(tier 2)가 1티어 시작 도구를 cannot_gather 로 거부했다.
-    // 표 모델에서 심층은 같은 표의 다른 외형일 뿐이라 접근을 막지 않는다 —
-    // 등급은 이제 확률 보정(G3)의 재료다.
+    // 예전에는 심층 노드(tier 2)가 1티어 시작 도구를 거부했다. 표 모델에서
+    // 심층은 같은 표의 다른 외형일 뿐이라 접근을 막지 않는다 — 등급은 이제
+    // 확률 보정(G3)의 재료다.
     const app = await buildTestApp()
     const me = await asPlayer(app)
     await enterField(me)
@@ -476,6 +476,144 @@ describe('POST /api/craft', () => {
     const me = await asPlayer(app)
 
     const res = await me.inject({ method: 'POST', url: '/api/craft', payload: {} })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
+describe('POST /api/equip', () => {
+  it('자기 인스턴스를 지목하면 착용을 반영한 플레이어 통째를 돌려준다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    // 신규 캐릭터의 유일한 인스턴스는 시작 도구다. 착용 중인 것을 다시 지목해도
+    // 같은 값을 다시 쓸 뿐이라 성공이다(§4 — "아무 일 없음"이 곧 성공). 교체
+    // 시나리오 자체는 서비스 테스트가 지키고, 여기서는 라우트 배선(스키마 →
+    // 서비스 → 저장 → { player } 응답)을 본다.
+    const state = await me.inject({ method: 'GET', url: '/api/state' })
+    const starter = (state.json() as { player: { instances: { instanceId: string; itemId: string }[] } })
+      .player.instances[0]!
+    const slot = loadGameData().items[starter.itemId]?.toolSkill
+    if (!slot) throw new Error(`시작 도구 ${starter.itemId} 의 toolSkill 이 없다`)
+
+    const res = await me.inject({
+      method: 'POST',
+      url: '/api/equip',
+      payload: { instanceId: starter.instanceId },
+    })
+
+    expect(res.statusCode).toBe(200)
+    // 응답이 { player } 통째 관례(§6-앞 11)를 지키는지 — 상태 응답과 같은 스키마다.
+    expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
+    const body = res.json() as { player: { equipped: Record<string, string> } }
+    expect(body.player.equipped[slot]).toBe(starter.instanceId)
+
+    await app.close()
+  })
+
+  it('없는 인스턴스는 400 unknown_instance 다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    const res = await me.inject({ method: 'POST', url: '/api/equip', payload: { instanceId: 'ghost' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'unknown_instance' })
+
+    await app.close()
+  })
+
+  it('instanceId 가 없으면 400 이다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    const res = await me.inject({ method: 'POST', url: '/api/equip', payload: {} })
+    expect(res.statusCode).toBe(400)
+
+    await app.close()
+  })
+})
+
+describe('POST /api/enhance', () => {
+  it('예비 도구를 재료로 착용 도구가 +1 되고, 재료 인스턴스는 사라진 채 저장된다', async () => {
+    const before = await buildTestApp()
+    const me = await asPlayer(before)
+    const file = saveFileOf(before)
+
+    // 세이브에 예비 인스턴스(착용 중인 것과 같은 itemId)를 직접 심는다 — API 로
+    // 만들려면 제작 난수를 기다려야 해서 라우트 시험이 결정적이지 않게 된다.
+    const raw = rawSaveOf(before)[me.id] as {
+      instances: { instanceId: string; itemId: string; enhanceLevel: number }[]
+    }
+    const starterItemId = raw.instances[0]!.itemId
+    raw.instances.push({ instanceId: 'spare-1', itemId: starterItemId, enhanceLevel: 0 })
+    writeRawCharacter(file, me.id, raw)
+
+    const app = await buildTestApp({ dataFile: file })
+    const resumed = await asPlayer(app, { resume: me })
+    const res = await resumed.inject({
+      method: 'POST',
+      url: '/api/enhance',
+      payload: { materialInstanceId: 'spare-1' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
+    const body = res.json() as { player: { instances: { enhanceLevel: number }[] } }
+    expect(body.player.instances).toHaveLength(1)
+    expect(body.player.instances[0]!.enhanceLevel).toBe(1)
+
+    // 저장까지 갔는지 — 강화가 응답에만 있고 세이브에 없으면 새로고침이 되돌린다.
+    const state = await resumed.inject({ method: 'GET', url: '/api/state' })
+    const saved = state.json() as { player: { instances: { enhanceLevel: number }[] } }
+    expect(saved.player.instances).toHaveLength(1)
+    expect(saved.player.instances[0]!.enhanceLevel).toBe(1)
+
+    await app.close()
+    // 임시 디렉터리를 지우는 것은 파일을 만든 쪽이다 — 나중에 닫는다.
+    await before.close()
+  })
+
+  it('착용 중인 인스턴스를 재료로 지목하면 400 material_equipped 다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    // 신규 캐릭터의 유일한 인스턴스는 착용 중이다 — 그것을 재료로 지목한다.
+    const state = await me.inject({ method: 'GET', url: '/api/state' })
+    const starter = (state.json() as { player: { instances: { instanceId: string }[] } })
+      .player.instances[0]!
+
+    const res = await me.inject({
+      method: 'POST',
+      url: '/api/enhance',
+      payload: { materialInstanceId: starter.instanceId },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'material_equipped' })
+
+    await app.close()
+  })
+
+  it('없는 인스턴스는 400 unknown_instance 다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    const res = await me.inject({
+      method: 'POST',
+      url: '/api/enhance',
+      payload: { materialInstanceId: 'ghost' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'unknown_instance' })
+
+    await app.close()
+  })
+
+  it('materialInstanceId 가 없으면 400 이다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+
+    const res = await me.inject({ method: 'POST', url: '/api/enhance', payload: {} })
     expect(res.statusCode).toBe(400)
 
     await app.close()

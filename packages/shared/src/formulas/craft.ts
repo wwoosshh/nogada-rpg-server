@@ -29,6 +29,17 @@ export function canCraft(ctx: CraftContext): boolean {
 }
 
 /**
+ * 망치의 유효 성공률 보너스 — 등급과 강화가 한 숫자로 합쳐지는 유일한 자리.
+ *
+ * 판정(calcCraftSuccess)과 제작 후 자동 착용 비교(craftService)가 이 식 하나를
+ * 나눠 읽는다. 두 벌로 적으면 판정과 비교가 서로 다른 망치를 "낫다"고 말할 수
+ * 있다 — 채집 도구의 effectiveIntervalFactor 와 정확히 같은 이유다(§6-앞 2).
+ */
+export function hammerChanceBonus(toolTier: number, enhanceLevel: number): number {
+  return toolTier * CRAFT_TOOL_TIER_CHANCE_BONUS + enhanceLevel * HAMMER_ENHANCE_CHANCE_BONUS
+}
+
+/**
  * 제작 성공률. canCraft 가 false 면 0.
  *
  * 요구 숙련도를 넘어선 만큼으로 계산한다 — 갓 열린 레시피는 기본값이고,
@@ -41,9 +52,6 @@ export function calcCraftSuccess(ctx: CraftContext): number {
   const t = proficiencyProgress(over, CHANCE_DECADES)
   const base = ctx.recipe.baseChance
   const withToolBonus =
-    base +
-    (MAX_SUCCESS_CHANCE - base) * t +
-    ctx.toolTier * CRAFT_TOOL_TIER_CHANCE_BONUS +
-    ctx.enhanceLevel * HAMMER_ENHANCE_CHANCE_BONUS
+    base + (MAX_SUCCESS_CHANCE - base) * t + hammerChanceBonus(ctx.toolTier, ctx.enhanceLevel)
   return clamp(withToolBonus, MIN_SUCCESS_CHANCE, MAX_SUCCESS_CHANCE)
 }
