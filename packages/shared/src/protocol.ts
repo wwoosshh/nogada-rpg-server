@@ -260,6 +260,36 @@ export const BuyRequestSchema = z.object({
 export type BuyRequest = z.infer<typeof BuyRequestSchema>
 
 /**
+ * 헌납 수량. **거래의 999(`TradeCount`)를 쓰지 않는다**(설계 §6-앞 12) — 그
+ * 상한은 원작의 소지 상한이라는 근거가 있었는데, `stacks` 에는 그런 상한이 없다.
+ * 절벽(숙련 50만) 뒤 사람은 흔한 칸을 분당 수백 개씩 캔다(수집 형평 검증 주석의
+ * 실측: 금 원석 536.8개/분) — 하루만 놔둬도 스택이 수만이 된다. 999 로 묶으면
+ * 그 스택 하나를 방에 옮기는 데만 수십 번을 눌러야 하고, 그것은 "숨기는 것은
+ * 없다"(§6-앞 3)의 반대편 실패다 — 방이 칸을 보여주고는 채우기를 지루하게 만든다.
+ *
+ * 100,000 은 문턱표의 가장 큰 4단(금 원석 16,000)보다 한 자릿수 이상 여유를 두어
+ * 방문 한 번으로 어떤 칸이든 4단까지 채울 수 있게 하면서도, `.int()` 와 함께
+ * 총액이 `Number.MAX_SAFE_INTEGER` 를 넘겨 소지 비교가 무의미해지는 요청은
+ * 여전히 막는다 — TradeCount 가 999 로 하는 것과 같은 자리의 방어다.
+ */
+const DonateCount = z.number().int().min(1).max(100_000)
+
+/**
+ * 헌납 요청. 무엇을, 몇 개.
+ *
+ * 상점 id 가 없다 — 거래와 달리 **누구에게 바치는가를 고를 자리가 없다**: 방은
+ * 하나뿐이고 위치·시각과도 무관하다(§6-앞 12 — 접근 판정도 행동 간격도 없다).
+ * 등급이 오르는가는 담기지 않는다 — 그것은 `collectionGrade`(shared)가 정하는
+ * 유도값이라, 요청이 등급을 보낼 수 있게 하면 클라이언트가 제 등급을 스스로
+ * 매기게 된다.
+ */
+export const DonateRequestSchema = z.object({
+  itemId: z.string().min(1),
+  count: DonateCount,
+})
+export type DonateRequest = z.infer<typeof DonateRequestSchema>
+
+/**
  * 전환 요청. **밟은 칸**만 담는다 — 어디로 갈지는 담기지 않는다.
  *
  * TalkRequest 가 규칙 id 를 담지 않는 것과 같은 이유다. 목적지를 클라이언트가
