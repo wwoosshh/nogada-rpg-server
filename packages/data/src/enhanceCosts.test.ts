@@ -37,6 +37,10 @@ function dataWith(costs: GameData['enhanceCosts']): GameData {
       lavender: testItem('lavender', { name: '라벤더', price: 130, skill: 'herb' }),
       pure_ice: testItem('pure_ice', { name: '맑은 얼음', price: 150, skill: 'ice' }),
       iron_ore: testItem('iron_ore', { name: '철 원석', price: 100, skill: 'mineral' }),
+      // 계열 회전 검사만 쓰는 둘 — 계열이 없는 재료와 채집 계열이 아닌 재료다.
+      // 출하 데이터에는 이런 행이 없지만, 그것이 없다는 것을 검사가 증명해야 한다.
+      nameless_dust: testItem('nameless_dust', { name: '이름 없는 가루', price: 10 }),
+      craft_scrap: testItem('craft_scrap', { name: '조합 부스러기', price: 10, skill: 'crafting' }),
       copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1),
     },
     nodes: {},
@@ -130,5 +134,63 @@ describe('validateEnhanceCosts', () => {
     const violations = validateEnhanceCosts(data)
     // 1티어 구리 곡괭이가 있는데 표는 2티어 것뿐이다.
     expect(violations.some((v) => v.includes('copper_pickaxe'))).toBe(true)
+  })
+})
+
+/*
+ * 계열 회전(설계 §6-앞 11, 검증 요구는 §6-앞 16) — 이 표의 뼈대다.
+ *
+ * 위 검사들은 표가 **조립되는가**를 묻는다. 여기 넷은 표가 **원작 UL4 의 그
+ * 사다리인가**를 묻는다: +1..+4 가 네 채집 계열을 하나씩 차례로 먹고, +5 가
+ * 넷을 한꺼번에 먹는가. 이것이 무너져도 표는 끝까지 온전해 보인다 — 단계는
+ * 빠짐없이 있고 아이템도 실재하고 골드도 갈라지지 않는다. 다만 그 도구를
+ * 강화하는 사람이 어느 한 계열을 영영 캐지 않게 되고, 그 사라짐은 화면 어디에도
+ * 흔적을 남기지 않는다.
+ */
+describe('validateEnhanceCosts 의 계열 회전', () => {
+  it('+1..+4 가 같은 계열을 두 번 먹으면 위반이다 — 회전이 한 계열을 통째로 건너뛴다', () => {
+    const rows = ladder(1, 1)
+    rows[1] = row('1', '2', 'hard_log', '10', '9000') // +2 도 나무가 된다(원래는 허브)
+    const violations = validateEnhanceCosts(dataWith(parseEnhanceCosts(rows)))
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('+1')
+    expect(violations[0]).toContain('wood')
+  })
+
+  it('한 단계가 두 계열을 먹으면 위반이다 — 넷을 한꺼번에 먹는 것은 +5 하나다', () => {
+    const rows = [...ladder(1, 1), row('1', '1', 'lavender', '5', '5000')]
+    const violations = validateEnhanceCosts(dataWith(parseEnhanceCosts(rows)))
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('+1')
+  })
+
+  it('+5 가 네 계열을 다 먹지 않으면 위반이다 — 마지막 칸은 회전이 돈 계열의 합이다', () => {
+    const rows = ladder(1, 1).filter((r) => !(r['level'] === '5' && r['itemId'] === 'iron_ore'))
+    const violations = validateEnhanceCosts(dataWith(parseEnhanceCosts(rows)))
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('+5')
+    expect(violations[0]).toContain('mineral')
+  })
+
+  it('계열이 없는 재료를 먹으면 위반이다 — 어느 계열의 대가인지 정해지지 않는다', () => {
+    const rows = ladder(1, 1)
+    rows[0] = row('1', '1', 'nameless_dust', '5', '5000')
+    const violations = validateEnhanceCosts(dataWith(parseEnhanceCosts(rows)))
+    expect(violations.some((v) => v.includes('nameless_dust'))).toBe(true)
+  })
+
+  it('채집 계열이 아닌 재료를 먹으면 위반이다 — 회전이 도는 것은 캐는 네 계열이다', () => {
+    const rows = ladder(1, 1)
+    rows[0] = row('1', '1', 'craft_scrap', '5', '5000')
+    const violations = validateEnhanceCosts(dataWith(parseEnhanceCosts(rows)))
+    expect(violations.some((v) => v.includes('craft_scrap'))).toBe(true)
+  })
+
+  it('사다리가 온전하지 않은 티어는 회전을 묻지 않는다 — 원인 하나가 위반 둘이 되지 않게', () => {
+    const rows = ladder(1, 1).filter((r) => r['level'] !== '4')
+    const violations = validateEnhanceCosts(dataWith(parseEnhanceCosts(rows)))
+    // "+4 단계가 없다" 하나뿐이다 — mineral 이 회전에서 빠졌다는 파생 위반은 없다.
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('+4')
   })
 })

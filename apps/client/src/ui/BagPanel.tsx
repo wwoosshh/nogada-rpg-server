@@ -1,5 +1,6 @@
 import {
   effectiveIntervalFactor,
+  ENHANCE_INTERVAL_FACTOR,
   hammerChanceBonus,
   SKILL_IDS,
   SKILL_LABELS,
@@ -13,17 +14,30 @@ import { ItemIcon } from './ItemIcon.js'
 import { formatGold } from './shopModel.js'
 
 /**
- * 도구 하나가 화면에 말할 속도 축 한 줄(§6-앞 13) — 채집 기술은 간격 절감률,
- * 조합(망치)은 성공률 보너스다(간격은 채집 도구만의 축이므로, §3). 둘 다
- * shared 의 공식(effectiveIntervalFactor·hammerChanceBonus)을 그대로 옮겨
- * 적을 뿐이라 서버 판정·다른 화면(craftCardModel, 숙련도 탭)과 다른 숫자가
+ * 도구 하나가 화면에 말할 효과 한 줄(§6-앞 13) — shared 의 공식
+ * (effectiveIntervalFactor·hammerChanceBonus·ENHANCE_INTERVAL_FACTOR)을 그대로
+ * 옮겨 적을 뿐이라 서버 판정·다른 화면(craftCardModel, 숙련도 탭)과 다른 숫자가
  * 뜰 수 없다. def 는 호출자가 "착용/예비 도구가 실제로 있다"를 확인한 뒤에만
- * 넘긴다 — 빈 슬롯에는 말할 속도가 없다.
+ * 넘긴다 — 빈 슬롯에는 말할 것이 없다.
+ *
+ * **채집 도구와 망치는 축이 다르되, 망치도 간격을 산다.** "간격은 채집 도구만의
+ * 축"이라던 이 자리의 옛 문장은 제작 확장 §6-앞 14 가 망치 강화에 제작 간격
+ * 절감을 붙이면서 거짓이 됐다. 지금 참인 것은 **무엇이 무엇을 사는가**이고,
+ * 망치는 둘로 갈린다:
+ *   - 성공률은 **티어**가 산다(승급 한 칸 +2.0%p) — 강화도 조금 얹는다(+0.3%p/단).
+ *   - 제작 간격은 **강화만** 산다(×0.97^n). 티어는 여기에 한 푼도 안 낸다
+ *     (craftIntervalMs 가 effectiveIntervalFactor 를 부르지 않는 이유).
+ * 그래서 조합 슬롯은 두 숫자를 나란히 적는다. 하나만 적으면 네 계열을 다 먹는
+ * 망치 강화가 무엇을 사 주는지 화면 어디에도 안 남는다 — 그 사다리를 아무도
+ * 안 타던 이유가 바로 그것이었다.
  */
 function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): string {
   if (skill === 'crafting') {
     const bonusPct = hammerChanceBonus(def.toolTier ?? 0, enhanceLevel) * 100
-    return `성공률 +${bonusPct.toFixed(1)}%p`
+    // 강화 배수만 곱한다 — craftIntervalMs 와 같은 셈이라야 이 줄이 참이다.
+    const cutPct = Math.round((1 - ENHANCE_INTERVAL_FACTOR ** enhanceLevel) * 100)
+    const interval = cutPct > 0 ? `간격 −${cutPct}%` : '간격 변화 없음'
+    return `성공률 +${bonusPct.toFixed(1)}%p · ${interval}`
   }
   const cutPct = Math.round((1 - effectiveIntervalFactor(def, enhanceLevel)) * 100)
   // 신품 구리(1티어, 미강화)는 배수가 정확히 1.0 이라 절감이 0 이다 — "−0%"
@@ -72,6 +86,11 @@ export function BagPanel(): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === 'bag')
   const player = useGameStore((s) => s.player)
   const data = useGameStore((s) => s.data)
+  // 왕복이 도는 동안 이 패널의 버튼 셋을 전부 잠근다 — 상점의 [팔기]·[사기]가
+  // tradeBusy 로 하는 그 일이고 같은 이유다(gameStore 의 bagBusy 문서). 셋이
+  // 한 신호를 나눠 쓰는 것은 셋이 같은 왕복이기 때문이다: 강화가 도는 동안
+  // 가루를 쓰면 그 응답 둘이 서로의 player 를 덮어쓴다.
+  const busy = useGameStore((s) => s.bagBusy)
 
   if (!open || player === null) return null
 
@@ -183,10 +202,12 @@ export function BagPanel(): JSX.Element | null {
                           </div>
                         </div>
                         <div className="bag__spare-actions">
-                          {/* 착용은 상시 — 예비는 정의상 미착용이니 대상이 늘 유효하다(§4). */}
+                          {/* 착용은 상시 — 예비는 정의상 미착용이니 대상이 늘 유효하다(§4).
+                              "상시"는 조건 이야기이고, 왕복 잠금은 그것과 다른 축이다. */}
                           <button
                             type="button"
                             className="bag__spare-btn"
+                            disabled={busy}
                             onClick={() => void useGameStore.getState().equip(inst.instanceId)}
                           >
                             착용
@@ -199,6 +220,7 @@ export function BagPanel(): JSX.Element | null {
                             <button
                               type="button"
                               className="bag__spare-btn bag__spare-btn--enhance"
+                              disabled={busy}
                               onClick={() => void useGameStore.getState().enhance(inst.instanceId)}
                             >
                               강화
@@ -225,11 +247,14 @@ export function BagPanel(): JSX.Element | null {
                   <span className="bag__material-qty">×{m.qty}</span>
                   {/* 쓸 수 있는 재료에만 붙는다 — 날씨 가루 4종이 지금 유일한
                       소지자다. 누른 뒤에도 패널은 열려 있고, 줄어든 개수가 이
-                      줄에서 그대로 갱신된다(스토어가 돌아온 player 를 갈아 끼운다). */}
+                      줄에서 그대로 갱신된다(스토어가 돌아온 player 를 갈아 끼운다).
+                      그 갱신이 오기 전까지는 화면이 눌린 티를 아예 안 내므로,
+                      잠그지 않으면 두 번 누른 사람이 가루 둘을 태운다. */}
                   {m.usable && (
                     <button
                       type="button"
                       className="bag__material-btn"
+                      disabled={busy}
                       onClick={() => void useGameStore.getState().use(m.id)}
                     >
                       사용

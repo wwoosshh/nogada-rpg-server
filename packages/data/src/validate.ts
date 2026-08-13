@@ -387,6 +387,26 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     if (recipe.skillGainMin > recipe.skillGainMax) {
       violations.push(`recipes[${recipe.id}]: skillGainMin 이 skillGainMax 보다 크다`)
     }
+    // 문턱의 계열과 산출물의 계열은 같은 한 가지를 말하는 두 칸이다(§6-앞 9·17):
+    // "이건 얼음 계열의 물건이라 얼음을 캔 사람이 만들고 얼음 상점이 사 준다".
+    // 둘이 갈라져도 어느 화면 하나 이상해지지 않는 것이 이 검사가 있는 이유다 —
+    // 문은 문대로 열리고, 죽은 아이템 검사는 팔 곳이 있으니 통과시킨다. 남는
+    // 것은 "나무를 5만 캐야 열리는데 얼음 상점만 사 주는 물건" 하나뿐이고, 그
+    // 어긋남은 두 CSV 를 나란히 놓고 봐야만 보인다. 출하 데이터는 지금 이 짝을
+    // 열 레시피 전부에서 지키고 있고, 이 검사가 그것을 못박는다.
+    //
+    // 문턱이 없으면 묻지 않는다 — 도구처럼 계열이 없는 산출물이 정상인 레시피가
+    // 있고(도구는 애초에 팔리지 않는다), 문이 없으면 어긋날 두 칸도 없다.
+    const gated = recipe.gateSkill
+    if (gated !== undefined && hasItem(recipe.output.item)) {
+      const output = data.items[recipe.output.item]!
+      if (output.skill !== gated) {
+        const outputLine = output.skill ? `${output.skill} 계열이다` : '계열(skill)이 없다'
+        violations.push(
+          `recipes[${recipe.id}]: 문턱은 ${gated} 계열인데 산출물 "${output.name}" ${output.skill ? '는' : '에'} ${outputLine} — 그 계열 상점만 사 주므로(§6-앞 17) 문을 연 계열과 팔 곳이 갈라진다. recipes.csv 의 gateSkill 이나 items.csv 의 skill 중 하나를 고친다`,
+        )
+      }
+    }
   }
 
   // 조합 숙련도는 craftService 의 성공 경로에서만 오르고, 그 성공 경로 자체가

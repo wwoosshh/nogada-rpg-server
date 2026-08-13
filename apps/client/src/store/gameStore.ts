@@ -259,6 +259,19 @@ interface GameStore {
    * 다음 요청이 나갈 때·성공할 때·패널이 바뀔 때 지워진다.
    */
   bagError: string | null
+  /**
+   * 가방 요청이 나가 있다 — [착용]·[강화]·[사용] 을 그동안 잠근다.
+   *
+   * `tradeBusy` 와 같은 신호이고 같은 이유다(그쪽 문서 참고): 왕복이 도는
+   * 동안 둘째 요청이 나가면 그 둘째는 이미 없어진 것을 다시 쓰려 해 반드시
+   * 거절된다. 가루는 그중에서도 나쁜 축이다 — 성공하면 개수가 정말로 줄어드는데
+   * 화면에는 그 사이 아무 표시가 없어서, 안 먹혔다고 생각한 사람이 한 번 더
+   * 누르고 그 한 번이 두 번째 가루를 태운다.
+   *
+   * 상점이 이 교훈을 먼저 배웠는데 가방만 빠져 있었다. 채널(bagError)을 셋이
+   * 나눠 쓰는 것처럼 잠금도 하나다 — 셋 다 같은 패널의 같은 왕복이다.
+   */
+  bagBusy: boolean
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
@@ -285,6 +298,15 @@ interface GameStore {
   buy: (shopId: string, itemId: string, count: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
   setOpenPanel: (panel: OpenPanel) => void
+  /**
+   * 지난 거래 거절 문구를 지운다 — 상점 패널 안에서 **선택이 옮겨질 때** 부른다.
+   *
+   * `setOpenPanel` 이 패널이 바뀌는 순간을 이미 지키지만(그쪽 주석), 패널을 열어
+   * 둔 채 탭을 옮기거나 다른 줄을 고르는 경우는 그 문 밖이었다. 그때 화면은
+   * 아이콘·이름·보유·합계가 전부 새 줄의 것으로 바뀌는데 빨간 줄만 앞 줄의 것이
+   * 남아, 방금 고른 물건이 거절당한 것처럼 읽힌다.
+   */
+  clearTradeError: () => void
   openPendingShop: () => void
 }
 
@@ -351,6 +373,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   tradeError: null,
   tradeBusy: false,
   bagError: null,
+  bagBusy: false,
   lastAction: null,
   milestone: null,
   utterance: null,
@@ -691,6 +714,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     else set({ openPanel: panel })
   },
 
+  /** 위 setOpenPanel 이 지키지 못하는 자리 — 패널은 그대로인데 안에서 선택만 옮겨질 때. */
+  clearTradeError: () => set({ tradeError: null }),
+
   /**
    * 대사가 끝났다 — 기다리던 상점이 있으면 지금 연다(설계 §6-앞 20).
    *
@@ -804,9 +830,15 @@ function applyPlayer(set: SetFn, next: PlayerState): void {
  * 성공을 알리지 않는 것도 셋이 같다 — 슬롯 그림, 강화 +N, 줄어든 개수와 바뀐
  * 하늘이 그 자리에서 직접 말한다. 행동 간격(too_fast)은 셋 다 올 수 없다:
  * 정리와 사용은 행동이 아니다(설계 §6-앞 11, 서버 useService).
+ *
+ * 왕복 동안 `bagBusy` 를 켜 두 번째 요청 자체를 막는다 — trade() 가 tradeBusy 로
+ * 하는 그 일이고, 근본 교정인 것도 같다. 마지막 한 개를 두 번 빠르게 누르면
+ * 둘째는 이미 없어진 것을 다시 쓰려 해 반드시 거절되는데, 버튼이 잠겨 있으면
+ * 그 거절이 애초에 생기지 않는다. 가루는 특히 그렇다: 누른 뒤 응답이 오기
+ * 전까지 화면에 아무 변화가 없어서, 안 먹혔다고 여긴 사람이 한 번 더 누른다.
  */
 async function bagAction(set: SetFn, send: () => Promise<{ player: PlayerState }>): Promise<void> {
-  set({ bagError: null })
+  set({ bagBusy: true, bagError: null })
   try {
     const { player } = await send()
     applyPlayer(set, player)
@@ -817,6 +849,10 @@ async function bagAction(set: SetFn, send: () => Promise<{ player: PlayerState }
     }
     set({ bagError: describeError(err) })
     console.error(err)
+  } finally {
+    // finally 인 것이 요점이다 — 거절로 끝난 왕복이 잠금을 켜 둔 채 돌아오면
+    // 가방의 세 버튼이 영영 잠겨, 패널을 닫았다 열기 전에는 아무것도 못 한다.
+    set({ bagBusy: false })
   }
 }
 
@@ -932,15 +968,17 @@ function describeError(err: unknown): string {
     case 'enhance_cap':
       return '더 강화할 수 없다'
     // 강화가 원재료·골드를 먹게 되면서 생긴 코드다(§6-앞 11). 가방이 요구를
-    // 숫자로 적고 못 채우면 버튼 자체를 안 그리므로 정상 조작으로는 오지 않지만,
-    // 두 창에서 같은 재료를 동시에 쓰면 둘째가 이것으로 돌아온다.
+    // 숫자로 적고 못 채우면 버튼 자체를 안 그리며, 왕복이 도는 동안에는 버튼이
+    // 잠기므로(bagBusy) 정상 조작으로는 오지 않는다 — 두 창에서 같은 재료를
+    // 동시에 쓰는 경합처럼 화면이 막을 수 없는 경우에만 온다.
     // `not_enough_gold` 는 아래 거래 코드와 같은 글자를 쓴다 — 골드가 모자란 것은
     // 상점에서든 강화에서든 같은 사실이고, 문구가 갈라지면 그게 더 이상하다.
     case 'missing_enhance_materials':
       return '강화 재료가 모자란다'
-    // 사용(use) 전용. 가방은 `useEffect` 가 있는 재료에만 [사용] 을 그리므로
-    // 정상 조작으로는 오지 않지만, 두 창에서 마지막 한 개를 동시에 쓰면
-    // 둘째가 missing_items 로 돌아온다 — 그때 화면이 조용하면 안 된다.
+    // 사용(use) 전용. 가방은 `useEffect` 가 있는 재료에만 [사용] 을 그리고,
+    // 한 창 안에서 두 번 빠르게 누르는 것은 왕복 잠금(bagBusy)이 막는다 —
+    // 그래서 마지막 한 개가 missing_items 로 돌아오는 것은 **두 창**을 동시에
+    // 연 경합뿐이다. 화면이 막을 수 없는 그 경우에 조용하면 안 된다.
     case 'not_usable':
       return '쓸 수 없는 물건'
     // 아래는 거래(sell·buy) 전용 코드다(설계 §6-앞 18). 상점 패널이 잠긴 칸·

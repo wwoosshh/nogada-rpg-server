@@ -1,5 +1,6 @@
 import { emptyPlayer, loadGameData } from '@nogada/data'
-import { ENHANCE_CAP, SKILL_LABELS, type PlayerState } from '@nogada/shared'
+import { ENHANCE_CAP, SKILL_LABELS, type GameData, type PlayerState } from '@nogada/shared'
+import { testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { SETTINGS_ACTION, TABS } from './detailMenuTabs.js'
 
@@ -8,9 +9,9 @@ function settingsLines() {
   return tab.buildLines(loadGameData(), emptyPlayer())
 }
 
-function skillLines(player: PlayerState) {
+function skillLines(player: PlayerState, data: GameData = loadGameData()) {
   const tab = TABS.find((t) => t.id === 'skills')!
-  return tab.buildLines(loadGameData(), player)
+  return tab.buildLines(data, player)
 }
 
 /** 각 줄이 적은 간격 숫자만 뽑는다 — 화면에 뜨는 그 문자열 그대로다. */
@@ -26,6 +27,21 @@ function intervalTokens(player: PlayerState): string[] {
 function mineralInterval(player: PlayerState): string {
   const line = skillLines(player).find((l) => l.text.startsWith(SKILL_LABELS.mineral))!
   return /행동 간격 (.+)ms$/.exec(line.text)![1]!
+}
+
+/** 조합 줄 하나 — 망치(crafting)가 바뀌는 것을 보는 자리다. */
+function craftingInterval(player: PlayerState, data?: GameData): number {
+  const line = skillLines(player, data).find((l) => l.text.startsWith(SKILL_LABELS.crafting))!
+  return Number(/행동 간격 (.+)ms$/.exec(line.text)![1]!)
+}
+
+/** 망치 하나만 들고 있는 플레이어. */
+function withHammer(itemId: string, enhanceLevel: number): PlayerState {
+  return {
+    ...emptyPlayer(),
+    instances: [{ instanceId: 'h1', itemId, enhanceLevel }],
+    equipped: { crafting: 'h1' },
+  }
 }
 
 describe('숙련도 탭', () => {
@@ -62,6 +78,38 @@ describe('숙련도 탭', () => {
       instances: [{ instanceId: 'p1', itemId: 'copper_pickaxe', enhanceLevel: ENHANCE_CAP }],
     }
     expect(Number(mineralInterval(enhanced))).toBeLessThan(Number(mineralInterval(base)))
+  })
+
+  // 왜: 조합 줄만 다른 함수를 쓴다(craftIntervalMs — 제작 확장 §6-앞 14). 그
+  //     분기가 사라져도 위 검사들은 전부 초록이다: 숫자는 여전히 정수이고,
+  //     곡괭이 강화도 여전히 광물 줄을 움직인다. 이 줄이 거짓말하는 모양은
+  //     정확히 둘이고 둘 다 여기서만 잡힌다 — ① 망치 강화를 무시해 만강 망치를
+  //     든 사람에게 500ms 라고 적으면서 서버는 429ms 로 스탬프하거나,
+  //     ② effectiveIntervalFactor 를 불러 망치 티어까지 간격에 넣거나
+  //     (티어가 사는 것은 성공률이다).
+  it('조합 줄은 망치 강화로 짧아지고, 망치 티어로는 짧아지지 않는다', () => {
+    const data = loadGameData()
+    // 2티어 망치는 출하 데이터에 아직 없다 — "티어는 간격을 안 산다"를 물으려면
+    // 티어가 다른 망치가 둘 있어야 하므로 여기서 하나를 세운다(서버의
+    // craftService.test 가 같은 이유로 같은 망치를 세운다).
+    const withIronHammer: GameData = {
+      ...data,
+      items: {
+        ...data.items,
+        iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
+      },
+    }
+
+    const fresh = craftingInterval(withHammer('copper_hammer', 0), withIronHammer)
+    const enhanced = craftingInterval(withHammer('copper_hammer', ENHANCE_CAP), withIronHammer)
+    const freshIron = craftingInterval(withHammer('iron_hammer', 0), withIronHammer)
+
+    // 500 × 0.97^5 = 429.3670128499999 → 429
+    expect(enhanced).toBeLessThan(fresh)
+    expect(enhanced).toBe(429)
+    // 신품 철 망치는 신품 구리와 한 자릿수까지 같다 — 티어는 이 축에 한 푼도 안 낸다.
+    expect(freshIron).toBe(fresh)
+    expect(fresh).toBe(500)
   })
 })
 

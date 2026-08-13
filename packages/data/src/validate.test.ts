@@ -295,6 +295,36 @@ describe('validateGameData', () => {
     expect(validateGameData(data, baseTables())).toContain('recipes[copper_ingot]: 산출물을 자기 재료로 쓴다')
   })
 
+  // 왜: 문턱(§6-앞 9)과 산출물의 계열(§6-앞 17)은 같은 한 가지를 말하는 두 칸이다
+  //     — "이건 얼음 계열의 물건이라 얼음을 5만 캔 사람이 만들고 얼음 상점이
+  //     사 준다". 둘이 갈라져도 어느 화면도 이상해지지 않는다: 문은 문대로
+  //     열리고, 죽은 아이템 검사는 팔 곳이 있으니 통과시킨다. 남는 것은
+  //     "나무를 5만 캐야 열리는데 얼음 상점만 사 주는 물건" 하나뿐이고,
+  //     그 어긋남은 데이터를 나란히 놓고 봐야만 보인다.
+  it('문턱의 계열과 산출물의 계열이 갈라진 레시피를 잡아낸다', () => {
+    const data = baseData()
+    data.recipes.copper_ingot!.gateSkill = 'ice'
+    data.recipes.copper_ingot!.gateValue = 1000
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_ingot]: 문턱은 ice 계열인데 산출물 "구리 주괴" 는 mineral 계열이다 — 그 계열 상점만 사 주므로(§6-앞 17) 문을 연 계열과 팔 곳이 갈라진다. recipes.csv 의 gateSkill 이나 items.csv 의 skill 중 하나를 고친다',
+    )
+  })
+
+  it('문턱이 있는데 산출물에 계열이 없으면 잡아낸다 — 캔 곳은 있는데 팔 곳이 없다', () => {
+    const data = baseData()
+    data.recipes.copper_pickaxe!.gateSkill = 'mineral'
+    data.recipes.copper_pickaxe!.gateValue = 1000
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_pickaxe]: 문턱은 mineral 계열인데 산출물 "구리 곡괭이" 에 계열(skill)이 없다 — 그 계열 상점만 사 주므로(§6-앞 17) 문을 연 계열과 팔 곳이 갈라진다. recipes.csv 의 gateSkill 이나 items.csv 의 skill 중 하나를 고친다',
+    )
+  })
+
+  it('문턱이 없는 레시피는 산출물의 계열을 묻지 않는다 — 문이 없으면 어긋날 두 칸도 없다', () => {
+    // copper_pickaxe 의 산출물(도구)에는 계열이 없다. 문턱이 없는 한 그것은
+    // 결손이 아니다 — 도구는 애초에 팔리지 않는다.
+    expect(validateGameData(baseData(), baseTables())).toEqual([])
+  })
+
   it('어떤 노드로도 얻을 수 없고 어떤 레시피로도 만들 수 없는 아이템을 잡아낸다', () => {
     const data = baseData()
     data.items.orphan = testItem('orphan', { name: '고아', icon: 'x' })
@@ -545,6 +575,52 @@ describe('출하 recipes.csv 의 미스릴 도구 — 정제품 수요가 도구
     for (const id of ['golden_fruit', 'millennium_leaf', 'aroma_herb']) {
       const item = data.items[id]!
       expect(Object.values(data.shops).some((shop) => isSellTarget(item, shop))).toBe(true)
+    }
+  })
+})
+
+// ---- 날씨 가루의 분당 재료 단가(제작 확장 §6-앞 1~4) ----
+//
+// 약과 중은 지속만 다른 **같은 하늘**이다. 그러니 둘 사이의 유일한 선택 기준은
+// 분당 재료 단가인데, 출하 첫판은 중이 약을 완전히 지배했다:
+//
+//   약  얼음 조각 10(×50) + 맑은 얼음  5(×150) = 1,250 ÷  60분 = 20.83/분
+//   중  얼음 조각 30(×50) + 맑은 얼음 10(×150) = 3,000 ÷ 180분 = 16.67/분  ← 20% 싸다
+//
+// 그래서 얼음 10,000(중의 문턱)을 넘는 순간 약 2종은 만들 이유가 **영원히**
+// 사라졌다 — 목록에 서 있기만 하는 레시피 둘이다.
+//
+// 고친 것은 지속이 아니라 재료다. 중을 약의 정확히 3배로 만들면
+//
+//   중  얼음 조각 30(1,500) + 맑은 얼음 15(2,250) = 3,750 ÷ 180분 = 20.83/분
+//
+// 로 단가가 같아지고, 60분/180분이라는 읽히는 모양도 그대로 지킨다(지속을
+// 180 → 144 로 깎아도 단가는 같아지지만 상단바에 "2시간 24분"이 뜬다).
+//
+// 단가가 같아진 뒤 약이 사는 자리는 **낱개**다: 하늘이 20분만 필요한 사람에게
+// 중은 160분어치를, 약은 40분어치만 버리게 한다. 한 개보다 적게 쓸 수 없다는
+// 사실이 싼 쪽의 존재 이유가 되는 것 — 이 등식이 지키는 것이 그것이다.
+
+describe('출하 recipes.csv 의 날씨 가루 — 중이 약을 지배하지 않는다', () => {
+  const data = loadRealGameData()
+
+  /** 그 가루 한 개의 재료 정가 합을, 그것이 사 주는 게임 분으로 나눈 값. */
+  const perMinute = (recipeId: string): number => {
+    const recipe = data.recipes[recipeId]!
+    const cost = recipe.inputs.reduce((sum, i) => sum + data.items[i.item]!.price * i.count, 0)
+    const effect = data.items[recipe.output.item]!.useEffect
+    if (effect?.kind !== 'weather') throw new Error(`${recipeId} 의 산출물이 날씨 가루가 아니다`)
+    return cost / effect.minutes
+  }
+
+  it('중 가루의 분당 재료 단가가 약 가루보다 싸지 않다 — 싸지면 약은 만들 이유가 없어진다', () => {
+    expect(perMinute('heavy_rain_powder')).toBeGreaterThanOrEqual(perMinute('rain_powder'))
+    expect(perMinute('heavy_snow_powder')).toBeGreaterThanOrEqual(perMinute('snow_powder'))
+  })
+
+  it('지금 출하값에서는 둘이 정확히 같다 — 1,250÷60 = 3,750÷180 = 20.83/분', () => {
+    for (const id of ['rain_powder', 'snow_powder', 'heavy_rain_powder', 'heavy_snow_powder']) {
+      expect(perMinute(id)).toBeCloseTo(1250 / 60, 10)
     }
   })
 })

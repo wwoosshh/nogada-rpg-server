@@ -65,6 +65,7 @@ beforeEach(() => {
     tradeError: null,
     tradeBusy: false,
     bagError: null,
+    bagBusy: false,
     player: emptyPlayer(),
     boot: 'playing',
     connection: 'online',
@@ -375,6 +376,21 @@ describe('거래 — 화자가 자리를 뜨면 패널이 닫힌다(설계 §6-�
     expect(useGameStore.getState().player?.gold).toBe(520000)
     expect(useGameStore.getState().openPanel).toBe('shop:얼음상점')
   })
+
+  // 왜: 거절 문구는 **그 줄 그 수량**의 것이다. 탭을 옮기거나 다른 줄을 고르면
+  //     화면의 아이콘·이름·합계가 전부 바뀌는데 그 아래 빨간 줄만 남는다 —
+  //     방금 고른 물건이 거절당한 것처럼 읽힌다. 패널을 닫을 때 지우는 규칙
+  //     (setOpenPanel)이 이미 있는데 패널 안에서 옮겨 다니는 경우만 빠져 있었다.
+  it('선택이 옮겨지면 지난 거절 문구를 지운다', () => {
+    useGameStore.getState().setOpenPanel('shop:얼음상점')
+    useGameStore.setState({ tradeError: '물건이 모자란다' })
+
+    useGameStore.getState().clearTradeError()
+
+    expect(useGameStore.getState().tradeError).toBeNull()
+    // 패널은 그대로다 — 지우는 것은 문구뿐이다.
+    expect(useGameStore.getState().openPanel).toBe('shop:얼음상점')
+  })
 })
 
 describe('사용 — 가방에서 쓴 가루가 하늘이 된다(설계 §6-앞 1~4)', () => {
@@ -417,6 +433,49 @@ describe('사용 — 가방에서 쓴 가루가 하늘이 된다(설계 §6-앞 
     expect(useGameStore.getState().bagError).toBe('물건이 모자란다')
     expect(useGameStore.getState().lastAction).toBeNull()
     expect(useGameStore.getState().openPanel).toBe('bag')
+  })
+
+  // 왜: **두 번째 요청 자체를 막는 것이 근본이다** — 상점이 tradeBusy 로 이미
+  //     배운 그 교훈이다. 마지막 한 개를 두 번 빠르게 누르면 첫 요청이 아직
+  //     돌아오지 않은 채 둘째가 나가고, 그 둘째는 이미 비워진 스택을 다시 쓰려
+  //     해 반드시 거절된다. 가루는 더 나쁘다: 첫 요청이 성공하면 개수는 정말로
+  //     줄어드는데, 화면에는 그 사이 아무 표시도 없어 "안 먹혔나" 하고 한 번
+  //     더 누르게 된다.
+  it('요청이 나가 있는 동안에는 잠금 신호(bagBusy)가 켜져 있다', async () => {
+    let release: (() => void) | null = null
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await held
+        return jsonResponse({ player: emptyPlayer() })
+      }),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    const inflight = useGameStore.getState().use('rain_powder')
+    expect(useGameStore.getState().bagBusy).toBe(true)
+
+    release!()
+    await inflight
+    expect(useGameStore.getState().bagBusy).toBe(false)
+  })
+
+  // 왜: finally 로 풀어야 한다. 거절로 끝난 왕복이 잠금을 켜 둔 채 돌아오면
+  //     가방의 세 버튼이 전부 영영 잠겨, 패널을 닫았다 열기 전에는 아무것도
+  //     못 하게 된다.
+  it('거절로 끝난 왕복도 잠금을 푼다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'missing_items' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().use('rain_powder')
+
+    expect(useGameStore.getState().bagBusy).toBe(false)
   })
 
   // 왜: 착용·강화도 같은 패널의 같은 사정이다(그쪽은 오래 머리 위로 보내고

@@ -358,11 +358,26 @@ function ShopView({
   const selectedSell = sells.find((r) => r.itemId === selectedId) ?? sells[0]
   const selectedBuy = buys.find((r) => r.itemId === selectedId) ?? buys[0]
 
+  /**
+   * 선택이 옮겨졌다 — 지난 거절 문구를 함께 지운다.
+   *
+   * 그 문구는 **그 줄 그 수량**의 것이다(스토어의 clearTradeError 문서). 줄을
+   * 옮기면 아이콘·이름·보유·합계가 전부 새 줄의 것으로 바뀌는데 빨간 줄만
+   * 앞 줄의 것이 남아, 방금 고른 물건이 거절당한 것처럼 읽힌다. 상세가 `key`
+   * 로 새로 마운트돼 수량이 1 로 돌아가는 것과 같은 이유이고 같은 순간이다 —
+   * 다만 문구는 스토어에 살아서 언마운트로 사라지지 않으므로 여기서 지운다.
+   */
+  const selectRow = (itemId: string): void => {
+    setSelectedId(itemId)
+    useGameStore.getState().clearTradeError()
+  }
+
   const selectTab = (next: ShopTab): void => {
     setTab(next)
     // 탭이 바뀌면 선택도 그 탭의 첫 줄에서 시작한다 — 팔기에서 고른 아이템 id
     // 가 사기 목록에 우연히 있으면 엉뚱한 줄이 잡힌다.
     setSelectedId(null)
+    useGameStore.getState().clearTradeError()
   }
 
   return (
@@ -394,7 +409,7 @@ function ShopView({
                     key={row.itemId}
                     row={row}
                     selected={row.itemId === selectedSell?.itemId}
-                    onSelect={setSelectedId}
+                    onSelect={selectRow}
                   />
                 ))
               : buys.map((row) => (
@@ -402,7 +417,7 @@ function ShopView({
                     key={row.itemId}
                     row={row}
                     selected={row.itemId === selectedBuy?.itemId}
-                    onSelect={setSelectedId}
+                    onSelect={selectRow}
                   />
                 ))}
           </ul>

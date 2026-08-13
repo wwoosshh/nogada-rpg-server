@@ -433,9 +433,14 @@ function renderEventScan(event: string, scan: EventScan): string {
  * 조건 하나가 왜 안 맞았는지를 지금 세계 상태에 비춰 말한다.
  *
  * "값이 없다"를 두 가지로 나누는 것이 이 함수의 값어치다. 공급자가 없는
- * 사실(weather 등)은 실제 게임에서도 안 맞으므로 작가가 할 일이 없고(빌드의
+ * 사실(affinity 등)은 실제 게임에서도 안 맞으므로 작가가 할 일이 없고(빌드의
  * "안내"와 같은 원인), 공급자가 있는데 이번에 안 준 사실은 인자 하나만 더
  * 주면 바로 확인된다 — 같은 "없다"가 정반대의 할 일을 뜻한다.
+ *
+ * 예가 weather 에서 affinity 로 옮긴 것은 날씨 가루가 weather 에 공급자를
+ * 주면서다(제작 확장 §6-앞 1~4) — 그 뒤로 weather 는 "안 준 사실"의 예이지
+ * "채워 주는 곳이 없는 사실"의 예가 아니다. dialogue/README.md 와
+ * validate.test.ts 가 같은 이유로 먼저 옮겨 갔다.
  */
 function conditionFailure(condition: Condition, facts: Facts): string {
   const actual = facts[condition.fact]
