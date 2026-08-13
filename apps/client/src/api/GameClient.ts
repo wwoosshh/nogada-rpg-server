@@ -71,6 +71,20 @@ export interface TalkOutcomeDto {
 }
 
 /**
+ * 헌납 한 번의 결과 — 플레이어와 **이번에 새로 달성된 이정표**.
+ *
+ * 착용·강화·사용·거래가 `{ player }` 하나인데 여기만 다른 이유(수집의 방 §6-앞 9):
+ * 헌납은 `donated` 를 늘려 방의 총점을 밀어 올리고, 그 총점이 이정표 지표
+ * (`metricKind='collection'`)라 이번 헌납이 문턱을 넘겼을 수 있다. 실어 오지
+ * 않으면 그 축하는 다음 채집·제작 때까지 조용히 미뤄져 "이 헌납 때문에 열렸다"가
+ * 화면에서 사라진다.
+ */
+export interface DonateOutcomeDto {
+  player: PlayerState
+  achieved: MilestoneDef[]
+}
+
+/**
  * 맵을 넘어간 결과.
  *
  * 다른 결과들과 달리 실린 것이 플레이어뿐이다 — 전환에는 성패도 산출물도
@@ -308,6 +322,20 @@ export const GameClient = {
     request<{ player: PlayerState }>('/api/enhance', {
       method: 'POST',
       body: JSON.stringify({ materialInstanceId }),
+    }),
+
+  /**
+   * 헌납 — 채집물을 수집의 방에 바친다. **돌아오지 않는다**(설계 §3).
+   *
+   * 상점 id 가 없는 것이 요점이다: 방은 하나뿐이고 위치·시각과 무관하다
+   * (protocol.ts 의 DonateRequestSchema). 수량 상한은 거래의 999 가 아니라
+   * 헌납 전용 100,000 이고(스택에 상한이 없다), 화면 쪽 같은 값은
+   * codexModel 의 `MAX_DONATE_COUNT` 다.
+   */
+  donate: (itemId: string, count: number) =>
+    request<DonateOutcomeDto>('/api/donate', {
+      method: 'POST',
+      body: JSON.stringify({ itemId, count }),
     }),
 
   /**

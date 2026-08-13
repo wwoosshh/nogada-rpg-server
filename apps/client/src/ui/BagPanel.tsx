@@ -8,10 +8,13 @@ import {
   type ItemInstance,
   type SkillId,
 } from '@nogada/shared'
+import { useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
+import { isCollectionSlot, maxDonateCount } from './codexModel.js'
 import { enhanceRequirementFor, type EnhanceRequirement } from './enhanceCostModel.js'
 import { ItemIcon } from './ItemIcon.js'
-import { formatGold } from './shopModel.js'
+import { QuantityPicker } from './QuantityPicker.js'
+import { clampCount, formatGold } from './shopModel.js'
 
 /**
  * 도구 하나가 화면에 말할 효과 한 줄(§6-앞 13) — shared 의 공식
@@ -81,6 +84,12 @@ function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): str
  * 하나이고 없는 재료에는 버튼을 그리지 않는다 — 예비 칩의 `강화` 와 정확히
  * 같은 규칙이다(비활성 노출 금지). **장비 슬롯은 여전히 버튼이 아니다** —
  * 슬롯은 착용 결과를 비추는 자리이지 조작하는 자리가 아니다(조작은 예비 칩).
+ *
+ * **재료의 세 번째 용도가 여기서 열린다 — `[바치기]`**(수집의 방 설계 §5·§6-앞 1).
+ * 팔기는 상점에서, 만들기는 제작 패널에서, 바치기는 여기다: 방은 결과를 보는
+ * 곳이고 물건은 가방에 있다. 자격은 `isCollectionSlot` 한 줄(서버 performDonate 가
+ * 보는 그 표)이라 주괴·증표·가루에는 버튼이 아예 안 붙는다 — [사용] 이 useEffect
+ * 칸 하나로 자격을 정하는 것과 같은 규칙이고, 같은 죽은 버튼 금지다.
  */
 export function BagPanel(): JSX.Element | null {
   const open = useGameStore((s) => s.openPanel === 'bag')
@@ -115,13 +124,21 @@ export function BagPanel(): JSX.Element | null {
   // `usable` 은 그 줄이 [사용] 버튼을 얻는가다. 자격은 `useEffect` 칸 하나뿐이고
   // (서버 performUse 가 보는 것과 같은 칸), 없는 재료에는 버튼을 아예 그리지
   // 않는다 — 눌러도 not_usable 만 돌아오는 죽은 버튼 금지(설계 §8-앞 13).
-  const materials: { id: string; name: string; qty: number; usable: boolean }[] = []
+  const materials: Material[] = []
   for (const id of Object.keys(data.items)) {
     const def = data.items[id]
     if (def?.kind !== 'material') continue
     const qty = player.stacks[id] ?? 0
     if (qty <= 0) continue
-    materials.push({ id, name: def.name, qty, usable: def.useEffect !== undefined })
+    materials.push({
+      id,
+      name: def.name,
+      qty,
+      usable: def.useEffect !== undefined,
+      // 방의 칸인가 — [바치기] 의 유일한 자격이고, 서버가 not_collectable 을
+      // 가르는 그 검사와 같은 검사다(codexModel 의 isCollectionSlot).
+      donatable: isCollectionSlot(data, id),
+    })
   }
 
   return (
@@ -239,33 +256,152 @@ export function BagPanel(): JSX.Element | null {
           {materials.length === 0 ? (
             <p className="bag__empty">아직 모은 재료가 없다.</p>
           ) : (
-            <ul className="bag__materials">
-              {materials.map((m) => (
-                <li key={m.id} className="bag__material">
-                  <ItemIcon itemId={m.id} />
-                  <span className="bag__material-name">{m.name}</span>
-                  <span className="bag__material-qty">×{m.qty}</span>
-                  {/* 쓸 수 있는 재료에만 붙는다 — 날씨 가루 4종이 지금 유일한
-                      소지자다. 누른 뒤에도 패널은 열려 있고, 줄어든 개수가 이
-                      줄에서 그대로 갱신된다(스토어가 돌아온 player 를 갈아 끼운다).
-                      그 갱신이 오기 전까지는 화면이 눌린 티를 아예 안 내므로,
-                      잠그지 않으면 두 번 누른 사람이 가루 둘을 태운다. */}
-                  {m.usable && (
-                    <button
-                      type="button"
-                      className="bag__material-btn"
-                      disabled={busy}
-                      onClick={() => void useGameStore.getState().use(m.id)}
-                    >
-                      사용
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <MaterialList materials={materials} busy={busy} />
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+/** 재료 줄 하나가 아는 것 — 무엇을 몇 개 가졌고, 그것으로 무엇을 할 수 있는가. */
+interface Material {
+  id: string
+  name: string
+  qty: number
+  /** 쓸 수 있는가(`useEffect` 칸) — [사용] 의 자격. */
+  usable: boolean
+  /** 방의 칸인가(`data.collection`) — [바치기] 의 자격. */
+  donatable: boolean
+}
+
+/**
+ * 재료 목록 — 줄마다 [사용]·[바치기] 가 붙고, 헌납 확인은 그 줄 아래에서 펼쳐진다.
+ *
+ * **본체에서 떼어낸 이유는 "지금 어느 줄이 확인 중인가"라는 상태 하나 때문이다.**
+ * 그 상태를 BagPanel 이 들면 패널이 닫혀도(컴포넌트가 null 을 돌려줄 뿐 언마운트
+ * 되지 않는다) 살아남아, 다시 열었을 때 아무도 누르지 않은 확인 줄이 펼쳐진 채로
+ * 보인다. 여기 있으면 패널이 닫히는 순간 이 컴포넌트가 통째로 언마운트되며 함께
+ * 버려진다 — 상점의 탭·선택·수량이 ShopView 에 사는 것과 같은 수법이다.
+ *
+ * 한 번에 한 줄만 펼친다(문자열 하나). 여러 줄을 동시에 열어 두면 "지금 무엇을
+ * 태우려는 중인가"가 흐려지는데, 그것은 되돌릴 수 없는 행위에서 가장 나쁜 흐림이다.
+ */
+function MaterialList({ materials, busy }: { materials: Material[]; busy: boolean }): JSX.Element {
+  const [donating, setDonating] = useState<string | null>(null)
+
+  return (
+    <ul className="bag__materials">
+      {materials.map((m) => (
+        <li key={m.id} className="bag__material-item">
+          <div className="bag__material">
+            <ItemIcon itemId={m.id} />
+            <span className="bag__material-name">{m.name}</span>
+            <span className="bag__material-qty">×{m.qty}</span>
+            {/* 쓸 수 있는 재료에만 붙는다 — 날씨 가루 4종이 지금 유일한
+                소지자다. 누른 뒤에도 패널은 열려 있고, 줄어든 개수가 이
+                줄에서 그대로 갱신된다(스토어가 돌아온 player 를 갈아 끼운다).
+                그 갱신이 오기 전까지는 화면이 눌린 티를 아예 안 내므로,
+                잠그지 않으면 두 번 누른 사람이 가루 둘을 태운다. */}
+            {m.usable && (
+              <button
+                type="button"
+                className="bag__material-btn"
+                disabled={busy}
+                onClick={() => void useGameStore.getState().use(m.id)}
+              >
+                사용
+              </button>
+            )}
+            {/* 방의 칸인 재료에만 붙는다 — 주괴·증표·가루는 여기 없다.
+                **이 버튼은 바치지 않는다. 확인 줄을 펼칠 뿐이다**(아래 문서). */}
+            {m.donatable && (
+              <button
+                type="button"
+                className="bag__material-btn bag__material-btn--donate"
+                aria-expanded={donating === m.id}
+                onClick={() => setDonating(donating === m.id ? null : m.id)}
+              >
+                바치기
+              </button>
+            )}
+          </div>
+          {donating === m.id && (
+            <DonateConfirm
+              // 줄마다 새로 마운트한다 — 고른 수량은 그 줄의 것이다(상점 상세가
+              // key 로 하는 그 일).
+              key={m.id}
+              material={m}
+              busy={busy}
+              onCancel={() => setDonating(null)}
+              onDone={() => setDonating(null)}
+            />
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * 헌납 확인 줄 — 그 재료 줄 바로 아래에서 펼쳐진다.
+ *
+ * **왜 확인이 있는가:** 바친 물건은 돌아오지 않는다(설계 §3). 이 저장소에서
+ * 확인을 요구하는 다른 한 곳이 캐릭터 삭제인데, 그쪽은 이름을 타이핑하게 한다 —
+ * 수십 시간이 오타 하나에 사라지는 무게라서다. 헌납은 그 무게가 아니다: 사라지는
+ * 것은 다시 캘 수 있는 재료 N개이고, 그 대신 칸이 영구히 남는다. 그래서 확인은
+ * **한 번**이되 가볍다.
+ *
+ * **왜 창이 아니라 줄인가:** 가방은 이미 전면 패널이다. 그 위에 확인 창을 또
+ * 띄우면 창 위의 창이 되어 닫는 순서가 두 겹이 되고, 812×375 에서는 뒤의 목록이
+ * 통째로 가려져 "무엇을 바치는 중인지"가 오히려 안 보인다. 대신 확인은 그 줄
+ * 아래에서 펼쳐진다 — 위에 아이콘·이름·보유 개수가 그대로 남아 있어, 확인이
+ * 가리키는 물건이 화면에서 한 번도 사라지지 않는다.
+ *
+ * 확정 버튼이 개수를 품는 것(`12개 바친다`)도 같은 이유다: 누르는 순간 무엇이
+ * 얼마나 사라지는지를 버튼 자신이 말한다. 수량 고르개는 상점의 그것을 그대로
+ * 쓴다(§6-앞 1) — 같은 조작이 두 화면에서 다른 모양이면 안 된다.
+ */
+function DonateConfirm({
+  material,
+  busy,
+  onCancel,
+  onDone,
+}: {
+  material: Material
+  busy: boolean
+  onCancel: () => void
+  onDone: () => void
+}): JSX.Element {
+  const max = maxDonateCount(material.qty)
+  const [pick, setPick] = useState(1)
+  const count = clampCount(pick, max)
+
+  const donate = async (): Promise<void> => {
+    await useGameStore.getState().donate(material.id, count)
+    // 거절이면 줄을 열어 둔다 — 왜 안 됐는지는 패널 위 한 줄(BagError)이 말하고,
+    // 고른 수량이 살아 있어야 다시 시도할 수 있다. 성공했으면 접는다: 그 줄의
+    // 보유 개수가 이미 줄어 있어 같은 수량이 더는 뜻이 없다.
+    if (useGameStore.getState().bagError === null) onDone()
+  }
+
+  return (
+    <div className="bag__donate">
+      <p className="bag__donate-warn">바친 것은 돌아오지 않는다.</p>
+      <QuantityPicker count={count} max={max} onChange={setPick} />
+      <div className="bag__donate-actions">
+        <button type="button" className="bag__spare-btn" disabled={busy} onClick={onCancel}>
+          그만두기
+        </button>
+        <button
+          type="button"
+          className="bag__spare-btn bag__spare-btn--donate"
+          disabled={busy}
+          onClick={() => void donate()}
+        >
+          {count.toLocaleString('ko-KR')}개 바친다
+        </button>
+      </div>
     </div>
   )
 }

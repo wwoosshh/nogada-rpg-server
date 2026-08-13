@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
 import { BagPanel } from './BagPanel.js'
+import { CodexPanel } from './CodexPanel.js'
 import { CraftPanel } from './CraftPanel.js'
 import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
 import { ShopPanel } from './ShopPanel.js'
@@ -60,6 +61,7 @@ export function TopBar(): JSX.Element {
       {/* 삭제 확인 창이 패널보다 뒤(위)다 — 설정 탭에서 삭제를 여는 순간 패널 값은 이미 'menu' 라 겹칠 일은 없지만, DOM 순서로도 확인 창이 이긴다. */}
       <BagPanel />
       <CraftPanel />
+      <CodexPanel />
       <ShopPanel />
       <DeleteCharacterDialog />
       <div className="topbar">
@@ -94,6 +96,27 @@ export function TopBar(): JSX.Element {
           openPanel 을 'menu' 로 함께 덮으므로, 열려 있던 가방·제작(DOM) 패널은
           그 교체 한 번으로 닫힌다.
         */}
+        {/*
+          수집의 방(CodexPanel)을 여는 입구 — 톱니 옆(수집의 방 설계 §6-앞 2).
+          새 입력 키를 파지 않는 이유는 값이 아니라 비용이다: 온스크린 버튼
+          하나를 늘리면 입력 계층 7개 파일(InputState·KeyboardSource·
+          ControlScene…)이 함께 움직이는데, 상단 바는 이미 DOM 이고 톱니가 그
+          반례다 — 여기서는 스토어 액션 한 줄이면 끝난다.
+
+          톱니와 달리 Phaser 를 거치지 않는다. 방은 DOM 패널이라 열림 값
+          하나(setOpenPanel('codex'))가 곧 화면이고, 열려 있던 가방·제작·상점은
+          그 교체 한 번으로 닫힌다(openPanel 이 열림의 유일한 주인이다).
+          글리프 대신 글자인 이유: 이 글꼴은 16 격자 비트맵이라 이모지가 대체
+          글꼴로 떨어져 톱니와 다른 그림체가 된다.
+        */}
+        <button
+          type="button"
+          className="topbar__codex"
+          aria-label="수집의 방"
+          onClick={() => useGameStore.getState().setOpenPanel('codex')}
+        >
+          도감
+        </button>
         <button
           type="button"
           className="topbar__gear"

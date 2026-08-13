@@ -110,6 +110,31 @@
 }
 
 /*
+ * 수집의 방을 여는 입구(TopBar.tsx) — 톱니 왼쪽. 톱니와 같은 재질·같은 높이라
+ * 둘이 한 벌의 도구처럼 보이고, 다른 것은 글리프 대신 글자라는 것뿐이다
+ * (이 글꼴은 16 격자 비트맵이라 이모지가 대체 글꼴로 떨어진다 — 톱니 옆에서
+ * 혼자 다른 그림체가 되면 안 된다). 그래서 13px: 상단 바의 다른 글자와 같은 단이다.
+ * flex: none 은 시계·소지금과 같은 이유 — 줄어드는 몫은 맵 이름 하나가 진다.
+ */
+.topbar__codex {
+  flex: none;
+  min-height: 24px;
+  padding: 0 var(--space-1);
+  background: none;
+  border: none;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--c-parchment-dim);
+  cursor: pointer;
+}
+
+.topbar__codex:active {
+  color: var(--c-parchment);
+}
+
+/*
  * 아이콘은 32x32 픽셀아트다. 정수 배율로만 확대하고 보간을 끈다.
  * 소수 배율을 쓰면 픽셀 맵과 아이콘의 픽셀 밀도가 어긋난다.
  */
@@ -755,6 +780,18 @@
   list-style: none;
 }
 
+/*
+ * 재료 한 칸 = 줄 + (펼쳐졌으면) 헌납 확인. 격자의 칸은 이제 이것이고, 줄
+ * 자체(.bag__material)는 그 안의 첫 행이다 — 확인이 그 줄 **아래**에서
+ * 펼쳐져야 무엇을 바치는 중인지가 화면에서 사라지지 않는다(BagPanel 문서).
+ */
+.bag__material-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .bag__material {
   display: flex;
   align-items: center;
@@ -804,6 +841,63 @@
 
 .bag__material-btn:active {
   background: var(--c-panel);
+}
+
+/*
+ * [바치기] — [사용] 과 같은 스펙이되 강조 테두리 하나를 얹는다. 같은 줄에 버튼이
+ * 둘 설 수 있고(가루는 쓸 수도 바칠 수도 없지만, 규칙이 아니라 데이터가 정하는
+ * 일이라 언젠가 겹친다), 그때 둘이 구별되지 않으면 되돌릴 수 없는 쪽을 잘못
+ * 누른다. 채우는 것은 아직 아니다 — 채우는 것은 확정 버튼의 몫이다.
+ */
+.bag__material-btn--donate {
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+/*
+ * 헌납 확인 — 그 재료 줄 아래에서 펼쳐지는 작은 단(BagPanel 의 DonateConfirm).
+ *
+ * 창(.modal)을 쓰지 않는다: 가방은 이미 전면 패널이라 그 위의 창은 창 위의
+ * 창이고, 812×375 에서는 뒤의 목록을 통째로 가려 "무엇을 바치는 중인가"를
+ * 오히려 감춘다. 대신 들여쓰기와 왼쪽 강조선으로 "이 줄에 딸린 것"임을 말한다.
+ */
+.bag__donate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-left: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid var(--c-accent);
+  background: var(--c-ink-soft);
+  border-radius: var(--radius);
+}
+
+/* 되돌릴 수 없다는 사실 한 줄 — 확인이 존재하는 이유라 가장 먼저 읽혀야 한다. */
+.bag__donate-warn {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+}
+
+.bag__donate-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/*
+ * 확정 버튼 — 예비 도구의 [강화](.bag__spare-btn--enhance)와 같은 강조색이다.
+ * 그 둘이 이 패널에서 "되돌릴 수 없는 것을 태우는" 유일한 조작이라 같은 색을
+ * 쓴다. 위험(--c-danger)이 아닌 이유: 헌납은 사고가 아니라 이 게임이 권하는
+ * 행위이고, 붉은색은 캐릭터 삭제의 것이다.
+ */
+.bag__spare-btn--donate {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-ink);
+}
+
+.bag__spare-btn--donate:active {
+  opacity: 0.8;
 }
 
 /*
@@ -1318,6 +1412,140 @@
 .shop__confirm {
   min-height: 48px;
   font-size: 16px;
+}
+
+/*
+ * 수집의 방(CodexPanel.tsx) — 계열 넷 × 칸 스물다섯.
+ *
+ * 좌 목록·우 상세(제작·상점)를 쓰지 않는 유일한 패널이다. 그 문법은 "고르고
+ * 실행한다"의 것인데 방에는 실행이 없기 때문이다 — 바치는 손은 가방에 있고
+ * (설계 §5) 여기는 결과를 보는 곳이라, 스물다섯 칸이 **한눈에** 있어야 한다.
+ * 그래서 격자이고, 812×375 에서 넘치는 만큼 세로로 스크롤된다.
+ *
+ * 상단 바 옆의 [도감] 이 여는 화면이고, 껍데기(.panel/.panel__card/.panel__header)는
+ * 가방·제작·상점과 같은 것을 그대로 입는다 — 어느 패널이 열려도 같은 상자가
+ * 같은 자리에 있는 것처럼 보이게.
+ */
+
+/* 총점 — 헤더에 상주한다(상점의 소지금과 같은 자리). 16px + tabular-nums: 오래 들여다보는 숫자다. */
+.codex__score {
+  flex: none;
+  font-size: 16px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 스크롤은 여기서만 일어난다 — .bag__body 와 같은 수법(헤더는 고정, 본문만 넘친다). */
+.codex__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.codex__line {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* 계열 점수 — 묶음 제목 옆의 작은 진척. 총점(16px)보다 낮춰 머리의 그것이 먼저 읽히게. */
+.codex__line-score {
+  font-size: 13px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 칸 격자. auto-fill + minmax 인 이유: 계열마다 칸 수가 5~7로 다른데(얼음 5,
+ * 광물 7) 열 수를 박아 두면 어느 한쪽이 반드시 어색해진다. 812px 폭에서는
+ * 대체로 여섯 열이 서고, 좁아지면 스스로 줄어든다.
+ */
+.codex__slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.codex__slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+}
+
+/*
+ * 한 번도 안 바친 칸 — **숨기지 않는다**(설계 §6-앞 3). 흐림은 아이콘과 이름
+ * 까지만이고 숫자는 그대로 밝다: 잠긴 제작 카드·잠긴 진열이 요구치를 흐리지
+ * 않는 그 규칙과 같다(가방·제작 §8-앞 11). 채운 칸과의 차이는 테두리로도 한 번
+ * 더 말한다 — 색맹 축 하나에 기대지 않는다.
+ */
+.codex__slot--untouched {
+  border-style: dashed;
+}
+
+.codex__slot--untouched .icon,
+.codex__slot--untouched .codex__slot-name {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.codex__slot-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--c-parchment);
+}
+
+/* 바친 개수/다음 문턱 — 이 칸에서 가장 밝은 것(원작의 "요구치를 숫자로 말하는 문"). */
+.codex__slot-num {
+  font-size: 13px;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 다음 문턱까지 남은 개수 — 이 방이 주는 유일한 목표다. 11px 로 낮추는 것은
+ * 위의 `바친/문턱` 이 먼저 읽혀야 하기 때문이고, 만강일 때 `가득` 이 이 자리에
+ * 앉는 것도 같은 단이다. 빈 문자열일 때도 칸이 남아 격자가 흔들리지 않게
+ * min-height 를 준다(한 번도 안 바친 칸은 여기 적을 말이 없다).
+ */
+.codex__slot-next {
+  min-height: 13px;
+  font-size: 11px;
+  color: var(--c-parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 등급 네 눈금 — 별 글리프 대신 네모(CodexPanel 의 GradePips 문서). */
+.codex__pips {
+  display: flex;
+  gap: 2px;
+}
+
+.codex__pip {
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--c-panel-edge);
+  border-radius: 2px;
+}
+
+.codex__pip--on {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
 }
 
 /*

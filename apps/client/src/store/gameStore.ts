@@ -155,14 +155,19 @@ export interface MenuRequest {
  * 지금 열려 있는 전면 패널 — 열림 상태의 유일한 주인이다(설계 §8-앞 6).
  *
  * 값이 하나라서 상호배제는 공짜다: 가방을 연 채 메뉴를 열면 이전 값이 덮이며
- * 닫힌다. `bag`·`craft` 는 DOM(React, TopBar 가 마운트)이 그리고 `menu` 는
+ * 닫힌다. `bag`·`craft`·`codex` 는 DOM(React, TopBar 가 마운트)이 그리고 `menu` 는
  * Phaser(PanelScene)가 그린다 — 그리는 쪽이 둘이어도 읽는 값은 이것 하나다.
  *
  * 입력 라우팅(I/C/ESC)은 여기가 아니라 PanelScene.applyInput 이 한다. DOM 에
  * 키보드 리스너를 두지 않는 이유는 대사창 계약(대화 중 I/C 삼킴) 때문이다 —
  * 그 계약은 WorldScene 이 applyInput 을 부르지 않는 것 한 곳으로 지켜진다.
+ *
+ * **`'codex'` 는 리터럴 하나로 끝난다**(수집의 방 설계 §6-앞 1). B 로 닫히는 것도,
+ * 열려 있는 동안 세계 입력이 잠기고 가상 컨트롤러가 숨는 것도 전부 `openPanel !==
+ * null` 하나를 보는 값 무관한 규칙이라(PanelScene.applyInput·applyWorldLock) 새
+ * 패널은 그것을 공짜로 물려받는다 — 새 입력 키를 파지 않는 이유이기도 하다.
  */
-export type OpenPanel = 'bag' | 'craft' | 'menu' | ShopPanelKey | null
+export type OpenPanel = 'bag' | 'craft' | 'codex' | 'menu' | ShopPanelKey | null
 
 /**
  * 상점 패널의 열림 값 — 상점 **id 를 품은 문자열 키**다(설계 §6-앞 20).
@@ -294,6 +299,7 @@ interface GameStore {
   equip: (instanceId: string) => Promise<void>
   enhance: (materialInstanceId: string) => Promise<void>
   use: (itemId: string) => Promise<void>
+  donate: (itemId: string, count: number) => Promise<void>
   sell: (shopId: string, itemId: string, count: number) => Promise<void>
   buy: (shopId: string, itemId: string, count: number) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
@@ -670,6 +676,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   /**
+   * 헌납 — 가방 재료 줄의 `[바치기]` 확인 버튼이 부른다(수집의 방 설계 §6-앞 1).
+   *
+   * 착용·강화·사용과 같은 왕복(bagAction)을 타는 이유는 **같은 패널의 같은
+   * 종류의 실패**이기 때문이다: 거절은 가방 패널 안에서 말해야 하고(bagError),
+   * 왕복이 도는 동안 버튼이 잠겨야 한다(bagBusy). 특히 여기서 두 번 누르는 것은
+   * 가루보다 나쁘다 — 성공한 첫 요청이 스택을 비운 뒤 둘째가 나가면 거절이지만,
+   * 남아 있으면 **두 배가 태워진다**. 돌이킬 수 없는 행위라 그 왕복 하나를
+   * 막는 것이 문구보다 근본이다.
+   *
+   * 다른 셋과 달리 응답에 `achieved` 가 실린다(§6-앞 9) — 총점이 이정표 지표라
+   * 이 헌납이 문턱을 넘겼으면 그 축하가 이번 응답에 있어야 한다. 그것을 채널에
+   * 싣는 일은 bagAction 이 한다.
+   */
+  donate: async (itemId, count) => {
+    await bagAction(set, () => GameClient.donate(itemId, count))
+  },
+
+  /**
    * 매도 — 상점 패널의 [팔기] 버튼이 부른다. 거래는 행동 간격을 쓰지 않으므로
    * (설계 §6-앞 18) too_fast 가 올 수 없다. 성공은 머리 위 글자로 알리지 않는다 —
    * 결과는 그 자리에서 골드와 스택 숫자가 직접 말하고, 패널이 화면을 덮고 있어
@@ -820,16 +844,21 @@ function applyPlayer(set: SetFn, next: PlayerState): void {
 }
 
 /**
- * 가방 패널 안에서 누른 버튼 하나의 왕복(착용·강화·사용 공통).
+ * 가방 패널 안에서 누른 버튼 하나의 왕복(착용·강화·사용·헌납 공통).
  *
- * 셋 다 응답이 `{ player }` 뿐이라 적용은 한 줄이고, **거절을 말하는 자리**가
- * 셋이 같아서 함수 하나로 묶인다: 이 조작들은 가방 패널이 화면을 덮은 상태에서만
+ * 넷 다 응답에 `player` 가 실려 적용은 한 줄이고, **거절을 말하는 자리**가
+ * 넷이 같아서 함수 하나로 묶인다: 이 조작들은 가방 패널이 화면을 덮은 상태에서만
  * 일어나므로 머리 위 글자로 보내면 패널 뒤에서 뜨고 사라진다(bagError 문서).
  * trade() 가 상점에서 하는 일과 같은 모양이고 같은 이유다.
  *
- * 성공을 알리지 않는 것도 셋이 같다 — 슬롯 그림, 강화 +N, 줄어든 개수와 바뀐
- * 하늘이 그 자리에서 직접 말한다. 행동 간격(too_fast)은 셋 다 올 수 없다:
- * 정리와 사용은 행동이 아니다(설계 §6-앞 11, 서버 useService).
+ * 성공을 알리지 않는 것도 넷이 같다 — 슬롯 그림, 강화 +N, 줄어든 개수와 바뀐
+ * 하늘, 그리고 방의 채워진 칸이 그 자리에서 직접 말한다. 행동 간격(too_fast)은
+ * 넷 다 올 수 없다: 정리와 사용은 행동이 아니다(설계 §6-앞 11, 서버 useService·
+ * donateService).
+ *
+ * **이정표는 실린 것만 나른다**(수집의 방 §6-앞 9). 헌납만 `achieved` 를 갖는
+ * 이유는 헌납만 지표(총점)를 밀어 올리기 때문이고, 없는 것을 빈 배열로 지어내지
+ * 않는 것은 이 저장소가 사실 공급자에게 요구해 온 자세와 같다.
  *
  * 왕복 동안 `bagBusy` 를 켜 두 번째 요청 자체를 막는다 — trade() 가 tradeBusy 로
  * 하는 그 일이고, 근본 교정인 것도 같다. 마지막 한 개를 두 번 빠르게 누르면
@@ -837,11 +866,15 @@ function applyPlayer(set: SetFn, next: PlayerState): void {
  * 그 거절이 애초에 생기지 않는다. 가루는 특히 그렇다: 누른 뒤 응답이 오기
  * 전까지 화면에 아무 변화가 없어서, 안 먹혔다고 여긴 사람이 한 번 더 누른다.
  */
-async function bagAction(set: SetFn, send: () => Promise<{ player: PlayerState }>): Promise<void> {
+async function bagAction(
+  set: SetFn,
+  send: () => Promise<{ player: PlayerState; achieved?: readonly MilestoneDef[] }>,
+): Promise<void> {
   set({ bagBusy: true, bagError: null })
   try {
-    const { player } = await send()
+    const { player, achieved } = await send()
     applyPlayer(set, player)
+    if (achieved) pushMilestones(set, achieved)
   } catch (err) {
     if (isNetworkFailure(err)) {
       set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
