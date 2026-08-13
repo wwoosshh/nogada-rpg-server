@@ -233,15 +233,31 @@ export type TokenEffect = 'speed' | 'sight'
 export const TOKEN_EFFECTS: readonly TokenEffect[] = ['speed', 'sight'] as const
 
 /**
- * 상점 진열 한 칸 — 그 상점이 파는 물건 하나와, 그것이 열리는 숙련도.
+ * 진열 한 칸을 여는 것이 무엇인가 — 숙련이거나, 수집의 방 총점이거나.
  *
- * `unlockSkill` 이 재는 것은 언제나 **그 상점의 `skill`** 이다(설계 §6-앞 14).
- * 품목마다 다른 기술을 재게 하면 "얼음상점에서 나무 숙련을 요구하는 칸"이
- * 만들어지고, 그것은 화면에서 되짚을 수 없는 종류의 데이터 오류다.
+ * `skill` 이 재는 것은 언제나 **그 상점의 `skill`** 이다(설계 §6-앞 14). 품목마다
+ * 다른 기술을 재게 하면 "얼음상점에서 나무 숙련을 요구하는 칸"이 만들어지고,
+ * 그것은 화면에서 되짚을 수 없는 종류의 데이터 오류다. `collection` 이 재는 것은
+ * 방 하나뿐이라 애초에 고를 것이 없다(§6-앞 7 의 되사기 진열).
+ */
+export type ShopUnlockKind = 'skill' | 'collection'
+
+/**
+ * 상점 진열 한 칸 — 그 상점이 파는 물건 하나와, 그것을 여는 문턱 **하나**.
+ *
+ * **두 칸이 아니라 종류 + 값인 이유:** `unlockSkill` 과 `unlockCollection` 을
+ * 나란히 두면 "둘 다 적힌 칸"과 "둘 다 빈 칸"이 타입 안에서 표현 가능해지고,
+ * 그때 무엇이 이기는지를 판정(tradeService)과 화면(shopModel)이 각자 정하게
+ * 된다 — 이 저장소가 이미 한 번 데인 자리다(표시된 규칙과 판정된 규칙의 분기).
+ * 한 칸은 정확히 한 문으로 열린다는 것을 모양이 강제하고, CSV 의 두 칸을 이
+ * 모양으로 접는 일은 파서 한 곳이 한다(`parseShops`).
  */
 export interface ShopStockEntry {
   itemId: string
-  unlockSkill: number
+  /** 무엇이 이 칸을 여는가. */
+  unlockBy: ShopUnlockKind
+  /** 그 값이 얼마 이상이어야 열리는가. 0 은 "처음부터 열려 있다"이지 빈칸이 아니다. */
+  unlockAt: number
 }
 
 /**

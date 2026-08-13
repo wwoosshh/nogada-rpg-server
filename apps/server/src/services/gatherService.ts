@@ -119,7 +119,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
 
   // ③ 달성 재판정 — 역시 무조건. 실패한 손질이 숙련을 올려 문턱을 넘겨도
   // 이번 응답에 그 사실이 실려야 플레이어가 "그 행동 때문에 열렸다" 를 느낀다.
-  const achieved = newlyAchieved(data.milestones, player, player.celebrated)
+  const achieved = newlyAchieved(data, player, player.celebrated)
   for (const m of achieved) player.celebrated.push(m.id)
 
   if (!success) {

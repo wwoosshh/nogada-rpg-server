@@ -691,7 +691,7 @@ export class WorldScene extends Phaser.Scene {
     const repeatMilestone = data.milestones.find(
       (m) => m.effect.kind === 'repeat' && m.effect.skill === node.skill,
     )
-    return repeatMilestone ? isAchieved(repeatMilestone, player, data.milestones) : false
+    return repeatMilestone ? isAchieved(repeatMilestone, player, data) : false
   }
 
   update(_time: number, delta: number): void {

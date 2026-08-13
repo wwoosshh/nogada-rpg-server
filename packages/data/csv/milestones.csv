@@ -30,3 +30,7 @@ ice_1000000,skill,ice,1000000,얼음의 극한,더 빨라질 수 없는 곳에 �
 wood_1000000,skill,wood,1000000,나무의 극한,더 빨라질 수 없는 곳에 닿았다,title,
 mineral_1000000,skill,mineral,1000000,광물의 극한,더 빨라질 수 없는 곳에 닿았다,title,
 herb_1000000,skill,herb,1000000,약초의 극한,더 빨라질 수 없는 곳에 닿았다,title,
+collection_10,collection,,10,방에 자리가 잡히다,수집의 방에 빈 칸이 채워지기 시작했다,title,
+collection_30,collection,,30,흔한 것을 되살 수 있다,상점이 흔한 채집물을 정가에 되팔기 시작했다,stock,
+collection_60,collection,,60,귀한 것도 되살 수 있다,상점이 귀한 채집물까지 정가에 되팔기 시작했다,stock,
+collection_100,collection,,100,방을 가득 채우다,스물다섯 칸이 모두 가득 찼다,title,

@@ -176,7 +176,7 @@ export function craftRepeatUnlocked(data: GameData, player: PlayerState): boolea
   const repeatMilestone = data.milestones.find(
     (m) => m.effect.kind === 'repeat' && m.effect.skill === 'crafting',
   )
-  return repeatMilestone ? isAchieved(repeatMilestone, player, data.milestones) : false
+  return repeatMilestone ? isAchieved(repeatMilestone, player, data) : false
 }
 
 function buildCard(

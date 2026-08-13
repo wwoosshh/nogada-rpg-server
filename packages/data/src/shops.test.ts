@@ -10,7 +10,7 @@ function shopRow(overrides: Record<string, string> = {}): Record<string, string>
 }
 
 function stockRow(overrides: Record<string, string> = {}): Record<string, string> {
-  return { shopId: '얼음상점', itemId: 'ice_speed_token', unlockSkill: '10000', ...overrides }
+  return { shopId: '얼음상점', itemId: 'ice_speed_token', unlockSkill: '10000', unlockCollection: '', ...overrides }
 }
 
 function masterRow(overrides: Record<string, string> = {}): Record<string, string> {
@@ -36,8 +36,8 @@ describe('parseShops', () => {
     // 결정이 사라지고, 그것을 되돌릴 방법이 CSV 어디에도 남지 않는다.
     const shops = parseShops([shopRow()], [stockRow(), stockRow({ itemId: 'ice_sight_token', unlockSkill: '25000' })])
     expect(shops.얼음상점?.stock).toEqual([
-      { itemId: 'ice_speed_token', unlockSkill: 10000 },
-      { itemId: 'ice_sight_token', unlockSkill: 25000 },
+      { itemId: 'ice_speed_token', unlockBy: 'skill', unlockAt: 10000 },
+      { itemId: 'ice_sight_token', unlockBy: 'skill', unlockAt: 25000 },
     ])
   })
 
@@ -64,7 +64,7 @@ describe('parseShops', () => {
       stockRow(),
       stockRow({ shopId: '나무상점' }),
     ])
-    expect(shops.나무상점?.stock).toEqual([{ itemId: 'ice_speed_token', unlockSkill: 10000 }])
+    expect(shops.나무상점?.stock).toEqual([{ itemId: 'ice_speed_token', unlockBy: 'skill', unlockAt: 10000 }])
   })
 
   it('중복된 shopId 를 거부한다', () => {
@@ -84,7 +84,7 @@ describe('parseShops', () => {
     // 작가가 1 같은 거짓 문턱을 적게 된다.
     expect(parseShops([shopRow({ unlockSkill: '0' })], [])).toMatchObject({ 얼음상점: { unlockSkill: 0 } })
     expect(parseShops([shopRow()], [stockRow({ unlockSkill: '0' })]).얼음상점?.stock).toEqual([
-      { itemId: 'ice_speed_token', unlockSkill: 0 },
+      { itemId: 'ice_speed_token', unlockBy: 'skill', unlockAt: 0 },
     ])
   })
 
@@ -100,6 +100,33 @@ describe('parseShops', () => {
     // 상점의 계열은 "무엇을 사 주는가"를 통째로 정한다 — 오타 하나면 그 상점은
     // 아무것도 안 사는 상점이 되고, 화면에는 빈 목록만 뜬다.
     expect(() => parseShops([shopRow({ skill: 'icee' })], [])).toThrow('shops.csv[얼음상점]: skill "icee" 는 알 수 없다')
+  })
+
+  it('unlockCollection 만 적힌 진열은 총점으로 열린다 — 되사기 진열의 문이다(§6-앞 7)', () => {
+    const stock = parseShops([shopRow()], [stockRow({ unlockSkill: '', unlockCollection: '30' })]).얼음상점?.stock
+    expect(stock).toEqual([{ itemId: 'ice_speed_token', unlockBy: 'collection', unlockAt: 30 }])
+  })
+
+  it('두 문이 다 적힌 진열을 거부한다 — 어느 쪽이 이기는지를 아무도 적어 두지 않은 규칙이 된다', () => {
+    // 조용히 한쪽을 골라 두면 그 선택은 판정(tradeService)과 화면(shopModel)에서
+    // 각자 굳는다. 한 칸은 문 하나로만 열린다.
+    expect(() => parseShops([shopRow()], [stockRow({ unlockCollection: '30' })])).toThrow(
+      'shop_stock.csv[얼음상점/ice_speed_token]: unlockSkill(10000) 과 unlockCollection(30) 이 둘 다 적혔다',
+    )
+  })
+
+  it('두 문이 다 빈 진열을 거부한다 — 빈칸은 0 이 아니라 "문이 없다"이다', () => {
+    // 조용히 0 으로 읽으면 잠근 줄 알았던 진열이 처음부터 열려 있고, 그 사실은
+    // 화면에도 CSV 에도 안 적힌다.
+    expect(() => parseShops([shopRow()], [stockRow({ unlockSkill: '' })])).toThrow(
+      'shop_stock.csv[얼음상점/ice_speed_token]: unlockSkill 과 unlockCollection 이 둘 다 비었다',
+    )
+  })
+
+  it('음수 unlockCollection 을 거부한다 — 총점도 음수가 되지 않는다', () => {
+    expect(() => parseShops([shopRow()], [stockRow({ unlockSkill: '', unlockCollection: '-1' })])).toThrow(
+      'shop_stock.csv[얼음상점/ice_speed_token]: unlockCollection "-1" 는 0 이상이어야 한다',
+    )
   })
 
   it('실제로 출하되는 CSV 데이터를 오류 없이 파싱한다', () => {

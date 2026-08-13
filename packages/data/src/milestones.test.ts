@@ -55,6 +55,31 @@ describe('parseMilestones — 정상 행', () => {
     expect(m?.effect).toEqual({ kind: 'recipes', ids: ['copper_hammer'] })
   })
 
+  it('metricKind=collection 을 파싱한다 — metricArg 는 비어 있다(방은 하나뿐이다)', () => {
+    const [m] = parseMilestones(
+      [row({ id: 'collection_30', metricKind: 'collection', metricArg: '', threshold: '30' })],
+      recipes,
+    )
+    expect(m?.metric).toEqual({ kind: 'collection' })
+  })
+
+  it('effectKind=stock 을 파싱한다 — effectArg 는 비어 있다(무엇이 열리는지는 진열이 안다)', () => {
+    const [m] = parseMilestones([row({ effectKind: 'stock', effectArg: '' })], recipes)
+    expect(m?.effect).toEqual({ kind: 'stock' })
+  })
+
+  it('metricKind=collection 인데 metricArg 가 적혀 있으면 던진다 — 조용히 무시하면 작가는 그것이 무언가 한다고 믿는다', () => {
+    expect(() =>
+      parseMilestones([row({ metricKind: 'collection', metricArg: 'ice', threshold: '30' })], recipes),
+    ).toThrow('milestones.csv[ice_1000]: metricArg 에 "ice" 가 적혔다')
+  })
+
+  it('effectKind=stock 인데 effectArg 가 적혀 있으면 던진다 — 진열 목록을 두 벌로 적게 하지 않는다', () => {
+    expect(() => parseMilestones([row({ effectKind: 'stock', effectArg: '30' })], recipes)).toThrow(
+      'milestones.csv[ice_1000]: effectArg 에 "30" 가 적혔다',
+    )
+  })
+
   it('CSV 행 순서를 그대로 보존한다', () => {
     // 이정표 탭(apps/client/src/game/detailMenuTabs.ts)이 동점 진척을 이 배열의
     // 순서로 정렬한다 — 파싱이 id 순으로 정렬하거나 순서를 흩뜨리면 그 정렬이
@@ -72,7 +97,7 @@ describe('parseMilestones — 정상 행', () => {
 describe('parseMilestones — metricKind 검사', () => {
   it('모르는 metricKind 면 던진다', () => {
     expect(() => parseMilestones([row({ metricKind: 'bogus' })], recipes)).toThrow(
-      'milestones.csv[ice_1000]: metricKind "bogus" 는 알 수 없다 (허용값: skill, every)',
+      'milestones.csv[ice_1000]: metricKind "bogus" 는 알 수 없다 (허용값: skill, every, collection)',
     )
   })
 
@@ -88,7 +113,7 @@ describe('parseMilestones — metricKind 검사', () => {
 describe('parseMilestones — effectKind 검사', () => {
   it('모르는 effectKind 면 던진다', () => {
     expect(() => parseMilestones([row({ effectKind: 'bogus' })], recipes)).toThrow(
-      'milestones.csv[ice_1000]: effectKind "bogus" 는 알 수 없다 (허용값: repeat, recipes, title)',
+      'milestones.csv[ice_1000]: effectKind "bogus" 는 알 수 없다 (허용값: repeat, recipes, stock, title)',
     )
   })
 
@@ -96,7 +121,7 @@ describe('parseMilestones — effectKind 검사', () => {
     // 옛 CSV 를 되살리거나 문서의 옛 예시를 베낀 행이 조용히 통과하면, 목록에
     // "달성하면 캘 수 있다" 라는 거짓 약속이 남는다 — 노드는 이제 잠기지 않는다.
     expect(() => parseMilestones([row({ effectKind: 'nodes', effectArg: 'copper_vein' })], recipes)).toThrow(
-      'milestones.csv[ice_1000]: effectKind "nodes" 는 알 수 없다 (허용값: repeat, recipes, title)',
+      'milestones.csv[ice_1000]: effectKind "nodes" 는 알 수 없다 (허용값: repeat, recipes, stock, title)',
     )
   })
 
@@ -172,11 +197,26 @@ describe('parseMilestones — 실제 출하 CSV', () => {
     expect(() => parseMilestones(readRealCsv('milestones.csv'), realRecipes)).not.toThrow()
   })
 
-  it('행 31개를 만든다', () => {
+  it('행 35개를 만든다', () => {
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
     const result = parseMilestones(readRealCsv('milestones.csv'), realRecipes)
     // 27 → 30: 주괴 3종(은·금·미스릴)의 recipes-이정표가 채집 티어 아크에서 늘었다.
     // 30 → 31: 미스릴 곡괭이(G5)의 recipes-이정표(crafting_25000)가 늘었다.
-    expect(result).toHaveLength(31)
+    // 31 → 35: 수집 총점 문턱 넷(10·30·60·100)이 늘었다 — 그중 둘은 되사기
+    //          진열을 여는 stock 이고 둘은 title 이다(§6-앞 7).
+    expect(result).toHaveLength(35)
+  })
+
+  it('수집 문턱 넷 중 둘이 되사기를 열고 둘이 칭호다 — 게이트가 콘텐츠이고 칭호는 그 위에 얹는다', () => {
+    const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
+    const collection = parseMilestones(readRealCsv('milestones.csv'), realRecipes).filter(
+      (m) => m.metric.kind === 'collection',
+    )
+    expect(collection.map((m) => `${m.threshold}:${m.effect.kind}`)).toEqual([
+      '10:title',
+      '30:stock',
+      '60:stock',
+      '100:title',
+    ])
   })
 })

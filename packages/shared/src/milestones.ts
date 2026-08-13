@@ -1,3 +1,4 @@
+import { collectionScore, type CollectionTable } from './collection.js'
 import { clamp } from './formulas/clamp.js'
 import type { PlayerState, SkillId } from './types.js'
 
@@ -11,6 +12,15 @@ export type MilestoneMetric =
   | { kind: 'skill'; skill: SkillId }
   /** 나열한 이정표 중 몇 개를 달성했는가. threshold 가 개수다 */
   | { kind: 'every'; of: string[] }
+  /**
+   * 수집의 방 총점(설계 §6-앞 8). 인자가 없다 — 방은 하나뿐이고 그 총점도 하나다.
+   *
+   * 단조인가: `donated` 는 헌납으로만 늘고 줄어드는 길이 없으며(§7 훅: 헌납 취소
+   * 없음) `collectionGrade` 는 그 누적치의 비감소 함수다. 문턱표가 바뀌면 총점이
+   * 내려갈 수는 있지만, 그것은 지표가 아니라 데이터를 고친 것이고 `celebrated`
+   * 가 이미 축하한 것을 지우지 않는다는 기존 원칙이 그 경우를 받아 준다.
+   */
+  | { kind: 'collection' }
 
 /**
  * 달성했을 때 무엇이 열리는가.
@@ -23,10 +33,17 @@ export type MilestoneMetric =
  * 게이트 자체가 없다. 노드는 이제 잠기지 않고, 숙련은 접근이 아니라 분포를 바꾼다.
  *
  * `title` 은 효과가 없다는 뜻이고, 그 사실을 숨기지 않는다.
+ *
+ * `stock` 도 `recipes` 와 같은 종류의 선언이다 — 새 게이트를 만드는 것이 아니라
+ * `shop_stock.csv` 의 `unlockCollection` 이 이미 강제하는 게이트를 목록에 적는
+ * 것이다(설계 §6-앞 7). 인자가 없는 이유: 무엇이 열리는지는 그 문턱과 같은
+ * 총점을 요구하는 진열 행들이고, 그 목록은 `GameData.shops` 에서 유도된다 —
+ * CSV 에 한 번 더 적으면 두 벌이 갈라진다.
  */
 export type MilestoneEffect =
   | { kind: 'repeat'; skill: SkillId }
   | { kind: 'recipes'; ids: string[] }
+  | { kind: 'stock' }
   | { kind: 'title' }
 
 export interface MilestoneDef {
@@ -38,6 +55,27 @@ export interface MilestoneDef {
   effect: MilestoneEffect
 }
 
+/**
+ * 지표가 세상에서 읽는 것 — 이정표 목록과 수집 문턱표.
+ *
+ * **왜 인자를 하나 더 늘리지 않고 이 객체인가**(§6-앞 8): `metricKind='collection'`
+ * 이 필요로 하는 것은 `player.donated` 만이 아니라 그것을 등급으로 옮기는
+ * 문턱표다. 네 번째 위치 인자로 받으면 지표가 하나 늘 때마다 다섯 함수의 시그니처와
+ * 모든 호출부가 다시 흔들리고, 자리만 다른 두 배열(`milestones`·다음 무엇)이
+ * 나란히 놓여 호출부에서 순서를 헷갈리기 좋아진다.
+ *
+ * 반대로 `GameData` 를 통째로 받지 않는 이유: 규칙 모듈이 데이터 뭉치 전체에
+ * 매이면 테스트가 이정표 하나를 물으려고 스무 칸짜리 세계를 지어야 하고,
+ * `types.ts` 가 이미 `MilestoneDef` 를 import 하므로 값 차원의 순환이 된다.
+ *
+ * 이름 붙인 구조 타입이라 **`GameData` 가 그대로 이것이다** — 서버·클라 호출부는
+ * 손에 든 `data` 를 그냥 넘기고, 테스트는 두 칸짜리 리터럴을 짓는다.
+ */
+export interface MilestoneWorld {
+  milestones: readonly MilestoneDef[]
+  collection: CollectionTable
+}
+
 function byId(all: readonly MilestoneDef[], id: string): MilestoneDef | undefined {
   return all.find((m) => m.id === id)
 }
@@ -46,17 +84,20 @@ function byId(all: readonly MilestoneDef[], id: string): MilestoneDef | undefine
 export function metricValue(
   def: MilestoneDef,
   player: PlayerState,
-  all: readonly MilestoneDef[],
+  world: MilestoneWorld,
 ): number {
   const m = def.metric
   if (m.kind === 'skill') return player.skills[m.skill]
+  // 방의 총점은 세이브에 저장된 값이 아니라 계산이다 — 서버 판정도 화면도
+  // 같은 `collectionScore` 를 부른다(§6-앞 11).
+  if (m.kind === 'collection') return collectionScore(player.donated, world.collection)
 
   let count = 0
   for (const id of m.of) {
-    const other = byId(all, id)
+    const other = byId(world.milestones, id)
     // 없는 이정표를 가리키면 세지 않는다. 데이터 검증이 막지만, 막지 못했을 때
     // 조용히 달성되는 것보다 조용히 달성 안 되는 편이 낫다.
-    if (other && isAchieved(other, player, all)) count += 1
+    if (other && isAchieved(other, player, world)) count += 1
   }
   return count
 }
@@ -64,9 +105,9 @@ export function metricValue(
 export function isAchieved(
   def: MilestoneDef,
   player: PlayerState,
-  all: readonly MilestoneDef[],
+  world: MilestoneWorld,
 ): boolean {
-  return metricValue(def, player, all) >= def.threshold
+  return metricValue(def, player, world) >= def.threshold
 }
 
 /**
@@ -88,7 +129,7 @@ export function isAchieved(
 export function milestoneRatio(
   def: MilestoneDef,
   player: PlayerState,
-  all: readonly MilestoneDef[],
+  world: MilestoneWorld,
 ): number {
   if (def.threshold <= 0) return 1
 
@@ -96,25 +137,28 @@ export function milestoneRatio(
   if (m.kind === 'every') {
     const ratios = m.of
       .map((id) => {
-        const other = byId(all, id)
+        const other = byId(world.milestones, id)
         // metricValue 와 같은 원칙이다 — 없는 이정표는 진척 0 으로 친다.
-        return other ? milestoneRatio(other, player, all) : 0
+        return other ? milestoneRatio(other, player, world) : 0
       })
       .sort((a, b) => b - a)
     const rank = clamp(def.threshold, 1, ratios.length) - 1
     return ratios[rank] ?? 0
   }
 
-  return clamp(metricValue(def, player, all) / def.threshold, 0, 1)
+  // 총점은 숙련도와 같은 갈래로 내려온다 — 지표 하나에 문턱 하나라 나누면 그대로
+  // 비율이다. `every` 만 특별한 것은 그것이 **다른 이정표의 진척**을 합치기
+  // 때문이고, 총점은 합칠 남이 없다.
+  return clamp(metricValue(def, player, world) / def.threshold, 0, 1)
 }
 
 export function achievedIds(
-  all: readonly MilestoneDef[],
+  world: MilestoneWorld,
   player: PlayerState,
 ): Set<string> {
   const ids = new Set<string>()
-  for (const def of all) {
-    if (isAchieved(def, player, all)) ids.add(def.id)
+  for (const def of world.milestones) {
+    if (isAchieved(def, player, world)) ids.add(def.id)
   }
   return ids
 }
@@ -126,10 +170,10 @@ export function achievedIds(
  * 옛 세이브가 그대로 살아 있어야 한다.
  */
 export function newlyAchieved(
-  all: readonly MilestoneDef[],
+  world: MilestoneWorld,
   player: PlayerState,
   celebrated: readonly string[],
 ): MilestoneDef[] {
   const seen = new Set(celebrated)
-  return all.filter((def) => !seen.has(def.id) && isAchieved(def, player, all))
+  return world.milestones.filter((def) => !seen.has(def.id) && isAchieved(def, player, world))
 }

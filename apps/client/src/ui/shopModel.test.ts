@@ -29,6 +29,21 @@ function playerWith(stacks: Record<string, number>, gold = 0, ice = 0): PlayerSt
   return { ...p, stacks, gold, skills: { ...p.skills, ice } }
 }
 
+/**
+ * 총점이 정확히 `4 × slots` 인 세이브를 짓는다 — 앞에서부터 그만큼의 칸을 만점으로 채운다.
+ *
+ * 숫자를 손으로 적지 않는 이유: 문턱은 `collection.csv` 가 소유하고 작가가
+ * 조정한다(§6-앞 5). 여기에 "1,000개" 같은 값을 박아 두면 문턱이 오르는 날 이
+ * 테스트는 조용히 다른 총점을 재게 된다.
+ */
+function donatedForSlots(slots: number): Record<string, number> {
+  const donated: Record<string, number> = {}
+  for (const def of Object.values(data.collection).slice(0, slots)) {
+    donated[def.itemId] = def.steps[3]
+  }
+  return donated
+}
+
 describe('sellRows — 팔기 목록은 가방 ∩ 그 상점의 계열이다', () => {
   // 왜: 상점은 자기 계열만 산다(설계 §4). 남의 계열이 목록에 뜨면 눌러 봐야
   //     서버가 not_sellable 로 거절하는 죽은 줄이 되고, 플레이어는 "저쪽
@@ -81,16 +96,48 @@ describe('buyRows — 진열은 잠긴 것까지 보인다', () => {
   //     화면에서 사라진다.
   it('요구치 미달 칸도 남고 현재/필요 숙련도를 싣는다', () => {
     const rows = buyRows(data, playerWith({}, 0, 5000), iceShop)
-    expect(rows.map((r) => r.itemId)).toEqual(['ice_speed_token', 'ice_sight_token'])
-    expect(rows.map((r) => r.state)).toEqual(['locked', 'locked'])
-    expect(rows[0]).toMatchObject({ proficiency: 5000, unlockSkill: 10000, skillLabel: '얼음' })
+    expect(rows.filter((r) => r.unlockLabel === '얼음 숙련도').map((r) => r.itemId)).toEqual([
+      'ice_speed_token',
+      'ice_sight_token',
+    ])
+    expect(rows.every((r) => r.state === 'locked')).toBe(true)
+    expect(rows[0]).toMatchObject({ unlockNow: 5000, unlockAt: 10000, unlockLabel: '얼음 숙련도' })
   })
 
   // 왜: 숙련이 넘으면 열린다(성공 기준 3). 요구치는 언제나 그 상점의 계열을
   //     잰다(§6-앞 14) — 얼음 진열이 나무 숙련을 볼 수는 없다.
   it('그 계열 숙련이 요구치를 넘으면 ready 가 된다', () => {
     const rows = buyRows(data, playerWith({}, 0, 10000), iceShop)
-    expect(rows.map((r) => r.state)).toEqual(['ready', 'locked'])
+    expect(rows[0]!.state).toBe('ready')
+    expect(rows[1]!.state).toBe('locked')
+  })
+
+  // 왜: 되사기 진열은 숙련이 아니라 **수집 총점**이 연다(§6-앞 7). 화면이 이
+  //     칸에 숙련도 눈금을 적으면, 만렙 얼음꾼이 "얼음 숙련도 1,000,000/30" 을
+  //     보면서 왜 안 열리는지 모르게 된다.
+  it('되사기 칸은 수집 점수를 눈금으로 적는다 — 숙련도가 아무리 높아도 총점이 문이다', () => {
+    const rows = buyRows(data, { ...playerWith({}, 0, 1_000_000), donated: donatedForSlots(7) }, iceShop)
+    const buyback = rows.filter((r) => r.unlockLabel === '수집 점수')
+    expect(buyback.map((r) => r.itemId)).toEqual([
+      'pure_ice',
+      'ice_shard',
+      'ice_gem',
+      'pure_ice_crystal',
+      'ice_crystal',
+    ])
+    // 칸 일곱이 만점이면 총점 28 — 30 문턱에 두 점 모자란다.
+    expect(buyback.map((r) => r.unlockNow)).toEqual([28, 28, 28, 28, 28])
+    expect(buyback.map((r) => r.state)).toEqual(['locked', 'locked', 'locked', 'locked', 'locked'])
+  })
+
+  it('총점이 문턱을 넘으면 그 문턱의 되사기 칸만 열린다 — 위 단은 아직 잠겨 있다', () => {
+    const rows = buyRows(data, { ...playerWith({}, 0, 0), donated: donatedForSlots(8) }, iceShop)
+    const byId = new Map(rows.map((r) => [r.itemId, r]))
+    // 총점 32 — 30 단(흔한 것)은 열리고 60 단(귀한 것)은 아직이다.
+    expect(byId.get('pure_ice')!.state).toBe('ready')
+    expect(byId.get('ice_shard')!.state).toBe('ready')
+    expect(byId.get('ice_gem')!.state).toBe('locked')
+    expect(byId.get('ice_gem')!.unlockAt).toBe(60)
   })
 
   // 왜: 증표는 하나로 충분하다(§6-앞 16 — 판정이 개수를 안 본다). 화면의

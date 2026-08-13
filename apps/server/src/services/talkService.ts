@@ -99,7 +99,7 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
   // 사실을 먼저 모은다. 아래에서 이력을 갱신하므로, 순서가 바뀌면 이번 대화가
   // 이번 대화의 사실(talkedBefore·daysSinceLastTalk)을 바꿔 버린다 — 처음
   // 만난 사람에게 "또 왔군" 이 나온다.
-  const facts = buildFacts({ speaker: speakerId, player, milestones: data.milestones, nowMs: now, place })
+  const facts = buildFacts({ speaker: speakerId, player, world: data, nowMs: now, place })
 
   // 화자로 거르는 일은 selectDialogue 가 스스로 한다 — 여기서 미리 거르면
   // "걸러서 넘겨야 한다"는 관례가 하나 더 생긴다(dialogue.ts 참고).

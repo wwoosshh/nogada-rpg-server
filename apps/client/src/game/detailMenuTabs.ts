@@ -53,6 +53,19 @@ const ROW_DETAIL_FONT_SIZE = FONT_SIZE.body
 
 const fmt = (n: number): string => n.toLocaleString('ko-KR')
 
+/** 그 총점에서 열리는 되사기 진열이 몇 상점 · 몇 종인가. `GameData.shops` 가 유일한 출처다. */
+function countBuyback(data: GameData, score: number): { shops: number; items: number } {
+  let shops = 0
+  let items = 0
+  for (const shop of Object.values(data.shops)) {
+    const opened = shop.stock.filter((e) => e.unlockBy === 'collection' && e.unlockAt === score)
+    if (opened.length === 0) continue
+    shops += 1
+    items += opened.length
+  }
+  return { shops, items }
+}
+
 /** ids 가 가리키는 대상의 실제 이름을 모아 사람이 읽는 목록으로 만든다. 데이터에 없으면 id 를 그대로 보여준다(조용히 지우지 않는다). */
 function namesOf(ids: readonly string[], table: Record<string, { name: string }>): string {
   return ids.map((id) => table[id]?.name ?? id).join(' · ')
@@ -65,13 +78,23 @@ function namesOf(ids: readonly string[], table: Record<string, { name: string }>
  * 이렇게 된다". `title` 은 achieved 여부와 무관하게 효과가 없다는 사실 자체를
  * 그대로 말한다 — 보상을 암시하고 안 주는 줄은 아예 없는 줄보다 나쁘다.
  */
-function effectDescription(effect: MilestoneEffect, data: GameData, achieved: boolean): string {
+function effectDescription(def: MilestoneDef, data: GameData, achieved: boolean): string {
+  const effect: MilestoneEffect = def.effect
   switch (effect.kind) {
     case 'repeat':
       return achieved ? '누르고 있으면 계속된다' : '달성하면 누르고 있는 것만으로 계속된다'
     case 'recipes': {
       const names = namesOf(effect.ids, data.recipes)
       return achieved ? `만들 수 있다 — ${names}` : `달성하면 만들 수 있다 — ${names}`
+    }
+    case 'stock': {
+      // 무엇이 열리는지는 **진열에서 센다** — 이정표 쪽에는 그 목록이 없고(효과에
+      // 인자가 없다), 여기서 손으로 적으면 shop_stock.csv 가 늘어난 날 이 줄만
+      // 조용히 옛 숫자를 말한다. 이름을 다 늘어놓지 않는 이유는 한 문턱에 열 줄
+      // 넘게 열려서다 — 한 줄에 안 들어가는 목록은 읽히지 않는다.
+      const opened = countBuyback(data, def.threshold)
+      const what = `상점 ${opened.shops}곳이 채집물 ${opened.items}종을 정가에 되판다`
+      return achieved ? what : `달성하면 ${what}`
     }
     case 'title':
       return achieved ? '칭호. 그 외 효과는 없다' : '칭호 — 효과는 없다'
@@ -99,12 +122,12 @@ interface MilestoneRow {
  * 순서에 기댄다(packages/data/src/validate.ts). 여기서 만드는 것은 표시 전용 사본이다.
  */
 function buildMilestoneRows(data: GameData, player: PlayerState): MilestoneRow[] {
-  const achieved = achievedIds(data.milestones, player)
+  const achieved = achievedIds(data, player)
   const rows: MilestoneRow[] = data.milestones.map((def) => ({
     def,
     achieved: achieved.has(def.id),
-    current: metricValue(def, player, data.milestones),
-    ratio: milestoneRatio(def, player, data.milestones),
+    current: metricValue(def, player, data),
+    ratio: milestoneRatio(def, player, data),
   }))
 
   const pending = rows.filter((r) => !r.achieved).sort((a, b) => b.ratio - a.ratio)
@@ -126,7 +149,7 @@ function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLin
       fontSize: ROW_NAME_FONT_SIZE,
     })
     lines.push({
-      text: effectDescription(row.def.effect, data, row.achieved),
+      text: effectDescription(row.def, data, row.achieved),
       color: DIM_COLOR,
       fontSize: ROW_DETAIL_FONT_SIZE,
     })

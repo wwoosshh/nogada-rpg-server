@@ -176,7 +176,7 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
 
   // 달성 판정은 숙련도가 오른 뒤에 한다. 이번 행동으로 넘긴 것을 이번 응답에 실어야
   // 플레이어가 "그 행동 때문에 열렸다" 를 느낀다.
-  const achieved = newlyAchieved(data.milestones, player, player.celebrated)
+  const achieved = newlyAchieved(data, player, player.celebrated)
   for (const m of achieved) player.celebrated.push(m.id)
 
   return {

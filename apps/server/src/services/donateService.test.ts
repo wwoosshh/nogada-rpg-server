@@ -231,6 +231,37 @@ describe('헌납이 이정표를 재판정한다', () => {
     const r = donate(p, 'ice_shard', 1, { data: dataWithMilestone })
     expect(r).toEqual({ ok: false, code: 'missing_items' })
   })
+
+  /**
+   * 총점 이정표(§6-앞 8)가 **헌납으로** 켜지는가 — 이 아크의 끝에서 끝이다.
+   *
+   * 위 세 줄은 지표가 숙련도인 이정표로 "재판정이 돌긴 도는가"만 물었다. 여기서
+   * 묻는 것은 다르다: `metricKind='collection'` 의 지표는 `donated` 를 문턱표로
+   * 옮겨야 나오므로, `newlyAchieved` 에 문턱표가 실려 가지 않으면 총점이 영원히
+   * 0 이고 이 칭호는 **아무리 바쳐도 안 붙는다**. 헌납이 곧 지표를 미는 유일한
+   * 행동이라, 이 배선이 끊기면 증상이 "바쳤는데 아무 일도 안 일어난다"다.
+   */
+  const 수집이정표: MilestoneDef = {
+    id: 'collection-2',
+    metric: { kind: 'collection' },
+    threshold: 2,
+    name: '흔한 것을 되살 수 있다',
+    announce: '상점이 흔한 채집물을 정가에 되팔기 시작했다',
+    effect: { kind: 'stock' },
+  }
+  const dataWithCollection: GameData = { ...data, milestones: [수집이정표] }
+
+  it('문턱을 넘기는 그 헌납에서 총점 이정표가 켜진다 — 그 전 헌납에서는 조용하다', () => {
+    // 문턱 [5, 10, 20, 40] — 5개면 1등급(총점 1), 10개면 2등급(총점 2)이다.
+    const 다섯 = donate(player(), 'ice_shard', 5, { data: dataWithCollection })
+    if (!다섯.ok) throw new Error(`첫 헌납이 ${다섯.code} 로 막혔다`)
+    expect(다섯.outcome.achieved).toEqual([])
+
+    const 열 = donate(다섯.outcome.player, 'ice_shard', 5, { data: dataWithCollection })
+    if (!열.ok) throw new Error(`둘째 헌납이 ${열.code} 로 막혔다`)
+    expect(열.outcome.achieved.map((m) => m.id)).toEqual(['collection-2'])
+    expect(열.outcome.player.celebrated).toEqual(['collection-2'])
+  })
 })
 
 // ---------------------------------------------------------------------------

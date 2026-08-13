@@ -111,7 +111,7 @@ export function performDonate(args: PerformDonateArgs): DonateResult {
   // 달성 재판정 — 총점이 이정표 지표가 되므로(§6-앞 8·9) 이번 헌납이 문턱을
   // 넘겼으면 이번 응답에 그 사실이 실려야 플레이어가 "이 헌납 때문에 열렸다"를
   // 느낀다. 채집·제작과 같은 자리, 같은 무조건이다.
-  const achieved = newlyAchieved(args.data.milestones, player, player.celebrated)
+  const achieved = newlyAchieved(args.data, player, player.celebrated)
   for (const m of achieved) player.celebrated.push(m.id)
 
   return { ok: true, outcome: { player, achieved } }

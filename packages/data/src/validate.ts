@@ -10,6 +10,7 @@ import type {
   SkillId,
 } from '@nogada/shared'
 import {
+  COLLECTION_MAX_GRADE,
   EVENT_ORDER,
   ONCE_EVENTS,
   SKILL_IDS,
@@ -251,10 +252,11 @@ function computeReachableItems(data: GameData, gatherTables: GatherTables): Set<
   const reachable = new Set<string>()
 
   // 상점 진열은 노드 표와 같은 자격의 시드다(§6-앞 12). 매수는 골드를 요구하지만
-  // 골드는 캔 것을 팔면 나오고, 진열의 unlockSkill 도 숙련도라 그라인딩으로 언젠가
-  // 닿는다 — "언젠가 항상 닿는다"는 점에서 브라켓과 같은 성질이라 조건으로 세지
-  // 않는다. 이 시드가 없으면 증표 8종처럼 **오직 사는 것**인 물건이 전부 도달
-  // 불가로 잡혀, 설계가 의도한 데이터가 빌드를 세운다.
+  // 골드는 캔 것을 팔면 나오고, 진열의 문턱도 숙련도이거나 수집 총점이라 둘 다
+  // 그라인딩으로 언젠가 닿는다(총점은 캔 것을 바치면 오르고, 바칠 것은 채집물이라
+  // 이미 이 집합 안에 있다) — "언젠가 항상 닿는다"는 점에서 브라켓과 같은 성질이라
+  // 조건으로 세지 않는다. 이 시드가 없으면 증표 8종처럼 **오직 사는 것**인 물건이
+  // 전부 도달 불가로 잡혀, 설계가 의도한 데이터가 빌드를 세운다.
   for (const shop of Object.values(data.shops)) {
     for (const entry of shop.stock) reachable.add(entry.itemId)
   }
@@ -525,9 +527,9 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
           `shops[${shop.id}]: "${entry.itemId}" 은 price 가 0 이라 진열할 수 없다 — price 0 은 "팔 수 없다"는 뜻이지 "공짜"가 아니다. 값이 0 이면 매수 총액이 0 이라 골드 검사가 언제나 통과해 누구나 무한히 가져간다. items.csv 의 price 를 1 이상으로 올리거나 shop_stock.csv 에서 그 줄을 지운다`,
         )
       }
-      // 진열은 그 상점 계열의 물건이어야 한다(설계 §6-앞 14). 진열 한 칸의
-      // 요구치(unlockSkill)가 재는 것도, 화면이 잠긴 칸에 적는 "현재/필요"와
-      // 기술 이름도 전부 **상점의 계열**이다(shopModel.buyRows). 그래서
+      // 진열은 그 상점 계열의 물건이어야 한다(설계 §6-앞 14). 숙련으로 열리는
+      // 칸의 요구치가 재는 것도, 화면이 그 칸에 적는 "현재/필요"와 기술 이름도
+      // 전부 **상점의 계열**이다(shopModel.buyRows). 그래서
       // `얼음상점,wood_speed_token,10000` 한 줄이면 나무 증표가 얼음 숙련도로
       // 열리고 화면은 "얼음 0/10,000"을 적는다 — 데이터가 적은 계열과 화면이
       // 말하는 계열이 갈라지는데, 어느 쪽도 화면에서 되짚을 수 없다.
@@ -943,6 +945,60 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   const cycle = findEveryCycle(data.milestones)
   if (cycle) {
     violations.push(`milestones: every 이정표가 순환 참조를 이룬다 — ${cycle}`)
+  }
+
+  // 수집 총점의 만점은 **칸 수 × 등급 수**다(§6-앞 4: 25 × 4 = 100). every 의
+  // "threshold 가 of 길이보다 크다"와 같은 자리의 검사다 — 만점보다 큰 문턱은
+  // 방을 통째로 채워도 닿지 않는 줄이 목록에 영원히 남는 것이고, 그 줄은
+  // 화면에서 "100 / 120" 으로 보이며 왜 안 열리는지 아무도 말해 주지 않는다.
+  const maxCollectionScore = Object.keys(data.collection).length * COLLECTION_MAX_GRADE
+  for (const milestone of data.milestones) {
+    if (milestone.metric.kind !== 'collection') continue
+    if (milestone.threshold > maxCollectionScore) {
+      violations.push(
+        `milestones[${milestone.id}]: threshold(${milestone.threshold}) 가 수집 만점(${maxCollectionScore} = 칸 ${Object.keys(data.collection).length}개 × ${COLLECTION_MAX_GRADE}등급)보다 크다 — 영원히 달성할 수 없다`,
+      )
+    }
+  }
+
+  // 되사기 게이트의 양방향 검사(§6-앞 7). `recipes` 이정표가 레시피 요구치와
+  // 맞물리는지를 양쪽에서 보는 것과 같은 자세다: 이정표는 **새 게이트를 만들지
+  // 않고 이미 데이터가 강제하는 게이트를 선언**하므로, 선언과 실물이 갈라지면
+  // 어느 쪽도 화면에서 되짚을 수 없다.
+  const buybackScores = new Set<number>()
+  for (const shop of Object.values(data.shops)) {
+    for (const entry of shop.stock) {
+      if (entry.unlockBy === 'collection') buybackScores.add(entry.unlockAt)
+    }
+  }
+
+  for (const milestone of data.milestones) {
+    if (milestone.effect.kind !== 'stock') continue
+    // 총점으로 열리는 문을 숙련도로 선언하면, 목록은 "얼음 30 / 60,000" 같은
+    // 엉뚱한 눈금으로 진척을 적으면서 상점은 총점을 본다.
+    if (milestone.metric.kind !== 'collection') {
+      violations.push(
+        `milestones[${milestone.id}]: effectKind=stock 인데 metricKind 가 "${milestone.metric.kind}" 다 — 되사기 진열을 여는 것은 수집 총점이므로 metricKind 도 collection 이어야 한다`,
+      )
+    }
+    if (!buybackScores.has(milestone.threshold)) {
+      violations.push(
+        `milestones[${milestone.id}]: 총점 ${milestone.threshold} 에서 열리는 진열이 하나도 없다 — shop_stock.csv 의 unlockCollection 에 ${milestone.threshold} 인 행이 있어야 이 선언이 실물을 가리킨다`,
+      )
+    }
+  }
+
+  for (const score of [...buybackScores].sort((a, b) => a - b)) {
+    const carriers = data.milestones.filter((m) => m.effect.kind === 'stock' && m.threshold === score)
+    if (carriers.length === 0) {
+      violations.push(
+        `shop_stock.csv: unlockCollection ${score} 로 열리는 진열이 있는데 어느 stock 이정표에도 실리지 않았다 — 목록방에서 조용히 빠져 플레이어는 그 문이 있는 줄도 모른다. milestones.csv 에 metricKind=collection·threshold=${score}·effectKind=stock 으로 싣는다`,
+      )
+    } else if (carriers.length > 1) {
+      violations.push(
+        `shop_stock.csv: unlockCollection ${score} 가 stock 이정표 [${carriers.map((m) => m.id).join(',')}] ${carriers.length}개에 실렸다 — 정확히 하나여야 한다. 목록에 같은 문이 두 번 열리는 것으로 보인다`,
+      )
+    }
   }
 
   for (const milestone of data.milestones) {

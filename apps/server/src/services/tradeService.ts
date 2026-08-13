@@ -1,6 +1,7 @@
 import {
   buyPrice,
   isSellTarget,
+  isStockUnlocked,
   sellPrice,
   shopAccess,
   type GameData,
@@ -151,7 +152,12 @@ export function performBuy(args: PerformTradeArgs): BuyResult {
   // 다뤄야 할 안내가 하나 늘어나는데, 그 안내가 화면에 뜰 길이 없다 — 진열에
   // 없는 물건은 애초에 그려지지 않으므로 손으로 지은 요청으로만 닿는다.
   // 요구치 숫자는 진열(GameData)이 말하지 오류 코드가 말하지 않는다.
-  if (!entry || args.player.skills[opened.shop.skill] < entry.unlockSkill) {
+  //
+  // 숙련이냐 수집 총점이냐를 **여기서 나누지 않는다**(§6-앞 7): 그 갈래는 shared
+  // 의 `isStockUnlocked` 하나가 소유하고, 화면의 사기 목록(shopModel.buyRows)이
+  // 같은 함수를 부른다 — 표시된 규칙과 판정된 규칙이 갈라지는 것이 이 저장소가
+  // 이미 데인 자리다.
+  if (!entry || !isStockUnlocked(entry, opened.shop, args.player, args.data.collection)) {
     return { ok: false, code: 'item_locked' }
   }
 

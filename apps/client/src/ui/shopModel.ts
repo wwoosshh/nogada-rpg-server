@@ -1,11 +1,14 @@
 import {
   buyPrice,
   isSellTarget,
+  isStockUnlocked,
   sellPrice,
   SKILL_LABELS,
+  stockProgress,
   type GameData,
   type PlayerState,
   type ShopDef,
+  type ShopStockEntry,
 } from '@nogada/shared'
 
 /**
@@ -52,12 +55,18 @@ export interface ShopBuyRow {
   /** 개당 매수가(정가). */
   unitPrice: number
   state: ShopBuyState
-  /** 이 칸이 열리는 숙련도. 잠긴 칸이 말하는 요구치. */
-  unlockSkill: number
-  /** 지금 그 계열 숙련도 — 잠긴 칸의 `현재/필요` 중 현재. */
-  proficiency: number
-  /** 요구치 옆에 붙는 기술 이름(그 상점의 계열). */
-  skillLabel: string
+  /** 이 칸이 열리는 값. 잠긴 칸이 말하는 요구치 — 숙련도이거나 수집 총점이다. */
+  unlockAt: number
+  /** 그 눈금의 지금 값 — 잠긴 칸의 `현재/필요` 중 현재. */
+  unlockNow: number
+  /**
+   * 그 숫자가 무엇의 눈금인지 적는 말 — `얼음 숙련도` 또는 `수집 점수`.
+   *
+   * 기술 이름만 담던 칸(`skillLabel`)을 넓힌 것이다: 되사기 진열이 생기면서
+   * 잠긴 칸의 눈금이 하나가 아니게 됐고, 화면이 "얼음 숙련도"를 박아 두면
+   * 총점으로 열리는 칸에 엉뚱한 이름이 붙는다.
+   */
+  unlockLabel: string
   /**
    * 증표인가 — 증표는 **하나로 충분하다**(판정이 개수를 안 본다, 설계 §6-앞 16).
    * 서버가 `count > 1` 을 `already_owned` 로 거절하므로 화면도 수량을 안 고른다.
@@ -92,25 +101,32 @@ export function sellRows(data: GameData, player: PlayerState, shop: ShopDef): Sh
  * 있다"는 사실 자체가 화면에서 사라진다.
  */
 export function buyRows(data: GameData, player: PlayerState, shop: ShopDef): ShopBuyRow[] {
-  const proficiency = player.skills[shop.skill]
   const rows: ShopBuyRow[] = []
   for (const entry of shop.stock) {
     const def = data.items[entry.itemId]
     if (def === undefined) continue // 없는 진열은 빌드가 막는다 — 화면은 조용히 넘긴다
     const token = def.tokenEffect !== undefined
     const owned = token && (player.stacks[entry.itemId] ?? 0) > 0
+    // 잠겼는가는 **서버가 부르는 그 함수**가 답한다(§6-앞 7) — 여기서 부등호를
+    // 다시 적으면 화면이 열어 놓은 칸을 서버가 item_locked 로 거절할 수 있다.
+    const unlocked = isStockUnlocked(entry, shop, player, data.collection)
     rows.push({
       itemId: entry.itemId,
       name: def.name,
       unitPrice: buyPrice(def),
-      state: owned ? 'owned' : proficiency < entry.unlockSkill ? 'locked' : 'ready',
-      unlockSkill: entry.unlockSkill,
-      proficiency,
-      skillLabel: SKILL_LABELS[shop.skill],
+      state: owned ? 'owned' : unlocked ? 'ready' : 'locked',
+      unlockAt: entry.unlockAt,
+      unlockNow: stockProgress(entry, shop, player, data.collection),
+      unlockLabel: unlockLabelOf(entry, shop),
       token,
     })
   }
   return rows
+}
+
+/** 잠긴 칸의 숫자가 무엇의 눈금인지 — 그 상점 계열의 숙련도이거나, 방 하나뿐인 수집 점수다. */
+function unlockLabelOf(entry: ShopStockEntry, shop: ShopDef): string {
+  return entry.unlockBy === 'skill' ? `${SKILL_LABELS[shop.skill]} 숙련도` : '수집 점수'
 }
 
 /** 이 줄을 한 번에 팔 수 있는 최대 수량 — 가진 만큼, 그리고 요청 상한까지. */

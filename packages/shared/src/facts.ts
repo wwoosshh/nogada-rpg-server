@@ -25,7 +25,7 @@
  */
 
 import type { Facts, FactValue } from './dialogue.js'
-import { achievedIds, type MilestoneDef } from './milestones.js'
+import { achievedIds, type MilestoneWorld } from './milestones.js'
 import { gameDaysBetween, gameTimeAt } from './time.js'
 import { SKILL_IDS, type PlayerState } from './types.js'
 import { activeWeather } from './weather.js'
@@ -41,8 +41,13 @@ export interface FactSources {
    */
   speaker: string
   player: PlayerState
-  /** 이정표 정의 전체. `milestone.<id>` 를 채우려면 무엇이 있는지부터 알아야 한다. */
-  milestones: readonly MilestoneDef[]
+  /**
+   * 이정표가 달성을 판정하는 데 필요한 세계 — 이정표 정의 전체와 수집 문턱표다.
+   * `milestone.<id>` 를 채우려면 무엇이 있는지부터 알아야 하고, 총점을 지표로
+   * 쓰는 이정표(`metricKind='collection'`)는 그 문턱표 없이는 판정되지 않는다.
+   * `GameData` 가 그대로 이 모양이라 서버는 손에 든 `data` 를 넘긴다.
+   */
+  world: MilestoneWorld
   /** epoch ms. 세계 시각의 유일한 입력이다 — 이 함수는 시계를 직접 읽지 않는다. */
   nowMs: number
   /**
@@ -64,7 +69,8 @@ export interface FactSources {
 }
 
 export function buildFacts(sources: FactSources): Facts {
-  const { speaker, player, milestones, nowMs, place } = sources
+  const { speaker, player, world, nowMs, place } = sources
+  const milestones = world.milestones
   const time = gameTimeAt(nowMs)
 
   const facts: Record<string, FactValue> = {
@@ -79,7 +85,7 @@ export function buildFacts(sources: FactSources): Facts {
 
   // 달성 여부는 저장된 값이 아니라 계산이다(milestones.ts) — 여기서도 그대로
   // 계산해서, 대사가 보는 달성과 이정표 목록이 보는 달성이 같은 함수에서 나온다.
-  const achieved = achievedIds(milestones, player)
+  const achieved = achievedIds(world, player)
   for (const def of milestones) facts[`milestone.${def.id}`] = achieved.has(def.id)
 
   // justAchieved 는 celebrated 에서 "지금 이정표 목록에도 있는" 가장 최근

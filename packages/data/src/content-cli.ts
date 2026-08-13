@@ -284,7 +284,7 @@ const SIMULATOR_SEED = 20260808
  * 실제로 플레이해야만 자기가 쓴 대사를 볼 수 있게 되면 안 된다.
  */
 function defaultFacts(data: GameData, speaker: string, nowMs: number): Facts {
-  return buildFacts({ speaker, player: emptyPlayer(), milestones: data.milestones, nowMs })
+  return buildFacts({ speaker, player: emptyPlayer(), world: data, nowMs })
 }
 
 /** 조건 없는 규칙의 라벨. 설계 문서 8.1 이 쓰는 그대로다. */

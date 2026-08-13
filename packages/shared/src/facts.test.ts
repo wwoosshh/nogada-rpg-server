@@ -63,7 +63,7 @@ const woodNovice: MilestoneDef = {
 
 describe('buildFacts', () => {
   it('세계 시각을 gameTimeAt 그대로 싣는다', () => {
-    const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(facts.season).toBe('spring')
     expect(facts.dayOfSeason).toBe(6) // 게임 5일 뒤 = 6일째
   })
@@ -72,7 +72,7 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ skills: { ice: 15000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }),
-      milestones: [],
+      world: { milestones: [], collection: {} },
       nowMs: NOW,
     })
     expect(facts['skill.ice']).toBe(15000)
@@ -82,7 +82,7 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ skills: { ice: 1000, wood: 0, mineral: 0, herb: 0, crafting: 0 } }),
-      milestones: [iceNovice],
+      world: { milestones: [iceNovice], collection: {} },
       nowMs: NOW,
     })
     expect(facts['milestone.ice_1000']).toBe(true)
@@ -96,7 +96,7 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ celebrated: ['wood_1000', 'ice_1000'] }),
-      milestones: [woodNovice, iceNovice],
+      world: { milestones: [woodNovice, iceNovice], collection: {} },
       nowMs: NOW,
     })
     expect(facts.justAchieved).toBe('ice_1000')
@@ -111,7 +111,7 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ celebrated: ['ice_1000', '존재하지않는이정표'] }),
-      milestones: [iceNovice],
+      world: { milestones: [iceNovice], collection: {} },
       nowMs: NOW,
     })
     expect(facts.justAchieved).toBe('ice_1000')
@@ -123,7 +123,7 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ celebrated: ['사라진1', '사라진2'] }),
-      milestones: [iceNovice],
+      world: { milestones: [iceNovice], collection: {} },
       nowMs: NOW,
     })
     expect(Object.hasOwn(facts, 'justAchieved')).toBe(false)
@@ -132,7 +132,7 @@ describe('buildFacts', () => {
   it('넘긴 것이 없으면 justAchieved 사실 자체가 없다', () => {
     // 없으면 undefined 가 아니라 키 자체가 없어야 한다 — matchesCondition 은
     // "없는 사실"만 항상 거짓으로 보고, undefined 값이 있는 키는 다루지 않는다.
-    const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(Object.hasOwn(facts, 'justAchieved')).toBe(false)
   })
 
@@ -146,12 +146,12 @@ describe('buildFacts', () => {
       celebrated: ['ice_1000'],
       skills: { ice: 900_000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     })
-    const facts = buildFacts({ speaker: SPEAKER, player: veteran, milestones: [iceNovice], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: veteran, world: { milestones: [iceNovice], collection: {} }, nowMs: NOW })
     expect(facts.justAchieved).toBe('ice_1000')
   })
 
   it('한 번도 말한 적 없으면 talkedBefore 는 false 고 daysSinceLastTalk 는 없다', () => {
-    const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(facts.talkedBefore).toBe(false)
     expect(Object.hasOwn(facts, 'daysSinceLastTalk')).toBe(false)
   })
@@ -160,7 +160,7 @@ describe('buildFacts', () => {
     const threeDaysAgo = NOW - 3 * REAL_MS_PER_GAME_DAY
     const p = player()
     p.dialogueHistory.lastTalkAt[SPEAKER] = threeDaysAgo
-    const facts = buildFacts({ speaker: SPEAKER, player: p, milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: p, world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(facts.talkedBefore).toBe(true)
     expect(facts.daysSinceLastTalk).toBe(3)
   })
@@ -176,7 +176,7 @@ describe('buildFacts', () => {
     const p = player()
     p.dialogueHistory.recent[SPEAKER] = ['어떤규칙아이디']
     // lastTalkAt 은 일부러 비워 둔다 — 마이그레이션 전 세이브를 흉내낸다.
-    const facts = buildFacts({ speaker: SPEAKER, player: p, milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: p, world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(facts.talkedBefore).toBe(true)
     // 시각 자체는 여전히 모른다 — recent 에는 시각이 없으므로 daysSinceLastTalk 를
     // 지어내지 않는다. 0 을 넣으면 "방금 말했다"가 되어 모른다고 하는 것보다 나쁘다.
@@ -187,7 +187,7 @@ describe('buildFacts', () => {
     const p = player()
     p.dialogueHistory.recent['다른화자'] = ['다른규칙']
     p.dialogueHistory.lastTalkAt['다른화자'] = NOW
-    const facts = buildFacts({ speaker: SPEAKER, player: p, milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: p, world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(facts.talkedBefore).toBe(false)
   })
 
@@ -197,7 +197,7 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ weather: { kind: 'rain', untilMs: NOW + 1000 } }),
-      milestones: [],
+      world: { milestones: [], collection: {} },
       nowMs: NOW,
     })
     expect(facts.weather).toBe('rain')
@@ -209,14 +209,14 @@ describe('buildFacts', () => {
     const facts = buildFacts({
       speaker: SPEAKER,
       player: player({ weather: { kind: 'rain', untilMs: NOW } }),
-      milestones: [],
+      world: { milestones: [], collection: {} },
       nowMs: NOW,
     })
     expect(Object.hasOwn(facts, 'weather')).toBe(false)
   })
 
   it('가루를 쓴 적 없으면 weather 를 넣지 않는다', () => {
-    const facts = buildFacts({ speaker: SPEAKER, player: player(), milestones: [], nowMs: NOW })
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(Object.hasOwn(facts, 'weather')).toBe(false)
   })
 })

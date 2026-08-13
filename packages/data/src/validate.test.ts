@@ -1602,7 +1602,7 @@ describe('validateGameData 의 상점 등록부 검사', () => {
     // 진열은 화면의 목록이 되고 매수 판정의 대상이 된다 — 없는 id 는 살 수 없는
     // 칸으로 조용히 남는다.
     const data = registryData()
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: '유령증표', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: '유령증표', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toContain(
       'shops[광물상점]: 없는 아이템 "유령증표" 를 진열한다 — items.csv 의 id 중 하나여야 한다',
     )
@@ -1614,7 +1614,7 @@ describe('validateGameData 의 상점 등록부 검사', () => {
     // 재료를 stacks 에서, 도구는 instances 에서만 그린다. 그래서 산 도구는 가방
     // 어디에도 나타나지 않고 조용히 사라진다 — E4 가 미룬 구멍(§progress.md).
     const data = registryData()
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'copper_pickaxe', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'copper_pickaxe', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toContain(
       'shops[광물상점]: "copper_pickaxe" 는 도구라 진열할 수 없다 — 매수는 무엇을 사든 가방의 재료 칸(player.stacks)에 넣는데, 가방 화면은 도구를 그 칸이 아니라 instances 에서만 그린다. 산 도구는 골드만 줄이고 가방 어디에도 나타나지 않는다. 진열은 kind 가 material 인 아이템만 할 수 있다',
     )
@@ -1627,7 +1627,7 @@ describe('validateGameData 의 상점 등록부 검사', () => {
     // `gold < cost` 검사도 0 앞에서는 통과한다 — 무한 무료 아이템이 된다.
     const data = registryData()
     data.items.gravel = testItem('gravel', { name: '자갈', icon: 'ore_copper', price: 0, skill: 'mineral' })
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'gravel', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'gravel', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toEqual([
       'shops[광물상점]: "gravel" 은 price 가 0 이라 진열할 수 없다 — price 0 은 "팔 수 없다"는 뜻이지 "공짜"가 아니다. 값이 0 이면 매수 총액이 0 이라 골드 검사가 언제나 통과해 누구나 무한히 가져간다. items.csv 의 price 를 1 이상으로 올리거나 shop_stock.csv 에서 그 줄을 지운다',
     ])
@@ -1640,7 +1640,7 @@ describe('validateGameData 의 상점 등록부 검사', () => {
     // 계열이 갈라지는데, 그 어긋남을 화면에서 되짚을 방법이 없다.
     const data = registryData()
     data.items.ice_shard = testItem('ice_shard', { name: '얼음 조각', icon: 'shard_ice', price: 50, skill: 'ice' })
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'ice_shard', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'ice_shard', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toEqual([
       'shops[광물상점]: "ice_shard" 는 "ice" 계열인데 이 상점은 "mineral" 계열이다 — 진열의 요구치도 화면의 "현재/필요"도 전부 상점 계열의 숙련도를 재므로, 이 칸은 남의 계열 숙련도로 열리고 화면은 엉뚱한 기술 이름을 적는다. shop_stock.csv 에서 그 줄을 "ice" 상점으로 옮기거나 items.csv 의 skill 을 고친다',
     ])
@@ -1648,6 +1648,86 @@ describe('validateGameData 의 상점 등록부 검사', () => {
 
   it('실제로 출하되는 CSV 데이터는 상점 검사를 통과한다', () => {
     expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
+/**
+ * 되사기 게이트(§6-앞 7) — 이정표의 선언과 진열의 실물이 맞물리는가.
+ *
+ * `recipes` 이정표를 양방향으로 보는 검사와 같은 자세다: 이정표는 **새 게이트를
+ * 만들지 않고 이미 데이터가 강제하는 게이트를 선언**한다. 한쪽만 있으면 증상이
+ * 둘로 갈린다 — 선언만 있으면 목록에 열리지 않는 문이 뜨고, 진열만 있으면
+ * 플레이어는 그 문이 있는 줄도 모른 채 지나간다.
+ */
+describe('validateGameData 의 되사기 게이트 검사', () => {
+  /** 총점 30 에서 열리는 되사기 진열과, 그것을 선언하는 이정표 — 맞물린 한 쌍. */
+  function buybackData(): GameData {
+    const data = registryData()
+    data.collection = { copper_ore: { itemId: 'copper_ore', steps: [1, 10, 100, 1000] } }
+    data.shops = {
+      광물상점: mineralShop({ stock: [{ itemId: 'copper_ore', unlockBy: 'collection', unlockAt: 4 }] }),
+    }
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'collection_4', metric: { kind: 'collection' }, threshold: 4,
+        name: '흔한 것을 되살 수 있다', announce: '', effect: { kind: 'stock' },
+      },
+    ]
+    return data
+  }
+
+  it('맞물린 한 쌍은 위반이 없다', () => {
+    expect(validateGameData(buybackData(), baseTables())).toEqual([])
+  })
+
+  it('선언만 있고 그 총점에서 열리는 진열이 없으면 잡아낸다', () => {
+    const data = buybackData()
+    data.shops = { 광물상점: mineralShop() }
+    expect(validateGameData(data, baseTables())).toContain(
+      'milestones[collection_4]: 총점 4 에서 열리는 진열이 하나도 없다 — shop_stock.csv 의 unlockCollection 에 4 인 행이 있어야 이 선언이 실물을 가리킨다',
+    )
+  })
+
+  it('진열만 있고 선언이 없으면 잡아낸다 — 목록방에서 조용히 빠지는 문이다', () => {
+    const data = buybackData()
+    data.milestones = data.milestones.filter((m) => m.id !== 'collection_4')
+    expect(validateGameData(data, baseTables())).toContain(
+      'shop_stock.csv: unlockCollection 4 로 열리는 진열이 있는데 어느 stock 이정표에도 실리지 않았다 — 목록방에서 조용히 빠져 플레이어는 그 문이 있는 줄도 모른다. milestones.csv 에 metricKind=collection·threshold=4·effectKind=stock 으로 싣는다',
+    )
+  })
+
+  it('같은 총점을 두 이정표가 선언하면 잡아낸다 — 목록에 같은 문이 두 번 열린다', () => {
+    const data = buybackData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'collection_4_again', metric: { kind: 'collection' }, threshold: 4,
+        name: '또 그 문', announce: '', effect: { kind: 'stock' },
+      },
+    ]
+    expect(validateGameData(data, baseTables())).toContain(
+      'shop_stock.csv: unlockCollection 4 가 stock 이정표 [collection_4,collection_4_again] 2개에 실렸다 — 정확히 하나여야 한다. 목록에 같은 문이 두 번 열리는 것으로 보인다',
+    )
+  })
+
+  it('되사기를 선언하면서 지표가 숙련도면 잡아낸다 — 목록이 엉뚱한 눈금으로 진척을 적는다', () => {
+    const data = buybackData()
+    data.milestones = data.milestones.map((m) =>
+      m.id === 'collection_4' ? { ...m, metric: { kind: 'skill' as const, skill: 'mineral' as const } } : m,
+    )
+    expect(validateGameData(data, baseTables())).toContain(
+      'milestones[collection_4]: effectKind=stock 인데 metricKind 가 "skill" 다 — 되사기 진열을 여는 것은 수집 총점이므로 metricKind 도 collection 이어야 한다',
+    )
+  })
+
+  it('만점보다 큰 총점 문턱을 잡아낸다 — 방을 통째로 채워도 닿지 않는 줄이다', () => {
+    const data = buybackData()
+    // 칸 하나짜리 방의 만점은 1 × 4 = 4 다. 5 는 영원히 못 넘는다.
+    data.milestones = data.milestones.map((m) => (m.id === 'collection_4' ? { ...m, threshold: 5 } : m))
+    expect(validateGameData(data, baseTables())).toContain(
+      'milestones[collection_4]: threshold(5) 가 수집 만점(4 = 칸 1개 × 4등급)보다 크다 — 영원히 달성할 수 없다',
+    )
   })
 })
 
@@ -1713,7 +1793,7 @@ describe('validateGameData 의 증표 제약 검사', () => {
     data.items.mineral_speed_token = testItem('mineral_speed_token', {
       name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
     })
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockBy: 'skill', unlockAt: 10000 }] }) }
     return data
   }
 
@@ -1808,7 +1888,7 @@ describe('validateGameData 의 획득·도달 시드 — 상점 진열', () => {
     data.items.mineral_speed_token = testItem('mineral_speed_token', {
       name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
     })
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toEqual([])
   })
 
@@ -1881,7 +1961,7 @@ describe('validateGameData 의 죽은 아이템 검사', () => {
     data.items.mineral_speed_token = testItem('mineral_speed_token', {
       name: '광물 속도증표', icon: 'feather_mineral', price: 360000, skill: 'mineral', tokenEffect: 'speed',
     })
-    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockSkill: 10000 }] }) }
+    data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'mineral_speed_token', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toEqual([])
   })
 

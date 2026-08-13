@@ -40,6 +40,13 @@ function add(def: ItemDef): ItemDef {
 /** 얼음 사다리의 재료 둘 — 하나는 팔고, 다른 하나는 "건드리지 않았음"의 증인이다. */
 add(testItem('ice_shard', { name: '얼음 조각', price: 50, skill: 'ice' }))
 add(testItem('clear_ice', { name: '맑은 얼음', price: 150, skill: 'ice' }))
+/**
+ * 되사기 진열에 오르는 재료(§6-앞 7) — **총점이 여는 칸**의 증인이다.
+ *
+ * 숙련으로 열리는 재료(ice_shard)와 따로 두는 이유: 한 물건에 두 문을 번갈아
+ * 걸면 "이 거절이 어느 문 때문인가"를 테스트가 스스로 구별하지 못한다.
+ */
+add(testItem('ice_bead', { name: '얼음 구슬', price: 220, skill: 'ice' }))
 /** 남의 계열. 값은 있지만 얼음상점은 사 주지 않는다 — 그 마을에 가야 판다(§4). */
 add(testItem('copper_ore', { name: '구리 원석', price: 80, skill: 'mineral' }))
 /** 값이 0 인 재료. price=0 은 "0원에 팔린다"가 아니라 **팔 수 없다**는 뜻이다. */
@@ -83,21 +90,24 @@ function shop(over: Partial<ShopDef> & Pick<ShopDef, 'id' | 'speakerId'>): ShopD
 }
 
 /**
- * 얼음상점. 진열에 증표 둘 **과 재료 하나**가 있다.
+ * 얼음상점. 진열에 증표 둘 **과 재료 둘**이 있고, 재료 둘은 **문이 서로 다르다**.
  *
- * 재료를 진열하는 상점은 출하 데이터에 없다(진열은 증표 8종뿐이다). 그래도
- * 픽스처에 두는 이유는 **왕복 단조성**(§6-앞 19 ③) 때문이다: 증표는 매도 대상이
- * 아니라서 사고 되팔 수가 없으므로, 그것만으로는 "사고 즉시 팔면 손해"를 코드로
- * 지나갈 방법이 없다. 언젠가 재료를 파는 상점이 생겨도 무한 골드 루프가 열리지
- * 않는다는 것을 지금 못박아 둔다.
+ * `ice_shard` 는 숙련으로(요구치 0), `ice_bead` 는 수집 총점으로 열린다 — 되사기
+ * 진열(§6-앞 7)이 생기면서 한 상점의 진열에 두 종류의 문이 섞였고, 이 픽스처가
+ * 그 섞인 상태다. 재료를 진열에 두는 이유는 예나 지금이나 **왕복 단조성**(§6-앞
+ * 19 ③)이다: 증표는 매도 대상이 아니라 사고 되팔 수가 없으므로 증표만으로는
+ * "사고 즉시 팔면 손해"를 코드로 지나갈 방법이 없다. 이제 출하 데이터에도 되팔
+ * 수 있는 진열이 생겼고(아래 출하 데이터 판), 그래서 이 왕복은 가정이 아니다.
  */
 const 얼음상점 = shop({
   id: '얼음상점',
   speakerId: '노인',
   stock: [
-    { itemId: 'ice_shard', unlockSkill: 0 },
-    { itemId: 'ice_speed_token', unlockSkill: 10_000 },
-    { itemId: 'ice_sight_token', unlockSkill: 25_000 },
+    { itemId: 'ice_shard', unlockBy: 'skill', unlockAt: 0 },
+    { itemId: 'ice_speed_token', unlockBy: 'skill', unlockAt: 10_000 },
+    { itemId: 'ice_sight_token', unlockBy: 'skill', unlockAt: 25_000 },
+    // 되사기 칸 — 숙련이 아니라 방의 총점 4 가 연다(§6-앞 7).
+    { itemId: 'ice_bead', unlockBy: 'collection', unlockAt: 4 },
   ],
 })
 
@@ -106,7 +116,7 @@ const 여관상점 = shop({
   id: '여관상점',
   speakerId: '여관안주인',
   unlockSkill: 0,
-  stock: [{ itemId: 'ice_shard', unlockSkill: 0 }],
+  stock: [{ itemId: 'ice_shard', unlockBy: 'skill', unlockAt: 0 }],
 })
 
 const data: GameData = {
@@ -127,7 +137,11 @@ const data: GameData = {
   shops: { 얼음상점, 여관상점 },
   masters: [],
   enhanceCosts: [],
-  collection: {},
+  // 칸 둘짜리 작은 방 — 만점은 2칸 × 4등급 = 8 이다. 되사기 문턱 4 는 그 절반이다.
+  collection: {
+    ice_shard: { itemId: 'ice_shard', steps: [1, 10, 100, 1000] },
+    clear_ice: { itemId: 'clear_ice', steps: [1, 10, 100, 1000] },
+  },
   places: Object.fromEntries([여관앞, 눈광장, 여관안, 초소].map((p) => [p.id, p])),
   schedules: { 여관안주인: 안주인일과 },
   routes: [
@@ -345,6 +359,29 @@ describe('performBuy', () => {
     expect(buy(p, 'ice_shard', 99).ok).toBe(true)
   })
 
+  // 왜: 총점이 진열을 여는 것이 이 아크의 게이트다(§6-앞 7 — "칭호는 장식이고
+  //     게이트가 콘텐츠다"). 숙련도가 아무리 높아도 바치지 않은 사람에게는
+  //     그 칸이 열리지 않아야, 헌납이 실제로 무언가를 여는 행동이 된다.
+  it('총점이 문턱에 못 미치면 되사기 칸은 item_locked 다 — 숙련도가 만렙이어도 마찬가지다', () => {
+    const 만렙 = player({ skills: skills({ ice: 1_000_000 }), gold: 100_000 })
+    const r = buy(만렙, 'ice_bead', 1)
+    expect(r.ok ? 'ok' : r.code).toBe('item_locked')
+  })
+
+  it('총점이 문턱에 닿으면 살 수 있다 — 경계값이 열린다', () => {
+    // 얼음 조각 100개(3등급) + 맑은 얼음 1개(1등급) = 총점 4 = 문턱.
+    const 헌납자 = player({ donated: { ice_shard: 100, clear_ice: 1 }, gold: 100_000 })
+    const r = buy(헌납자, 'ice_bead', 2)
+    if (!r.ok) throw new Error(`성공해야 하는데 ${r.code} 로 막혔다`)
+    expect(r.outcome.player.gold).toBe(100_000 - 220 * 2)
+    expect(r.outcome.player.stacks['ice_bead']).toBe(2)
+
+    // 한 등급만 모자라면 닫혀 있다 — 경계가 진짜 경계인지 양쪽에서 묻는다.
+    const 하나모자란 = player({ donated: { ice_shard: 100 }, gold: 100_000 })
+    const blocked = buy(하나모자란, 'ice_bead', 1)
+    expect(blocked.ok ? 'ok' : blocked.code).toBe('item_locked')
+  })
+
   it('행동 간격을 검사도 소비도 하지 않는다(§6-앞 18)', () => {
     const p = player({ nextActionAt: 9_000_000 })
     const r = buy(p, 'ice_shard', 1, { now: 0 })
@@ -415,27 +452,70 @@ describe('거래 불변식', () => {
       expect(sold.outcome.player.stacks).toEqual(start.stacks)
     }
   })
+
+  // 왜: 되사기 진열은 **바친 사람에게 물건을 살 길을 여는 것**이지 환전소가
+  //     아니다(§6-앞 7). 매수가가 정가이고 매도가가 그 절반이라 왕복은 언제나
+  //     손해여야 하고, 그래야 "바치면 이득인가"라는 계산이 생기지 않는다.
+  //     ③ 과 같은 자리에서 묻는 이유: 되사기가 열리기 전에는 이 왕복 자체가
+  //     성립하지 않았다(진열은 증표뿐이었고 증표는 매도 대상이 아니다).
+  it('③ 왕복 단조성 — 총점으로 열린 되사기 칸도 사고 되팔면 골드가 준다', () => {
+    for (const count of [1, 2, 3, 10, 99]) {
+      const start = player({ gold: 1_000_000, stacks: {}, donated: { ice_shard: 1000, clear_ice: 1000 } })
+      const bought = buy(start, 'ice_bead', count)
+      if (!bought.ok) throw new Error(`${count}개 매수가 ${bought.code} 로 막혔다`)
+      const sold = sell(bought.outcome.player, 'ice_bead', count)
+      if (!sold.ok) throw new Error(`${count}개 매도가 ${sold.code} 로 막혔다`)
+
+      // 정가 220, 매도 110 — 왕복 한 번에 개당 110 이 사라진다.
+      expect(sold.outcome.player.gold).toBe(start.gold - 110 * count)
+      expect(sold.outcome.player.stacks).toEqual(start.stacks)
+      // 바친 것은 되돌아오지 않는다 — 되사기는 헌납의 취소가 아니다(§7 훅).
+      expect(sold.outcome.player.donated).toEqual(start.donated)
+    }
+  })
 })
 
 /**
  * ③ 을 출하 데이터에서도 묻는다.
  *
- * **오늘 출하 데이터에는 사고 되팔 수 있는 물건이 하나도 없다** — 진열은 증표
- * 8종뿐이고 증표는 매도 대상의 정의에서 빠지기 때문이다. 그래서 실제 왕복은
- * 위 픽스처가 지나가고, 여기서는 그 왕복을 언젠가 열더라도 반드시 손해이게
- * 만드는 **가격 수준의 성질**을 못박는다: price ≥ 1 이면 언제나 매수가 > 매도가.
- * 이것이 깨지는 순간(누가 sellPrice 를 반올림으로 고치는 날) 왕복은 이익이 된다.
+ * **이제 출하 데이터에도 사고 되팔 수 있는 물건이 있다** — 되사기 진열(§6-앞 7)이
+ * 그 계열 채집물을 정가에 되팔기 때문이다. 한때 이 자리에는 "진열은 증표뿐이라
+ * 왕복이 성립하지 않는다"는 줄이 있었고, 되사기가 그 문장을 낡게 만들었다.
+ * 그래서 여기서 묻는 것이 바뀐다: 왕복이 성립하게 된 지금, 그 왕복이 **반드시
+ * 손해인가**. 가격 수준의 성질(price ≥ 1 이면 언제나 매수가 > 매도가)이 그
+ * 답이고, 이것이 깨지는 순간(누가 sellPrice 를 반올림으로 고치는 날) 되사기
+ * 진열은 그대로 무한 골드 루프가 된다.
  */
 describe('거래 불변식 ③ — 출하 데이터', () => {
   const shipped = loadGameData()
 
-  it('진열된 물건 중 되팔 수 있는 것은 아직 하나도 없다 — 진열은 증표뿐이다', () => {
-    const stocked = Object.values(shipped.shops).flatMap((s) =>
-      s.stock.map((entry) => ({ shop: s, def: shipped.items[entry.itemId]! })),
-    )
-    expect(stocked.length).toBeGreaterThan(0)
-    for (const { shop: s, def } of stocked) {
-      expect({ item: def.id, sellable: isSellTarget(def, s) }).toEqual({ item: def.id, sellable: false })
+  /** 총점으로 열리는 진열 — 되사기 칸 전부. */
+  const buybackStock = Object.values(shipped.shops).flatMap((s) =>
+    s.stock.filter((e) => e.unlockBy === 'collection').map((entry) => ({ shop: s, def: shipped.items[entry.itemId]! })),
+  )
+
+  it('되사기 칸은 그 상점이 되사 주는 물건이다 — 사고 파는 문이 같은 자리에 있다', () => {
+    // 매수만 되고 매도가 안 되면 "되사기"라는 이름이 거짓이 되고, 왕복 손해라는
+    // 안전장치도 성립하지 않는다(팔 수 없는 물건은 왕복 자체가 없다).
+    expect(buybackStock.length).toBeGreaterThan(0)
+    for (const { shop: s, def } of buybackStock) {
+      expect({ item: def.id, sellable: isSellTarget(def, s) }).toEqual({ item: def.id, sellable: true })
+    }
+  })
+
+  it('되사기 칸은 전부 채집물이다 — 방의 칸인 것만 되산다(정제품·주괴는 아니다)', () => {
+    for (const { def } of buybackStock) {
+      expect({ item: def.id, slot: Object.hasOwn(shipped.collection, def.id) }).toEqual({ item: def.id, slot: true })
+    }
+  })
+
+  it('되사기 왕복은 개당 정가의 절반이 사라진다 — 바치는 것이 이득인가를 계산하게 만들지 않는다', () => {
+    for (const { def } of buybackStock) {
+      expect({ item: def.id, loss: buyPrice(def) - sellPrice(def) }).toEqual({
+        item: def.id,
+        loss: def.price - Math.floor(def.price / 2),
+      })
+      expect(buyPrice(def)).toBeGreaterThan(sellPrice(def))
     }
   })
 

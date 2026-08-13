@@ -789,13 +789,24 @@ describe('POST /api/shop/sell·buy', () => {
     return item
   }
 
-  /** 그 상점의 진열 한 칸. 요구치가 가장 낮은 것 — 그것을 살 수 있으면 배선이 산 것이다. */
+  /**
+   * 그 상점에서 **숙련으로 열리는** 진열 한 칸. 요구치가 가장 낮은 것 — 그것을
+   * 살 수 있으면 배선이 산 것이다.
+   *
+   * 숙련 칸만 고르는 이유: 되사기 진열이 생기면서 한 상점의 진열에 두 종류의
+   * 문이 섞였고(§6-앞 7), 총점으로 열리는 칸의 요구치(30·60)는 숙련 요구치
+   * (10,000)보다 늘 작다 — 그냥 최솟값을 고르면 이 도우미는 증표가 아니라
+   * 채집물을 집어 온다. 이 도우미를 쓰는 테스트가 묻는 것은 증표의 규칙
+   * (`already_owned`)이라 그 칸이어야 한다.
+   */
   function stockedAt(shop: ShopDef): { def: ItemDef; unlockSkill: number } {
-    const entry = [...shop.stock].sort((a, b) => a.unlockSkill - b.unlockSkill)[0]
-    if (!entry) throw new Error(`${shop.id} 의 진열이 비어 있다`)
+    const entry = shop.stock
+      .filter((e) => e.unlockBy === 'skill')
+      .sort((a, b) => a.unlockAt - b.unlockAt)[0]
+    if (!entry) throw new Error(`${shop.id} 에 숙련으로 열리는 진열이 없다`)
     const def = loadGameData().items[entry.itemId]
     if (!def) throw new Error(`진열한 ${entry.itemId} 가 items.csv 에 없다`)
-    return { def, unlockSkill: entry.unlockSkill }
+    return { def, unlockSkill: entry.unlockAt }
   }
 
   /** 숙련도·재고·골드를 세이브에 직접 심고 그 위에 앱을 다시 세운다. */

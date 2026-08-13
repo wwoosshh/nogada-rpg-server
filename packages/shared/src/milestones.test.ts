@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
 import type { PlayerState } from './types.js'
+import type { CollectionTable } from './collection.js'
 import {
   achievedIds,
   isAchieved,
@@ -8,6 +9,7 @@ import {
   milestoneRatio,
   newlyAchieved,
   type MilestoneDef,
+  type MilestoneWorld,
 } from './milestones.js'
 
 function player(skills: Partial<PlayerState['skills']> = {}): PlayerState {
@@ -48,54 +50,67 @@ const bothNovice: MilestoneDef = {
 }
 const all = [iceNovice, mineralNovice, bothNovice]
 
+/**
+ * 판정이 보는 세계 — 이정표 목록과 수집 문턱표.
+ *
+ * 문턱표를 **인자로 받는** 것이 `metricKind='collection'` 을 가능하게 한 변경이다
+ * (총점은 `donated` 만으로는 계산되지 않는다). 이 스위트의 대부분은 방을 보지
+ * 않으므로 빈 표를 쓴다 — 빈 방의 총점은 0 이고 만점도 0 이다.
+ */
+function worldOf(milestones: readonly MilestoneDef[], collection: CollectionTable = {}): MilestoneWorld {
+  return { milestones, collection }
+}
+
+const world = worldOf(all)
+
 describe('isAchieved — skill', () => {
   it('문턱 미만이면 달성이 아니다', () => {
-    expect(isAchieved(iceNovice, player({ ice: 999 }), all)).toBe(false)
+    expect(isAchieved(iceNovice, player({ ice: 999 }), world)).toBe(false)
   })
   it('문턱에 닿으면 달성이다', () => {
-    expect(isAchieved(iceNovice, player({ ice: 1000 }), all)).toBe(true)
+    expect(isAchieved(iceNovice, player({ ice: 1000 }), world)).toBe(true)
   })
   it('다른 기술은 보지 않는다', () => {
-    expect(isAchieved(iceNovice, player({ mineral: 999999 }), all)).toBe(false)
+    expect(isAchieved(iceNovice, player({ mineral: 999999 }), world)).toBe(false)
   })
 })
 
 describe('isAchieved — every', () => {
   it('하나만 채우면 달성이 아니다', () => {
-    expect(isAchieved(bothNovice, player({ ice: 5000 }), all)).toBe(false)
+    expect(isAchieved(bothNovice, player({ ice: 5000 }), world)).toBe(false)
   })
   it('둘 다 채우면 달성이다', () => {
-    expect(isAchieved(bothNovice, player({ ice: 1000, mineral: 1000 }), all)).toBe(true)
+    expect(isAchieved(bothNovice, player({ ice: 1000, mineral: 1000 }), world)).toBe(true)
   })
   it('없는 이정표를 가리키면 달성될 수 없다', () => {
     // 데이터 검증이 막지만, 막지 못했을 때 조용히 참이 되면 안 된다.
     const ghost: MilestoneDef = {
       ...bothNovice, id: 'ghost', metric: { kind: 'every', of: ['nope'] }, threshold: 1,
     }
-    expect(isAchieved(ghost, player({ ice: 999999, mineral: 999999 }), [...all, ghost])).toBe(false)
+    expect(isAchieved(ghost, player({ ice: 999999, mineral: 999999 }), worldOf([...all, ghost]))).toBe(false)
   })
 })
 
 describe('metricValue', () => {
   it('기술은 그 숙련도다', () => {
-    expect(metricValue(iceNovice, player({ ice: 42 }), all)).toBe(42)
+    expect(metricValue(iceNovice, player({ ice: 42 }), world)).toBe(42)
   })
   it('합산은 달성한 개수다', () => {
-    expect(metricValue(bothNovice, player({ ice: 1000 }), all)).toBe(1)
-    expect(metricValue(bothNovice, player({ ice: 1000, mineral: 1000 }), all)).toBe(2)
+    expect(metricValue(bothNovice, player({ ice: 1000 }), world)).toBe(1)
+    expect(metricValue(bothNovice, player({ ice: 1000, mineral: 1000 }), world)).toBe(2)
   })
 })
 
 describe('milestoneRatio', () => {
   it('0 에서 0, 문턱에서 1 이다', () => {
-    expect(milestoneRatio(iceNovice, player({ ice: 0 }), all)).toBe(0)
-    expect(milestoneRatio(iceNovice, player({ ice: 1000 }), all)).toBe(1)
+    expect(milestoneRatio(iceNovice, player({ ice: 0 }), world)).toBe(0)
+    expect(milestoneRatio(iceNovice, player({ ice: 1000 }), world)).toBe(1)
   })
   it('문턱을 넘어도 1 을 넘지 않는다', () => {
-    expect(milestoneRatio(iceNovice, player({ ice: 99999 }), all)).toBe(1)
+    expect(milestoneRatio(iceNovice, player({ ice: 99999 }), world)).toBe(1)
   })
   it('절반이면 0.5 다', () => {
-    expect(milestoneRatio(iceNovice, player({ ice: 500 }), all)).toBe(0.5)
+    expect(milestoneRatio(iceNovice, player({ ice: 500 }), world)).toBe(0.5)
   })
 })
 
@@ -109,45 +124,106 @@ describe('milestoneRatio', () => {
 describe('milestoneRatio — every', () => {
   it('둘이 다르게 진행 중이면 더 처진 쪽(최솟값)을 쓴다 — 평균이나 최댓값이 아니다', () => {
     // ice 500/1000=0.5, mineral 200/1000=0.2 → 병목은 mineral 이다.
-    expect(milestoneRatio(bothNovice, player({ ice: 500, mineral: 200 }), all)).toBe(0.2)
+    expect(milestoneRatio(bothNovice, player({ ice: 500, mineral: 200 }), world)).toBe(0.2)
   })
   it('하나가 0이면 나머지가 얼마든 전체는 0이다', () => {
     // mineral 은 이미 문턱을 넘겼어도(비율 1) ice 가 0 이면 병목은 ice 다.
     // metricValue(달성 개수)/threshold 였다면 여기서 0.5(둘 중 하나 달성)를
     // 보고했을 자리다 — milestoneRatio 문서가 경고하는 바로 그 오판이다.
-    expect(milestoneRatio(bothNovice, player({ ice: 0, mineral: 1000 }), all)).toBe(0)
+    expect(milestoneRatio(bothNovice, player({ ice: 0, mineral: 1000 }), world)).toBe(0)
   })
   it('하나가 이미 완료여도 나머지가 병목이면 나머지의 비율을 그대로 쓴다', () => {
     // ice 는 완료(비율 1), mineral 은 300/1000=0.3 진행 중 → 0.3 이어야 한다.
     // "하나는 끝났으니 절반은 왔다"는 개수 비율의 착시를 피하는 것이 이
     // 규칙의 존재 이유다.
-    expect(milestoneRatio(bothNovice, player({ ice: 1000, mineral: 300 }), all)).toBe(0.3)
+    expect(milestoneRatio(bothNovice, player({ ice: 1000, mineral: 300 }), world)).toBe(0.3)
+  })
+})
+
+/**
+ * 총점 지표(설계 §6-앞 8) — 이 저장소에서 **숙련도가 아닌 첫 이정표 지표**다.
+ *
+ * 왜 따로 판을 짜는가: `metricValue` 가 지금까지 `PlayerState` 만 보면 됐던 것과
+ * 달리, 총점은 세이브의 `donated` 를 **문턱표로 옮겨야** 나온다. 즉 이 분기가
+ * 도는지는 시그니처가 문턱표를 실어 나르는지와 같은 질문이고, 표를 안 넘기면
+ * 조용히 0 이 되어 "바쳤는데 칭호가 안 붙는다" 로만 드러난다.
+ */
+describe('metricKind = collection', () => {
+  // 칸 둘짜리 작은 방 — 만점은 2칸 × 4등급 = 8 이다.
+  const table: CollectionTable = {
+    ice_shard: { itemId: 'ice_shard', steps: [1, 10, 100, 1000] },
+    copper_ore: { itemId: 'copper_ore', steps: [1, 10, 100, 1000] },
+  }
+  const collector: MilestoneDef = {
+    id: 'collection-4', metric: { kind: 'collection' }, threshold: 4,
+    name: '방에 자리가 잡히다', announce: '빈 칸이 채워지기 시작했다', effect: { kind: 'stock' },
+  }
+  const room = worldOf([collector], table)
+  const donor = (donated: Record<string, number>): PlayerState => ({ ...player(), donated })
+
+  it('지표는 방의 총점이다 — 등급 합이지 바친 개수가 아니다', () => {
+    // 얼음 조각 100개 = 3등급, 구리 원석 10개 = 2등급 → 총점 5.
+    expect(metricValue(collector, donor({ ice_shard: 100, copper_ore: 10 }), room)).toBe(5)
+  })
+
+  it('아무것도 안 바친 사람은 0 이다', () => {
+    expect(metricValue(collector, donor({}), room)).toBe(0)
+  })
+
+  it('문턱을 넘긴 헌납에서 달성으로 바뀐다', () => {
+    // 총점 3(3등급 + 0등급) 에서는 아직이고, 한 칸이 더 오르면 4 가 되어 달성이다.
+    expect(isAchieved(collector, donor({ ice_shard: 100 }), room)).toBe(false)
+    expect(isAchieved(collector, donor({ ice_shard: 100, copper_ore: 1 }), room)).toBe(true)
+  })
+
+  it('문턱표를 못 받으면 총점이 0 이다 — 표가 지표의 절반이라는 증거다', () => {
+    // 같은 세이브인데 방(문턱표)이 비면 셀 칸이 없다. 이 줄이 초록인 이유가
+    // 곧 시그니처가 표를 실어 날라야 하는 이유다.
+    expect(metricValue(collector, donor({ ice_shard: 1000 }), worldOf([collector]))).toBe(0)
+  })
+
+  it('진척 비율은 총점/문턱이고 1 에서 잘린다', () => {
+    expect(milestoneRatio(collector, donor({ ice_shard: 10 }), room)).toBe(0.5)
+    expect(milestoneRatio(collector, donor({ ice_shard: 1000, copper_ore: 1000 }), room)).toBe(1)
+  })
+
+  it('every 가 총점 이정표를 가리켜도 그 비율이 그대로 병목으로 들어온다', () => {
+    // every 의 재귀는 metricValue 가 아니라 milestoneRatio 를 다시 부른다 —
+    // 새 지표가 그 재귀를 타는지는 별개의 질문이라 여기서 따로 못박는다.
+    const both: MilestoneDef = {
+      id: 'both', metric: { kind: 'every', of: ['collection-4', 'ice-1000'] }, threshold: 2,
+      name: '둘 다', announce: '', effect: { kind: 'title' },
+    }
+    const mixed = worldOf([collector, iceNovice, both], table)
+    // 총점 2/4 = 0.5, 얼음 1000/1000 = 1 → 병목은 총점 쪽이다.
+    const p = { ...donor({ ice_shard: 10 }), skills: { ...player().skills, ice: 1000 } }
+    expect(milestoneRatio(both, p, mixed)).toBe(0.5)
   })
 })
 
 describe('achievedIds', () => {
   it('달성한 것만 담는다', () => {
-    const ids = achievedIds(all, player({ ice: 1000 }))
+    const ids = achievedIds(world, player({ ice: 1000 }))
     expect([...ids].sort()).toEqual(['ice-1000'])
   })
   it('합산 이정표도 함께 잡힌다', () => {
-    const ids = achievedIds(all, player({ ice: 1000, mineral: 1000 }))
+    const ids = achievedIds(world, player({ ice: 1000, mineral: 1000 }))
     expect([...ids].sort()).toEqual(['both-1000', 'ice-1000', 'mineral-1000'])
   })
 })
 
 describe('newlyAchieved', () => {
   it('축하하지 않은 것만 준다', () => {
-    const fresh = newlyAchieved(all, player({ ice: 1000 }), ['ice-1000'])
+    const fresh = newlyAchieved(world, player({ ice: 1000 }), ['ice-1000'])
     expect(fresh).toEqual([])
   })
   it('축하 이력이 비어 있으면 달성한 것을 전부 준다', () => {
-    const fresh = newlyAchieved(all, player({ ice: 1000 }), [])
+    const fresh = newlyAchieved(world, player({ ice: 1000 }), [])
     expect(fresh.map((m) => m.id)).toEqual(['ice-1000'])
   })
   it('축하 이력에 없는 id 가 있어도 무시한다', () => {
     // 이정표를 지운 뒤에도 옛 세이브가 살아 있어야 한다.
-    const fresh = newlyAchieved(all, player({ ice: 1000 }), ['사라진것'])
+    const fresh = newlyAchieved(world, player({ ice: 1000 }), ['사라진것'])
     expect(fresh.map((m) => m.id)).toEqual(['ice-1000'])
   })
 })

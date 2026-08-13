@@ -27,12 +27,32 @@ function parsePipeList(value: string, context: string, field: string): string[] 
   return parts
 }
 
-const METRIC_KINDS = ['skill', 'every'] as const
+const METRIC_KINDS = ['skill', 'every', 'collection'] as const
 // 'nodes' 는 은퇴했다(설계 §7-앞 2) — 노드 tier 게이트가 폐지되어 선언할 게이트가 없다.
-const EFFECT_KINDS = ['repeat', 'recipes', 'title'] as const
+const EFFECT_KINDS = ['repeat', 'recipes', 'stock', 'title'] as const
+
+/**
+ * 인자를 안 쓰는 종류에 인자가 적혀 있으면 그 자리에서 거절한다.
+ *
+ * 조용히 무시하면 작가는 자기가 적은 것이 무언가를 한다고 믿는다 — `collection`
+ * 의 metricArg 에 `ice` 를 적어 두면 "얼음 칸만 세는 총점"으로 읽히지만 실제로는
+ * 방 전체를 세고, 그 오해는 화면 어디에도 드러나지 않는다.
+ */
+function requireEmpty(row: Row, field: string, ctx: string, why: string): void {
+  const value = (row[field] ?? '').trim()
+  if (value !== '') throw new Error(`${ctx}: ${field} 에 "${value}" 가 적혔다 — ${why}`)
+}
 
 function toMetric(row: Row, ctx: string): MilestoneMetric {
   const kind = requireCell(row, 'metricKind', ctx)
+
+  // 인자를 요구하기 **전에** 인자 없는 종류를 가른다 — requireCell 은 빈 칸을
+  // 던지므로, 위에 두면 인자가 없는 것이 정상인 지표를 적을 방법이 사라진다.
+  if (kind === 'collection') {
+    requireEmpty(row, 'metricArg', ctx, '수집 총점은 방 하나의 점수라 고를 인자가 없다')
+    return { kind: 'collection' }
+  }
+
   const arg = requireCell(row, 'metricArg', ctx)
 
   if (kind === 'skill') return { kind: 'skill', skill: toSkillId(arg, ctx) }
@@ -60,6 +80,15 @@ function toEffect(
   const kind = requireCell(row, 'effectKind', ctx)
 
   if (kind === 'title') return { kind: 'title' }
+
+  // `stock` 이 무엇을 여는지는 effectArg 가 아니라 **진열이 안다**: 같은 총점을
+  // 요구하는 shop_stock.csv 의 행들이 그 목록이다(§6-앞 7). 여기에 한 번 더 적게
+  // 하면 두 벌이 갈라지고, 그 어긋남은 "목록엔 적혔는데 상점엔 없다"로만 드러난다.
+  // 둘이 맞물리는지는 validate.ts 가 양방향으로 본다.
+  if (kind === 'stock') {
+    requireEmpty(row, 'effectArg', ctx, '무엇이 열리는지는 같은 문턱을 요구하는 shop_stock.csv 의 unlockCollection 행들이 정한다')
+    return { kind: 'stock' }
+  }
 
   if (kind === 'repeat') {
     const arg = requireCell(row, 'effectArg', ctx)

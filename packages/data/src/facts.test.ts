@@ -58,7 +58,7 @@ const NOW = 1_767_225_600_000 + 5 * 60 * 60 * 1000 // 게임 5일차 정오 언�
  * "지점 대사" 검사가 지킨다 — talkedBeforeFacts 와 같은 분업이다.
  */
 function productionFacts(player: PlayerState, nowMs: number = NOW, place?: string): Facts {
-  return buildFacts({ speaker: SPEAKER, player, milestones: data.milestones, nowMs, place })
+  return buildFacts({ speaker: SPEAKER, player, world: data, nowMs, place })
 }
 
 function emptyPlayerFacts(): Facts {

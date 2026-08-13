@@ -116,7 +116,7 @@ function BuyRow({
           <span className="craft__row-req">
             {/* 자물쇠는 장식이라 aria-hidden — 잠김은 이미 이 숫자가 말한다. */}
             <span aria-hidden="true">🔒</span>
-            {fmt(row.proficiency)}/{fmt(row.unlockSkill)}
+            {fmt(row.unlockNow)}/{fmt(row.unlockAt)}
           </span>
         ) : row.state === 'owned' ? (
           <span className="shop__row-owned">보유 중</span>
@@ -299,9 +299,9 @@ function BuyDetail({
         </div>
         {locked ? (
           <p className="craft__stat">
-            {row.skillLabel} 숙련도{' '}
+            {row.unlockLabel}{' '}
             <span className="craft__req">
-              {fmt(row.proficiency)}/{fmt(row.unlockSkill)}
+              {fmt(row.unlockNow)}/{fmt(row.unlockAt)}
             </span>
           </p>
         ) : row.state === 'owned' ? (
