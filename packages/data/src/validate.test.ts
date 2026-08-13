@@ -1774,6 +1774,105 @@ describe('validateGameData 의 되사기 게이트 검사', () => {
   })
 })
 
+describe('validateGameData 의 결계 게이트 검사', () => {
+  /**
+   * 결계 하나 — 문(transitions)과 그것을 선언하는 이정표(milestones) 한 쌍.
+   *
+   * 되사기(buybackData)와 같은 모양의 픽스처다. 저쪽이 `shop_stock.csv` 의
+   * `unlockCollection` 과 짝이라면 이쪽은 `transitions.csv` 의 `gateSkill`·
+   * `gateValue` 와 짝이고, 검사가 묻는 것도 같다 — **선언과 실물이 서로를 아는가**.
+   */
+  function barrierData(): GameData {
+    const data = registryData()
+    data.transitions = [
+      { fromMap: 'world', fromX: 5, fromY: 4, toMap: 'world', toX: 5, toY: 2, facing: 'up', gateSkill: 'mineral', gateValue: 85000 },
+      // 나오는 문 — 게이트가 없으므로 이 검사의 대상이 아니다(§9-앞 16).
+      { fromMap: 'world', fromX: 5, fromY: 2, toMap: 'world', toX: 5, toY: 4, facing: 'down' },
+    ]
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'mineral_85000', metric: { kind: 'skill', skill: 'mineral' }, threshold: 85000,
+        name: '광물 결계를 넘을 수 있다', announce: '', effect: { kind: 'barrier' },
+      },
+    ]
+    return data
+  }
+
+  it('맞물린 한 쌍은 위반이 없다', () => {
+    expect(validateGameData(barrierData(), baseTables())).toEqual([])
+  })
+
+  it('선언만 있고 그 숫자를 요구하는 문이 없으면 잡아낸다', () => {
+    const data = barrierData()
+    data.transitions = data.transitions.filter((t) => t.gateSkill === undefined)
+    expect(validateGameData(data, baseTables())).toContain(
+      'milestones[mineral_85000]: 숙련 mineral 85000 에서 열리는 결계 문이 하나도 없다 — transitions.csv 에 gateSkill=mineral·gateValue=85000 인 행이 있어야 이 선언이 실물을 가리킨다',
+    )
+  })
+
+  // 왜: **이것이 이 검사의 존재 이유다.** 결계 넷을 출하하고도 85,000 이 어느
+  //     목록에도 없던 그 구멍이 이 방향이다 — 문은 서 있는데 목록방이 그 숫자를
+  //     한 번도 말하지 않으면, 플레이어는 벽 앞에 서고 나서야 처음 그 숫자를 읽는다.
+  it('문만 있고 선언이 없으면 잡아낸다 — 목록방에서 조용히 빠지는 문이다', () => {
+    const data = barrierData()
+    data.milestones = data.milestones.filter((m) => m.id !== 'mineral_85000')
+    expect(validateGameData(data, baseTables())).toContain(
+      'transitions.csv[world (5, 4)]: gateSkill=mineral·gateValue=85000 인 문이 어느 barrier 이정표에도 실리지 않았다 — 목록방에서 조용히 빠져 플레이어는 그 숫자를 결계 앞에서야 처음 읽는다. milestones.csv 에 metricKind=skill·metricArg=mineral·threshold=85000·effectKind=barrier 로 싣는다',
+    )
+  })
+
+  it('같은 문을 두 이정표가 선언하면 잡아낸다 — 목록에 같은 문이 두 번 열린다', () => {
+    const data = barrierData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'mineral_85000_again', metric: { kind: 'skill', skill: 'mineral' }, threshold: 85000,
+        name: '또 그 벽', announce: '', effect: { kind: 'barrier' },
+      },
+    ]
+    expect(validateGameData(data, baseTables())).toContain(
+      'transitions.csv[world (5, 4)]: gateSkill=mineral·gateValue=85000 인 문이 barrier 이정표 [mineral_85000,mineral_85000_again] 2개에 실렸다 — 정확히 하나여야 한다. 목록에 같은 벽이 두 번 열리는 것으로 보인다',
+    )
+  })
+
+  it('결계를 선언하면서 지표가 총점이면 잡아낸다 — 짝지을 계열이 없다', () => {
+    const data = barrierData()
+    data.milestones = data.milestones.map((m) =>
+      m.id === 'mineral_85000' ? { ...m, metric: { kind: 'collection' as const } } : m,
+    )
+    expect(validateGameData(data, baseTables())).toContain(
+      'milestones[mineral_85000]: effectKind=barrier 인데 metricKind 가 "collection" 다 — 결계 문이 요구하는 것은 계열 숙련도이므로 metricKind 도 skill 이어야 한다. 그래야 transitions.csv 의 gateSkill 과 짝지을 수 있다',
+    )
+  })
+
+  // 왜: 계열을 잘못 적으면 "허브 85,000" 을 광물 문에 걸어 둔 목록이 된다 — 두 줄
+  //     다 참인 숫자를 적으면서 서로 다른 것을 가리키고, 어느 화면도 이상해지지
+  //     않는다. 양방향이라 위반이 둘 뜬다(선언은 실물이 없고, 실물은 선언이 없다).
+  it('계열이 어긋나면 양쪽에서 잡아낸다', () => {
+    const data = barrierData()
+    data.milestones = data.milestones.map((m) =>
+      m.id === 'mineral_85000' ? { ...m, metric: { kind: 'skill' as const, skill: 'herb' as const } } : m,
+    )
+    const violations = validateGameData(data, baseTables())
+    expect(violations).toContain(
+      'milestones[mineral_85000]: 숙련 herb 85000 에서 열리는 결계 문이 하나도 없다 — transitions.csv 에 gateSkill=herb·gateValue=85000 인 행이 있어야 이 선언이 실물을 가리킨다',
+    )
+    expect(violations.some((v) => v.startsWith('transitions.csv[world (5, 4)]:'))).toBe(true)
+  })
+
+  // 왜: 물때는 숙련 문턱 위에 얹힌 두 번째 조건이지 짝의 열쇠가 아니다(허브 결계).
+  //     열쇠로 세면 같은 85,000 문이 물때 유무로 둘로 갈라져, 물때 문 하나가
+  //     "선언이 없다" 라고 잘못 고발된다.
+  it('물때까지 지는 문도 숙련 문턱 하나로 짝지어진다', () => {
+    const data = barrierData()
+    data.transitions = data.transitions.map((t) =>
+      t.gateSkill === undefined ? t : { ...t, gateTide: true },
+    )
+    expect(validateGameData(data, baseTables())).toEqual([])
+  })
+})
+
 describe('validateGameData 의 달인 등록부 검사', () => {
   it('없는 화자를 가리키는 달인을 잡아낸다', () => {
     const data = registryData()

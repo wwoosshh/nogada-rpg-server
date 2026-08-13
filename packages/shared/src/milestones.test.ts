@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
-import type { PlayerState } from './types.js'
+import type { PlayerState, TransitionDef } from './types.js'
 import type { CollectionTable } from './collection.js'
 import {
   achievedIds,
+  barrierDoorsOf,
   isAchieved,
   metricValue,
   milestoneRatio,
@@ -225,5 +226,60 @@ describe('newlyAchieved', () => {
     // 이정표를 지운 뒤에도 옛 세이브가 살아 있어야 한다.
     const fresh = newlyAchieved(world, player({ ice: 1000 }), ['사라진것'])
     expect(fresh.map((m) => m.id)).toEqual(['ice-1000'])
+  })
+})
+
+/**
+ * `barrier` 효과가 무엇을 여는가 — 그 정의는 이 함수 하나다.
+ *
+ * 왜 술어를 두는가: 화면(이정표 탭)과 빌드 검증이 같은 질문을 한다 — "이 이정표가
+ * 여는 문이 어느 것인가". 둘이 각자 `gateSkill === … && gateValue === …` 를 옮겨
+ * 적으면, 짝짓는 규칙이 바뀌는 날 한쪽만 따라가고 그 어긋남은 "빌드는 초록인데
+ * 목록이 딴소리를 한다" 로만 드러난다.
+ */
+describe('barrierDoorsOf', () => {
+  const iceDoor: TransitionDef = {
+    fromMap: '얼음채집장', fromX: 5, fromY: 4, toMap: '얼음채집장', toX: 5, toY: 2,
+    facing: 'up', gateSkill: 'ice', gateValue: 85000,
+  }
+  const iceExit: TransitionDef = {
+    fromMap: '얼음채집장', fromX: 5, fromY: 2, toMap: '얼음채집장', toX: 5, toY: 4, facing: 'down',
+  }
+  const herbDoor: TransitionDef = {
+    fromMap: '허브채집장', fromX: 29, fromY: 16, toMap: '허브채집장', toX: 29, toY: 14,
+    facing: 'up', gateSkill: 'herb', gateValue: 85000, gateTide: true,
+  }
+  const iceBarrier: MilestoneDef = {
+    id: 'ice_85000', metric: { kind: 'skill', skill: 'ice' }, threshold: 85000,
+    name: '얼음 결계를 넘을 수 있다', announce: '', effect: { kind: 'barrier' },
+  }
+
+  it('같은 계열·같은 숫자를 요구하는 문만 고른다', () => {
+    const doors = barrierDoorsOf(iceBarrier, [iceDoor, iceExit, herbDoor])
+    expect(doors).toEqual([iceDoor])
+  })
+
+  // 왜: 나오는 문은 게이트가 없다(§9-앞 16). 그것까지 세면 목록이 "결계 2곳" 이라
+  //     적으면서 실제로 넘어야 할 벽은 하나인 화면이 된다.
+  it('게이트 없는 나오는 문은 세지 않는다', () => {
+    expect(barrierDoorsOf(iceBarrier, [iceExit])).toEqual([])
+  })
+
+  // 왜: 숫자가 다르면 다른 문이다. 문턱을 90,000 으로 올리면서 이정표를 안 고친 날
+  //     이 목록이 비고, 빌드가 그 사실을 위반으로 말한다.
+  it('숫자가 다른 문은 남이다', () => {
+    expect(barrierDoorsOf({ ...iceBarrier, threshold: 90000 }, [iceDoor])).toEqual([])
+  })
+
+  // 왜: 효과가 barrier 가 아닌 이정표에 문을 붙여 주면, 화면이 칭호 줄 아래에
+  //     결계 문구를 적는다. 짝은 효과가 선언한 것에만 붙는다.
+  it('barrier 가 아닌 효과에는 문이 붙지 않는다', () => {
+    expect(barrierDoorsOf({ ...iceBarrier, effect: { kind: 'title' } }, [iceDoor])).toEqual([])
+  })
+
+  // 왜: 문이 요구하는 것은 계열 숙련도다. 총점·합산 지표로는 어느 계열인지 말할
+  //     수 없으므로 짝지을 수 없고, 빌드가 그 조합 자체를 위반으로 잡는다.
+  it('지표가 숙련도가 아니면 짝지을 계열이 없다', () => {
+    expect(barrierDoorsOf({ ...iceBarrier, metric: { kind: 'collection' } }, [iceDoor])).toEqual([])
   })
 })

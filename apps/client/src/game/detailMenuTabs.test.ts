@@ -113,6 +113,74 @@ describe('숙련도 탭', () => {
   })
 })
 
+/**
+ * 이정표 탭의 효과 줄 — 이 탭이 무엇을 약속하는가.
+ *
+ * 결계 넷은 한동안 `title` 로 실려 있었다. 그래서 화면이 "얼음 결계를 넘을 수
+ * 있다" 바로 아래에 "칭호 — 효과는 없다" 를 적었고, 두 줄이 서로를 부정했다.
+ * 그 두 줄이 다시 어긋나지 않게 **화면에 뜨는 문자열 그대로** 못박는다.
+ */
+describe('이정표 탭 — 결계 줄', () => {
+  function milestoneLines(player: PlayerState) {
+    const tab = TABS.find((t) => t.id === 'milestones')!
+    return tab.buildLines(loadGameData(), player)
+  }
+
+  /** 그 이정표의 효과 줄 — 이름 줄 바로 다음 줄이다. */
+  function effectLine(player: PlayerState, name: string): string {
+    const lines = milestoneLines(player)
+    const head = lines.findIndex((l) => l.text.startsWith(name) || l.text === `✓ ${name}`)
+    if (head < 0) throw new Error(`이정표 줄을 못 찾았다: ${name}`)
+    return lines[head + 1]!.text
+  }
+
+  const 초보 = emptyPlayer()
+  const 장인 = {
+    ...emptyPlayer(),
+    skills: { ice: 85000, wood: 85000, mineral: 85000, herb: 85000, crafting: 0 },
+  }
+
+  // 왜: 못한 줄이 "칭호 — 효과는 없다" 를 적으면, 85,000 을 향해 캐는 이유가
+  //     화면에서 사라진다. 어느 맵의 벽인지를 적는 것이 그 이유다.
+  it('못한 결계 줄은 어느 채집장의 벽이 열리는지 적는다', () => {
+    expect(effectLine(초보, '얼음 결계를 넘을 수 있다')).toBe(
+      '달성하면 얼음 채집장의 결계가 더는 밀어내지 않는다',
+    )
+    expect(effectLine(초보, '나무 결계를 넘을 수 있다')).toBe(
+      '달성하면 나무 수렵장의 결계가 더는 밀어내지 않는다',
+    )
+    expect(effectLine(초보, '광물 결계를 넘을 수 있다')).toBe(
+      '달성하면 광물 채굴장의 결계가 더는 밀어내지 않는다',
+    )
+  })
+
+  // 왜: 허브 문은 숙련만으로 열리지 않는다(물때도 진다). 그 사실을 빼면 목록이
+  //     85,000 을 채운 사람에게 "열렸다" 고 말해 놓고 문은 여전히 밀어낸다.
+  it('허브 줄은 물때까지 적는다 — 숙련만으로는 안 열리는 유일한 문이다', () => {
+    expect(effectLine(초보, '허브 결계를 넘을 수 있다')).toBe(
+      '달성하면 허브 채집장의 결계가 더는 밀어내지 않는다 — 물이 빠졌을 때만',
+    )
+  })
+
+  // 왜: 달성한 줄은 시제만 다르다 — 같은 사실을 현재형으로 말한다.
+  it('달성한 결계 줄은 지금 열려 있다고 말한다', () => {
+    expect(effectLine(장인, '얼음 결계를 넘을 수 있다')).toBe(
+      '얼음 채집장의 결계가 더는 밀어내지 않는다',
+    )
+    expect(effectLine(장인, '허브 결계를 넘을 수 있다')).toBe(
+      '허브 채집장의 결계가 더는 밀어내지 않는다 — 물이 빠졌을 때만',
+    )
+  })
+
+  // 왜: 이 아크가 지운 거짓말이 바로 이 문자열이다. 어느 결계 줄에도 다시
+  //     나타나면 안 된다.
+  it('결계 줄 넷 중 어느 것도 "효과는 없다" 라고 말하지 않는다', () => {
+    for (const name of ['얼음', '나무', '광물', '허브']) {
+      expect(effectLine(초보, `${name} 결계를 넘을 수 있다`)).not.toContain('효과는 없다')
+    }
+  })
+})
+
 describe('설정 탭', () => {
   // 왜: 이 두 줄이 계정을 놓는 유일한 문이다. groupId 가 빠지면 줄은 그대로
   //     보이는데 눌리지만 않아서, 화면만 봐서는 고장인지 원래 그런 것인지

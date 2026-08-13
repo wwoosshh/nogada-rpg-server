@@ -29,7 +29,7 @@ function parsePipeList(value: string, context: string, field: string): string[] 
 
 const METRIC_KINDS = ['skill', 'every', 'collection'] as const
 // 'nodes' 는 은퇴했다(설계 §7-앞 2) — 노드 tier 게이트가 폐지되어 선언할 게이트가 없다.
-const EFFECT_KINDS = ['repeat', 'recipes', 'stock', 'title'] as const
+const EFFECT_KINDS = ['repeat', 'recipes', 'stock', 'barrier', 'title'] as const
 
 /**
  * 인자를 안 쓰는 종류에 인자가 적혀 있으면 그 자리에서 거절한다.
@@ -88,6 +88,21 @@ function toEffect(
   if (kind === 'stock') {
     requireEmpty(row, 'effectArg', ctx, '무엇이 열리는지는 같은 문턱을 요구하는 shop_stock.csv 의 unlockCollection 행들이 정한다')
     return { kind: 'stock' }
+  }
+
+  // `barrier` 는 `stock` 의 전환판이다 — 무엇이 열리는지는 effectArg 가 아니라
+  // **문이 안다**: 같은 계열·같은 숫자를 요구하는 transitions.csv 의 gateSkill·
+  // gateValue 행들이 그 목록이다(shared 의 barrierDoorsOf). 여기에 한 번 더 적게
+  // 하면 두 벌이 갈라지고, 그 어긋남은 "목록엔 적혔는데 그 칸엔 문이 없다"로만
+  // 드러난다. 둘이 맞물리는지는 validate.ts 가 양방향으로 본다.
+  //
+  // 계열을 여기서 안 받는 이유: 그것은 이미 metricKind=skill 의 metricArg 다.
+  // 문턱도 threshold 다 — 짝의 열쇠 둘이 모두 이 행에 이미 있으므로, 효과 칸이
+  // 더 적을 것은 없다. 둘이 어긋나는 조합(예: 지표가 총점인데 효과가 barrier)은
+  // 이 행 하나만 봐서는 판단할 수 없어 validate.ts 가 진다.
+  if (kind === 'barrier') {
+    requireEmpty(row, 'effectArg', ctx, '무엇이 열리는지는 같은 계열·같은 숫자를 요구하는 transitions.csv 의 gateSkill·gateValue 행들이 정한다')
+    return { kind: 'barrier' }
   }
 
   if (kind === 'repeat') {

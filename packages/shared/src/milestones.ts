@@ -1,6 +1,6 @@
 import { collectionScore, type CollectionTable } from './collection.js'
 import { clamp } from './formulas/clamp.js'
-import type { PlayerState, SkillId } from './types.js'
+import type { PlayerState, SkillId, TransitionDef } from './types.js'
 
 /**
  * 이정표가 무엇을 보는가.
@@ -39,11 +39,22 @@ export type MilestoneMetric =
  * 것이다(설계 §6-앞 7). 인자가 없는 이유: 무엇이 열리는지는 그 문턱과 같은
  * 총점을 요구하는 진열 행들이고, 그 목록은 `GameData.shops` 에서 유도된다 —
  * CSV 에 한 번 더 적으면 두 벌이 갈라진다.
+ *
+ * `barrier` 는 `stock` 의 전환판이다 — `transitions.csv` 의 `gateSkill`·`gateValue`
+ * 가 이미 강제하는 문을 목록에 적는다(결계 설계 §2). 인자가 없는 이유도 같다:
+ * 무엇이 열리는지는 그 계열·그 숫자를 요구하는 전환 행들이고, 그 목록은
+ * `GameData.transitions` 에서 유도된다(`barrierDoorsOf`).
+ *
+ * **이 종류가 생긴 이유는 그것이 없어서 생긴 거짓말이다.** 85,000 결계 넷을
+ * 목록에 실을 때 맞는 종류가 없어 `title` 로 뒀더니, 이정표 탭이 "얼음 결계를
+ * 넘을 수 있다" 바로 아래에 "칭호 — 효과는 없다" 를 적었다. 두 줄이 서로를
+ * 부정했고, 이정표 설계 §2.3("칭호는 장식이고, 게이트가 콘텐츠다")과도 어긋났다.
  */
 export type MilestoneEffect =
   | { kind: 'repeat'; skill: SkillId }
   | { kind: 'recipes'; ids: string[] }
   | { kind: 'stock' }
+  | { kind: 'barrier' }
   | { kind: 'title' }
 
 export interface MilestoneDef {
@@ -53,6 +64,34 @@ export interface MilestoneDef {
   name: string
   announce: string
   effect: MilestoneEffect
+}
+
+/**
+ * `barrier` 이정표가 여는 문들 — **그 짝의 유일한 정의**.
+ *
+ * 이 술어를 shared 에 두는 이유는 같은 질문을 하는 곳이 둘이기 때문이다:
+ * 이정표 탭(무엇이 열리는지 한 줄로 적는다)과 빌드 검증(선언과 실물이 양방향으로
+ * 맞물리는지 본다). 양쪽이 `gateSkill === … && gateValue === …` 를 각자 옮겨
+ * 적으면 짝짓는 규칙이 바뀌는 날 한쪽만 따라가고, 그 어긋남은 "빌드는 초록인데
+ * 목록이 딴소리를 한다" 로만 드러난다 — `transitionGate` 를 shared 하나로 둔 것과
+ * 같은 자리, 같은 이유다.
+ *
+ * **`gateTide` 는 짝의 조건이 아니다.** 물때는 숙련 문턱 위에 얹힌 두 번째 조건이고
+ * (허브 결계 하나뿐이다), 이정표가 선언하는 것은 **숙련 쪽 문턱**이다. 물때까지
+ * 짝의 열쇠로 삼으면 같은 85,000 문이 물때 유무로 둘로 갈라진다.
+ *
+ * 지표가 숙련도가 아니면 빈 목록이다 — 문이 요구하는 것은 계열 숙련도라 총점·합산
+ * 지표로는 어느 계열인지 말할 수 없다. 그 조합 자체를 빌드가 위반으로 잡지만,
+ * 여기서도 조용히 엉뚱한 문을 붙이지는 않는다.
+ */
+export function barrierDoorsOf(
+  def: MilestoneDef,
+  transitions: readonly TransitionDef[],
+): TransitionDef[] {
+  if (def.effect.kind !== 'barrier') return []
+  if (def.metric.kind !== 'skill') return []
+  const { skill } = def.metric
+  return transitions.filter((t) => t.gateSkill === skill && t.gateValue === def.threshold)
 }
 
 /**

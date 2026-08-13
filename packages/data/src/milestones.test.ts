@@ -80,6 +80,17 @@ describe('parseMilestones — 정상 행', () => {
     )
   })
 
+  it('effectKind=barrier 를 파싱한다 — effectArg 는 비어 있다(무엇이 열리는지는 문이 안다)', () => {
+    const [m] = parseMilestones([row({ effectKind: 'barrier', effectArg: '' })], recipes)
+    expect(m?.effect).toEqual({ kind: 'barrier' })
+  })
+
+  it('effectKind=barrier 인데 effectArg 가 적혀 있으면 던진다 — 문 목록을 두 벌로 적게 하지 않는다', () => {
+    expect(() =>
+      parseMilestones([row({ effectKind: 'barrier', effectArg: '얼음채집장' })], recipes),
+    ).toThrow('milestones.csv[ice_1000]: effectArg 에 "얼음채집장" 가 적혔다')
+  })
+
   it('CSV 행 순서를 그대로 보존한다', () => {
     // 이정표 탭(apps/client/src/game/detailMenuTabs.ts)이 동점 진척을 이 배열의
     // 순서로 정렬한다 — 파싱이 id 순으로 정렬하거나 순서를 흩뜨리면 그 정렬이
@@ -113,7 +124,7 @@ describe('parseMilestones — metricKind 검사', () => {
 describe('parseMilestones — effectKind 검사', () => {
   it('모르는 effectKind 면 던진다', () => {
     expect(() => parseMilestones([row({ effectKind: 'bogus' })], recipes)).toThrow(
-      'milestones.csv[ice_1000]: effectKind "bogus" 는 알 수 없다 (허용값: repeat, recipes, stock, title)',
+      'milestones.csv[ice_1000]: effectKind "bogus" 는 알 수 없다 (허용값: repeat, recipes, stock, barrier, title)',
     )
   })
 
@@ -121,7 +132,7 @@ describe('parseMilestones — effectKind 검사', () => {
     // 옛 CSV 를 되살리거나 문서의 옛 예시를 베낀 행이 조용히 통과하면, 목록에
     // "달성하면 캘 수 있다" 라는 거짓 약속이 남는다 — 노드는 이제 잠기지 않는다.
     expect(() => parseMilestones([row({ effectKind: 'nodes', effectArg: 'copper_vein' })], recipes)).toThrow(
-      'milestones.csv[ice_1000]: effectKind "nodes" 는 알 수 없다 (허용값: repeat, recipes, stock, title)',
+      'milestones.csv[ice_1000]: effectKind "nodes" 는 알 수 없다 (허용값: repeat, recipes, stock, barrier, title)',
     )
   })
 

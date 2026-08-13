@@ -1,5 +1,6 @@
 import {
   achievedIds,
+  barrierDoorsOf,
   craftIntervalMs,
   equippedToolInfo,
   gatherHandOf,
@@ -94,6 +95,27 @@ function effectDescription(def: MilestoneDef, data: GameData, achieved: boolean)
       // 넘게 열려서다 — 한 줄에 안 들어가는 목록은 읽히지 않는다.
       const opened = countBuyback(data, def.threshold)
       const what = `상점 ${opened.shops}곳이 채집물 ${opened.items}종을 정가에 되판다`
+      return achieved ? what : `달성하면 ${what}`
+    }
+    case 'barrier': {
+      // `stock` 과 같은 자리다 — 무엇이 열리는지는 **문이 안다**(효과에 인자가
+      // 없고, 짝짓는 규칙은 shared 의 barrierDoorsOf 하나다). 여기서 맵 이름을
+      // 손으로 적으면 transitions.csv 가 바뀐 날 이 줄만 옛말을 한다.
+      //
+      // 상점처럼 개수만 세지 않고 **어디인지를 적는** 이유: 한 문턱이 여는 문은
+      // 채집장 하나뿐이라 이름이 한 줄에 들어가고, "결계 1곳" 은 플레이어를 그
+      // 벽 앞으로 데려다 주지 못한다. 되사기 쪽이 세기만 하는 것은 한 문턱에 열
+      // 줄 넘게 열리기 때문이지 개수가 더 낫기 때문이 아니다.
+      const walls = barrierDoorsOf(def, data.transitions)
+      // 문이 하나도 없는 선언은 빌드가 막는다(validate.ts 의 결계 게이트 양방향
+      // 검사). 그래도 총체적으로 답해야 하므로, 지어낸 장소를 적는 대신 없다고
+      // 말한다 — 보상을 암시하고 안 주는 줄은 아예 없는 줄보다 나쁘다.
+      if (walls.length === 0) return '여는 결계가 없다'
+      const where = walls.map((d) => data.maps[d.fromMap]?.name ?? d.fromMap).join(' · ')
+      // 물때는 숙련 위에 얹힌 두 번째 조건이다(허브 결계 하나뿐). 빼면 목록이
+      // 85,000 을 채운 사람에게 "열렸다" 고 말해 놓고 문은 여전히 밀어낸다.
+      const tide = walls.some((d) => d.gateTide === true) ? ' — 물이 빠졌을 때만' : ''
+      const what = `${where}의 결계가 더는 밀어내지 않는다${tide}`
       return achieved ? what : `달성하면 ${what}`
     }
     case 'title':

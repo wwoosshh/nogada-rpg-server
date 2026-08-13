@@ -15,6 +15,7 @@ import {
   ONCE_EVENTS,
   SKILL_IDS,
   actionIntervalMs,
+  barrierDoorsOf,
   describeFactValueShape,
   factValueFitsShape,
   findFactSpec,
@@ -367,7 +368,10 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
         `nodes[${node.id}]: 존재하지 않는 표 "${node.tableId}" 를 가리킨다 — gather_tables.csv 의 tableId 중 하나여야 한다`,
       )
     }
-    // variant 와 tableId 는 한 가지를 말하는 두 칸이다(결계 §9-앞 5).
+    // variant 와 tableId 는 한 가지를 말하는 두 칸이다. **이 짝의 출처는 결계
+    // 계획 B2 의 마지막 항목**("`variant='deep'` ⟺ `tableId` 가 `*_deep`")이고
+    // 설계의 §9-앞 규범이 아니다 — 이 줄은 오래 "§9-앞 5" 로 적혀 있었는데 그
+    // 번호는 전수 시뮬의 표 목록 하드코딩 얘기다.
     //
     // 이 아크 전까지 variant 는 채집 티어 스펙이 스스로 적어 둔 대로 "표시 전용"
     // 이었고, 그 대가로 심층 노드 넷이 이름과 마커 색만 심층인 채 바깥과 **같은
@@ -1036,6 +1040,55 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     } else if (carriers.length > 1) {
       violations.push(
         `shop_stock.csv: unlockCollection ${score} 가 stock 이정표 [${carriers.map((m) => m.id).join(',')}] ${carriers.length}개에 실렸다 — 정확히 하나여야 한다. 목록에 같은 문이 두 번 열리는 것으로 보인다`,
+      )
+    }
+  }
+
+  // 결계 게이트의 양방향 검사 — 되사기(바로 위)와 같은 자세, 같은 이유다.
+  // 이정표는 새 게이트를 만들지 않고 `transitions.csv` 의 `gateSkill`·`gateValue`
+  // 가 이미 강제하는 문을 목록에 적을 뿐이므로, 선언과 실물이 갈라지면 어느
+  // 쪽도 화면에서 되짚을 수 없다.
+  //
+  // **뒷방향이 이 검사의 존재 이유다.** 결계 넷이 출하되고도 85,000 이 어느
+  // 목록에도 없던 적이 있다 — 문은 서 있는데 목록방이 그 숫자를 한 번도 말하지
+  // 않으면, 플레이어는 벽 앞에 서고 나서야 처음 그 숫자를 읽는다. 그것은 원작이
+  // 쓴 "잠긴 것까지 보이는 목록방" 의 반대다.
+  //
+  // 짝짓는 규칙 자체는 shared 의 `barrierDoorsOf` 하나가 소유한다 — 이정표 탭이
+  // "무엇이 열리는가" 를 적을 때 부르는 그 함수이고, 검사와 화면이 각자 부등호를
+  // 옮겨 적으면 둘이 갈라지는 날 빌드는 초록인데 목록만 딴소리를 한다.
+  for (const milestone of data.milestones) {
+    if (milestone.effect.kind !== 'barrier') continue
+    // 문이 요구하는 것은 계열 숙련도다. 총점·합산 지표로 선언하면 짝지을 계열이
+    // 없어 `barrierDoorsOf` 가 언제나 빈 목록을 주고, 아래 "문이 하나도 없다" 만
+    // 뜬다 — 진짜 원인은 지표 칸이므로 그것을 이름으로 말한다.
+    if (milestone.metric.kind !== 'skill') {
+      violations.push(
+        `milestones[${milestone.id}]: effectKind=barrier 인데 metricKind 가 "${milestone.metric.kind}" 다 — 결계 문이 요구하는 것은 계열 숙련도이므로 metricKind 도 skill 이어야 한다. 그래야 transitions.csv 의 gateSkill 과 짝지을 수 있다`,
+      )
+      continue
+    }
+    if (barrierDoorsOf(milestone, data.transitions).length === 0) {
+      violations.push(
+        `milestones[${milestone.id}]: 숙련 ${milestone.metric.skill} ${milestone.threshold} 에서 열리는 결계 문이 하나도 없다 — transitions.csv 에 gateSkill=${milestone.metric.skill}·gateValue=${milestone.threshold} 인 행이 있어야 이 선언이 실물을 가리킨다`,
+      )
+    }
+  }
+
+  for (const door of data.transitions) {
+    // 게이트 없는 문(나오는 문과 마을 사이 열여덟 줄)은 선언할 것이 없다.
+    // 물때만 지는 문도 여기 없다 — 이정표가 선언하는 것은 숙련 쪽 문턱이고,
+    // 시각은 아무리 캐도 오르지 않는 숫자라 목록에 적을 진척이 없다.
+    if (door.gateSkill === undefined || door.gateValue === undefined) continue
+    const carriers = data.milestones.filter((m) => barrierDoorsOf(m, [door]).length === 1)
+    const at = `transitions.csv[${door.fromMap} (${door.fromX}, ${door.fromY})]`
+    if (carriers.length === 0) {
+      violations.push(
+        `${at}: gateSkill=${door.gateSkill}·gateValue=${door.gateValue} 인 문이 어느 barrier 이정표에도 실리지 않았다 — 목록방에서 조용히 빠져 플레이어는 그 숫자를 결계 앞에서야 처음 읽는다. milestones.csv 에 metricKind=skill·metricArg=${door.gateSkill}·threshold=${door.gateValue}·effectKind=barrier 로 싣는다`,
+      )
+    } else if (carriers.length > 1) {
+      violations.push(
+        `${at}: gateSkill=${door.gateSkill}·gateValue=${door.gateValue} 인 문이 barrier 이정표 [${carriers.map((m) => m.id).join(',')}] ${carriers.length}개에 실렸다 — 정확히 하나여야 한다. 목록에 같은 벽이 두 번 열리는 것으로 보인다`,
       )
     }
   }
