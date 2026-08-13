@@ -68,7 +68,7 @@ const hammerRecipesMilestone: MilestoneDef = {
 function baseTables(): GatherTables {
   return {
     mineral: {
-      id: 'mineral', skill: 'mineral', skillGainMin: 1, skillGainMax: 2,
+      id: 'mineral', skill: 'mineral', skillGainMin: 1, skillGainMax: 2, equity: true,
       tiers: [{ itemId: 'copper_ore' }],
       brackets: [{ bracketMax: null, cumulative: [60000] }],
     },

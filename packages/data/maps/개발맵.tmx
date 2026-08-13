@@ -215,36 +215,36 @@
   </object>
   <object id="10" x="208" y="752">
    <properties>
-    <property name="nodeId" value="iron_vein"/>
-    <property name="instanceId" value="iron_vein-1"/>
+    <property name="nodeId" value="copper_vein"/>
+    <property name="instanceId" value="copper_vein-11"/>
    </properties>
    <point/>
   </object>
   <object id="11" x="304" y="816">
    <properties>
-    <property name="nodeId" value="iron_vein"/>
-    <property name="instanceId" value="iron_vein-2"/>
+    <property name="nodeId" value="copper_vein"/>
+    <property name="instanceId" value="copper_vein-12"/>
    </properties>
    <point/>
   </object>
   <object id="12" x="80" y="880">
    <properties>
-    <property name="nodeId" value="deep_ice_vein"/>
-    <property name="instanceId" value="deep_ice_vein-1"/>
+    <property name="nodeId" value="ice_vein"/>
+    <property name="instanceId" value="ice_vein-11"/>
    </properties>
    <point/>
   </object>
   <object id="13" x="880" y="912">
    <properties>
-    <property name="nodeId" value="old_tree"/>
-    <property name="instanceId" value="old_tree-1"/>
+    <property name="nodeId" value="young_tree"/>
+    <property name="instanceId" value="young_tree-11"/>
    </properties>
    <point/>
   </object>
   <object id="14" x="688" y="880">
    <properties>
-    <property name="nodeId" value="rare_herb_patch"/>
-    <property name="instanceId" value="rare_herb_patch-1"/>
+    <property name="nodeId" value="herb_patch"/>
+    <property name="instanceId" value="herb_patch-11"/>
    </properties>
    <point/>
   </object>

@@ -1,4 +1,4 @@
-import type { CollectionTable, GameData, ItemDef } from '@nogada/shared'
+import type { CollectionTable, GameData, GatherTableDef, GatherTables, ItemDef } from '@nogada/shared'
 import { COLLECTION_MAX_GRADE, collectionScore } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { parseCollection, validateCollection } from './collection.js'
@@ -30,8 +30,33 @@ function stepsOf(itemId: string, steps: [number, number, number, number]): Colle
   return { ...shipped.collection, [itemId]: { itemId, steps } }
 }
 
-const check = (collection: CollectionTable, items?: Record<string, ItemDef>): string[] =>
-  validateCollection(dataWith(collection, items), tables)
+const check = (
+  collection: CollectionTable,
+  items?: Record<string, ItemDef>,
+  measured: GatherTables = tables,
+): string[] => validateCollection(dataWith(collection, items), measured)
+
+/**
+ * 출하 얼음 표 옆에 심층 표 하나를 세운 사본 — B2 가 놓을 자리를 미리 흉내 낸다.
+ *
+ * 심층 표의 확률을 일부러 어긋나게 둔다. 첫 브라켓은 거의 아무것도 안 나오는
+ * 구간이고(결계 뒤라 구리 손·숙련 0 은 여기 설 수 없다), ∞ 는 최상 티어가
+ * 흔한 구간이다. 그래서 같은 표 하나로 두 가지를 한꺼번에 보인다: **재는 표가
+ * 아니면 검증이 조용하고, 재는 표가 되는 순간 같은 값이 빨개진다.**
+ */
+function withDeepIce(equity: { outer: boolean; deep: boolean }): GatherTables {
+  const outer = tables['ice']!
+  const deep: GatherTableDef = {
+    ...outer,
+    id: 'ice_deep',
+    equity: equity.deep,
+    brackets: [
+      { bracketMax: 85_000, cumulative: [1, 2, 3, 4, 5] },
+      { bracketMax: null, cumulative: [90_000, 92_000, 94_000, 96_000, 100_000] },
+    ],
+  }
+  return { ...tables, ice: { ...outer, equity: equity.outer }, ice_deep: deep }
+}
 
 describe('parseCollection', () => {
   it('한 줄이 한 칸이고 문턱 넷을 순서대로 읽는다 — 화면이 "0/50" 을 적으려면 요구치가 데이터에 있어야 한다(§6-앞 3)', () => {
@@ -136,6 +161,39 @@ describe('validateCollection — 형평(§6-앞 5)', () => {
     // 그래서 위반도 계열마다 하나다(칸마다 일곱 번 같은 말을 하지 않는다).
     const { mineral_sight_token: _removed, ...items } = shipped.items
     expect(check(shipped.collection, items)).toEqual([expect.stringContaining('최적손')])
+  })
+})
+
+describe('validateCollection — 계열마다 재는 표가 하나(결계 §9-앞 1·2)', () => {
+  it('계열에 재는 표가 없으면 위반이다 — 검증이 사라진 것을 아무도 모르면 그 계열의 일곱 칸이 조용히 안 재인다', () => {
+    const blind = { ...tables, ice: { ...tables['ice']!, equity: false } }
+    const violations = check(shipped.collection, undefined, blind)
+    expect(violations).toHaveLength(1)
+    // 읽는 사람은 CSV 작가다 — 어느 계열인지, 어느 파일 어느 칸에 무엇을 적는지.
+    expect(violations[0]).toContain('gather_tables.csv')
+    expect(violations[0]).toContain('ice')
+    expect(violations[0]).toContain('equity')
+  })
+
+  it('계열에 재는 표가 둘이면 위반이다 — 한 칸의 t4 가 두 표의 ∞ 를 동시에 만족해야 해서 어떤 문턱으로도 빌드가 안 선다', () => {
+    const violations = check(shipped.collection, undefined, withDeepIce({ outer: true, deep: true }))
+    expect(violations).toHaveLength(1)
+    expect(violations[0]).toContain('ice_deep')
+    expect(violations[0]).toContain('equity')
+  })
+
+  it('재는 표가 아닌 표는 형평도 조기도달도 안 재인다 — 출하 25칸이 심층 표 옆에서 그대로 통과한다(회귀 0)', () => {
+    expect(check(shipped.collection, undefined, withDeepIce({ outer: true, deep: false }))).toEqual([])
+  })
+
+  it('그 표가 대표가 되는 순간 같은 값이 빨개진다 — 가림이 무르지 않다는 증거', () => {
+    const violations = check(shipped.collection, undefined, withDeepIce({ outer: false, deep: true }))
+    // 형평(∞ 가 너무 후하다)과 조기도달(첫 브라켓이 너무 박하다)이 둘 다 뜬다 —
+    // 가림이 없애는 것이 검사 하나가 아니라 안전망 둘이라는 뜻이다.
+    expect(violations.some((v) => v.includes('ice_gem') && v.includes('최적손'))).toBe(true)
+    expect(violations.some((v) => v.includes('ice_shard') && v.includes('구리 손'))).toBe(true)
+    // 다른 세 계열은 대표 표가 그대로라 조용하다.
+    expect(violations.some((v) => v.includes('copper_ore'))).toBe(false)
   })
 })
 

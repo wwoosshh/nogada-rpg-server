@@ -57,12 +57,12 @@ const data: GameData = {
  */
 const tables: GatherTables = {
   mineral: {
-    id: 'mineral', skill: 'mineral', skillGainMin: 1, skillGainMax: 2,
+    id: 'mineral', skill: 'mineral', skillGainMin: 1, skillGainMax: 2, equity: true,
     tiers: [{ itemId: 'mithril_ore' }, { itemId: 'copper_ore' }],
     brackets: [{ bracketMax: null, cumulative: [10, 20000] }],
   },
   herb: {
-    id: 'herb', skill: 'herb', skillGainMin: 1, skillGainMax: 2,
+    id: 'herb', skill: 'herb', skillGainMin: 1, skillGainMax: 2, equity: true,
     tiers: [{ itemId: 'rare_herb' }],
     brackets: [{ bracketMax: null, cumulative: [50000] }],
   },

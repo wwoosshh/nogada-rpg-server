@@ -1,5 +1,5 @@
-tableId,skill,skillGainMin,skillGainMax
-ice,ice,1,2
-wood,wood,1,2
-mineral,mineral,1,2
-herb,herb,1,2
+tableId,skill,skillGainMin,skillGainMax,equity
+ice,ice,1,2,1
+wood,wood,1,2,1
+mineral,mineral,1,2,1
+herb,herb,1,2,1

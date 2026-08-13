@@ -5,6 +5,7 @@ import {
   StateResponseSchema,
   isSellTarget,
   type ItemDef,
+  type NodePlacement,
   type ShopDef,
   type TransitionDef,
 } from '@nogada/shared'
@@ -60,6 +61,27 @@ async function step(me: TestPlayer, t: TransitionDef): Promise<void> {
  */
 async function enterField(me: TestPlayer): Promise<void> {
   await step(me, transitionBetween(startLocation(loadGameData()).mapId, fieldMapId()))
+}
+
+/**
+ * 심층 배치 하나 — 어느 맵의 무엇인지는 데이터가 정한다.
+ *
+ * 예전에는 개발용 시험장에 심층이 섞여 있어 `enterField` 뒤에 이름 하나만
+ * 적으면 됐다. 결계 아크가 그 뒷문을 닫으면서(숙련 0 이 걸어 들어가는 맵에
+ * 심층이 있으면 결계가 출하 첫날 장식이 된다) 심층은 채집장에만 남았다 —
+ * 그래서 여기서는 **시작 맵에서 한 걸음에 닿는** 채집장의 심층 배치를 데이터에서
+ * 고른다. 이름을 적으면 배치를 옮기는 날 이 테스트가 거짓말을 한다.
+ */
+function deepPlacement(): NodePlacement {
+  const data = loadGameData()
+  const oneStep = new Set(
+    data.transitions.filter((t) => t.fromMap === startLocation(data).mapId).map((t) => t.toMap),
+  )
+  const found = Object.values(data.placements).find(
+    (p) => oneStep.has(p.mapId) && data.nodes[p.nodeId]?.variant === 'deep',
+  )
+  if (!found) throw new Error('시작 맵에서 한 걸음에 닿는 심층 배치가 없다')
+  return found
 }
 
 /** 화자가 있는 맵으로 걸어 넘어간다. 대화 라우트는 같은 맵에 서 있어야 답한다. */
@@ -379,12 +401,13 @@ describe('POST /api/gather', () => {
     // 확률 보정(G3)의 재료다.
     const app = await buildTestApp()
     const me = await asPlayer(app)
-    await enterField(me)
+    const deep = deepPlacement()
+    await step(me, transitionBetween(startLocation(loadGameData()).mapId, deep.mapId))
 
     const res = await me.inject({
       method: 'POST',
       url: '/api/gather',
-      payload: { instanceId: 'deep_ice_vein-1' },
+      payload: { instanceId: deep.instanceId },
     })
 
     expect(res.statusCode).toBe(200)

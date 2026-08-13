@@ -67,13 +67,24 @@ describe('parseGatherTables — 구조', () => {
   it('메타·사다리·브라켓 세 CSV 를 표 하나로 조립한다', () => {
     const tables = parsedIce()
     expect(tables.ice).toEqual({
-      id: 'ice', skill: 'ice', skillGainMin: 1, skillGainMax: 2,
+      id: 'ice', skill: 'ice', skillGainMin: 1, skillGainMax: 2, equity: false,
       tiers: [{ itemId: 'ice_gem' }, { itemId: 'ice_shard' }],
       brackets: [
         { bracketMax: 500, cumulative: [3, 60000] },
         { bracketMax: null, cumulative: [15000, 100000] },
       ],
     })
+  })
+
+  it('equity 칸의 "1" 은 그 표가 계열을 대표해 재인다는 표시다 — 빈 칸은 아니다(결계 §9-앞 1·2)', () => {
+    expect(parsedIce().ice!.equity).toBe(false)
+    expect(parseGatherTables([metaRow({ equity: '1' })], tierRows(), [bracketRow()]).ice!.equity).toBe(true)
+  })
+
+  it('equity 에 "1" 도 빈 칸도 아닌 값이 오면 거부한다 — 조용히 false 가 되면 그 계열의 형평 검증이 소리 없이 사라진다', () => {
+    expect(() => parseGatherTables([metaRow({ equity: 'true' })], tierRows(), [bracketRow()])).toThrow(
+      'gather_tables.csv[ice]: equity "true" 는 알 수 없다 — 계열의 대표 표 한 줄에만 "1" 을 적고 나머지는 비운다',
+    )
   })
 
   it('중복된 tableId 를 거부한다', () => {
@@ -332,6 +343,15 @@ describe('실제로 출하되는 채집표', () => {
     const tables = loadRealTables()
     for (const id of ['ice', 'wood', 'mineral', 'herb'] as const) {
       expect(tables[id]!.brackets.at(-1)!.cumulative.at(-1)).toBe(100000)
+    }
+  })
+
+  it('네 표가 각자 자기 계열의 대표 표다 — 계열마다 표가 하나뿐인 지금은 그 하나가 25칸을 잰다', () => {
+    // 계열마다 정확히 하나여야 한다는 규칙 자체는 validateCollection 이 지고,
+    // 여기서는 출하 CSV 가 그 규칙을 만족한 채로 나간다는 사실만 못박는다.
+    const tables = loadRealTables()
+    for (const id of ['ice', 'wood', 'mineral', 'herb'] as const) {
+      expect(tables[id]!.equity).toBe(true)
     }
   })
 })

@@ -16,6 +16,8 @@ const table: GatherTableDef = {
   skill: 'ice',
   skillGainMin: 1,
   skillGainMax: 2,
+  // 계열에 표가 이 하나뿐이니 재는 표도 이것이다 — 판정에는 안 쓰이는 표시다.
+  equity: true,
   // 희귀 → 흔함. gem 은 잭팟 밴드(roll ≤ 10)와 겹치는 폭 3 으로 둬서
   // 평감산이 티어를 바꾸는 것까지 보이게 한다.
   tiers: [{ itemId: 'gem' }, { itemId: 'crystal' }, { itemId: 'shard' }],

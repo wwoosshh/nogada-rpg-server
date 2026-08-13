@@ -26,6 +26,15 @@ type Row = Record<string, string>
 
 const FILE = 'collection.csv'
 
+/**
+ * 위반 메시지가 가리키는 **다른** 파일 — 재는 표를 고르는 칸은 저쪽에 있다.
+ *
+ * 이 검증의 위반은 거의 다 collection.csv 의 문턱을 고치라는 말인데, 대표 표
+ * 위반만은 gather_tables.csv 한 줄을 고치라는 말이다. 파일 이름을 안 적으면
+ * 작가는 문턱표를 열고 equity 칸을 찾다가 없는 칸을 찾게 된다.
+ */
+const GATHER_TABLES_FILE = 'gather_tables.csv'
+
 /** roll 의 정의역 크기 — roll ∈ 0~100000 이므로 확률의 분모는 100001 이다. */
 const DOMAIN = GATHER_ROLL_MAX + 1
 
@@ -323,15 +332,54 @@ export function validateCollection(data: GameData, tables: GatherTables): string
     }
   }
 
-  // 칸 목록이 어긋난 채로 시간을 재면 "없는 표의 칸"을 묻게 되어 원인 하나가
-  // 위반 여럿이 된다 — validate.ts 가 참조 위반이 있으면 도달 가능성 검사를
-  // 미루는 것과 같은 저울이다.
+  // ---- 계열마다 "재는 표"가 정확히 하나(결계 §9-앞 1·2) ----
+  //
+  // 아래 시간 검사는 표를 순회하며 **같은 25칸 문턱**을 잰다. 계열에 표가 둘이
+  // 되면(바깥·심층) 한 칸의 t4 가 두 표의 ∞ 양쪽에서 25~35분 대역을 동시에
+  // 만족해야 하는데, 실측 허용창은 0.84×~1.23× 라 **어떤 문턱을 적어도 빌드가
+  // 안 서는 교착**이 된다. 그래서 계열마다 하나만 잰다.
+  //
+  // 0개도 위반인 이유는 반대쪽이다: 그 계열의 칸들이 아무에게도 안 재이는데
+  // **아무 소리도 안 난다.** 검증이 사라진 것은 검증이 알려야 한다.
+  const bySkill = new Map<SkillId, GatherTableDef[]>()
+  for (const table of Object.values(tables)) {
+    const list = bySkill.get(table.skill)
+    if (list) list.push(table)
+    else bySkill.set(table.skill, [table])
+  }
+  for (const [skill, all] of bySkill) {
+    const measuring = all.filter((t) => t.equity)
+    if (measuring.length === 1) continue
+    const at = `${GATHER_TABLES_FILE}(${skill} 계열)`
+    const ids = all.map((t) => t.id).join(', ')
+    violations.push(
+      measuring.length === 0
+        ? `${at}: equity 칸이 "1" 인 표가 없다 — 이 계열의 칸들이 형평·조기도달 검증을 아무 소리 없이 통째로 건너뛴다. 이 계열 표(${ids}) 중 바깥 표 한 줄의 equity 칸에 1 을 적는다`
+        : `${at}: equity 칸이 "1" 인 표가 ${measuring.length}개다(${measuring.map((t) => t.id).join(', ')}) — 한 칸의 t4 가 두 표의 ∞ 양쪽에서 ${EQUITY_MIN_MINUTES}~${EQUITY_MAX_MINUTES}분을 동시에 만족해야 해서 어떤 문턱으로도 빌드가 서지 않는다. 대표 표 한 줄만 남기고 나머지 줄의 equity 칸을 비운다`,
+    )
+  }
+
+  // 칸 목록이나 재는 표가 어긋난 채로 시간을 재면 "없는 표의 칸"을 묻거나 같은
+  // 칸을 두 표로 재게 되어 원인 하나가 위반 여럿이 된다 — validate.ts 가 참조
+  // 위반이 있으면 도달 가능성 검사를 미루는 것과 같은 저울이다.
   if (violations.length > 0) return violations
 
   // 시간은 **표 단위로** 잰다(칸 단위가 아니라). 손과 확률은 계열이 소유하는
   // 것이라 한 표의 일곱 칸이 같은 답을 나눠 쓰고, 전수 셈(100,001회)은 손마다
   // 한 번이면 된다 — 칸마다 다시 세면 같은 답을 25번 만든다.
   for (const table of Object.values(tables)) {
+    // 계열의 대표 표 하나만 잰다(결계 §9-앞 1·2) — 위 검사가 "정확히 하나"를
+    // 이미 보장했다.
+    //
+    // 형평은 위에 적은 교착 때문이고, 조기 도달은 이유가 하나 더 있다:
+    // 그 검사는 `table.brackets[0]` 을 **구리 손·숙련 0** 으로 재는데, 심층
+    // 표의 첫 브라켓은 숙련 85,000 결계 뒤에 있어 그 손이 영영 서 볼 수 없는
+    // 자리다. 가리지 않으면 검사는 계속 도는데 그것이 지키던 것("절벽까지 한
+    // 개도 안 바치는 것이 지배 전략이 되지 않게")은 새 표 위에서 아무 뜻도
+    // 없어진다 — **안전망이 새 표에서만 조용히 사라지고**, 작가는 그 자리를
+    // 초록으로 만들려고 닿을 수 없는 구간의 확률을 고치게 된다.
+    if (!table.equity) continue
+
     const skill = table.skill
     const at = `${FILE}(${table.id} 계열)`
 

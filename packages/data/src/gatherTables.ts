@@ -12,6 +12,29 @@ const CUM_COLUMNS = ['cum1', 'cum2', 'cum3', 'cum4', 'cum5', 'cum6', 'cum7'] as 
 /** roll 의 정의역 상한. roll = floor(rng × 100001) ∈ 0~100000 이다(설계 §2). */
 const ROLL_MAX = 100000
 
+/** `equity` 칸에 적는 유일한 값. 숫자가 아니라 표시라 1 하나뿐이다. */
+const EQUITY_MARK = '1'
+
+/**
+ * `equity` 칸을 읽는다 — 빈 칸은 아니다, `"1"` 은 맞다, 나머지는 던진다.
+ *
+ * 왜 다른 값을 조용히 false 로 접지 않는가: 이 칸은 수집의 방 형평·조기도달
+ * 검증이 **계열의 25칸을 어느 표로 재는가**를 정한다(결계 §9-앞 1·2).
+ * `true`·`y`·`O` 를 적은 작가는 대표 표를 골랐다고 믿는데, 접어 버리면 그
+ * 계열은 재는 표가 없어져 검증 자체가 사라진다 — 그 어긋남은 빌드 로그
+ * 어디에도 흔적을 안 남긴다. nodes.csv 의 variant 오타를 파싱 단계에서
+ * 던지는 것과 같은 자리다.
+ */
+function toEquity(raw: string | undefined, ctx: string): boolean {
+  if (raw === undefined) return false
+  if (raw !== EQUITY_MARK) {
+    throw new Error(
+      `${ctx}: equity "${raw}" 는 알 수 없다 — 계열의 대표 표 한 줄에만 "${EQUITY_MARK}" 을 적고 나머지는 비운다`,
+    )
+  }
+  return true
+}
+
 /**
  * 표 셋(메타·사다리·브라켓)을 GatherTables 하나로 조립한다.
  *
@@ -35,6 +58,7 @@ export function parseGatherTables(metaRows: Row[], tierRows: Row[], bracketRows:
       skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
       skillGainMin: toInt(requireCell(row, 'skillGainMin', ctx), ctx, 'skillGainMin'),
       skillGainMax: toInt(requireCell(row, 'skillGainMax', ctx), ctx, 'skillGainMax'),
+      equity: toEquity(optionalCell(row, 'equity'), ctx),
       tiers: [],
       brackets: [],
     }
