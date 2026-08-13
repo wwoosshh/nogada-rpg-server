@@ -274,6 +274,81 @@ describe('validateTransitions', () => {
 })
 
 /**
+ * **문과 문 뒤의 것이 서로를 아는가.**
+ *
+ * 이 검사가 없던 동안 두 렌즈가 독립으로 수렴했다 — 문은 `transitions.csv` 에서,
+ * 심층 노드는 `.tmx` 오브젝트에서 각자 서고 그 둘이 서로에 대해 아무것도 주장하지
+ * 않았다. 아래 셋은 전부 리뷰가 실제로 돌려 본 재현이고, 그때 빌드는 전부 초록이었다.
+ */
+describe('validateTransitions — 결계와 그 안의 배치', () => {
+  const { real, realTerrains } = shipped()
+
+  /** 출하 데이터에서 배치 하나를 더하거나 전환을 손본 사본. 원본은 건드리지 않는다. */
+  function variant(overrides: Partial<GameData>): GameData {
+    return { ...real, ...overrides }
+  }
+
+  // 왜: §9-앞 4 가 **치명**이라 부른 상태(개발맵 뒷문)가 `.tmx` 오브젝트 하나로
+  //     그대로 돌아온다. 심층 표는 "문 너머에서만 굴려진다"를 전제로 지은 표라,
+  //     밖에 하나만 놓여도 숙련 0 인 사람이 입구에서 그 분포를 굴린다.
+  it('심층 배치가 결계 밖에 하나라도 있으면 막는다', () => {
+    const leaked = variant({
+      placements: {
+        ...real.placements,
+        'deep_ice_vein-99': {
+          instanceId: 'deep_ice_vein-99', nodeId: 'deep_ice_vein', mapId: '얼음채집장', x: 10, y: 20,
+        },
+      },
+    })
+    expect(validateTransitions(leaked, realTerrains)).toEqual([
+      'placements[deep_ice_vein-99]: 심층 노드 "deep_ice_vein"(variant=deep) 가 결계 밖 얼음채집장 (10, 20) 에 놓였다 — 그 표(ice_deep)는 문 너머에서만 굴려지기로 하고 지은 표라(설계 §9-앞 3·4), 밖에 하나만 놓이면 숙련 0 인 사람이 입구에서 그 분포를 굴린다. 그 맵의 .tmx 에서 이 오브젝트를 결계 안쪽 칸으로 옮기거나, nodeId 를 같은 계열 normal 노드로 바꾼다',
+    ])
+  })
+
+  // 왜: `transitions.csv` 의 `ice` 를 `wood` 로 한 글자 오타 내도 빌드가 전부
+  //     초록이었다. 문은 문대로 열리고 노드는 노드대로 캐지므로 **어느 화면에서도
+  //     되짚을 수 없다** — validate.ts 의 "문턱은 X 계열인데 산출물은 Y 계열" 과
+  //     같은 부류, 같은 처방이다.
+  it('결계의 gateSkill 이 그 안 노드의 계열과 다르면 막는다', () => {
+    const typo = variant({
+      transitions: real.transitions.map((t) => (t.gateSkill === 'ice' ? { ...t, gateSkill: 'wood' as const } : t)),
+    })
+    expect(validateTransitions(typo, realTerrains)).toEqual([
+      'transitions[얼음채집장 (5, 4)]: 문턱은 wood 85000 인데 이 문 뒤의 노드 [deep_ice_vein-2(ice), deep_ice_vein-3(ice), deep_ice_vein-4(ice), deep_ice_vein-5(ice)] 는 다른 계열이다 — 문을 여는 숙련과 문 뒤에서 캐는 숙련이 갈라지면 네 NPC 가 말한 "그 숙련이면 그 결계 너머도 가 볼 만하지" 가 거짓이 되는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다(문은 문대로 열리고 노드는 노드대로 캐진다). transitions.csv 의 gateSkill 이나 얼음채집장.tmx 의 그 노드 배치 중 하나를 고친다',
+    ])
+  })
+
+  // 왜: 물때만 지는 문은 결계 구역을 만들지만(isGated 가 그렇게 센다) 숙련은 안
+  //     묻는다 — 기다리면 누구에게나 열리므로 그 뒤의 심층은 숙련 0 짜리 손에
+  //     열린다. 허브 결계에서 gateSkill 두 칸만 비우면 그 상태가 된다.
+  it('심층이 있는 구역으로 들어오는 문에 숙련 문턱이 하나도 없으면 막는다', () => {
+    const tideOnly = variant({
+      transitions: real.transitions.map((t) =>
+        t.gateSkill === 'herb' ? { ...t, gateSkill: undefined, gateValue: undefined } : t,
+      ),
+    })
+    expect(validateTransitions(tideOnly, realTerrains)).toEqual([
+      'maps[허브채집장] (27, 13) 구역: 심층 노드 [rare_herb_patch-2, rare_herb_patch-3, rare_herb_patch-4, rare_herb_patch-5] 가 있는데 이 구역으로 들어오는 문에 숙련 문턱(gateSkill)이 하나도 없다 — 물때만 지는 문은 기다리면 누구에게나 열리므로, 숙련 0 인 사람이 물이 빠지는 창마다 결계 뒤의 분포를 굴린다. transitions.csv 의 그 문에 gateSkill·gateValue 를 적는다',
+    ])
+  })
+
+  // 왜: 반대는 **묻지 않는다.** 결계의 약속은 "심층은 문 뒤에만 있다"이지 "문
+  //     뒤에는 심층만 있다"가 아니다 — 결계 안의 normal 노드는 아무에게도 손해가
+  //     아니다(같은 노드가 밖에 8개 그대로 있으므로 저숙련이 잃는 것이 없다,
+  //     설계 §2). 금지하면 "안쪽에도 평범한 나무가 몇 그루 선 숲" 같은 정당한
+  //     맵을 데이터로 표현할 수 없게 된다. 해악이 비대칭이라 검사도 비대칭이다.
+  it('결계 안의 normal 노드는 막지 않는다 — 같은 계열이면 문턱과도 어긋나지 않는다', () => {
+    const inside = variant({
+      placements: {
+        ...real.placements,
+        'ice_vein-99': { instanceId: 'ice_vein-99', nodeId: 'ice_vein', mapId: '얼음채집장', x: 5, y: 1 },
+      },
+    })
+    expect(validateTransitions(inside, realTerrains)).toEqual([])
+  })
+})
+
+/**
  * 출하되는 CSV·맵을 그대로 읽어 온다 — 픽스처가 아니라 **진짜 데이터**다.
  *
  * 두 스위트가 쓴다: 전환 검증이 스스로 통과하는지와, 결계 구역 굽기가 실제

@@ -3,6 +3,7 @@ import {
   type BarrierRegions,
   type Direction,
   type GameData,
+  type NodeDef,
   type TransitionDef,
 } from '@nogada/shared'
 import { START_MAP_ID } from './maps.js'
@@ -255,7 +256,26 @@ function collectTrapViolations(
 }
 
 /**
- * 결계 뒤 칸들을 굽는다 — 서버가 "지금 그 안에 있는가"에 답할 재료다(설계 §9-앞 18).
+ * 결계 하나 — 구운 칸들과, **그 안으로 들어오는 게이트 걸린 문들**.
+ *
+ * 문을 함께 들고 있는 것이 이 자료의 값어치다. `bakeBarrierRegions` 는 칸만
+ * 내놓으면 되지만(서버가 묻는 것은 "지금 그 안인가" 하나다), 빌드는 그보다
+ * 하나 더 물어야 한다 — **이 문과 이 문 뒤의 것이 서로를 아는가**.
+ */
+interface Barrier {
+  region: Region
+  /** 이 덩어리에 속한 칸의 `"x,y"` 키. */
+  cells: string[]
+  /** 이 덩어리로 **들어오는** 게이트 걸린 문. 나오는 문은 여기 없다. */
+  doors: TransitionDef[]
+}
+
+/**
+ * 결계들을 계산한다 — 굽기(`bakeBarrierRegions`)와 문·내용물 검사가 나눠 쓴다.
+ *
+ * 둘이 각자 세면 언젠가 갈라지고, 갈라지는 쪽이 하필 검사면 **서버가 지키는
+ * 목록과 빌드가 검사한 목록이 다른 것**이 된다 — 그 어긋남은 어느 화면에도
+ * 안 나타난다.
  *
  * **갇힘 방지 검사(collectTrapViolations)와 같은 두 계산의 앞뒤 짝이다.** 저쪽은
  * 게이트 없는 문만으로 **거꾸로** 넓혀 "여기서 나올 수 있는가"를 묻고, 여기는
@@ -264,18 +284,11 @@ function collectTrapViolations(
  * 만든 사실이고, 벽이나 게이트를 옮기면 이 산출물이 따라 움직인다 — CSV 에
  * 결계를 하나 더 그리는 날 아무도 이 함수를 고치러 오지 않아도 된다.
  *
- * **왜 배치가 아니라 칸을 굽는가:** 서버가 물어야 하는 것은 노드 쪽만이 아니다.
- * "이 노드가 결계 뒤인가" 와 "이 사람이 그 안에 있는가" 는 같은 구역 목록에
- * 물어야 하고, 사람이 서는 자리는 노드가 놓인 칸이 아니다(전환 도착 칸이다).
- *
  * 시작 맵이나 시작 칸이 성립하지 않으면 **빈 목록**이다 — 그 한 줄은
  * validateTransitions·validateMapSpawns 가 이미 말하므로 여기서 또 말하지
  * 않는다. 빌드는 어차피 그 위반에서 멈춘다.
  */
-export function bakeBarrierRegions(
-  data: GameData,
-  terrains: Record<string, MapTerrain>,
-): BarrierRegions {
+function collectBarriers(data: GameData, terrains: Record<string, MapTerrain>): Barrier[] {
   const { regions, regionOf } = walkableRegions(terrains)
 
   const startMap = data.maps[START_MAP_ID]
@@ -308,11 +321,130 @@ export function bakeBarrierRegions(
     else cellsOf.set(index, [key.slice(cut + 1)])
   }
 
+  const doorsOf = new Map<number, TransitionDef[]>()
+  for (const t of data.transitions) {
+    if (!isGated(t)) continue
+    const to = regionOf.get(`${t.toMap}:${t.toX},${t.toY}`)
+    const from = regionOf.get(`${t.fromMap}:${t.fromX},${t.fromY}`)
+    if (to === undefined || from === to || free.has(to)) continue
+    const list = doorsOf.get(to)
+    if (list) list.push(t)
+    else doorsOf.set(to, [t])
+  }
+
   // 덩어리 번호 순으로 낸다 — walkableRegions 가 맵 이름을 정렬해 도므로,
   // 같은 데이터에서 같은 파일이 나온다(diff 가 흔들리지 않는다).
   return [...cellsOf.keys()]
     .sort((a, b) => a - b)
-    .map((index) => ({ mapId: regions[index]!.mapId, cells: cellsOf.get(index)! }))
+    .map((index) => ({
+      region: regions[index]!,
+      cells: cellsOf.get(index)!,
+      doors: doorsOf.get(index) ?? [],
+    }))
+}
+
+/**
+ * 결계 뒤 칸들을 굽는다 — 서버가 "지금 그 안에 있는가"에 답할 재료다(설계 §9-앞 18).
+ *
+ * **왜 배치가 아니라 칸을 굽는가:** 서버가 물어야 하는 것은 노드 쪽만이 아니다.
+ * "이 노드가 결계 뒤인가" 와 "이 사람이 그 안에 있는가" 는 같은 구역 목록에
+ * 물어야 하고, 사람이 서는 자리는 노드가 놓인 칸이 아니다(전환 도착 칸이다).
+ *
+ * 계산 자체는 `collectBarriers` 하나이고, 여기서는 서버가 쓰지 않는 것(문)을
+ * 떨어뜨린다 — 판정의 재료를 판정받는 쪽에 쥐여 줄 이유가 없다는 저울과 같다.
+ */
+export function bakeBarrierRegions(
+  data: GameData,
+  terrains: Record<string, MapTerrain>,
+): BarrierRegions {
+  return collectBarriers(data, terrains).map((barrier) => ({
+    mapId: barrier.region.mapId,
+    cells: barrier.cells,
+  }))
+}
+
+/**
+ * **문과 문 뒤의 것이 서로를 아는가** — 결계와 배치를 맞대 보는 두 검사.
+ *
+ * 이 검사가 없던 동안 두 렌즈가 **독립으로 수렴**했다: 문은 문대로 서고
+ * (`transitions.csv` 의 게이트), 심층 노드는 노드대로 놓였는데(`.tmx` 의 오브젝트)
+ * 그 둘이 서로에 대해 **아무것도 주장하지 않았다.** 실제로 `transitions.csv` 의
+ * `ice` 를 `wood` 로 오타 내도, 얼음채집장 (10,20) 에 `deep_ice_vein` 배치를
+ * 하나 더 놓아도 빌드가 전부 초록이었다 — 뒤엣것은 설계 §9-앞 4 가 **치명**이라
+ * 부른 상태(개발맵 뒷문)가 `.tmx` 오브젝트 하나로 돌아오는 것이다.
+ *
+ * **1. `variant='deep'` 배치는 결계 구역 안에 있다.** 심층 표는 "문 너머에서만
+ *    굴려진다"를 전제로 지은 표라(§9-앞 3 — 문턱 아래 구간은 바깥과 같게 두고,
+ *    그 위만 갈라 놓았다), 밖에 하나만 놓여도 숙련 0 인 사람이 입구에서 ×2.5 를
+ *    굴린다. 그 순간 결계는 장식이 된다.
+ *
+ * **반대(normal 이 결계 안)는 묻지 않는다.** 결계의 약속은 "심층은 문 뒤에만
+ * 있다"이지 "문 뒤에는 심층만 있다"가 아니다 — 결계 안의 normal 노드는 아무에게도
+ * 손해가 아니다(같은 노드가 밖에 8개 그대로 있으므로 저숙련이 잃는 것이 없다,
+ * 설계 §2). 금지하면 "안쪽에도 평범한 나무가 몇 그루 선 숲"처럼 정당한 맵을
+ * 데이터로 표현할 수 없게 된다. **해악이 비대칭이라 검사도 비대칭이다.**
+ *
+ * **2. 결계의 `gateSkill` 은 그 안 배치들의 노드 `skill` 과 같다.** 선례는
+ *    `validate.ts` 의 레시피 검사다("문턱은 X 계열인데 산출물은 Y 계열") — 그쪽과
+ *    같은 이유로 여기 있다: 둘이 갈라져도 **어느 화면 하나 이상해지지 않는다.**
+ *    문은 문대로 열리고 노드는 노드대로 캐지며, 남는 것은 "나무를 85,000 캐야
+ *    열리는데 안에서는 얼음만 나오는 문" 하나뿐이다. 네 NPC 가 말한 것도
+ *    ("그 숙련이면 그 결계 너머도 가 볼 만하지") 정확히 이 짝이다.
+ */
+function collectBarrierContentViolations(
+  data: GameData,
+  terrains: Record<string, MapTerrain>,
+): string[] {
+  const barriers = collectBarriers(data, terrains)
+  const violations: string[] = []
+
+  /** 그 칸이 몇 번째 결계 안인가. 밖이면 -1 — 서버의 `barrierSeparates` 와 같은 물음이다. */
+  const barrierAt = (mapId: string, x: number, y: number): number =>
+    barriers.findIndex((b) => b.region.mapId === mapId && b.cells.includes(`${x},${y}`))
+
+  const placements = Object.values(data.placements)
+
+  // ---- 1. 심층 배치는 결계 안에 있다 ----
+  for (const placement of placements) {
+    const node = data.nodes[placement.nodeId]
+    // 없는 노드를 가리키는 배치는 parsePlacements 가 이미 던졌다.
+    if (!node || node.variant !== 'deep') continue
+    if (barrierAt(placement.mapId, placement.x, placement.y) >= 0) continue
+    violations.push(
+      `placements[${placement.instanceId}]: 심층 노드 "${node.id}"(variant=deep) 가 결계 밖 ${placement.mapId} (${placement.x}, ${placement.y}) 에 놓였다 — 그 표(${node.tableId})는 문 너머에서만 굴려지기로 하고 지은 표라(설계 §9-앞 3·4), 밖에 하나만 놓이면 숙련 0 인 사람이 입구에서 그 분포를 굴린다. 그 맵의 .tmx 에서 이 오브젝트를 결계 안쪽 칸으로 옮기거나, nodeId 를 같은 계열 normal 노드로 바꾼다`,
+    )
+  }
+
+  // ---- 2. 문턱의 계열과 그 안 노드의 계열은 같다 ----
+  //
+  // 결계별로 한 번씩 말한다 — 배치마다 말하면 문 하나의 오타가 그 안 노드 수만큼의
+  // 위반이 되어, 고칠 곳 하나가 자기 그림자에 묻힌다.
+  for (const [index, barrier] of barriers.entries()) {
+    const inside = placements
+      .filter((p) => barrierAt(p.mapId, p.x, p.y) === index)
+      .map((p) => ({ placement: p, node: data.nodes[p.nodeId] }))
+      .filter((entry): entry is { placement: (typeof placements)[number]; node: NodeDef } => entry.node !== undefined)
+    if (inside.length === 0) continue
+
+    for (const door of barrier.doors) {
+      if (door.gateSkill === undefined) continue
+      const wrong = inside.filter((entry) => entry.node.skill !== door.gateSkill)
+      if (wrong.length === 0) continue
+      violations.push(
+        `transitions[${door.fromMap} (${door.fromX}, ${door.fromY})]: 문턱은 ${door.gateSkill} ${door.gateValue} 인데 이 문 뒤의 노드 [${wrong.map((e) => `${e.placement.instanceId}(${e.node.skill})`).join(', ')}] 는 다른 계열이다 — 문을 여는 숙련과 문 뒤에서 캐는 숙련이 갈라지면 네 NPC 가 말한 "그 숙련이면 그 결계 너머도 가 볼 만하지" 가 거짓이 되는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다(문은 문대로 열리고 노드는 노드대로 캐진다). transitions.csv 의 gateSkill 이나 ${barrier.region.mapId}.tmx 의 그 노드 배치 중 하나를 고친다`,
+      )
+    }
+
+    // 물때만 지는 문 뒤의 심층 — 기다리면 누구에게나 열리므로 숙련 문턱이 없다.
+    const deepInside = inside.filter((entry) => entry.node.variant === 'deep')
+    if (deepInside.length > 0 && !barrier.doors.some((d) => d.gateSkill !== undefined)) {
+      violations.push(
+        `maps[${barrier.region.mapId}] (${barrier.region.sample.x}, ${barrier.region.sample.y}) 구역: 심층 노드 [${deepInside.map((e) => e.placement.instanceId).join(', ')}] 가 있는데 이 구역으로 들어오는 문에 숙련 문턱(gateSkill)이 하나도 없다 — 물때만 지는 문은 기다리면 누구에게나 열리므로, 숙련 0 인 사람이 물이 빠지는 창마다 결계 뒤의 분포를 굴린다. transitions.csv 의 그 문에 gateSkill·gateValue 를 적는다`,
+      )
+    }
+  }
+
+  return violations
 }
 
 /**
@@ -412,6 +544,10 @@ export function validateTransitions(
   // 그리고 같은 것을 한 번 더, **게이트를 아는 채로** 센다. 위의 것은 맵 단위라
   // 결계(fromMap === toMap)를 아예 보지 못한다.
   violations.push(...collectTrapViolations(data, terrains))
+
+  // 마지막으로 문과 문 뒤의 것을 맞대 본다 — 여기까지 오면 결계가 어디인지가
+  // 정해져 있다.
+  violations.push(...collectBarrierContentViolations(data, terrains))
 
   return violations
 }
