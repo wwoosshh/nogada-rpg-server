@@ -3,6 +3,11 @@ import {
   emptyDialogueHistory,
   ENHANCE_CAP,
   ENHANCE_INTERVAL_FACTOR,
+  GAME_EPOCH_MS,
+  gameTimeAt,
+  isLowTide,
+  REAL_MS_PER_GAME_MINUTE,
+  type BarrierRegions,
   type GameData,
   type GatherTables,
   type MilestoneDef,
@@ -74,6 +79,14 @@ const tables: GatherTables = {
   },
 }
 
+/**
+ * 결계가 하나도 없는 세계 — 이 스위트의 기존 단정 전부가 서는 무대다.
+ *
+ * 결계 뒤가 아닌 노드에게 이 검사는 아무것도 묻지 않으므로, 빈 목록은 "아크
+ * 이전의 세계" 와 정확히 같다. 아래 결계 describe 만 자기 목록을 따로 준다.
+ */
+const noBarriers: BarrierRegions = []
+
 function player(overrides: Partial<PlayerState> = {}): PlayerState {
   return {
     id: 'local',
@@ -120,7 +133,7 @@ const herbEdgeRoll = () => 0.4
 
 describe('performGather', () => {
   it('없는 노드는 unknown_node 로 거부한다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'ghost-1', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'ghost-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'unknown_node' })
   })
 
@@ -134,8 +147,8 @@ describe('performGather', () => {
         'copper_vein-2': { instanceId: 'copper_vein-2', nodeId: 'copper_vein', mapId: '얼음채집장', x: 9, y: 3 },
       },
     }
-    const a = performGather({ player: player(), data: d, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
-    const b = performGather({ player: player(), data: d, tables, instanceId: 'copper_vein-2', rng: jackpotRoll, now: 0 })
+    const a = performGather({ player: player(), data: d, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const b = performGather({ player: player(), data: d, tables, barriers: noBarriers, instanceId: 'copper_vein-2', rng: jackpotRoll, now: 0 })
     if (!a.ok || !b.ok) throw new Error('둘 다 성공해야 한다')
     expect(a.outcome.gained).toEqual(b.outcome.gained)
   })
@@ -145,12 +158,12 @@ describe('performGather', () => {
   //     존재하지 않던 구멍이라 기존 검사 어느 것도 이걸 막지 않는다.
   it('다른 맵의 노드는 캘 수 없다', () => {
     const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
 
   it('없는 인스턴스는 unknown_node 로 거부한다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'nope-9', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'nope-9', rng: jackpotRoll, now: 0 })
     expect(r).toEqual({ ok: false, code: 'unknown_node' })
   })
 
@@ -159,7 +172,7 @@ describe('performGather', () => {
     // 불일치를 null(맨손)로 만들어 판정에 넘기는지를 서비스 경로에서 본다 —
     // 게이트로 거부하던 옛 cannot_gather 는 은퇴했다(§2).
     const p = player({ equipped: { herb: 'i1' } })
-    const r = performGather({ player: p, data, tables, instanceId: 'herb_patch-1', rng: herbEdgeRoll, now: 0 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'herb_patch-1', rng: herbEdgeRoll, now: 0 })
     if (!r.ok) throw new Error('맨손 채집은 거부가 아니다')
     expect(r.outcome.success).toBe(false)
     // 간격도 맨손 배수다 — 엉뚱한 도구가 페널티만 피해 가면 규범이 반쪽이 된다.
@@ -171,20 +184,20 @@ describe('performGather', () => {
       instances: [{ instanceId: 's1', itemId: 'copper_sickle', enhanceLevel: 0 }],
       equipped: { herb: 's1' },
     })
-    const r = performGather({ player: p, data, tables, instanceId: 'herb_patch-1', rng: herbEdgeRoll, now: 0 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'herb_patch-1', rng: herbEdgeRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.success).toBe(true)
     expect(r.outcome.gained).toEqual({ itemId: 'rare_herb', count: 1 })
   })
 
   it('심층 외형(deep) 노드도 같은 기술의 1등급 도구로 캘 수 있다 — 등급 게이트는 폐지됐다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
     expect(r.ok).toBe(true)
   })
 
   it('굴리는 것은 variant 가 아니라 tableId 다 — 표가 같으면 외형이 달라도 같은 roll 에 같은 티어가 나온다', () => {
-    const normal = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
-    const deep = performGather({ player: player(), data, tables, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    const normal = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const deep = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
     if (!normal.ok || !deep.ok) throw new Error('둘 다 성공해야 한다')
     // 이 스위트의 두 노드는 variant 만 다르고 표는 'mineral' 로 같다. 그래서
     // 같은 roll(0)이면 같은 최상 티어(mithril_ore)가 나온다 — 판정이 노드의
@@ -195,7 +208,7 @@ describe('performGather', () => {
 
   it('맨손이어도 캘 수 있다 — 게이트가 아니라 페널티다(§2): 간격 ×1.5, 잭팟은 원확률', () => {
     const p = player({ instances: [], equipped: {} })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('맨손 채집은 거부가 아니다')
     // 잭팟 밴드는 평감산만 적용되고 맨손의 평감산은 0 이다(§3) — roll 0 그대로
     // 최상 티어가 나온다. 맨손 잭팟이 원확률로 열려 있다는 원작 정신의 증거다.
@@ -206,7 +219,7 @@ describe('performGather', () => {
 
   it('강화된 도구는 간격 스탬프가 짧아진다 — 스탬프가 ×0.97^강화 를 실제로 읽는다(§6-앞 10)', () => {
     const p = player({ instances: [{ instanceId: 'i1', itemId: 'copper_pickaxe', enhanceLevel: ENHANCE_CAP }] })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
     // 구리(×1.0) +5 → 500 × 0.97^5 = 429ms(반올림). actionIntervalMs(0)=500 그대로라면
     // (스탬프가 강화를 안 읽는다면) 1500 이 나와 이 테스트가 깨진다. 스탬프는
@@ -218,31 +231,31 @@ describe('performGather', () => {
 
   it('간격이 지나지 않았으면 too_fast 로 거부한다', () => {
     const p = player({ nextActionAt: 8000 })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'too_fast' })
   })
 
   it('간격이 지났으면 채집할 수 있다', () => {
     const p = player({ nextActionAt: 5000 })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
     expect(r.ok).toBe(true)
   })
 
   it('숙련도 0 이면 다음 행동까지 500ms 를 기다린다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
 
   it('숙련도가 높으면 간격이 짧아진다', () => {
     const p = player({ skills: { ice: 0, wood: 0, mineral: 999_999, herb: 0, crafting: 0 } })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 50)
   })
 
   it('실패해도 간격은 걸린다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 1000 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: failRoll, now: 1000 })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
@@ -253,12 +266,12 @@ describe('performGather', () => {
   // 않는 노드다. (도구 자격 검사는 은퇴했다 — 맨손 허용, §2.)
   it('간격도 남아 있고 맵도 다르면 wrong_map 을 우선한다', () => {
     const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 }, nextActionAt: 8000 })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
 
   it('성공하면 뽑힌 아이템 1개가 스택에 쌓이고 숙련도가 오른다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
 
     expect(r.outcome.success).toBe(true)
@@ -273,7 +286,7 @@ describe('performGather', () => {
   // 바뀌었다(설계 §7-앞 7) — 숙련 증가는 성패 무관 무조건이다. 이 테스트가
   // 그 반전을 못 박는다.
   it('실패하면 산출물은 없지만 숙련도는 그대로 오른다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 0 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: failRoll, now: 0 })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
     expect(r.outcome.success).toBe(false)
@@ -284,8 +297,8 @@ describe('performGather', () => {
   })
 
   it('표 메타(skillGainMin~Max)가 정한 범위(1~2)에서 성패와 무관하게 숙련이 오른다', () => {
-    const success = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
-    const failure = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 0 })
+    const success = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const failure = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: failRoll, now: 0 })
     if (!success.ok || !failure.ok) throw new Error('둘 다 요청 자체는 성공해야 한다')
 
     for (const r of [success, failure]) {
@@ -297,13 +310,13 @@ describe('performGather', () => {
 
   it('이미 가진 재료에 누적한다', () => {
     const p = player({ stacks: { mithril_ore: 5 } })
-    const r = performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.stacks.mithril_ore).toBe(6)
   })
 
   it('다른 생활기술의 숙련도는 건드리지 않는다', () => {
-    const r = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    const r = performGather({ player: player(), data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.skills.ice).toBe(0)
     expect(r.outcome.player.skills.wood).toBe(0)
@@ -313,7 +326,7 @@ describe('performGather', () => {
 
   it('입력 플레이어 객체를 변경하지 않는다', () => {
     const p = player()
-    performGather({ player: p, data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
+    performGather({ player: p, data, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     expect(p.stacks).toEqual({})
     expect(p.nextActionAt).toBe(0)
   })
@@ -337,7 +350,7 @@ describe('performGather — 이정표 달성', () => {
 
   it('성공한 채집이 문턱을 넘기면 outcome.achieved 에 그 이정표가 담긴다', () => {
     const r = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables, barriers: noBarriers,
       instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
     })
     if (!r.ok) throw new Error('성공해야 한다')
@@ -348,7 +361,7 @@ describe('performGather — 이정표 달성', () => {
 
   it('그 이정표 id 가 outcome.player.celebrated 에 들어간다', () => {
     const r = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables, barriers: noBarriers,
       instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
     })
     if (!r.ok) throw new Error('성공해야 한다')
@@ -358,13 +371,13 @@ describe('performGather — 이정표 달성', () => {
 
   it('다음 채집에서는 다시 담기지 않는다', () => {
     const first = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables, barriers: noBarriers,
       instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
     })
     if (!first.ok) throw new Error('성공해야 한다')
 
     const second = performGather({
-      player: first.outcome.player, data: dataWithMilestone, tables,
+      player: first.outcome.player, data: dataWithMilestone, tables, barriers: noBarriers,
       instanceId: 'copper_vein-1', rng: jackpotRoll, now: first.outcome.player.nextActionAt,
     })
     if (!second.ok) throw new Error('성공해야 한다')
@@ -379,7 +392,7 @@ describe('performGather — 이정표 달성', () => {
   // 그 상승이 문턱을 넘기면 축하가 침묵하면 안 된다.
   it('실패한 채집도 숙련이 올라 문턱을 넘기면 achieved 에 담긴다 — 실패가 판정을 침묵시키지 않는다', () => {
     const r = performGather({
-      player: playerBelowThreshold(), data: dataWithMilestone, tables,
+      player: playerBelowThreshold(), data: dataWithMilestone, tables, barriers: noBarriers,
       instanceId: 'copper_vein-1', rng: failRoll, now: 0,
     })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
@@ -396,7 +409,7 @@ describe('performGather — 이정표 달성', () => {
       celebrated: ['mineral-5'],
     })
     const r = performGather({
-      player: p, data: dataWithMilestone, tables, instanceId: 'copper_vein-1', rng: failRoll, now: 0,
+      player: p, data: dataWithMilestone, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: failRoll, now: 0,
     })
     if (!r.ok) throw new Error('요청 자체는 성공해야 한다')
 
@@ -410,9 +423,152 @@ describe('performGather — 이정표 달성', () => {
       nextActionAt: 8000,
     })
     const r = performGather({
-      player: p, data: dataWithMilestone, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000,
+      player: p, data: dataWithMilestone, tables, barriers: noBarriers, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 5000,
     })
     // too_fast 거부는 outcome 자체가 없다 — celebrated 를 실을 자리가 없다.
     expect(r).toEqual({ ok: false, code: 'too_fast' })
+  })
+})
+
+/**
+ * 결계 뒤 노드 — **이 아크가 만든 구멍**을 막는 검사다(설계 §9-앞 18).
+ *
+ * 결계는 맵 안 전환이라(`fromMap === toMap`, 설계 §3) 위의 맵 검사에게 안팎이
+ * 같은 맵이다. B2 가 심층에 ×2.5 분포를 주기 전에는 뚫어도 얻을 것이 없어
+ * 무해했지만, 지금은 벽 바깥에 선 사람이 `instanceId` 하나로 심층 표를 굴릴 수
+ * 있다 — 맵 JSON 은 클라이언트가 받아 가므로 그 id 는 이미 손에 있다.
+ */
+describe('performGather — 결계 뒤 노드', () => {
+  /**
+   * 얼음 결계 하나. 안쪽은 도착 칸 (5,2) 와 심층 노드가 놓인 (5,3) 이다 —
+   * 위 fixture 의 `iron_vein-1`(variant: deep)이 그 (5,3) 에 있다.
+   *
+   * 실제 출하 데이터에서는 이 목록을 빌드가 굽는다(`bakeBarrierRegions`) —
+   * 여기 손으로 적는 이유는 이 스위트가 재는 것이 **판정**이지 굽기가 아니기
+   * 때문이다. 굽기가 맞는지는 packages/data 의 transitions.test.ts 가 본다.
+   */
+  const barriers: BarrierRegions = [{ mapId: '얼음채집장', cells: ['5,2', '5,3'] }]
+
+  /** 결계 밖 어딘가 — 마을에서 채집장으로 들어온 사람의 도착 칸 자리다. */
+  const 바깥 = { mapId: '얼음채집장', x: 15, y: 24 }
+  /** 결계를 넘은 사람의 저장된 위치 — moveThroughTransition 이 적어 준 도착 칸이다. */
+  const 안쪽 = { mapId: '얼음채집장', x: 5, y: 2 }
+
+  // 왜: 이것이 구멍 그 자체다. 맵 검사만 있던 동안 이 요청은 200 으로 통과했고,
+  //     결계가 이 아크의 전부인데 devtools 하나로 우회됐다.
+  it('결계 밖에 선 사람은 결계 뒤 노드를 캘 수 없다', () => {
+    const p = player({ location: 바깥 })
+    const r = performGather({ player: p, data, tables, barriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    expect(r).toEqual({ ok: false, code: 'wrong_side' })
+  })
+
+  // 왜: 거절이 상태를 건드리면 연타만으로 숙련·간격이 움직인다 — 못 캐게 막은
+  //     것이 아니라 "아이템 없이 캐게" 한 것이 된다.
+  it('그 거절은 상태를 하나도 바꾸지 않는다', () => {
+    const p = player({ location: 바깥 })
+    const before = structuredClone(p)
+    const r = performGather({ player: p, data, tables, barriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    expect(r.ok).toBe(false)
+    // 거절 경로에는 outcome 이 없으므로 돌아오는 플레이어 자체가 없다. 인자로
+    // 건넨 객체가 그대로인지를 본다 — 서비스가 원본을 건드렸다면 여기서 드러난다.
+    expect(p).toEqual(before)
+  })
+
+  // 왜: 서버가 통과 여부를 아는 유일한 흔적이 저장된 도착 칸이다. 그것이
+  //     통과로 읽히지 않으면 정당하게 들어간 사람이 벽 안에서 아무것도 못 캔다.
+  it('결계를 넘은 사람은 결계 뒤 노드를 캔다', () => {
+    const p = player({ location: 안쪽 })
+    const r = performGather({ player: p, data, tables, barriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    if (!r.ok) throw new Error('안에 있는 사람은 캘 수 있어야 한다')
+    expect(r.outcome.success).toBe(true)
+  })
+
+  // 왜: **회귀 0 의 정의다.** 바깥 노드는 결계 목록이 있든 없든, 서 있는 자리가
+  //     어디든 지금까지와 똑같이 캐져야 한다. 저장된 x·y 는 원래도 실제 서 있는
+  //     칸이 아니라 마지막 전환 도착 칸이라(PlayerState.location), 여기에 자리
+  //     검사를 얹으면 멀쩡히 캐던 사람들이 이유 없이 거절당한다.
+  it('결계 뒤가 아닌 노드는 어디에 서 있든 지금처럼 캐진다', () => {
+    for (const location of [바깥, 안쪽, { mapId: '얼음채집장', x: 0, y: 0 }]) {
+      const r = performGather({
+        player: player({ location }), data, tables, barriers,
+        instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0,
+      })
+      if (!r.ok) throw new Error(`(${location.x}, ${location.y}) 에서도 캘 수 있어야 한다`)
+      expect(r.outcome.success).toBe(true)
+    }
+  })
+
+  // 왜: **가장 중요한 회귀 방지다.** "결계 뒤 노드니까 결계 조건(숙련 85,000 +
+  //     물때)을 다시 확인한다" 는 틀린 고침이다 — 허브 결계는 물이 빠졌을 때만
+  //     들어갈 수 있지만 안내판이 "나오는 길은 막지 않았다"고 약속했고(설계 §6),
+  //     들어간 뒤에는 물이 차도 안에서 계속 캘 수 있어야 한다. 조건을 다시 재면
+  //     정당하게 들어간 사람이 물이 들어오는 순간 손을 놓는다.
+  //
+  //     그래서 이 무대는 **물때가 걸린 결계**이고, 플레이어의 숙련은 0 이며
+  //     (요구치를 지금은 못 채운다), 판정 시각은 물이 차 있는 때다. 그래도
+  //     캐져야 한다: 물어야 할 것은 "조건을 만족하는가"가 아니라 "지금 그 안에
+  //     있는가" 뿐이기 때문이다.
+  it('물때가 닫힌 시각에도, 이미 안에 있으면 캔다 — 묻는 것은 조건이 아니라 자리다', () => {
+    const 물때결계: GameData = {
+      ...data,
+      transitions: [
+        { fromMap: '얼음채집장', fromX: 5, fromY: 4, toMap: '얼음채집장', toX: 5, toY: 2,
+          facing: 'up', gateSkill: 'mineral', gateValue: 85000, gateTide: true },
+      ],
+    }
+    // 물이 차 있는 시각(게임 12시 — TIDE_WINDOWS 는 2~8·14~20 이다)이고
+    // 숙련도 0 이라, 지금 이 사람은 저 문을 **다시는 못 지난다**.
+    const 물찬시각 = GAME_EPOCH_MS + 12 * 60 * REAL_MS_PER_GAME_MINUTE
+    expect(isLowTide(gameTimeAt(물찬시각).hour)).toBe(false)
+
+    const p = player({ location: 안쪽, skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 } })
+    const r = performGather({
+      player: p, data: 물때결계, tables, barriers,
+      instanceId: 'iron_vein-1', rng: jackpotRoll, now: 물찬시각,
+    })
+    if (!r.ok) throw new Error('안에 있는 사람은 물이 차도 캘 수 있어야 한다')
+    expect(r.outcome.success).toBe(true)
+  })
+
+  // 왜: 결계가 없는 맵(개발용 시험장)에는 이 검사가 손댈 것이 없다. 구운 목록에
+  //     그 맵이 아예 안 들어가므로, 그 맵의 노드는 전부 "결계 뒤가 아님" 이다.
+  it('결계가 없는 맵의 노드는 영향을 받지 않는다', () => {
+    const 개발맵: GameData = {
+      ...data,
+      placements: {
+        ...data.placements,
+        'iron_vein-9': { instanceId: 'iron_vein-9', nodeId: 'iron_vein', mapId: '개발맵', x: 5, y: 3 },
+      },
+      maps: {
+        ...data.maps,
+        개발맵: { id: '개발맵', name: '개발용 시험장', file: 'dev.tmx', width: 30, height: 30, spawn: { x: 1, y: 1 } },
+      },
+    }
+    // 얼음 결계와 **같은 좌표**(5,3)를 일부러 골랐다 — 맵을 안 보고 좌표만 보면
+    // 이 노드가 결계 뒤로 읽힌다.
+    const p = player({ location: { mapId: '개발맵', x: 15, y: 15 } })
+    const r = performGather({
+      player: p, data: 개발맵, tables, barriers, instanceId: 'iron_vein-9', rng: jackpotRoll, now: 0,
+    })
+    if (!r.ok) throw new Error('결계 없는 맵에서는 그대로 캐져야 한다')
+    expect(r.outcome.success).toBe(true)
+  })
+
+  // 왜: 검사 순서를 못 박는다. 다른 맵이면 wrong_map 이 먼저다 — 결계 검사는
+  //     "같은 맵인데 벽 반대편" 을 말하는 코드이므로, 맵부터 다른 요청에 그것을
+  //     돌려주면 플레이어(와 로그를 읽는 우리)가 원인을 잘못 짚는다.
+  it('맵부터 다르면 wrong_side 가 아니라 wrong_map 이다', () => {
+    const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
+    const r = performGather({ player: p, data, tables, barriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
+    expect(r).toEqual({ ok: false, code: 'wrong_map' })
+  })
+
+  // 왜: 자리 검사가 간격보다 먼저인 이유는 맵 검사와 같다 — 벽 반대편에서는
+  //     언제 두드려도 닿을 수 없는데 too_fast 로 답하면 "조금 있다 다시 두드리면
+  //     된다" 로 읽힌다.
+  it('간격도 남아 있고 벽 반대편이면 wrong_side 를 우선한다', () => {
+    const p = player({ location: 바깥, nextActionAt: 8000 })
+    const r = performGather({ player: p, data, tables, barriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 5000 })
+    expect(r).toEqual({ ok: false, code: 'wrong_side' })
   })
 })

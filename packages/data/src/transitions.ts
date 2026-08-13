@@ -1,4 +1,10 @@
-import { DIRECTIONS, type Direction, type GameData, type TransitionDef } from '@nogada/shared'
+import {
+  DIRECTIONS,
+  type BarrierRegions,
+  type Direction,
+  type GameData,
+  type TransitionDef,
+} from '@nogada/shared'
 import { START_MAP_ID } from './maps.js'
 import { optionalCell, readGate, requireCell, toInt } from './parse.js'
 import type { MapTerrain } from './placements.js'
@@ -151,6 +157,12 @@ function doorLabel(t: TransitionDef): string {
   return `${t.fromMap} (${t.fromX}, ${t.fromY})→${to}${gate}`
 }
 
+function push(m: Map<number, number[]>, from: number, to: number): void {
+  const list = m.get(from)
+  if (list) list.push(to)
+  else m.set(from, [to])
+}
+
 function grow(seeds: Iterable<number>, edges: ReadonlyMap<number, number[]>): Set<number> {
   const seen = new Set<number>(seeds)
   const stack = [...seen]
@@ -204,12 +216,6 @@ function collectTrapViolations(
   const entering = new Map<number, TransitionDef[]>()
   const leaving = new Map<number, TransitionDef[]>()
 
-  const push = (m: Map<number, number[]>, from: number, to: number): void => {
-    const list = m.get(from)
-    if (list) list.push(to)
-    else m.set(from, [to])
-  }
-
   for (const t of data.transitions) {
     const from = regionAt(t.fromMap, t.fromX, t.fromY)
     const to = regionAt(t.toMap, t.toX, t.toY)
@@ -246,6 +252,67 @@ function collectTrapViolations(
     )
   }
   return violations
+}
+
+/**
+ * 결계 뒤 칸들을 굽는다 — 서버가 "지금 그 안에 있는가"에 답할 재료다(설계 §9-앞 18).
+ *
+ * **갇힘 방지 검사(collectTrapViolations)와 같은 두 계산의 앞뒤 짝이다.** 저쪽은
+ * 게이트 없는 문만으로 **거꾸로** 넓혀 "여기서 나올 수 있는가"를 묻고, 여기는
+ * 같은 문들로 **앞으로** 넓혀 "여기 들어오는 데 게이트가 필요했는가"를 묻는다.
+ * 그래서 결계 뒤의 정의는 좌표를 손으로 적은 목록이 아니라 지형과 문이 함께
+ * 만든 사실이고, 벽이나 게이트를 옮기면 이 산출물이 따라 움직인다 — CSV 에
+ * 결계를 하나 더 그리는 날 아무도 이 함수를 고치러 오지 않아도 된다.
+ *
+ * **왜 배치가 아니라 칸을 굽는가:** 서버가 물어야 하는 것은 노드 쪽만이 아니다.
+ * "이 노드가 결계 뒤인가" 와 "이 사람이 그 안에 있는가" 는 같은 구역 목록에
+ * 물어야 하고, 사람이 서는 자리는 노드가 놓인 칸이 아니다(전환 도착 칸이다).
+ *
+ * 시작 맵이나 시작 칸이 성립하지 않으면 **빈 목록**이다 — 그 한 줄은
+ * validateTransitions·validateMapSpawns 가 이미 말하므로 여기서 또 말하지
+ * 않는다. 빌드는 어차피 그 위반에서 멈춘다.
+ */
+export function bakeBarrierRegions(
+  data: GameData,
+  terrains: Record<string, MapTerrain>,
+): BarrierRegions {
+  const { regions, regionOf } = walkableRegions(terrains)
+
+  const startMap = data.maps[START_MAP_ID]
+  if (!startMap) return []
+  const home = regionOf.get(`${START_MAP_ID}:${startMap.spawn.x},${startMap.spawn.y}`)
+  if (home === undefined) return []
+
+  // 게이트 없는 문만 잇는다. 게이트가 걸린 문은 아예 간선으로 놓지 않으므로,
+  // 그 문 하나로만 닿는 덩어리는 아래 `free` 에 들어오지 못한다.
+  const ungated = new Map<number, number[]>()
+  for (const t of data.transitions) {
+    if (isGated(t)) continue
+    const from = regionOf.get(`${t.fromMap}:${t.fromX},${t.fromY}`)
+    const to = regionOf.get(`${t.toMap}:${t.toX},${t.toY}`)
+    if (from === undefined || to === undefined || from === to) continue
+    push(ungated, from, to)
+  }
+  const free = grow([home], ungated)
+
+  // 칸은 덩어리 번호에서 되짚는다 — walkableRegions 가 칸마다 번호를 이미
+  // 적어 두었으므로, 그것을 뒤집는 것이 같은 순회를 한 번 더 도는 것보다 싸다.
+  const cellsOf = new Map<number, string[]>()
+  for (const [key, index] of regionOf) {
+    if (free.has(index)) continue
+    // key 는 `mapId:x,y` 다. 맵 이름에 콜론이 없다는 보장이 없으므로 **뒤에서**
+    // 자른다 — 좌표 쪽에는 콜론이 못 들어간다.
+    const cut = key.lastIndexOf(':')
+    const list = cellsOf.get(index)
+    if (list) list.push(key.slice(cut + 1))
+    else cellsOf.set(index, [key.slice(cut + 1)])
+  }
+
+  // 덩어리 번호 순으로 낸다 — walkableRegions 가 맵 이름을 정렬해 도므로,
+  // 같은 데이터에서 같은 파일이 나온다(diff 가 흔들리지 않는다).
+  return [...cellsOf.keys()]
+    .sort((a, b) => a - b)
+    .map((index) => ({ mapId: regions[index]!.mapId, cells: cellsOf.get(index)! }))
 }
 
 /**

@@ -4,6 +4,11 @@ import { loadGameData } from '@nogada/data'
 // 별도 진입이다 — 배럴(index.ts)에 실리면 클라이언트 번들도 이 표를 받는다.
 // 브라켓 경계·잭팟 확률이 곧 숨은 문턱이라 그러면 F12 로 스포일된다(설계 §7-앞 9).
 import { loadGatherTables } from '@nogada/data/gather-tables'
+// 역시 별도 진입이다 — 결계 뒤 칸들은 서버가 위조 요청을 거르는 근거이지
+// 화면이 그릴 것이 아니다(설계 §9-앞 18). 벽은 클라이언트가 맵 JSON 으로 이미
+// 보고 있으므로 감출 비밀이 있어서가 아니라, 판정의 재료를 판정받는 쪽에
+// 쥐여 줄 이유가 없어서다.
+import { loadBarrierRegions } from '@nogada/data/barriers'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { requireSession } from './auth/sessions.js'
 import { parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
@@ -58,6 +63,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // GameData 와 갈라서 온다(위 import 주석 참고) — data 처럼 한 번 읽어서
   // 채집 라우트에 주입한다. 다른 라우트는 이 값을 받지 않는다.
   const gatherTables = loadGatherTables()
+  // 확률표와 같은 자리·같은 수명 — 한 번 읽어서 채집 라우트에만 준다.
+  const barrierRegions = loadBarrierRegions()
   const store = options.persistence ?? (await openStore(options.dataFile))
 
   // 개발 중 클라이언트(Vite dev server)와 오리진이 다르므로 허용한다.
@@ -129,7 +136,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     registerMeRoutes(guarded, store, data)
     registerStateRoutes(guarded, store)
-    registerGatherRoutes(guarded, store, data, gatherTables)
+    registerGatherRoutes(guarded, store, data, gatherTables, barrierRegions)
     registerCraftRoutes(guarded, store, data)
     registerEquipRoutes(guarded, store, data)
     registerEnhanceRoutes(guarded, store, data)

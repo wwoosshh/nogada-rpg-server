@@ -1,5 +1,11 @@
 import { randomInt } from 'node:crypto'
-import { GatherRequestSchema, createRng, type GameData, type GatherTables } from '@nogada/shared'
+import {
+  GatherRequestSchema,
+  createRng,
+  type BarrierRegions,
+  type GameData,
+  type GatherTables,
+} from '@nogada/shared'
 import type { FastifyInstance } from 'fastify'
 import { performGather } from '../services/gatherService.js'
 import { requireAccount } from '../auth/sessions.js'
@@ -11,6 +17,7 @@ export function registerGatherRoutes(
   store: Persistence,
   data: GameData,
   tables: GatherTables,
+  barriers: BarrierRegions,
 ): void {
   app.post('/api/gather', async (request, reply) => {
     const parsed = GatherRequestSchema.safeParse(request.body)
@@ -21,6 +28,7 @@ export function registerGatherRoutes(
         player,
         data,
         tables,
+        barriers,
         instanceId: parsed.data.instanceId,
         // 시드도 시각도 **판정할 때마다** 새로 만든다. 저장이 밀려 다시 읽으면
         // 그때는 새 상태 위에서 다시 굴려야 한다 — 지나간 상태에서 굴린 주사위를

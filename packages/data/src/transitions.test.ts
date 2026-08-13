@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parseTransitions, validateTransitions } from './transitions.js'
-import type { GameData } from '@nogada/shared'
+import { bakeBarrierRegions, parseTransitions, validateTransitions } from './transitions.js'
+import type { BarrierRegions, GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMaps, START_MAP_ID } from './maps.js'
 import { parseSpeakers } from './speakers.js'
@@ -268,32 +268,119 @@ describe('validateTransitions', () => {
   //     테스트가 전부 통과해도 게임은 빌드되지 않는다. 특히 도달 가능성은
   //     맵을 하나 더 그린 뒤 길 내는 것을 잊기 가장 쉬운 자리다.
   it('실제로 출하되는 전환은 검증을 통과한다', () => {
-    const here = dirname(fileURLToPath(import.meta.url))
-    const csvDir = join(here, '..', 'csv')
-    const mapsDir = join(here, '..', 'maps')
-    const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
-    const nodes = parseNodes(readRealCsv('nodes.csv'))
-    const { maps, terrains: realTerrains, placements, places } = parseMaps(
-      readRealCsv('maps.csv'),
-      (file) => readFileSync(join(mapsDir, file), 'utf8'),
-      nodes,
-    )
-    const real: GameData = {
-      items: parseItems(readRealCsv('items.csv')),
-      nodes,
-      recipes: parseRecipes(readRealCsv('recipes.csv')),
-      maps,
-      transitions: parseTransitions(readRealCsv('transitions.csv')),
-      placements,
-      milestones: [],
-      speakers: parseSpeakers(readRealCsv('speakers.csv')),
-      // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
-      places,
-      schedules: {},
-      shops: {}, masters: [], enhanceCosts: [], collection: {},
-      routes: [],
-      dialogue: [],
-    }
+    const { real, realTerrains } = shipped()
     expect(validateTransitions(real, realTerrains)).toEqual([])
+  })
+})
+
+/**
+ * 출하되는 CSV·맵을 그대로 읽어 온다 — 픽스처가 아니라 **진짜 데이터**다.
+ *
+ * 두 스위트가 쓴다: 전환 검증이 스스로 통과하는지와, 결계 구역 굽기가 실제
+ * 네 채집장에서 무엇을 내놓는지. 각자 읽으면 한쪽만 고쳐져 갈라진다.
+ */
+function shipped(): { real: GameData; realTerrains: Record<string, MapTerrain> } {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const csvDir = join(here, '..', 'csv')
+  const mapsDir = join(here, '..', 'maps')
+  const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+  const nodes = parseNodes(readRealCsv('nodes.csv'))
+  const { maps, terrains: realTerrains, placements, places } = parseMaps(
+    readRealCsv('maps.csv'),
+    (file) => readFileSync(join(mapsDir, file), 'utf8'),
+    nodes,
+  )
+  const real: GameData = {
+    items: parseItems(readRealCsv('items.csv')),
+    nodes,
+    recipes: parseRecipes(readRealCsv('recipes.csv')),
+    maps,
+    transitions: parseTransitions(readRealCsv('transitions.csv')),
+    placements,
+    milestones: [],
+    speakers: parseSpeakers(readRealCsv('speakers.csv')),
+    // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
+    places,
+    schedules: {},
+    shops: {}, masters: [], enhanceCosts: [], collection: {},
+    routes: [],
+    dialogue: [],
+  }
+  return { real, realTerrains }
+}
+
+/**
+ * 결계 구역 굽기 — 서버가 "지금 그 안에 있는가"에 답할 재료를 만드는 곳이다.
+ *
+ * 갇힘 방지 검사와 **같은 두 계산의 앞뒤 짝**이라 같은 픽스처 위에 선다: 저쪽은
+ * 게이트 없는 문으로 거꾸로 넓혀 "나올 수 있는가"를 묻고, 이쪽은 앞으로 넓혀
+ * "들어오는 데 게이트가 필요했는가"를 묻는다.
+ */
+describe('bakeBarrierRegions', () => {
+  /** 그 칸이 구운 목록 안에 있는가 — 서버의 판정(barrierSeparates)과 같은 물음이다. */
+  function baked(regions: BarrierRegions, mapId: string, x: number, y: number): boolean {
+    return regions.some((r) => r.mapId === mapId && r.cells.includes(`${x},${y}`))
+  }
+
+  // 왜: 이것이 이 함수의 정의다. 벽 너머(y 0~2)는 게이트 걸린 문 하나로만
+  //     닿으므로 결계 뒤이고, 문 앞쪽은 시작 맵에서 게이트 없이 걸어오므로 아니다.
+  it('게이트 걸린 문으로만 닿는 덩어리만 굽는다', () => {
+    const regions = bakeBarrierRegions(barrier(), barrierTerrains)
+    expect(regions).toHaveLength(1)
+    expect(regions[0]!.mapId).toBe('채집장')
+    // 벽(y=3) 위쪽 30 칸 전부다 — 도착 칸 하나가 아니라 덩어리 전체여야, 안에서
+    // 걸어 다닌 사람의 저장 위치가 어느 칸이든 "안에 있다"로 읽힌다.
+    expect(regions[0]!.cells).toHaveLength(30)
+    expect(baked(regions, '채집장', 5, 2)).toBe(true) // 결계 문의 도착 칸
+    expect(baked(regions, '채집장', 0, 0)).toBe(true) // 안쪽 구석
+    expect(baked(regions, '채집장', 5, 4)).toBe(false) // 문 앞(바깥)
+    expect(baked(regions, '채집장', 5, 9)).toBe(false) // 채집장 입구(바깥)
+    expect(baked(regions, START_MAP_ID, 15, 0)).toBe(false)
+  })
+
+  // 왜: 결계는 게이트가 만든다. 문턱을 지우면 그 덩어리는 누구나 걸어 들어가는
+  //     평범한 안쪽이 되고, 서버가 지킬 것도 사라져야 한다 — 여기 남아 있으면
+  //     게이트 없는 문 뒤가 이유 없이 잠긴다.
+  it('게이트를 지운 문 뒤는 결계가 아니다', () => {
+    const 문턱없는결계 = barrier({ 들어가는문: { gateSkill: '', gateValue: '' } })
+    expect(bakeBarrierRegions(문턱없는결계, barrierTerrains)).toEqual([])
+  })
+
+  // 왜: 물때만 지는 문도 못 지나가는 문이다(isGated 가 같은 자리에서 말한다).
+  //     숙련만 보면 허브 결계 같은 문 뒤가 통째로 빠져나간다.
+  it('물때만 걸린 문 뒤도 결계다', () => {
+    const 물때문 = barrier({ 들어가는문: { gateSkill: '', gateValue: '', gateTide: '1' } })
+    expect(bakeBarrierRegions(물때문, barrierTerrains)).toHaveLength(1)
+  })
+
+  // 왜: 픽스처가 통과해도 출하 데이터에서 빗나가면 서버는 아무것도 못 지킨다.
+  //     심층 배치 열여섯이 전부 구운 구역 안에 있고, 바깥 노드는 하나도 없어야
+  //     한다 — 앞의 하나라도 빠지면 구멍이 남고, 뒤의 하나라도 들어가면 멀쩡히
+  //     캐던 노드가 잠긴다.
+  it('출하 데이터에서는 심층 배치만 결계 뒤에 있다', () => {
+    const { real, realTerrains } = shipped()
+    const regions = bakeBarrierRegions(real, realTerrains)
+
+    const inside = Object.values(real.placements).filter((p) => baked(regions, p.mapId, p.x, p.y))
+    const deep = Object.values(real.placements).filter((p) => real.nodes[p.nodeId]?.variant === 'deep')
+
+    expect(deep.length).toBeGreaterThan(0) // 심층이 하나도 없으면 아래 단정이 공허하다
+    expect(inside.map((p) => p.instanceId).sort()).toEqual(deep.map((p) => p.instanceId).sort())
+  })
+
+  // 왜: 결계를 넘은 사람의 저장된 위치는 그 문의 도착 칸이다(moveThroughTransition).
+  //     그 칸이 구운 구역 안에 없으면 정당하게 들어간 사람이 벽 안에서 아무것도
+  //     못 캔다 — 구멍을 막으려다 정반대의 벽을 세우는 실패다.
+  it('출하된 결계 문의 도착 칸은 전부 구운 구역 안이다', () => {
+    const { real, realTerrains } = shipped()
+    const regions = bakeBarrierRegions(real, realTerrains)
+    const gates = real.transitions.filter((t) => t.gateSkill !== undefined || t.gateTide === true)
+
+    expect(gates.length).toBeGreaterThan(0)
+    for (const t of gates) {
+      expect(baked(regions, t.toMap, t.toX, t.toY)).toBe(true)
+      // 그리고 출발 칸(문 앞)은 바깥이어야 한다 — 안팎이 뒤집히면 아무도 못 캔다.
+      expect(baked(regions, t.fromMap, t.fromX, t.fromY)).toBe(false)
+    }
   })
 })

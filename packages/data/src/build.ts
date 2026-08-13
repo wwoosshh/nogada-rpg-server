@@ -10,7 +10,7 @@ import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import { parseMasters, parseShops } from './shops.js'
 import { parseSpeakers } from './speakers.js'
-import { parseTransitions, validateTransitions } from './transitions.js'
+import { bakeBarrierRegions, parseTransitions, validateTransitions } from './transitions.js'
 import { parseDialogueFiles, type DialogueSource } from './dialogueParse.js'
 import { validatePlaces } from './places.js'
 import { bakeRoutes } from './routeBake.js'
@@ -198,6 +198,18 @@ writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf
 // 문턱 전부가 F12 로 스포일된다.
 writeFileSync(join(outDir, 'gather-tables.json'), JSON.stringify(gatherTables, null, 2), 'utf8')
 
+// 결계 뒤 칸들도 **서버 전용 산출물**이다 — 확률표와 같은 취급이다(설계 §9-앞 18).
+// 읽는 문은 loadBarrierRegions() 하나이고 apps/server 만 import 한다.
+//
+// 확률표를 감추는 이유(브라켓 경계가 곧 숨은 문턱이라 F12 로 스포일된다)와는
+// 다르다: 벽은 클라이언트가 맵 JSON 으로 이미 보고 있으므로 여기 감출 비밀은
+// 없다. 그런데도 gamedata.json 에 싣지 않는 것은 **판정의 재료를 판정받는 쪽에
+// 쥐여 줄 이유가 없기** 때문이다 — 이 표를 클라이언트가 갖는다고 할 수 있는 일이
+// 하나도 늘지 않는데(화면은 벽으로 이미 밀린다), 서버가 위조 요청을 거르는
+// 근거만 번들에 복사된다.
+const barrierRegions = bakeBarrierRegions(data, terrains)
+writeFileSync(join(outDir, 'barrier-regions.json'), JSON.stringify(barrierRegions, null, 2), 'utf8')
+
 // 클라이언트가 이 파일을 실행 중에 받아 간다. gamedata.json 과 같은 생성 폴더에 둔다 —
 // 저장소에 커밋된 .json 을 두면 .tmx 와 어긋날 수 있고, 그것을 없애려고 이 단계를 만들었다.
 //
@@ -232,6 +244,7 @@ console.log(
     `강화비용 ${data.enhanceCosts.length}, ` +
     `수집칸 ${Object.keys(data.collection).length}, ` +
     `전환 ${data.transitions.length}, ` +
+    `결계구역 ${barrierRegions.length}(칸 ${barrierRegions.reduce((n, r) => n + r.cells.length, 0)}), ` +
     `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
 )
 

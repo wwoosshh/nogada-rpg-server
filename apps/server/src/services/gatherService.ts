@@ -1,10 +1,12 @@
 import {
+  barrierSeparates,
   EFFICIENCY_MULTIPLIER,
   gatherHandOf,
   gatherIntervalMs,
   gatherOutcome,
   newlyAchieved,
   rollInt,
+  type BarrierRegions,
   type GameData,
   type GatherTables,
   type MilestoneDef,
@@ -20,6 +22,15 @@ export interface PerformGatherArgs {
    * 별도 진입(`@nogada/data/gather-tables`)에서 앱 조립 시점에 주입받는다.
    */
   tables: GatherTables
+  /**
+   * 결계 뒤 칸들. 확률표와 같은 자세로 앱 조립 시점에 주입받는다 — 서버 전용
+   * 산출물이고(`@nogada/data/barriers`) 클라이언트 번들에 실리지 않는다.
+   *
+   * **선택 인자가 아니다.** 비워 두면 이 아크가 막은 구멍이 조용히 다시 열리고,
+   * 그 사실은 화면 어디에도 흔적을 안 남긴다(심층이 그냥 캐질 뿐이다). 필수로
+   * 두면 배선을 잊는 날 컴파일러가 먼저 말한다.
+   */
+  barriers: BarrierRegions
   instanceId: string
   /** 서버가 시드를 독점한다. 클라이언트는 이 인자를 만들 수 없다. */
   rng: () => number
@@ -42,7 +53,7 @@ export interface GatherOutcome {
 
 // cannot_gather 는 은퇴했다(§2 — 맨손 채집 허용): 도구는 접근 게이트가 아니라
 // 페널티의 부재이고, 맨손의 숫자(roll ×1.45·간격 ×1.5)는 gatherToolProfile 이 진다.
-export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'too_fast'
+export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'wrong_side' | 'too_fast'
 
 export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; code: GatherErrorCode }
 
@@ -59,7 +70,7 @@ export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; c
  *   ④ 아이템 지급은 성공 시에만.
  */
 export function performGather(args: PerformGatherArgs): GatherResult {
-  const { data, tables, instanceId, rng, now } = args
+  const { data, tables, barriers, instanceId, rng, now } = args
   // instanceId 는 클라이언트가 그대로 보낸 문자열이다. Object.hasOwn 없이
   // data.placements[instanceId] 로 바로 읽으면 "constructor" 같은 상속 키가
   // 프로토타입 체인에서 값을 찾아 truthy 를 반환한다 — 그 값이 Placement
@@ -80,6 +91,34 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 없으면 인스턴스 id 하나로 맵 너머의 노드를 캘 수 있다.
   if (placement.mapId !== player.location.mapId) return { ok: false, code: 'wrong_map' }
 
+  // 그리고 **같은 맵 안의 벽 반대편**도 앞칸일 수가 없다 — 그것도 서버가 확실히 안다.
+  //
+  // 위 검사만으로 부족한 이유: 결계는 맵 안 전환이라(`fromMap === toMap`, 설계 §3
+  // — 새 맵을 짓지 않고 같은 맵 안에 벽으로 안쪽을 만든다) 저 줄에게 결계 안과
+  // 밖은 같은 맵이다. 심층 노드의 instanceId 는 맵 JSON 을 받는 클라이언트의
+  // 손에 이미 있으므로, 이 줄이 없으면 벽 바깥에 선 사람이 요청 하나로 심층
+  // 표(B2 가 준 ×2.5 분포)를 굴린다 — 결계가 이 아크의 전부인데 devtools 로
+  // 우회된다. **이 아크가 만든 구멍이고, 여기서 닫는다.**
+  //
+  // 서버가 답을 아는 이유: 결계도 전환이라 넘은 사람의 저장된 위치는 벽 안쪽
+  // 도착 칸이다(moveThroughTransition 이 갱신한다). 저장된 x·y 가 지금 실제로
+  // 서 있는 칸이 아니어도(마지막 전환 도착 칸이다) **어느 벽 구역인가**는
+  // 틀리지 않는다 — 구역을 바꾸는 유일한 방법이 전환이기 때문이다.
+  //
+  // **게이트를 다시 재지 않는다.** 묻는 것은 "조건을 만족하는가"가 아니라
+  // "지금 그 안에 있는가" 뿐이다(barrierSeparates 의 문서). 허브 결계는 물이
+  // 빠졌을 때만 들어갈 수 있지만 안내판이 "나오는 길은 막지 않았다"고 약속했고
+  // (설계 §6), 들어간 뒤에는 물이 차도 안에서 계속 캘 수 있어야 한다.
+  //
+  // **"노드는 잠기지 않고, 숙련은 접근이 아니라 분포를 바꾼다"(milestones.ts)를
+  // 되살리는 것이 아니다.** 그 규범이 금지한 것은 노드 **앞에 선** 사람을 게임이
+  // 못 캔다고 거절하는 일인데, 여기서 거절당하는 사람은 애초에 그 앞에 설 수
+  // 없다 — 벽이 막는다. 게임플레이 게이트가 아니라 **위조된 요청에만 걸리는
+  // 검사**이고, 정상 조작으로는 도달할 수 없는 코드다.
+  if (barrierSeparates(barriers, placement, player.location)) {
+    return { ok: false, code: 'wrong_side' }
+  }
+
   const proficiency = player.skills[node.skill]
   // 이 기술로 캐는 지금 이 손 — 착용한 도구(없거나 엉뚱한 기술이면 맨손, §6-앞 9)와
   // 가지고 있는 그 계열 증표(설계 §5)가 여기서 한 번 합쳐진다. 게이트는 없다(§2):
@@ -88,10 +127,12 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 증표를 세는 날이 온다.
   const hand = gatherHandOf(player, node.skill, data.items)
 
-  // 검사 순서: 대상 존재 → 같은 맵 → 간격 → 난수. (도구 자격 검사는 은퇴했다.)
+  // 검사 순서: 대상 존재 → 같은 맵 → 같은 벽 구역 → 간격 → 난수.
+  // (도구 자격 검사는 은퇴했다.)
   //
-  // 맵 검사가 간격보다 앞인 이유는, 맵이 다르면 언제 두드려도 닿을 수 없기
-  // 때문이다 — too_fast 로 답하면 "조금 있다 다시 두드리면 된다"로 읽힌다.
+  // 자리 검사 둘이 간격보다 앞인 이유는, 맵이 다르거나 벽 반대편이면 언제
+  // 두드려도 닿을 수 없기 때문이다 — too_fast 로 답하면 "조금 있다 다시
+  // 두드리면 된다"로 읽힌다.
   //
   // 간격 검사가 난수보다 앞인 이유는, 거부된 요청이 시드를 소비하면 연타로 판정
   // 결과를 흔들 수 있기 때문이다.

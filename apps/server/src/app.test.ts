@@ -3,6 +3,8 @@ import {
   GAME_EPOCH_MS,
   REAL_MS_PER_GAME_MINUTE,
   StateResponseSchema,
+  gameTimeAt,
+  isLowTide,
   isSellTarget,
   type ItemDef,
   type NodePlacement,
@@ -82,6 +84,88 @@ function deepPlacement(): NodePlacement {
   )
   if (!found) throw new Error('시작 맵에서 한 걸음에 닿는 심층 배치가 없다')
   return found
+}
+
+/**
+ * 그 맵을 지키는 결계 문 — **맵 안 전환**(`fromMap === toMap`)이고 게이트가 걸린 줄이다.
+ *
+ * 좌표도 계열도 적지 않는다: 결계는 CSV 가 정하므로 여기 숫자를 박으면 벽을
+ * 옮기는 날 이 테스트가 거짓말을 한다(deepPlacement 과 같은 자세).
+ */
+function barrierGateOf(mapId: string): TransitionDef {
+  const found = loadGameData().transitions.find(
+    (t) =>
+      t.fromMap === mapId && t.toMap === mapId && (t.gateSkill !== undefined || t.gateTide === true),
+  )
+  if (!found) throw new Error(`${mapId} 에 결계 전환이 없다`)
+  return found
+}
+
+/**
+ * 시작 맵에서 그 맵까지 **게이트 없는 문만** 밟아 걸어간다.
+ *
+ * 좌표를 적지 않고 전환표에게 길을 묻는 이유는 `transitionBetween` 과 같다 —
+ * 맵을 하나 더 끼워 넣는 날 여기 적힌 경로가 조용히 틀린 길이 된다. 결계는
+ * 일부러 빼고 넓힌다: 이 함수가 하는 일은 문 **앞까지** 데려다 놓는 것이고,
+ * 넘는 것은 테스트 본문이 자기 눈으로 봐야 할 사건이다.
+ */
+async function walkTo(me: TestPlayer, targetMapId: string): Promise<void> {
+  const data = loadGameData()
+  const start = startLocation(data).mapId
+  const queue: string[][] = [[start]]
+  const seen = new Set([start])
+  while (queue.length > 0) {
+    const path = queue.shift()!
+    const here = path[path.length - 1]!
+    if (here === targetMapId) {
+      for (let i = 1; i < path.length; i += 1) await step(me, transitionBetween(path[i - 1]!, path[i]!))
+      return
+    }
+    for (const t of data.transitions) {
+      if (t.fromMap !== here || t.toMap === here || seen.has(t.toMap)) continue
+      if (t.gateSkill !== undefined || t.gateTide === true) continue
+      seen.add(t.toMap)
+      queue.push([...path, t.toMap])
+    }
+  }
+  throw new Error(`${start} 에서 ${targetMapId} 까지 게이트 없는 길이 없다`)
+}
+
+/** 숙련을 채워 앉힌 사람과, 그 사람이 사는 앱. `close()` 로 둘 다 닫는다. */
+interface SeededPlayer {
+  me: TestPlayer
+  close(): Promise<void>
+}
+
+/**
+ * 그 계열 숙련을 채운 사람으로 앱을 다시 세운다 — 결계를 실제로 넘어 보려면
+ * 필요한 준비다(85,000 을 캐서 올리려면 몇 시간이다).
+ *
+ * 세이브 파일을 만든 첫 앱은 **끝까지 열어 둔다**: 그 앱이 닫히면서 임시
+ * 디렉터리를 통째로 지우므로, 먼저 닫으면 두 번째 앱이 읽을 파일이 없다.
+ */
+async function playerWithSkills(skills: Record<string, number>): Promise<SeededPlayer> {
+  const owner = await buildTestApp()
+  const first = await asPlayer(owner)
+  const file = saveFileOf(owner)
+  const raw = rawSaveOf(owner)[first.id] as { skills: Record<string, number> }
+  Object.assign(raw.skills, skills)
+  writeRawCharacter(file, first.id, raw)
+
+  const app = await buildTestApp({ dataFile: file })
+  const me = await asPlayer(app, { resume: first })
+  return {
+    me,
+    close: async () => {
+      await app.close()
+      await owner.close()
+    },
+  }
+}
+
+/** 그 게임 시각(0~23)의 실측 ms. 물때를 열고 닫는 시험이 시계를 여기에 맞춘다. */
+function atGameHour(hour: number): number {
+  return GAME_EPOCH_MS + hour * 60 * REAL_MS_PER_GAME_MINUTE
 }
 
 /** 화자가 있는 맵으로 걸어 넘어간다. 대화 라우트는 같은 맵에 서 있어야 답한다. */
@@ -399,23 +483,122 @@ describe('POST /api/gather', () => {
     // 예전에는 심층 노드(tier 2)가 1티어 시작 도구를 거부했다. 표 모델에서
     // **도구 등급은 접근이 아니라 확률 보정(G3)의 재료**이므로 구리 손도 캔다.
     //
-    // 결계 아크가 이 자리에 무엇을 더했고 무엇을 안 더했는지: 심층은 이제 자기
-    // 표(*_deep)를 굴리고 **결계 뒤에 놓였다**. 그래도 거절하는 것은 채집이
-    // 아니라 그 앞의 전환이다 — 서버는 걸음마다 위치를 받지 않으므로
-    // (moveService 문서) 채집 라우트가 아는 위치는 맵까지이고, 결계는 맵 안의
-    // 전환이라 여기서는 안팎이 같은 맵으로 보인다. 이 테스트가 200 을 기대하는
-    // 것은 그래서다: 심층 채집을 막는 것은 **처음부터 이 라우트의 일이 아니다.**
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
+    // 이 사람이 결계를 실제로 넘어 들어가는 것은 그 사실을 재기 위한 준비일
+    // 뿐이다 — 이 단정이 재는 것은 여전히 도구 등급이다. 예전에는 벽 **바깥**에
+    // 선 채로 물어도 200 이 나왔고(맵 검사에게 결계 안팎은 같은 맵이다), B8 이
+    // 그 구멍을 막으면서 이 무대도 정직해졌다: 안에 있는 사람에게 물어야
+    // "도구 등급이 거절하지 않는다"가 실제로 증명된다.
     const deep = deepPlacement()
-    await step(me, transitionBetween(startLocation(loadGameData()).mapId, deep.mapId))
+    const gate = barrierGateOf(deep.mapId)
+    const seeded = await playerWithSkills({ [gate.gateSkill!]: gate.gateValue! })
+    await walkTo(seeded.me, deep.mapId)
+    await step(seeded.me, gate)
 
-    const res = await me.inject({
+    const res = await seeded.me.inject({
       method: 'POST',
       url: '/api/gather',
       payload: { instanceId: deep.instanceId },
     })
 
+    expect(res.statusCode).toBe(200)
+
+    await seeded.close()
+  })
+
+  // 왜: **이 아크가 만든 구멍이다.** 결계는 맵 안 전환이라 맵 검사에게 안팎이
+  //     같은 맵이고, 심층 instanceId 는 맵 JSON 을 받는 클라이언트의 손에 이미
+  //     있다 — 이 줄이 없으면 결계가 이 아크의 전부인데 devtools 로 우회된다.
+  //     서비스 단위 테스트가 판정을 보지만, 라우트가 그 코드를 그대로 내보내고
+  //     저장을 막지 않으면 게임에서는 아무 일도 안 일어난다.
+  it('결계 밖에 선 채로 심층 노드를 요청하면 400 wrong_side 이고 상태가 그대로다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const deep = deepPlacement()
+    // 문 **앞까지만** 간다. 넘지 않았으므로 저장된 위치는 벽 바깥이다.
+    await walkTo(me, deep.mapId)
+
+    const before = await me.inject({ method: 'GET', url: '/api/state' })
+    const res = await me.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { instanceId: deep.instanceId },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'wrong_side' })
+
+    // 거절이 저장까지 갔는지 본다 — 숙련도 간격도 움직이면, 못 캐게 막은 것이
+    // 아니라 "아이템 없이 캐게" 한 것이 된다.
+    const after = await me.inject({ method: 'GET', url: '/api/state' })
+    expect((after.json() as { player: unknown }).player).toEqual(
+      (before.json() as { player: unknown }).player,
+    )
+
+    await app.close()
+  })
+
+  // 왜: **"게이트를 다시 검사한다"는 틀린 고침을 막는 회귀 테스트다.** 허브 결계는
+  //     물이 빠졌을 때만 들어갈 수 있지만, 안내판이 "나오는 길은 막지 않았다"고
+  //     약속했고(설계 §6) 들어간 뒤에는 물이 차도 안에서 계속 캘 수 있어야 한다.
+  //     채집 판정이 조건을 다시 재면 정당하게 들어간 사람이 물이 들어오는 순간
+  //     손을 놓는다 — 묻는 것은 "조건을 만족하는가"가 아니라 "지금 그 안에
+  //     있는가" 뿐이다.
+  it('물때 결계 안에서는 물이 들어와도 계속 캔다 — 들어간 뒤에는 자리만 본다', async () => {
+    const data = loadGameData()
+    const 물때결계 = data.transitions.find((t) => t.gateTide === true)
+    if (!물때결계) throw new Error('물때를 지는 결계가 transitions.csv 에 없다')
+    const deep = Object.values(data.placements).find(
+      (p) => p.mapId === 물때결계.toMap && data.nodes[p.nodeId]?.variant === 'deep',
+    )
+    if (!deep) throw new Error(`${물때결계.toMap} 에 심층 배치가 없다`)
+
+    const seeded = await playerWithSkills({ [물때결계.gateSkill!]: 물때결계.gateValue! })
+    try {
+      // 물이 빠진 시각에 들어간다. TIDE_WINDOWS 는 2~8·14~20 이다.
+      vi.setSystemTime(atGameHour(4))
+      expect(isLowTide(gameTimeAt(Date.now()).hour)).toBe(true)
+      await walkTo(seeded.me, 물때결계.fromMap)
+      await step(seeded.me, 물때결계)
+
+      // 그리고 물이 찬다. 지금 이 사람은 저 문을 **다시는 못 지난다**.
+      vi.setSystemTime(atGameHour(12))
+      expect(isLowTide(gameTimeAt(Date.now()).hour)).toBe(false)
+      const 다시못들어감 = await seeded.me.inject({
+        method: 'POST',
+        url: '/api/move',
+        payload: { x: 물때결계.fromX, y: 물때결계.fromY },
+      })
+      expect(다시못들어감.json()).toEqual({ code: 'locked' })
+
+      // 그래도 안에서는 캔다.
+      const res = await seeded.me.inject({
+        method: 'POST',
+        url: '/api/gather',
+        payload: { instanceId: deep.instanceId },
+      })
+      expect(res.statusCode).toBe(200)
+    } finally {
+      vi.useRealTimers()
+      await seeded.close()
+    }
+  })
+
+  // 왜: 결계가 없는 맵(개발용 시험장)의 노드는 이 검사가 손댈 것이 없다. 구운
+  //     목록에 그 맵이 아예 안 들어가므로, 거기 서 있는 사람은 지금까지처럼 캔다.
+  it('결계가 없는 맵의 노드는 영향을 받지 않는다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const 결계없는맵 = fieldMapId()
+    // 전제부터 확인한다 — 이 맵에 결계가 생기는 날 이 테스트는 다른 것을 재게 된다.
+    expect(
+      loadGameData().transitions.some((t) => t.fromMap === 결계없는맵 && t.toMap === 결계없는맵),
+    ).toBe(false)
+    await walkTo(me, 결계없는맵)
+
+    const res = await me.inject({
+      method: 'POST',
+      url: '/api/gather',
+      payload: { instanceId: 'copper_vein-1' },
+    })
     expect(res.statusCode).toBe(200)
 
     await app.close()
