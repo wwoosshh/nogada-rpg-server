@@ -20,7 +20,7 @@ const data: GameData = {
   speakers: {},
   places: {},
   schedules: {},
-  shops: {}, masters: [],
+  shops: {}, masters: [], enhanceCosts: [],
   routes: [],
   dialogue: [],
 }

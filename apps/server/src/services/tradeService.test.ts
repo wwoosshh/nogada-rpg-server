@@ -126,6 +126,7 @@ const data: GameData = {
   },
   shops: { 얼음상점, 여관상점 },
   masters: [],
+  enhanceCosts: [],
   places: Object.fromEntries([여관앞, 눈광장, 여관안, 초소].map((p) => [p.id, p])),
   schedules: { 여관안주인: 안주인일과 },
   routes: [

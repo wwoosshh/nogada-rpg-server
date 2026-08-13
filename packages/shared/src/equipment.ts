@@ -1,5 +1,12 @@
 import { toolMatchesSkill } from './formulas/gather.js'
-import type { GameData, ItemDef, ItemInstance, PlayerState, SkillId } from './types.js'
+import type {
+  EnhanceCostDef,
+  GameData,
+  ItemDef,
+  ItemInstance,
+  PlayerState,
+  SkillId,
+} from './types.js'
 
 /**
  * 착용 중인 도구의 정의와 인스턴스 한 쌍 — 효과는 정의(toolTier)에, 강화 수치는
@@ -41,6 +48,24 @@ export function equippedToolInfo(
  */
 export function equippedToolTier(player: PlayerState, data: GameData, skill: SkillId): number {
   return equippedToolInfo(player, skill, data.items)?.def.toolTier ?? 0
+}
+
+/**
+ * 그 티어의 도구를 그 단계로 올리는 값. 없으면 undefined.
+ *
+ * **서버 판정과 가방 표시가 이 문 하나를 나눠 쓴다.** 두 벌로 적으면 화면이
+ * "라벤더 10개"라고 적어 놓고 서버는 다른 줄을 보는 날이 온다 — 그때 플레이어는
+ * 요구를 정확히 채우고도 거절받고, 화면 어디에도 이유가 안 남는다.
+ *
+ * `level` 은 **올라간 뒤의 수치**다(+2 도구를 +3 으로 만들 때 level=3). 비용을
+ * "지금 수치"로 세면 만강(+5) 도구가 존재하지 않는 +6 의 값을 묻게 된다.
+ */
+export function enhanceCostFor(
+  costs: readonly EnhanceCostDef[],
+  toolTier: number,
+  level: number,
+): EnhanceCostDef | undefined {
+  return costs.find((cost) => cost.toolTier === toolTier && cost.level === level)
 }
 
 /**

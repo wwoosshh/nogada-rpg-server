@@ -53,7 +53,7 @@ function gameDataWith(items: ItemDef[], nodes: NodeDef[]): GameData {
     items: Object.fromEntries(items.map((i) => [i.id, i])),
     nodes: Object.fromEntries(nodes.map((n) => [n.id, n])),
     recipes: {}, maps: {}, transitions: [], placements: {}, milestones: [],
-    shops: {}, masters: [],
+    shops: {}, masters: [], enhanceCosts: [],
     speakers: {}, places: {}, schedules: {}, routes: [], dialogue: [],
   }
 }

@@ -91,7 +91,7 @@ function gameData(dialogue: DialogueRule[]): GameData {
       노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: '얼음채집장', x: 1, y: 1, sprite: 'npc_elder', facing: 'down' },
       안내판: { id: '안내판', name: '안내판', kind: 'sign', mapId: '얼음채집장', x: 2, y: 2, sprite: 'sign_wood', facing: 'down' },
     },
-    shops: {}, masters: [],
+    shops: {}, masters: [], enhanceCosts: [],
     places: {}, schedules: {}, routes: [],
     dialogue,
   }

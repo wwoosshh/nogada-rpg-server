@@ -592,15 +592,78 @@
   list-style: none;
 }
 
+/*
+ * 예비 도구 한 줄. **세로 두 층**이다 — 위층은 도구와 버튼(가로), 아래층은
+ * 다음 강화의 요구(§6-앞 11·13). 요구를 위층 오른쪽에 붙이면 375px 에서 재료
+ * 넷 + 골드가 버튼을 밀어내고, 밀려난 버튼은 터치 타깃 32px 을 잃는다.
+ */
 .bag__spare {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   padding: var(--space-1) var(--space-2);
   background: var(--c-ink);
   border: 1px solid var(--c-panel-edge);
   border-radius: var(--radius);
+}
+
+.bag__spare-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/*
+ * 다음 강화의 요구 — 못 채워도 늘 보인다(BagPanel 상단 주석의 그 판단).
+ * 숫자 꼴과 색은 제작 패널의 재료 칩(.craft__mat)과 같게 맞춘다.
+ */
+.bag__enhance-req {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.bag__enhance-req-label {
+  flex: none;
+  font-size: 11px;
+  color: var(--c-parchment-dim);
+}
+
+.bag__enhance-mats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bag__enhance-mat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px var(--space-1);
+  background: var(--c-panel);
+  border-radius: var(--radius);
+  font-size: 11px;
+}
+
+.bag__enhance-mat-name {
+  color: var(--c-parchment-dim);
+}
+
+.bag__enhance-mat-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.bag__enhance-mat--ok .bag__enhance-mat-num {
+  color: var(--c-success);
+}
+
+.bag__enhance-mat--missing .bag__enhance-mat-num {
+  color: var(--c-danger);
 }
 
 .bag__spare-info {

@@ -6,6 +6,7 @@ import type { DialogueRule, GameData, GatherTables, MilestoneDef, ShopDef, Speak
 import { testItem, testTool } from '@nogada/shared/testing'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMasters, parseShops } from './shops.js'
+import { parseEnhanceCosts } from './enhanceCosts.js'
 import { parseGatherTables } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
 import { parseMaps } from './maps.js'
@@ -131,7 +132,7 @@ function baseData(): GameData {
     // 상점·달인이 없는 픽스처다 — 등록부가 비어 있으면 그 검사들은 순회할
     // 대상이 없어 조용히 통과하고, 나머지 테스트를 방해하지 않는다. 죽은 아이템
     // 검사도 여기 아이템 전부가 레시피 재료이거나 도구라 상점 없이 통과한다.
-    shops: {}, masters: [],
+    shops: {}, masters: [], enhanceCosts: [],
     places: {}, schedules: {}, routes: [],
     dialogue: [],
   }
@@ -232,6 +233,9 @@ function loadRealGameData(): GameData {
     speakers: parseSpeakers(readRealCsv('speakers.csv')),
     shops: parseShops(readRealCsv('shops.csv'), readRealCsv('shop_stock.csv')),
     masters: parseMasters(readRealCsv('masters.csv')),
+    // 출하 강화표를 그대로 싣는다 — 이 픽스처의 값어치는 "지금 CSV 가 실제로
+    // 검증을 통과하는가"이므로, 여기만 빈 배열이면 그 물음이 강화에는 닿지 않는다.
+    enhanceCosts: parseEnhanceCosts(readRealCsv('enhance_costs.csv')),
     // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
     places,
     schedules: {},

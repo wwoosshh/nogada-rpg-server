@@ -131,7 +131,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     registerGatherRoutes(guarded, store, data, gatherTables)
     registerCraftRoutes(guarded, store, data)
     registerEquipRoutes(guarded, store, data)
-    registerEnhanceRoutes(guarded, store)
+    registerEnhanceRoutes(guarded, store, data)
     registerTalkRoutes(guarded, store, data)
     registerTradeRoutes(guarded, store, data)
     registerUseRoutes(guarded, store, data)

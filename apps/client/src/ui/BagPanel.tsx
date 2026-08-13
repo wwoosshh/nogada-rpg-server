@@ -1,6 +1,5 @@
 import {
   effectiveIntervalFactor,
-  ENHANCE_CAP,
   hammerChanceBonus,
   SKILL_IDS,
   SKILL_LABELS,
@@ -9,6 +8,7 @@ import {
   type SkillId,
 } from '@nogada/shared'
 import { useGameStore } from '../store/gameStore.js'
+import { enhanceRequirementFor, type EnhanceRequirement } from './enhanceCostModel.js'
 import { ItemIcon } from './ItemIcon.js'
 import { formatGold } from './shopModel.js'
 
@@ -46,10 +46,19 @@ function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): str
  * 그 API 를 만들면서 §6-앞 12 가 이 전제를 **예비 칩 한 곳에 한해** 의식적으로
  * 기각한다 — 죽은 버튼 금지 규범(설계 §8-앞 13)은 "될 수 없는 조작을 버튼으로
  * 보여주지 말라"는 것이지 "될 수 있는 조작을 숨기라"는 뜻이 아니었다. 그래서
- * 예비 칩은 `착용` 버튼을 상시, `강화` 버튼을 같은 itemId 를 착용 중이고 그
- * 착용분이 아직 상한(+5) 아래일 때만 얻는다(비활성 노출은 여전히 금지 —
- * 조건을 못 채우면 버튼 자체를 그리지 않는다. 만강 도구 곁의 `강화` 는 눌러도
- * enhance_cap 만 돌아오는 죽은 버튼이다).
+ * 예비 칩은 `착용` 버튼을 상시, `강화` 버튼을 **그 강화를 지금 감당할 수 있을
+ * 때만** 얻는다(비활성 노출은 여전히 금지 — 조건을 못 채우면 버튼 자체를 그리지
+ * 않는다).
+ *
+ * **요구 readout 은 버튼과 다른 규칙으로 산다**(§6-앞 11·13). 강화가 원작 UL4 로
+ * 돌아가면서 예비 도구 말고도 원재료와 골드를 먹게 됐는데, 그것을 화면이 안
+ * 적으면 플레이어는 무엇을 얼마나 모아야 하는지 눌러 보고 거절받으며 알아내야
+ * 한다. 그래서 요구 줄은 **대상이 있고 만강이 아니면 늘** 그린다 — 못 채운
+ * 재료는 danger 색으로 자기가 모자라다고 말한다. 죽은 버튼 금지 규범이 막는
+ * 것은 "눌러도 거절만 돌아오는 조작"이지 "요구치를 숫자로 말하는 문"이
+ * 아니다(원작이 쓰던 그 장치가 여기서도 같은 일을 한다). 그 위에서 버튼만
+ * `affordable` 로 다시 걸러진다: 요구를 다 적어 놓고도 못 채운 사람에게 버튼을
+ * 내밀면 그건 규범이 금지한 바로 그 버튼이다.
  *
  * **재료 줄에도 버튼이 생겼다 — 단, 쓸 수 있는 재료에만**(설계 §6-앞 1~4).
  * "재료는 애초에 눌러서 될 일이 없다"는 v1 의 전제는 서버에 사용 API 가 없던
@@ -79,19 +88,6 @@ export function BagPanel(): JSX.Element | null {
   // 순서(획득 순) 그대로 — 훑어보는 자리가 매번 바뀌면 안 된다.
   const equippedIds = new Set(Object.values(player.equipped))
   const spares = player.instances.filter((inst) => !equippedIds.has(inst.instanceId))
-
-  // 강화 버튼의 노출 조건을 itemId 집합으로 미리 계산한다(§6-앞 12) — 대상이
-  // 없거나(no_target) 상한에 닿은(enhance_cap) 강화는 서버가 거절하니, 그 두
-  // 조건을 화면이 먼저 걸러야 "눌러도 매번 거절만 돌아오는" 죽은 버튼이 생기지
-  // 않는다. 상한을 보는 곳이 예비 칩 자신이 아니라 **착용 중인 대상**인 이유는
-  // 강화의 규칙이 그렇기 때문이다(equipService: 재료는 예비, +1 은 착용분에
-  // 붙고 ENHANCE_CAP 도 그 착용분에 걸린다).
-  const enhanceableItemIds = new Set(
-    Object.values(player.equipped)
-      .map((instanceId) => player.instances.find((inst) => inst.instanceId === instanceId))
-      .filter((inst): inst is ItemInstance => inst !== undefined && inst.enhanceLevel < ENHANCE_CAP)
-      .map((inst) => inst.itemId),
-  )
 
   // 재료는 items.csv 선언 순서(= data.items 의 키 순서)로 고정한다 — 제작
   // 패널의 행이 흔들리면 안 되는 것과 같은 이유. 수량 0(스택에 키가 아예
@@ -162,48 +158,55 @@ export function BagPanel(): JSX.Element | null {
               <ul className="bag__spares">
                 {spares.map((inst) => {
                   const def = data.items[inst.itemId]
-                  const canEnhance = enhanceableItemIds.has(inst.itemId)
+                  // 요구는 예비 칩이 아니라 **그 itemId 의 착용분**이 정한다 —
+                  // +1 이 붙는 곳이 착용분이므로 다음 단계도 그쪽 수치의 다음이다.
+                  const req = enhanceRequirementFor(data, player, inst.itemId)
                   const speedLabel =
                     def !== undefined && def.toolSkill !== undefined
                       ? toolSpeedLabel(def.toolSkill, def, inst.enhanceLevel)
                       : null
                   return (
                     <li key={inst.instanceId} className="bag__spare">
-                      <div className="bag__spare-info">
-                        <ItemIcon itemId={inst.itemId} />
-                        <div className="bag__spare-text">
-                          <span className="bag__spare-name-row">
-                            <span className="bag__spare-name">{def?.name ?? inst.itemId}</span>
-                            {inst.enhanceLevel > 0 && (
-                              <span className="bag__enhance">+{inst.enhanceLevel}</span>
+                      <div className="bag__spare-top">
+                        <div className="bag__spare-info">
+                          <ItemIcon itemId={inst.itemId} />
+                          <div className="bag__spare-text">
+                            <span className="bag__spare-name-row">
+                              <span className="bag__spare-name">{def?.name ?? inst.itemId}</span>
+                              {inst.enhanceLevel > 0 && (
+                                <span className="bag__enhance">+{inst.enhanceLevel}</span>
+                              )}
+                            </span>
+                            {speedLabel !== null && (
+                              <span className="bag__spare-speed">{speedLabel}</span>
                             )}
-                          </span>
-                          {speedLabel !== null && (
-                            <span className="bag__spare-speed">{speedLabel}</span>
+                          </div>
+                        </div>
+                        <div className="bag__spare-actions">
+                          {/* 착용은 상시 — 예비는 정의상 미착용이니 대상이 늘 유효하다(§4). */}
+                          <button
+                            type="button"
+                            className="bag__spare-btn"
+                            onClick={() => void useGameStore.getState().equip(inst.instanceId)}
+                          >
+                            착용
+                          </button>
+                          {/* 요구를 다 채웠을 때만 그린다 — 재료·골드가 모자란 채로
+                              누르면 서버는 missing_enhance_materials·not_enough_gold
+                              만 돌려준다(죽은 버튼 금지, 설계 §8-앞 13). 무엇이
+                              모자란지는 아래 요구 줄이 말한다. */}
+                          {req?.affordable === true && (
+                            <button
+                              type="button"
+                              className="bag__spare-btn bag__spare-btn--enhance"
+                              onClick={() => void useGameStore.getState().enhance(inst.instanceId)}
+                            >
+                              강화
+                            </button>
                           )}
                         </div>
                       </div>
-                      <div className="bag__spare-actions">
-                        {/* 착용은 상시 — 예비는 정의상 미착용이니 대상이 늘 유효하다(§4). */}
-                        <button
-                          type="button"
-                          className="bag__spare-btn"
-                          onClick={() => void useGameStore.getState().equip(inst.instanceId)}
-                        >
-                          착용
-                        </button>
-                        {/* 강화는 같은 itemId 를 착용 중이고 그 착용분이 만강이 아닐 때만
-                            그린다 — 비활성 노출 금지(설계 §8-앞 13, §6-앞 12). */}
-                        {canEnhance && (
-                          <button
-                            type="button"
-                            className="bag__spare-btn bag__spare-btn--enhance"
-                            onClick={() => void useGameStore.getState().enhance(inst.instanceId)}
-                          >
-                            강화
-                          </button>
-                        )}
-                      </div>
+                      {req !== null && <EnhanceRequirementRow req={req} />}
                     </li>
                   )
                 })}
@@ -238,6 +241,53 @@ export function BagPanel(): JSX.Element | null {
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+/**
+ * 다음 강화가 요구하는 것 — 예비 도구 줄 아래의 한 줄.
+ *
+ * **이 줄이 강화 개편의 화면 쪽 전부다**(§6-앞 11·13). 예비 도구 하나만 먹던
+ * 시절에는 화면이 적을 것이 없었다(재료가 곧 그 칩 자신이었다). 이제는 단계마다
+ * 다른 계열의 원재료와 골드를 먹으므로, 무엇을 얼마나 모아야 하는지 화면이
+ * 말하지 않으면 플레이어가 알아낼 방법은 눌러 보고 거절받는 것뿐이다.
+ *
+ * `have/need` 꼴과 모자람의 danger 색은 제작 패널의 재료 칩(.craft__mat)과 같다 —
+ * 두 화면이 "가진 것 대 필요한 것"을 다른 글자로 적으면 플레이어는 같은 것을
+ * 가리키는지 매번 다시 확인해야 한다.
+ */
+function EnhanceRequirementRow({ req }: { req: EnhanceRequirement }): JSX.Element {
+  return (
+    <div className="bag__enhance-req">
+      <span className="bag__enhance-req-label">+{req.nextLevel} 요구</span>
+      <ul className="bag__enhance-mats">
+        {req.materials.map((m) => (
+          <li
+            key={m.item}
+            className={`bag__enhance-mat ${m.ok ? 'bag__enhance-mat--ok' : 'bag__enhance-mat--missing'}`}
+          >
+            {/* 아이콘이 없는 것이 의도다 — 이 줄은 예비 도구 줄 **아래**에
+                끼는 부속이라 375px 폭에서 칩 다섯이 나란해야 하고, 이름이
+                이미 무엇인지 말한다(제작 패널의 재료 칩은 상세 화면 전체를
+                쓰므로 아이콘을 놓을 자리가 있었다). */}
+            <span className="bag__enhance-mat-name">{m.name}</span>
+            <span className="bag__enhance-mat-num">
+              {m.have}/{m.need}
+            </span>
+          </li>
+        ))}
+        {/* 골드도 요구의 하나다 — 재료와 같은 줄에 두어야 "이것도 든다"가
+            한눈에 보인다(원작 UL4 는 둘을 함께 먹었다). */}
+        <li
+          className={`bag__enhance-mat ${req.goldOk ? 'bag__enhance-mat--ok' : 'bag__enhance-mat--missing'}`}
+        >
+          <span className="bag__enhance-mat-name">골드</span>
+          <span className="bag__enhance-mat-num">
+            {formatGold(req.goldHave)}/{formatGold(req.goldNeed)}
+          </span>
+        </li>
+      </ul>
     </div>
   )
 }

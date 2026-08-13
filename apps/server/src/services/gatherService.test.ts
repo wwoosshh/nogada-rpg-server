@@ -44,7 +44,7 @@ const data: GameData = {
   },
   milestones: [],
   speakers: {},
-  shops: {}, masters: [],
+  shops: {}, masters: [], enhanceCosts: [],
   places: {}, schedules: {}, routes: [],
   dialogue: [],
 }

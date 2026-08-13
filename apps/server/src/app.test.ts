@@ -622,22 +622,35 @@ describe('POST /api/use', () => {
 })
 
 describe('POST /api/enhance', () => {
-  it('예비 도구를 재료로 착용 도구가 +1 되고, 재료 인스턴스는 사라진 채 저장된다', async () => {
+  /**
+   * 신규 캐릭터의 세이브에 예비 도구와 (원하면) 재료·골드를 직접 심고, 그 파일로
+   * 앱을 다시 세운다. API 로 예비 도구를 만들려면 제작 난수를 기다려야 해서
+   * 라우트 시험이 결정적이지 않게 된다.
+   *
+   * 재료·골드까지 심게 된 것은 강화가 원작 UL4 로 돌아갔기 때문이다(§6-앞 11) —
+   * 1티어 +1 은 `hard_log×5 + 5,000골드` 를 함께 먹는다.
+   */
+  async function withSpare(seed: { stacks?: Record<string, number>; gold?: number } = {}) {
     const before = await buildTestApp()
     const me = await asPlayer(before)
     const file = saveFileOf(before)
 
-    // 세이브에 예비 인스턴스(착용 중인 것과 같은 itemId)를 직접 심는다 — API 로
-    // 만들려면 제작 난수를 기다려야 해서 라우트 시험이 결정적이지 않게 된다.
     const raw = rawSaveOf(before)[me.id] as {
       instances: { instanceId: string; itemId: string; enhanceLevel: number }[]
+      stacks: Record<string, number>
+      gold: number
     }
-    const starterItemId = raw.instances[0]!.itemId
-    raw.instances.push({ instanceId: 'spare-1', itemId: starterItemId, enhanceLevel: 0 })
+    raw.instances.push({ instanceId: 'spare-1', itemId: raw.instances[0]!.itemId, enhanceLevel: 0 })
+    if (seed.stacks) raw.stacks = { ...raw.stacks, ...seed.stacks }
+    if (seed.gold !== undefined) raw.gold = seed.gold
     writeRawCharacter(file, me.id, raw)
 
     const app = await buildTestApp({ dataFile: file })
-    const resumed = await asPlayer(app, { resume: me })
+    return { before, app, resumed: await asPlayer(app, { resume: me }) }
+  }
+
+  it('예비 도구·재료·골드를 함께 먹고 착용 도구가 +1 된 채 저장된다', async () => {
+    const { before, app, resumed } = await withSpare({ stacks: { hard_log: 7 }, gold: 6_000 })
     const res = await resumed.inject({
       method: 'POST',
       url: '/api/enhance',
@@ -646,18 +659,56 @@ describe('POST /api/enhance', () => {
 
     expect(res.statusCode).toBe(200)
     expect(() => StateResponseSchema.parse(res.json())).not.toThrow()
-    const body = res.json() as { player: { instances: { enhanceLevel: number }[] } }
+    const body = res.json() as {
+      player: { instances: { enhanceLevel: number }[]; stacks: Record<string, number>; gold: number }
+    }
     expect(body.player.instances).toHaveLength(1)
     expect(body.player.instances[0]!.enhanceLevel).toBe(1)
+    // 재료·골드가 실제로 줄었다 = 라우트가 GameData(items·enhanceCosts)를 서비스에
+    // 넘겼다는 증거다. 넘기지 않으면 이 라우트는 판정 자체를 할 수 없다.
+    expect(body.player.stacks['hard_log']).toBe(2)
+    expect(body.player.gold).toBe(1_000)
 
     // 저장까지 갔는지 — 강화가 응답에만 있고 세이브에 없으면 새로고침이 되돌린다.
     const state = await resumed.inject({ method: 'GET', url: '/api/state' })
-    const saved = state.json() as { player: { instances: { enhanceLevel: number }[] } }
+    const saved = state.json() as {
+      player: { instances: { enhanceLevel: number }[]; stacks: Record<string, number>; gold: number }
+    }
     expect(saved.player.instances).toHaveLength(1)
     expect(saved.player.instances[0]!.enhanceLevel).toBe(1)
+    expect(saved.player.stacks['hard_log']).toBe(2)
+    expect(saved.player.gold).toBe(1_000)
 
     await app.close()
     // 임시 디렉터리를 지우는 것은 파일을 만든 쪽이다 — 나중에 닫는다.
+    await before.close()
+  })
+
+  it('재료가 없으면 400 missing_enhance_materials 다 — 신규 캐릭터의 맨손 강화가 이 자리다', async () => {
+    const { before, app, resumed } = await withSpare({ gold: 1_000_000 })
+    const res = await resumed.inject({
+      method: 'POST',
+      url: '/api/enhance',
+      payload: { materialInstanceId: 'spare-1' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'missing_enhance_materials' })
+
+    await app.close()
+    await before.close()
+  })
+
+  it('재료는 있는데 골드가 모자라면 400 not_enough_gold 다', async () => {
+    const { before, app, resumed } = await withSpare({ stacks: { hard_log: 99 }, gold: 4_999 })
+    const res = await resumed.inject({
+      method: 'POST',
+      url: '/api/enhance',
+      payload: { materialInstanceId: 'spare-1' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'not_enough_gold' })
+
+    await app.close()
     await before.close()
   })
 

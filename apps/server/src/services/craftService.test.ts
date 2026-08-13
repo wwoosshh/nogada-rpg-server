@@ -63,7 +63,7 @@ const data: GameData = {
   placements: {},
   milestones: [],
   speakers: {},
-  shops: {}, masters: [],
+  shops: {}, masters: [], enhanceCosts: [],
   places: {}, schedules: {}, routes: [],
   dialogue: [],
 }

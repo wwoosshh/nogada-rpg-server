@@ -323,6 +323,35 @@ export interface GatherTableDef {
 
 export type GatherTables = Record<string, GatherTableDef>
 
+/** 강화 한 단계가 먹는 원재료 한 줄. */
+export interface EnhanceMaterial {
+  item: string
+  count: number
+}
+
+/**
+ * (도구 티어 × 강화 단계) 하나의 값. 원작 UL4 를 그대로 옮긴 자리다(설계 §6-앞 11·12).
+ *
+ * **계열이 아니라 단계가 재료를 정한다.** +1 은 나무, +2 는 허브, +3 은 얼음,
+ * +4 는 광물, +5 는 네 계열 각 1 — 도구가 무엇이든 같은 사다리를 탄다. 계열
+ * 대응(얼음 도구는 얼음 재료)으로 뒤집으면 원작이 UL4 에 심어 둔 "계열이 서로를
+ * 먹인다"는 성질이 통째로 사라진다.
+ *
+ * **티어가 키에 들어가는 이유**(§6-앞 12): 같은 표가 구리에선 도구 값의
+ * 99.9% 이고 미스릴에선 0.5% 였다. 티어마다 배수를 곱해야 사다리가 끝까지 벽이다.
+ *
+ * `gold` 는 **단계 하나의 값**이지 재료 줄마다의 값이 아니다 — CSV 는 같은 단계의
+ * 모든 줄에 같은 골드를 되풀이해 적고(어느 줄만 봐도 그 단계의 값을 알 수 있게),
+ * 파서가 그 일치를 강제한 뒤 하나로 접는다.
+ */
+export interface EnhanceCostDef {
+  toolTier: number
+  /** 강화 후의 수치(1..ENHANCE_CAP). "+3 으로 올리는 값"이지 "+3 에서 내는 값"이 아니다. */
+  level: number
+  materials: EnhanceMaterial[]
+  gold: number
+}
+
 export interface RecipeInput {
   item: string
   count: number
@@ -583,6 +612,21 @@ export interface GameData {
    * (대금이 들어온 뒤 무엇이 들어왔는지 화면이 말해야 한다).
    */
   masters: MasterDef[]
+  /**
+   * 강화 비용표. 한 항목이 (도구 티어 × 강화 단계) 하나다.
+   *
+   * **확률표와 달리 이것은 GameData 에 싣는다**(§6-앞 13). 채집 표를 뺀 이유는
+   * "브라켓 경계가 곧 숨은 문턱이라 F12 로 스포일된다"였는데, 강화 비용에는
+   * 숨길 것이 없다 — 오히려 **가방이 요구량을 적어 주지 못하면** 플레이어는
+   * 무엇을 얼마나 모아야 하는지 모른 채 [강화] 를 눌러 보고 거절만 받는다.
+   * 원작이 쓰던 "요구치를 숫자로 말하는 문"이 여기서도 그대로여야 한다.
+   * 상점 진열(shops)을 싣는 이유와 같은 자리이고, 채집 표(GatherTables)와
+   * 정확히 반대편이다.
+   *
+   * 배열인 것은 키가 둘(toolTier·level)이라서다 — masters 가 배열인 것과 같은
+   * 사정이다. 찾는 문은 enhanceCostFor 하나다.
+   */
+  enhanceCosts: EnhanceCostDef[]
   /** 지점 등록부. 키는 지점 id 이고 맵을 넘어 유일하다. */
   places: Record<string, PlaceDef>
   /** 일과가 있는 화자만. 키는 화자 id 다 — `.sched` 가 없는 화자는 여기 없고 좌표에 고정이다. */

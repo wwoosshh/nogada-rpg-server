@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseEnhanceCosts, validateEnhanceCosts } from './enhanceCosts.js'
 import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
@@ -144,6 +145,11 @@ const data: GameData = {
   // 만들지 않기 위해서다.
   shops: parseShops(readCsv('shops.csv'), readCsv('shop_stock.csv')),
   masters: parseMasters(readCsv('masters.csv')),
+  // 강화 비용표도 GameData 에 싣는다(§6-앞 13) — 채집 확률표와 정확히 반대편
+  // 결정이다. 저쪽은 브라켓 경계가 곧 숨은 문턱이라 감췄지만, 강화는 **가방이
+  // 요구량을 숫자로 적어 주지 못하면** 플레이어가 무엇을 얼마나 모아야 하는지
+  // 모른 채 버튼만 눌러 보게 된다.
+  enhanceCosts: parseEnhanceCosts(readCsv('enhance_costs.csv')),
   places,
   schedules,
   // 길은 아래에서 굽는다 — 참조가 성립하는지부터 보고 나서다.
@@ -158,6 +164,7 @@ const gatherCheck = validateGatherTables(gatherTables, data)
 const violations = [
   ...validateGameData(data, gatherTables),
   ...gatherCheck.violations,
+  ...validateEnhanceCosts(data),
   ...validateSpeakerPlacements(data, terrains),
   ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
@@ -216,6 +223,7 @@ console.log(
     `상점 ${Object.keys(data.shops).length}, ` +
     `진열 ${Object.values(data.shops).reduce((sum, shop) => sum + shop.stock.length, 0)}, ` +
     `달인 ${data.masters.length}, ` +
+    `강화비용 ${data.enhanceCosts.length}, ` +
     `전환 ${data.transitions.length}, ` +
     `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
 )
