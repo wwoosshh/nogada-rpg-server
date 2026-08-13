@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   createRng,
+  ENHANCE_CAP,
   gatherBracketFor,
   gatherHandOf,
   gatherIntervalMs,
   gatherOutcome,
+  gatherRoll,
   GATHER_ROLL_MAX,
-  JACKPOT_BAND_MAX,
   sellPrice,
   TOKEN_SPEED_FACTOR,
   type GatherHand,
@@ -64,11 +65,16 @@ type Grade = 1 | 2 | 3 | null
  * 이 파일의 존재 이유와 같다(§7-앞 12): 증명이 게임과 **같은 경로**를 지나야
  * 한다. 여기서 배수를 직접 곱하면 증표 조회가 망가진 날에도 이 시뮬만 초록이다.
  */
-function handOf(skill: SkillId, grade: Grade, tokens: readonly TokenEffect[] = []): GatherHand {
+function handOf(
+  skill: SkillId,
+  grade: Grade,
+  tokens: readonly TokenEffect[] = [],
+  enhanceLevel = 0,
+): GatherHand {
   const player: PlayerState = emptyPlayer()
   if (grade !== null) {
     const tool = toolOf(skill, grade)
-    player.instances = [{ instanceId: 'sim', itemId: tool.id, enhanceLevel: 0 }]
+    player.instances = [{ instanceId: 'sim', itemId: tool.id, enhanceLevel }]
     player.equipped = { [skill]: 'sim' }
   }
   for (const effect of tokens) {
@@ -174,6 +180,96 @@ describe('§8-4 네 표 전 티어가 실제로 드랍된다', () => {
   }
 })
 
+/**
+ * §6-앞 14 — **어떤 손으로도 모든 티어가 나온다.**
+ *
+ * 위 §8-4 는 구리 손 하나로 "폭 0 인 티어가 없다"만 봤다. 그런데 확률을 0 으로
+ * 만드는 것은 표의 폭이 아니라 **손과 표의 어긋남**이었다: 배수가 1 보다 작은 손은
+ * 원 roll 의 정의역을 접어 표의 꼬리를 못 밟는다. 출하본에서 전수로 세어 보면
+ * 416 조합(4표 × 26브라켓 × 16손) 중 14 조합에 확률 **정확히 0** 인 티어가 있었다 —
+ * 미스릴+선별(0.76)의 광물 ∞ 에서는 은·철·구리 원석 셋이 한꺼번에 0 이었다.
+ *
+ * 그래서 이 스위트는 표본이 아니라 **전수**로 판정한다: 시뮬레이션은 "안 나왔다"와
+ * "못 나온다"를 구별하지 못하고, 폭 6,200/100,001 짜리 티어는 1만 번을 굴려도
+ * 우연히 0 회일 수 있다. rawRoll 100001 가지를 다 세면 0 은 오직 불가능뿐이다.
+ *
+ * 손 목록은 `gatherHandOf` 로 **실제로 짓는다**(장비를 꿴 흉내 플레이어). 배수를
+ * 여기서 직접 곱해 목록을 만들면, 장비 조회나 증표 곱이 깨진 날에도 이 스위트만
+ * 초록이다 — 그러면 현실이 아니라 사본을 지키는 테스트가 된다.
+ */
+describe('§6-앞 14 어떤 손으로도 모든 티어가 나온다 — 전 표·전 브라켓·전 손 전수', () => {
+  const GRADES: readonly Grade[] = [null, 1, 2, 3]
+  const GRADE_NAMES = new Map<Grade, string>([
+    [null, '맨손'],
+    [1, '구리'],
+    [2, '철'],
+    [3, '미스릴'],
+  ])
+  /** 강화는 간격 축이라 roll 을 안 건드린다 — 그래도 목록에 넣어 그 사실까지 잰다(아래). */
+  const ENHANCE_LEVELS = [0, ENHANCE_CAP] as const
+
+  interface Hand {
+    name: string
+    hand: GatherHand
+  }
+
+  const handsOf = (skill: SkillId): Hand[] =>
+    GRADES.flatMap((grade) =>
+      [false, true].flatMap((sight) =>
+        ENHANCE_LEVELS.map((enhance) => ({
+          name: `${GRADE_NAMES.get(grade)}${sight ? '+선별증표' : ''}+${enhance}`,
+          hand: handOf(skill, grade, sight ? ['sight'] : [], enhance),
+        })),
+      ),
+    )
+
+  it('강화는 roll 프로필을 건드리지 않는다 — 16 손이 8 가지 배수로 접힌다(전수 셈을 그만큼 줄일 수 있는 근거)', () => {
+    // 이 등식이 깨지는 날(강화가 roll 축을 사는 날) 아래 전수 셈은 손을 절반만
+    // 보게 된다 — 그래서 줄이기 전에 줄여도 되는지를 먼저 못박는다.
+    for (const skill of ['ice', 'wood', 'mineral', 'herb'] as const) {
+      for (const grade of GRADES) {
+        expect(handOf(skill, grade, [], ENHANCE_CAP).profile).toEqual(handOf(skill, grade, [], 0).profile)
+      }
+    }
+  })
+
+  for (const tableId of ['ice', 'wood', 'mineral', 'herb'] as const) {
+    const table = tables[tableId]!
+    // 같은 배수·평감산이면 roll 분포가 글자 그대로 같다 — 강화 두 값이 여기서
+    // 합쳐져 표당 16 손이 8 벌의 전수 셈이 된다(위 등식이 그것을 보증한다).
+    const rollsByProfile = new Map<string, { names: string[]; rolls: Int32Array }>()
+    for (const { name, hand } of handsOf(table.skill)) {
+      const key = `${hand.profile.rollFactor}|${hand.profile.jackpotFlat}`
+      const seen = rollsByProfile.get(key)
+      if (seen) {
+        seen.names.push(name)
+        continue
+      }
+      const rolls = new Int32Array(DOMAIN)
+      for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) rolls[rawRoll] = gatherRoll(rawRoll, hand.profile)
+      rollsByProfile.set(key, { names: [name], rolls })
+    }
+
+    for (const bracket of table.brackets) {
+      const label = bracket.bracketMax === null ? '∞' : `≤${bracket.bracketMax}`
+      it(`${tableId} ${label} 브라켓: 어느 손으로도 그 브라켓의 전 티어가 나온다`, () => {
+        for (const { names, rolls } of rollsByProfile.values()) {
+          const counts = new Array<number>(bracket.cumulative.length).fill(0)
+          for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
+            const tierIndex = bracket.cumulative.findIndex((c) => rolls[rawRoll]! <= c)
+            if (tierIndex >= 0) counts[tierIndex]! += 1
+          }
+          for (let i = 0; i < counts.length; i++) {
+            // 실패 메시지가 "어느 손이 어느 재료를 못 캐는가"를 그대로 말하게 한다 —
+            // 이 스위트가 빨개지는 날 읽을 사람은 CSV 작가다.
+            expect(counts[i], `${names.join(' / ')} 로는 ${table.tiers[i]?.itemId} 가 안 나온다`).toBeGreaterThan(0)
+          }
+        }
+      })
+    }
+  }
+})
+
 describe('§8-5 도구 등급이 희귀 티어를 체감되게 더 뽑는다', () => {
   // 얼음 ≤500000 브라켓(숙련 20만): 상위 두 티어(ice_gem + pure_ice_crystal)의
   // 누적 상한이 10065 다.
@@ -182,18 +278,15 @@ describe('§8-5 도구 등급이 희귀 티어를 체감되게 더 뽑는다', (
   // 반비례하지 않는다 — rawRoll ≤ JACKPOT_BAND_MAX(10) 구간은 곱이 아니라
   // 평감산만 받고, rawRoll 이 정수이므로(연속均등이 아니라 이산 균등) 곱을
   // 적용하는 밖 구간도 factor 별로 깔끔한 반비례가 아니다. 근사식 대신
-  // gatherOutcome 과 똑같은 두 갈래 식으로 rawRoll 100001 가지를 전수 세어
-  // "정확한" 확률을 낸다 — 근사가 실제 판정과 갈라질 여지를 아예 없앤다.
+  // **판정과 같은 함수**(gatherRoll)로 rawRoll 100001 가지를 전수 세어 "정확한"
+  // 확률을 낸다 — 식을 여기 베껴 두면 언젠가 증명이 판정과 다른 식을 본다.
   const prof = 200_000
   const rareCut = 10_065
 
   const exactRareCount = (hand: GatherHand): number => {
-    const { rollFactor, jackpotFlat } = hand.profile
     let count = 0
     for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
-      const roll =
-        rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - jackpotFlat) : Math.floor(rawRoll * rollFactor)
-      if (roll <= rareCut) count++
+      if (gatherRoll(rawRoll, hand.profile) <= rareCut) count++
     }
     return count
   }
@@ -226,17 +319,14 @@ describe('§6-앞 3 맨손 페널티 — 첫 도구를 만드는 순간이 체�
   // 구리(×1.0)는 rawRoll 0..20000 이 성공(≈20.0%), 맨손(×1.45)은 밴드 11개 +
   // rawRoll 11..13793 만 성공(≈13.8%) — §6-앞 3 이 "저브라켓에서도 무감각하지
   // 않은 페널티"로 ×1.1 을 ×1.45 로 올린 그 수치다. §8-5 와 같은 이유로 근사식
-  // 대신 gatherOutcome 과 똑같은 두 갈래 식의 전수 셈으로 정확한 확률을 낸다.
+  // 대신 판정과 같은 함수(gatherRoll)의 전수 셈으로 정확한 확률을 낸다.
   const table = tables['mineral']!
   const successCut = table.brackets[0]!.cumulative.at(-1)!
 
   const exactSuccessCount = (hand: GatherHand): number => {
-    const { rollFactor, jackpotFlat } = hand.profile
     let count = 0
     for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
-      const roll =
-        rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - jackpotFlat) : Math.floor(rawRoll * rollFactor)
-      if (roll <= successCut) count++
+      if (gatherRoll(rawRoll, hand.profile) <= successCut) count++
     }
     return count
   }
@@ -283,12 +373,10 @@ describe('§6-앞 7 증표의 값어치 — 가격을 유도한 두 숫자를 �
   /** 한 번의 시도가 낳는 골드의 정확한 기댓값과 분산. 실패는 0 골드다. */
   function goldMoments(table: GatherTableDef, prof: number, hand: GatherHand): { mean: number; variance: number } {
     const bracket = gatherBracketFor(table, prof)
-    const { rollFactor, jackpotFlat } = hand.profile
     let sum = 0
     let sumSq = 0
     for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
-      const roll =
-        rawRoll <= JACKPOT_BAND_MAX ? Math.max(0, rawRoll - jackpotFlat) : Math.floor(rawRoll * rollFactor)
+      const roll = gatherRoll(rawRoll, hand.profile)
       const tierIndex = bracket.cumulative.findIndex((c) => roll <= c)
       const itemId = tierIndex >= 0 ? table.tiers[tierIndex]?.itemId : undefined
       const gold = itemId ? sellPrice(data.items[itemId]!) : 0

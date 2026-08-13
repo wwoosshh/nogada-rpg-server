@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { testTool } from '../testing/items.js'
 import type { GatherTableDef, ItemDef } from '../types.js'
 import { TOKEN_SIGHT_FACTOR, type GatherHand } from './gatherHand.js'
-import { gatherBracketFor, gatherOutcome } from './gatherTable.js'
+import { GATHER_ROLL_MAX, gatherBracketFor, gatherOutcome, gatherRoll } from './gatherTable.js'
 import { effectiveIntervalFactor, gatherToolProfile } from './toolProfile.js'
 
 // ---------------------------------------------------------------------------
@@ -152,6 +152,70 @@ describe('gatherOutcome — 도구 보정', () => {
 
     expect(gatherOutcome(table, 0, mithril, rawRollOf(6)).roll).toBe(3) // 6−3=3, 마지막으로 걸림
     expect(gatherOutcome(table, 0, mithril, rawRollOf(7)).roll).toBe(4) // 7−3=4, 그 다음은 밖
+  })
+})
+
+describe('gatherRoll — 접힌 손도 표의 끝에 닿는다(§6-앞 14 의 버그)', () => {
+  /**
+   * 배수가 1 보다 작은 손은 원 roll 의 정의역을 [0, F] 로 접는다(F = floor(100000×배수)).
+   * 표의 눈금은 [0, 100000] 위에 있으므로 접힌 만큼 표의 꼬리가 통째로 사라졌다 —
+   * 미스릴+선별(0.76)로는 광물의 은·철·구리 원석이 확률 **정확히 0** 이었다.
+   */
+  const sight = (h: GatherHand): GatherHand => ({
+    ...h,
+    profile: { ...h.profile, rollFactor: h.profile.rollFactor * TOKEN_SIGHT_FACTOR },
+  })
+
+  it('어떤 손이든 원 roll 의 끝은 표의 끝에 정확히 닿는다 — 이것이 "모든 티어가 가능"의 근거다', () => {
+    for (const h of [bare, sight(bare), copper, sight(copper), iron, sight(iron), mithril, sight(mithril)]) {
+      expect(gatherRoll(GATHER_ROLL_MAX, h.profile)).toBeGreaterThanOrEqual(GATHER_ROLL_MAX)
+    }
+    // 접힌 손(배수 < 1)은 넘치지도 모자라지도 않게 **정확히** 표의 끝이다.
+    expect(gatherRoll(GATHER_ROLL_MAX, mithril.profile)).toBe(GATHER_ROLL_MAX)
+    expect(gatherRoll(GATHER_ROLL_MAX, sight(mithril).profile)).toBe(GATHER_ROLL_MAX)
+    expect(gatherRoll(GATHER_ROLL_MAX, iron.profile)).toBe(GATHER_ROLL_MAX)
+  })
+
+  it('배수 ≥ 1 인 손은 되펴기 항이 0 이다 — 맨손·구리의 확률이 한 톨도 안 바뀐다', () => {
+    // 되펴기는 도달 상한(F)을 넘는 원 roll 에만 붙는데, 배수가 1 이상이면
+    // F ≥ 100000 이라 그런 원 roll 이 없다. 맨손의 실패(§6-앞 3 의 13.8%)가
+    // 이 성질 하나로 통째로 보존된다.
+    expect(gatherRoll(GATHER_ROLL_MAX, copper.profile)).toBe(100_000)
+    expect(gatherRoll(GATHER_ROLL_MAX, bare.profile)).toBe(145_000)
+    expect(gatherRoll(50_000, bare.profile)).toBe(72_500)
+  })
+
+  it('도달 상한 아래에서는 예전 그대로 곱만 적용된다 — 되펴기는 꼬리에만 붙는다', () => {
+    // 미스릴의 F 는 floor(100000×0.8) = 80000 이다.
+    expect(gatherRoll(79_999, mithril.profile)).toBe(63_999)
+    expect(gatherRoll(80_000, mithril.profile)).toBe(64_000)
+    // 상한 바로 위부터 넘긴 몫이 더해진다 — 이음매에 구멍이 없다(티어를 건너뛰지 않는다).
+    expect(gatherRoll(80_001, mithril.profile)).toBe(64_001)
+    expect(gatherRoll(80_002, mithril.profile)).toBe(64_003)
+  })
+
+  it('되펴기는 roll 을 낮추지 않는다 — 희귀 티어가 몰래 흔해질 수 없다', () => {
+    for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll += 997) {
+      const plain =
+        rawRoll <= 10
+          ? Math.max(0, rawRoll - mithril.profile.jackpotFlat)
+          : Math.floor(rawRoll * mithril.profile.rollFactor)
+      expect(gatherRoll(rawRoll, mithril.profile)).toBeGreaterThanOrEqual(plain)
+    }
+  })
+
+  it('꼬리가 도달 상한 위에 있는 표에서도 최하 티어가 나온다 — 출하 버그의 축소판', () => {
+    // 광물 ∞ 와 같은 모양의 픽스처: 흔한 티어의 문턱(85000)이 미스릴의 도달
+    // 상한(80000) 위에 있다. 고치기 전에는 shard 의 확률이 정확히 0 이었다.
+    const tailTable: GatherTableDef = {
+      ...table,
+      brackets: [{ bracketMax: null, cumulative: [15_000, 85_000, 100_000] }],
+    }
+    const seen = new Set<string | null>()
+    for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
+      seen.add(gatherOutcome(tailTable, 1_000, mithril, rawRollOf(rawRoll)).itemId)
+    }
+    expect(seen).toEqual(new Set(['gem', 'crystal', 'shard']))
   })
 })
 
