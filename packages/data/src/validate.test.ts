@@ -1634,15 +1634,15 @@ describe('validateGameData 의 상점 등록부 검사', () => {
   })
 
   it('남의 계열 아이템을 진열한 상점을 잡아낸다', () => {
-    // 진열의 요구치(unlockSkill)도 화면의 "현재/필요"도 전부 **상점의 계열**을
-    // 잰다(§6-앞 14). 그래서 나무 증표를 얼음상점에 놓으면 그것이 얼음 숙련도로
-    // 열리고 화면은 "얼음 0/10,000"을 적는다 — 데이터에 적힌 계열과 화면이 말하는
-    // 계열이 갈라지는데, 그 어긋남을 화면에서 되짚을 방법이 없다.
+    // 숙련 잠금 칸의 요구치(unlockSkill)도 화면의 "현재/필요"도 전부 **상점의
+    // 계열**을 잰다(§6-앞 14). 그래서 나무 증표를 얼음상점에 놓으면 그것이 얼음
+    // 숙련도로 열리고 화면은 "얼음 0/10,000"을 적는다 — 데이터에 적힌 계열과
+    // 화면이 말하는 계열이 갈라지는데, 그 어긋남을 화면에서 되짚을 방법이 없다.
     const data = registryData()
     data.items.ice_shard = testItem('ice_shard', { name: '얼음 조각', icon: 'shard_ice', price: 50, skill: 'ice' })
     data.shops = { 광물상점: mineralShop({ stock: [{ itemId: 'ice_shard', unlockBy: 'skill', unlockAt: 10000 }] }) }
     expect(validateGameData(data, baseTables())).toEqual([
-      'shops[광물상점]: "ice_shard" 는 "ice" 계열인데 이 상점은 "mineral" 계열이다 — 진열의 요구치도 화면의 "현재/필요"도 전부 상점 계열의 숙련도를 재므로, 이 칸은 남의 계열 숙련도로 열리고 화면은 엉뚱한 기술 이름을 적는다. shop_stock.csv 에서 그 줄을 "ice" 상점으로 옮기거나 items.csv 의 skill 을 고친다',
+      'shops[광물상점]: "ice_shard" 는 "ice" 계열인데 이 상점은 "mineral" 계열이다 — 숙련 잠금 칸이면 요구치와 화면의 "현재/필요"가 상점 계열의 숙련도를 재는데 엉뚱한 계열의 문턱이 되고, 수집 잠금(되사기) 칸이면 "자기 계열만 되판다"는 규칙이 깨진다. shop_stock.csv 에서 그 줄을 "ice" 상점으로 옮기거나 items.csv 의 skill 을 고친다',
     ])
   })
 
