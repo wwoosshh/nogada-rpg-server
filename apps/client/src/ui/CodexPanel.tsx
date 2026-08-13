@@ -1,6 +1,6 @@
 import { COLLECTION_MAX_GRADE } from '@nogada/shared'
 import { useGameStore } from '../store/gameStore.js'
-import { buildCodex, type CodexSlot } from './codexModel.js'
+import { buildCodex, nextCollectionGate, type CodexSlot } from './codexModel.js'
 import { ItemIcon } from './ItemIcon.js'
 
 /**
@@ -32,6 +32,7 @@ export function CodexPanel(): JSX.Element | null {
   if (!open || player === null) return null
 
   const view = buildCodex(data, player)
+  const gate = nextCollectionGate(data.milestones, view.score)
 
   return (
     <div className="panel">
@@ -40,9 +41,17 @@ export function CodexPanel(): JSX.Element | null {
           <h2 className="panel__title">수집의 방</h2>
           {/* 총점은 이 화면에서 가장 자주 보는 숫자라 헤더에 상주한다 — 상점
               패널의 소지금과 같은 자리, 같은 이유다. 이 수가 되사기 진열을
-              여는 그 수이므로(§6-앞 7) 만점과 함께 적어 거리를 읽게 한다. */}
-          <span className="codex__score" aria-label="수집 총점">
-            총점 {view.score}/{view.maxScore}
+              여는 그 수이므로(§6-앞 7) 만점과 함께 적어 거리를 읽게 한다.
+
+              이름은 `총점` 이 아니라 `수집 점수` 다 — 상점의 잠긴 진열이 이미
+              그 글자로 같은 수를 말한다(shopModel). 한 숫자가 두 화면에서 다른
+              이름을 달면, 처음 보는 사람은 두 눈금이 같은 것인지 확인할 방법이 없다.
+
+              그리고 만점 옆에 **다음 문**을 적는다: 100 은 문이 아니고, 실제로
+              열리는 수는 30·60 이다(nextCollectionGate 문서). */}
+          <span className="codex__score" aria-label="수집 점수">
+            수집 점수 {view.score}/{view.maxScore}
+            {gate !== null && <span className="codex__gate"> · 다음 문 {gate.threshold}</span>}
           </span>
           <button
             type="button"
@@ -100,6 +109,11 @@ function SlotCell({ slot }: { slot: CodexSlot }): JSX.Element {
       <span className="codex__slot-next">
         {full ? '가득' : untouched ? '' : `다음까지 ${fmt(slot.remaining ?? 0)}개`}
       </span>
+      {/* 만강 문턱은 **모든 상태에서** 적는다. 잠긴 칸에 `0/1` 만 적으면 그 칸이
+          26분짜리인지 10시간짜리인지 알 길이 없고(첫 문턱과 만강이 1 대 1,600 인
+          칸이 있다), 그것을 아는 유일한 방법이 되돌릴 수 없는 헌납 한 번이 된다.
+          자리를 늘 차지하게 두는 것은 격자가 상태마다 튀지 않게 하기 위해서다. */}
+      <span className="codex__slot-final">만강 {fmt(slot.finalStep)}</span>
     </li>
   )
 }

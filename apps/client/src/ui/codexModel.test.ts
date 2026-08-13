@@ -6,6 +6,8 @@ import {
   isCollectionSlot,
   MAX_DONATE_COUNT,
   maxDonateCount,
+  donateToThresholdCount,
+  nextCollectionGate,
   nextThresholdOf,
 } from './codexModel.js'
 
@@ -180,3 +182,123 @@ function slotOf(view: ReturnType<typeof buildCodex>, itemId: string) {
   if (slot === undefined) throw new Error(`칸이 화면에 없다: ${itemId}`)
   return slot
 }
+
+describe('문턱까지 고르기 — 되돌릴 수 없는 행위에서 "정확히 그만큼"을 손이 닿는 곳에', () => {
+  /*
+   * 수량 고르개는 −/+/전부 셋뿐이라, 문턱까지 정확히 바치려면 +를 수천 번 눌러야
+   * 한다. 실질 선택지가 "1개 아니면 전량"이 되는데, 그것은 헌납이 고치겠다고 한
+   * 원작의 "전량 소멸"이 조작으로 되살아난 모양이다. 그래서 화면은 "다음 문턱까지"
+   * 한 칸을 함께 준다. 이 함수는 그 칸이 몇 개인가만 답한다.
+   */
+  it('다음 문턱까지 모자란 만큼을 답한다 — 가진 것이 그보다 많을 때', () => {
+    const steps = stepsOf('ice_shard')
+    const count = donateToThresholdCount(steps[0], steps[0] + 999, {
+      itemId: 'ice_shard',
+      steps,
+    })
+    // 1단을 막 채운 사람의 다음 목표는 2단이고, 모자란 만큼은 t2 - t1 이다.
+    expect(count).toBe(steps[1] - steps[0])
+  })
+
+  it('가진 것으로 문턱에 못 닿으면 답하지 않는다 — 있지도 않은 수량을 권하지 않는다', () => {
+    const steps = stepsOf('ice_shard')
+    expect(donateToThresholdCount(0, 1, { itemId: 'ice_shard', steps })).toBeNull()
+  })
+
+  it('가진 것이 정확히 모자란 만큼이면 답하지 않는다 — [전부] 가 이미 그 일을 한다', () => {
+    const steps = stepsOf('ice_shard')
+    expect(donateToThresholdCount(0, steps[0], { itemId: 'ice_shard', steps })).toBeNull()
+  })
+
+  it('만강인 칸은 답하지 않는다 — 더 오를 등급이 없다', () => {
+    const steps = stepsOf('ice_shard')
+    expect(
+      donateToThresholdCount(steps[3], steps[3], { itemId: 'ice_shard', steps }),
+    ).toBeNull()
+  })
+
+  it('한 요청 상한을 넘는 문턱은 답하지 않는다 — 서버가 bad_request 로 거절할 수량이다', () => {
+    // 문턱이 상한보다 먼 칸을 지어낸다(출하 데이터에는 없다 — 상한이 100,000 이다).
+    const steps: [number, number, number, number] = [1, MAX_DONATE_COUNT + 1, 2, 3]
+    expect(
+      donateToThresholdCount(1, MAX_DONATE_COUNT + 5, { itemId: 'made_up', steps }),
+    ).toBeNull()
+  })
+})
+
+describe('칸은 사다리 전체를 말한다 — 픽 넷을 그려 놓고 숫자 하나만 말하지 않는다', () => {
+  /*
+   * 화면은 등급 픽을 넷 그리는데 `nextStep` 은 그중 하나만 말한다. 그리고 숨은
+   * 문턱은 첫 문턱보다 수백 배 크다(`ice_gem` 1 → 710, `gold_ore` 1 → 1,600).
+   * 그래서 첫 개를 바치기 **전**에는 이 칸이 26분짜리인지 10시간짜리인지 알 길이
+   * 없고, 그것을 아는 유일한 방법이 "되돌릴 수 없는 헌납을 한 번 해 보는 것"이
+   * 된다 — 규범 §6-앞 3(숨기는 것은 없다)이 금지한 바로 그 모양이다.
+   */
+  it('만강 문턱을 잠긴 칸도 말한다 — 이 칸이 결국 몇 개짜리인가', () => {
+    const view = buildCodex(data, emptyPlayer())
+    const slots = view.lines.flatMap((line) => line.slots)
+    expect(slots.length).toBeGreaterThan(0)
+    for (const slot of slots) {
+      expect(slot.finalStep).toBe(stepsOf(slot.itemId)[3])
+    }
+  })
+
+  it('만강 문턱은 다 채운 뒤에도 남는다 — `가득` 이 얼마짜리 가득인지 말한다', () => {
+    const steps = stepsOf('ice_shard')
+    const view = buildCodex(data, donatedPlayer({ ice_shard: steps[3] }))
+    const slot = view.lines.flatMap((l) => l.slots).find((s) => s.itemId === 'ice_shard')
+    expect(slot?.remaining).toBeNull()
+    expect(slot?.finalStep).toBe(steps[3])
+  })
+})
+
+describe('바친 개수를 세는 규칙은 총점과 같아야 한다', () => {
+  /*
+   * `collectionScore` 는 `Object.hasOwn` 으로 조회하고 그 이유를 주석에 적어 두었다
+   * (세이브에서 온 객체라 상속 키가 정의 행세를 할 수 있다). `buildCodex` 가 맨손
+   * 조회를 하면 같은 세이브에서 머리의 총점과 칸의 개수가 갈린다 — 플레이어가
+   * 확인할 방법이 없는 거짓말이다.
+   */
+  it('상속된 키는 바친 것이 아니다 — 머리의 총점과 칸이 같은 답을 한다', () => {
+    // 프로토타입에 얹은 값: 맨손 조회(`donated[id] ?? 0`)에는 잡히고 hasOwn 에는 안 잡힌다.
+    const donated = Object.create({ ice_shard: 999_999 }) as Record<string, number>
+    const view = buildCodex(data, { ...emptyPlayer(), donated })
+    const slot = view.lines.flatMap((l) => l.slots).find((s) => s.itemId === 'ice_shard')
+    expect(slot?.donated).toBe(0)
+    expect(slot?.grade).toBe(0)
+    expect(view.score).toBe(collectionScore(donated, data.collection))
+  })
+})
+
+describe('머리가 실제 문을 가리킨다 — 만점은 문이 아니다', () => {
+  /*
+   * 헤더는 `총점 N/100` 만 적었는데, 100 은 문이 아니다. 실제로 무언가 열리는
+   * 수는 30(흔한 것 되사기)과 60(귀한 것 되사기)이고, 그 수는 다른 패널(상세
+   * 메뉴 이정표 탭)에만 있었다 — 게다가 신규 캐릭터에서는 그 넷이 전부 ratio 0
+   * 이라 탭 맨 아래로 밀린다. 방이 자기 문을 모르면 "왜 모아야 하는가"의 답이
+   * 화면 밖에 있다.
+   */
+  it('아직 안 넘은 가장 가까운 수집 문턱과 그 이름을 답한다', () => {
+    const gate = nextCollectionGate(data.milestones, 0)
+    expect(gate).not.toBeNull()
+    expect(gate?.threshold).toBe(10)
+  })
+
+  it('넘은 문은 지나친다 — 31점이면 30 이 아니라 60 을 가리킨다', () => {
+    expect(nextCollectionGate(data.milestones, 31)?.threshold).toBe(60)
+  })
+
+  it('문턱과 같은 점수는 이미 넘은 것이다 — 30점에서 다음은 60', () => {
+    expect(nextCollectionGate(data.milestones, 30)?.threshold).toBe(60)
+  })
+
+  it('만점이면 가리킬 문이 없다', () => {
+    expect(nextCollectionGate(data.milestones, 100)).toBeNull()
+  })
+
+  it('수집이 아닌 이정표는 쳐다보지 않는다 — 숙련 문턱이 방의 문일 수 없다', () => {
+    const gate = nextCollectionGate(data.milestones, 0)
+    const def = data.milestones.find((m) => m.threshold === gate?.threshold && m.name === gate?.name)
+    expect(def?.metric.kind).toBe('collection')
+  })
+})

@@ -4,13 +4,19 @@ import {
   hammerChanceBonus,
   SKILL_IDS,
   SKILL_LABELS,
+  type CollectionThresholds,
   type ItemDef,
   type ItemInstance,
   type SkillId,
 } from '@nogada/shared'
 import { useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
-import { isCollectionSlot, maxDonateCount } from './codexModel.js'
+import {
+  donateToThresholdCount,
+  isCollectionSlot,
+  maxDonateCount,
+  nextThresholdOf,
+} from './codexModel.js'
 import { enhanceRequirementFor, type EnhanceRequirement } from './enhanceCostModel.js'
 import { ItemIcon } from './ItemIcon.js'
 import { QuantityPicker } from './QuantityPicker.js'
@@ -130,14 +136,20 @@ export function BagPanel(): JSX.Element | null {
     if (def?.kind !== 'material') continue
     const qty = player.stacks[id] ?? 0
     if (qty <= 0) continue
+    // 방의 칸인가 — [바치기] 의 유일한 자격이고, 서버가 not_collectable 을
+    // 가르는 그 검사와 같은 검사다(codexModel 의 isCollectionSlot). 문턱을 꺼내기
+    // **전에** 이 검사를 통과시키는 이유도 그 함수와 같다: `data.collection[id]` 를
+    // 맨손으로 읽으면 `constructor` 같은 상속 키가 정의 행세를 한다.
+    const thresholds = isCollectionSlot(data, id) ? data.collection[id] : undefined
     materials.push({
       id,
       name: def.name,
       qty,
       usable: def.useEffect !== undefined,
-      // 방의 칸인가 — [바치기] 의 유일한 자격이고, 서버가 not_collectable 을
-      // 가르는 그 검사와 같은 검사다(codexModel 의 isCollectionSlot).
-      donatable: isCollectionSlot(data, id),
+      slot:
+        thresholds === undefined
+          ? null
+          : { donated: player.donated[id] ?? 0, thresholds },
     })
   }
 
@@ -271,8 +283,13 @@ interface Material {
   qty: number
   /** 쓸 수 있는가(`useEffect` 칸) — [사용] 의 자격. */
   usable: boolean
-  /** 방의 칸인가(`data.collection`) — [바치기] 의 자격. */
-  donatable: boolean
+  /**
+   * 방의 칸이면 그 칸의 형편, 아니면 null — **[바치기] 의 자격이자 확인 줄의 재료**다.
+   *
+   * 자격을 boolean 하나로 따로 들지 않는 이유: 그러면 "바칠 수 있다"와 "문턱이
+   * 얼마다"가 서로를 모르는 두 값이 되어, 한쪽만 채워진 줄이 언젠가 생긴다.
+   */
+  slot: { donated: number; thresholds: CollectionThresholds } | null
 }
 
 /**
@@ -315,7 +332,7 @@ function MaterialList({ materials, busy }: { materials: Material[]; busy: boolea
             )}
             {/* 방의 칸인 재료에만 붙는다 — 주괴·증표·가루는 여기 없다.
                 **이 버튼은 바치지 않는다. 확인 줄을 펼칠 뿐이다**(아래 문서). */}
-            {m.donatable && (
+            {m.slot !== null && (
               <button
                 type="button"
                 className="bag__material-btn bag__material-btn--donate"
@@ -326,12 +343,13 @@ function MaterialList({ materials, busy }: { materials: Material[]; busy: boolea
               </button>
             )}
           </div>
-          {donating === m.id && (
+          {donating === m.id && m.slot !== null && (
             <DonateConfirm
               // 줄마다 새로 마운트한다 — 고른 수량은 그 줄의 것이다(상점 상세가
               // key 로 하는 그 일).
               key={m.id}
               material={m}
+              slot={m.slot}
               busy={busy}
               onCancel={() => setDonating(null)}
               onDone={() => setDonating(null)}
@@ -364,11 +382,13 @@ function MaterialList({ materials, busy }: { materials: Material[]; busy: boolea
  */
 function DonateConfirm({
   material,
+  slot,
   busy,
   onCancel,
   onDone,
 }: {
   material: Material
+  slot: { donated: number; thresholds: CollectionThresholds }
   busy: boolean
   onCancel: () => void
   onDone: () => void
@@ -376,6 +396,8 @@ function DonateConfirm({
   const max = maxDonateCount(material.qty)
   const [pick, setPick] = useState(1)
   const count = clampCount(pick, max)
+  const next = nextThresholdOf(slot.donated, slot.thresholds)
+  const toThreshold = donateToThresholdCount(slot.donated, material.qty, slot.thresholds)
 
   const donate = async (): Promise<void> => {
     await useGameStore.getState().donate(material.id, count)
@@ -388,7 +410,27 @@ function DonateConfirm({
   return (
     <div className="bag__donate">
       <p className="bag__donate-warn">바친 것은 돌아오지 않는다.</p>
+      {/* 목표를 확인 줄 안에 적는다 — 이 숫자는 방(CodexPanel)에도 있지만, 방은
+          다른 패널이라 여기서는 볼 수 없다. 되돌릴 수 없는 행위 앞에서 "얼마가
+          필요한지"를 보려고 화면을 나갔다 와야 한다면, 그 확인은 확인이 아니다. */}
+      <p className="bag__donate-goal">
+        {next === null
+          ? `지금까지 ${slot.donated.toLocaleString('ko-KR')}개 — 이미 가득 찼다.`
+          : `지금까지 ${slot.donated.toLocaleString('ko-KR')}개 · 다음 등급까지 ${next.remaining.toLocaleString('ko-KR')}개`}
+      </p>
       <QuantityPicker count={count} max={max} onChange={setPick} />
+      {/* 고르개의 셋(−·+·전부)만으로는 문턱에 정확히 못 선다 — 그 사연은
+          donateToThresholdCount 에 적혀 있다. 없을 때는 아예 안 그린다(죽은 버튼 금지). */}
+      {toThreshold !== null && (
+        <button
+          type="button"
+          className="bag__spare-btn bag__spare-btn--to-threshold"
+          disabled={busy}
+          onClick={() => setPick(toThreshold)}
+        >
+          문턱까지 {toThreshold.toLocaleString('ko-KR')}개
+        </button>
+      )}
       <div className="bag__donate-actions">
         <button type="button" className="bag__spare-btn" disabled={busy} onClick={onCancel}>
           그만두기

@@ -879,6 +879,31 @@
   color: var(--c-parchment-dim);
 }
 
+/*
+ * 목표 한 줄 — 지금까지 바친 개수와 다음 등급까지 남은 개수. 경고 바로 아래,
+ * 수량을 고르기 **전에** 온다: 얼마가 필요한지를 모르고 고른 수량은 고른 것이
+ * 아니다. 숫자를 강조색으로 띄우지 않는 이유는 이 줄이 목표이지 경고가 아니어서다
+ * — 이 줄에서 가장 밝아야 하는 것은 위의 "돌아오지 않는다"이다.
+ */
+.bag__donate-goal {
+  margin: 0;
+  font-size: 11px;
+  color: var(--c-parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * [문턱까지 N개] — 고르개의 [전부] 옆이 아니라 아래에 따로 선다. 셋(−·+·전부)은
+ * 상점과 공유하는 것이라 늘리지 않는다(§6-앞 1: 같은 조작이 두 화면에서 다른
+ * 모양이면 안 된다). 줄을 꽉 채우지 않는 것은 이것이 확정이 아니라 수량 제안이기
+ * 때문이다 — 꽉 찬 버튼은 아래의 [N개 바친다]뿐이어야 한다.
+ */
+.bag__spare-btn--to-threshold {
+  align-self: flex-start;
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
 .bag__donate-actions {
   display: flex;
   gap: var(--space-2);
@@ -1644,4 +1669,25 @@
   font-size: 10px;
   line-height: 1.4;
   color: var(--c-parchment-dim);
+}
+
+/*
+ * 다음 문 — 수집 점수 바로 뒤. 만점(100)은 문이 아니라 끝이고, 실제로 무언가
+ * 열리는 수는 30·60 이다. 점수보다 흐리게 두는 것은 이것이 목표이지 현재값이
+ * 아니어서다.
+ */
+.codex__gate {
+  color: var(--c-parchment-dim);
+  font-size: 13px;
+}
+
+/*
+ * 만강 문턱 — 칸마다 늘 있다. `다음까지` 줄보다 더 흐리고 작다: 이것은 지금
+ * 겨눌 목표가 아니라 이 칸의 끝이 어디인가라는 배경 정보다.
+ */
+.codex__slot-final {
+  font-size: 11px;
+  color: var(--c-parchment-dim);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }

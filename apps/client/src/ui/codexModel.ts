@@ -6,6 +6,7 @@ import {
   SKILL_LABELS,
   type CollectionThresholds,
   type GameData,
+  type MilestoneDef,
   type PlayerState,
   type SkillId,
 } from '@nogada/shared'
@@ -47,6 +48,16 @@ export interface CodexSlot {
   nextStep: number | null
   /** 다음 문턱까지 남은 개수(`nextStep - donated`). 만강이면 null. */
   remaining: number | null
+  /**
+   * 마지막(4단) 문턱 — **만강이 몇 개짜리인가**. 잠긴 칸에도, 다 채운 칸에도 있다.
+   *
+   * `nextStep` 하나만으로는 부족하다: 화면은 등급 픽을 넷 그리는데 숫자는 하나만
+   * 말하고, 숨은 문턱은 첫 문턱의 수백 배다(`gold_ore` 1 → 1,600). 그러면 이 칸이
+   * 26분짜리인지 10시간짜리인지 아는 유일한 방법이 **되돌릴 수 없는 헌납을 한 번
+   * 해 보는 것**이 된다 — §6-앞 3(숨기는 것은 없다)이 금지한 그 모양이다.
+   * 넷을 다 적지 않고 양 끝(다음·만강)만 적는 이유는 812×375 에 칸이 25개라서다.
+   */
+  finalStep: number
 }
 
 /** 계열 한 묶음 — 방의 격자는 이것 넷이다(얼음·나무·광물·허브). */
@@ -114,6 +125,64 @@ export function nextThresholdOf(
 }
 
 /**
+ * 다음 문턱까지 **정확히** 모자란 개수 — 고를 값어치가 있을 때만, 없으면 null.
+ *
+ * **왜 이 칸이 필요한가:** 수량 고르개는 `−`/`+`/`전부` 셋뿐이다(상점과 같은 것을
+ * 쓴다, §6-앞 1). 상점에서는 그것으로 충분하다 — 살 것은 골드가 정하고, 팔다 남긴
+ * 재료는 다시 팔 수 있다. 헌납은 다르다: **바친 것은 돌아오지 않는데**, 문턱까지
+ * 정확히 채우려면 `+` 를 수천 번 눌러야 한다(`ice_shard` 4단이면 6,299번). 그래서
+ * 실질 선택지가 "1개 아니면 전량"으로 접히고, 전량을 누른 사람은 강화에 쓸 원석까지
+ * 함께 태운다 — 설계 §3 이 원작의 사고("19개 바치면 19개가 통째로")를 고쳤다고 적은
+ * 바로 그 결과가 조작에서 되살아난다.
+ *
+ * **null 을 돌려주는 세 자리는 전부 "그 칸이 죽은 버튼이 되는" 자리다**(죽은 버튼
+ * 금지, §8-앞 13):
+ *   - 만강이면 오를 등급이 없다(`nextThresholdOf` 가 null).
+ *   - 모자란 만큼이 가진 것보다 많으면 눌러도 문턱에 못 닿는다.
+ *   - 모자란 만큼이 고를 수 있는 최대와 같으면 `전부` 가 이미 그 일을 한다 — 같은
+ *     결과를 내는 버튼 둘을 나란히 두면 손가락이 둘을 견주느라 멈춘다.
+ */
+export function donateToThresholdCount(
+  donatedCount: number,
+  held: number,
+  thresholds: CollectionThresholds,
+): number | null {
+  const next = nextThresholdOf(donatedCount, thresholds)
+  if (next === null) return null
+  // 상한(MAX_DONATE_COUNT)은 `maxDonateCount` 가 이미 물고 있다 — 문턱이 그보다
+  // 멀면 `remaining < max` 가 거짓이 되어 여기서 null 로 떨어진다.
+  const max = maxDonateCount(held)
+  if (next.remaining < 1 || next.remaining >= max) return null
+  return next.remaining
+}
+
+/**
+ * 아직 안 넘은 가장 가까운 **수집** 이정표 — 방이 가리킬 문. 만점이면 null.
+ *
+ * **왜 만점이 아니라 이것인가:** 헤더의 `N/100` 에서 100 은 문이 아니다. 실제로
+ * 무언가 열리는 수는 30(흔한 것 되사기)과 60(귀한 것 되사기)이고, 그 수는 방이
+ * 아니라 다른 패널(상세 메뉴의 이정표 탭)에 있었다 — 게다가 신규 캐릭터에서는
+ * 수집 이정표 넷이 전부 ratio 0 이라 그 탭의 맨 아래로 밀린다. 방이 자기 문을
+ * 모르면 "왜 모아야 하는가"의 답이 화면 밖에 있는 셈이다.
+ *
+ * 문턱과 같은 점수는 **이미 넘은 것**으로 본다 — `collectionGrade` 와 이정표
+ * 판정이 둘 다 `>=` 이므로, 여기서만 `>` 로 세면 30점인 사람에게 이미 열린 문을
+ * 가리키게 된다.
+ */
+export function nextCollectionGate(
+  milestones: readonly MilestoneDef[],
+  score: number,
+): { threshold: number; name: string } | null {
+  let best: MilestoneDef | undefined
+  for (const m of milestones) {
+    if (m.metric.kind !== 'collection') continue
+    if (m.threshold <= score) continue
+    if (best === undefined || m.threshold < best.threshold) best = m
+  }
+  return best === undefined ? null : { threshold: best.threshold, name: best.name }
+}
+
+/**
  * 방 한 화면을 만든다 — 계열 넷 × 칸들.
  *
  * 총점을 계열 점수의 합으로 다시 세지 않고 `collectionScore` 를 부르는 이유:
@@ -142,7 +211,14 @@ export function buildCodex(data: GameData, player: PlayerState): CodexView {
     const line = bySkill.get(def.skill)
     if (line === undefined) continue
 
-    const donated = player.donated[thresholds.itemId] ?? 0
+    // `Object.hasOwn` 인 이유는 `collectionScore` 와 같다 — `donated` 는 세이브에서
+    // 온 객체라 상속 키(`constructor` 등)가 정의 행세를 할 수 있고, 맨손 조회는
+    // `?? 0` 으로도 그것을 못 막는다(값이 undefined 가 아니라 함수다). 두 곳이
+    // 다른 규칙을 쓰면 머리의 총점과 칸의 개수가 갈리는데, 플레이어에게는 어느
+    // 쪽이 참인지 확인할 방법이 없다.
+    const donated = Object.hasOwn(player.donated, thresholds.itemId)
+      ? (player.donated[thresholds.itemId] ?? 0)
+      : 0
     const grade = collectionGrade(donated, thresholds)
     const next = nextThresholdOf(donated, thresholds)
     line.slots.push({
@@ -152,6 +228,11 @@ export function buildCodex(data: GameData, player: PlayerState): CodexView {
       grade,
       nextStep: next?.step ?? null,
       remaining: next?.remaining ?? null,
+      // 마지막 문턱을 계산된 첨자(`COLLECTION_MAX_GRADE - 1`)가 아니라 리터럴로
+      // 꺼낸다: `steps` 는 4-튜플이라 계산된 첨자는 `number | undefined` 가 되고,
+      // 그러면 없는 기본값(0)을 지어내야 한다 — 화면에 `만강 0` 을 적는 길이다.
+      // 단이 다섯이 되는 날 이 줄은 컴파일에서 먼저 깨지는데, 그때 깨지는 것이 옳다.
+      finalStep: thresholds.steps[3],
     })
     line.score += grade
     line.maxScore += COLLECTION_MAX_GRADE
