@@ -39,12 +39,90 @@ function data(transitions = parseTransitions(ROWS)): GameData {
   }
 }
 
+/**
+ * 결계 픽스처 — 벽 하나로 안쪽을 만든 채집장.
+ *
+ * `채집장` 은 10×10 이고 y=3 한 줄이 통째로 벽이라, 위쪽(y 0~2)으로 가는 길은
+ * 결계 전환 하나뿐이다. 실제 네 채집장이 B3 에서 이 모양으로 수술됐다 —
+ * 전환의 `fromMap === toMap` 이고, 밟으면 벽 너머로 선다.
+ */
+const BARRIER_WALL = Array.from({ length: 10 }, (_, x) => `${x},3`)
+
+const barrierTerrains: Record<string, MapTerrain> = {
+  [START_MAP_ID]: { width: 20, height: 15, walls: new Set() },
+  채집장: { width: 10, height: 10, walls: new Set(BARRIER_WALL) },
+}
+
+/** 결계 픽스처의 네 줄. 키는 아래 `barrier()` 가 덮어쓸 때 쓰는 이름이다. */
+const BARRIER_ROWS = {
+  들어가는입구: { fromMap: START_MAP_ID, fromX: '15', fromY: '0', toMap: '채집장', toX: '5', toY: '8', facing: 'up' },
+  나가는입구: { fromMap: '채집장', fromX: '5', fromY: '9', toMap: START_MAP_ID, toX: '15', toY: '1', facing: 'down' },
+  // 들어가는 문에만 문턱이 있다. 나오는 문은 비운다 — 그것이 이 검사가 지키는 규범이다.
+  들어가는문: {
+    fromMap: '채집장', fromX: '5', fromY: '4', toMap: '채집장', toX: '5', toY: '2', facing: 'up',
+    gateSkill: 'ice', gateValue: '85000',
+  },
+  나오는문: { fromMap: '채집장', fromX: '5', fromY: '2', toMap: '채집장', toX: '5', toY: '4', facing: 'down' },
+}
+
+function barrier(overrides: Partial<Record<keyof typeof BARRIER_ROWS, Record<string, string>>> = {}): GameData {
+  const rows = Object.entries(BARRIER_ROWS).map(([name, row]) => ({
+    ...row,
+    ...overrides[name as keyof typeof BARRIER_ROWS],
+  }))
+  return {
+    ...data(parseTransitions(rows)),
+    maps: {
+      [START_MAP_ID]: {
+        id: START_MAP_ID, name: '시작 맵', file: 'start.tmx', width: 20, height: 15, spawn: { x: 1, y: 1 },
+      },
+      채집장: { id: '채집장', name: '채집장', file: 'f.tmx', width: 10, height: 10, spawn: { x: 5, y: 9 } },
+    },
+  }
+}
+
 describe('parseTransitions', () => {
   // 왜: facing 은 비워 둘 수 있다. 빈 칸을 'null' 이 아니라 오류로 읽으면
   //     작가가 매번 방향을 적어야 한다.
   it('facing 이 비면 null 이다', () => {
     const rows = [{ ...ROWS[0]!, facing: '' }]
     expect(parseTransitions(rows)[0]?.facing).toBeNull()
+  })
+
+  // 왜: 게이트는 선택 칸이다. 출하된 전환 열여덟 줄이 게이트 없이 살아 있고,
+  //     빈 칸을 "숙련 0 을 요구하는 문"으로 읽으면 화면이 마을 입구에서도
+  //     결계 문구를 조립할 수 있게 된다.
+  it('게이트 칸이 비면 문턱이 없다', () => {
+    const t = parseTransitions([ROWS[0]!])[0]!
+    expect(t.gateSkill).toBeUndefined()
+    expect(t.gateValue).toBeUndefined()
+  })
+
+  it('둘 다 적으면 문턱이 실린다', () => {
+    const rows = [{ ...ROWS[0]!, gateSkill: 'ice', gateValue: '85000' }]
+    const t = parseTransitions(rows)[0]!
+    expect(t.gateSkill).toBe('ice')
+    expect(t.gateValue).toBe(85000)
+  })
+
+  // 왜: 한쪽만 적힌 행을 통과시키면 작가는 결계를 세웠다고 믿는데 게임에는
+  //     아무나 지나는 문이 선다 — 그 어긋남은 화면 어디에도 흔적을 남기지
+  //     않는다. recipes.csv 의 gateSkill/gateValue 와 같은 규칙, 같은 문구다.
+  it('gateSkill 만 적으면 거절한다', () => {
+    const rows = [{ ...ROWS[0]!, gateSkill: 'ice', gateValue: '' }]
+    expect(() => parseTransitions(rows)).toThrow(/함께 적거나 함께 비워야 한다/)
+  })
+
+  it('gateValue 만 적어도 거절한다', () => {
+    const rows = [{ ...ROWS[0]!, gateSkill: '', gateValue: '85000' }]
+    expect(() => parseTransitions(rows)).toThrow(/함께 적거나 함께 비워야 한다/)
+  })
+
+  // 왜: 오타는 아무도 못 여는 문(없는 계열)이나 늘 열린 문이 된다. 어느 쪽이든
+  //     빌드가 말해 주지 않으면 플레이해 보고서야 안다.
+  it('없는 계열을 적으면 거절한다', () => {
+    const rows = [{ ...ROWS[0]!, gateSkill: 'mining', gateValue: '85000' }]
+    expect(() => parseTransitions(rows)).toThrow(/gateSkill/)
   })
 })
 
@@ -119,6 +197,42 @@ describe('validateTransitions', () => {
     const rows = [{ ...ROWS[0]!, fromX: '20' }] // 픽스처의 출발 맵은 20 칸 폭이라 x 는 0~19 다
     const violations = validateTransitions(data(parseTransitions(rows)), terrains)
     expect(violations.join('\n')).toMatch(/출발 칸이 맵 밖이다/)
+  })
+
+  // 왜: 게이트가 걸린 문은 지금까지의 검사가 하나도 보지 않는다. 도달 가능성
+  //     검사는 전환을 전부 문으로 세므로, 결계 안쪽도 "닿을 수 있다"고 말한다.
+  it('게이트 없는 문만 남기면 결계 안쪽은 여전히 나올 수 있다', () => {
+    expect(validateTransitions(barrier(), barrierTerrains)).toEqual([])
+  })
+
+  // 왜: 이것이 이 검사의 존재 이유다(§9-앞 16). resolvePlayerLocation 은 맵
+  //     존재와 좌표 범위만 보므로 결계 안에 갇힌 세이브를 구제하지 못한다 —
+  //     나오는 문에 게이트가 걸리는 순간 그 안의 사람은 영구히 갇힌다.
+  it('나오는 문에 게이트를 걸면 막는다', () => {
+    const d = barrier({ 나오는문: { gateSkill: 'ice', gateValue: '85000' } })
+    const message = validateTransitions(d, barrierTerrains).join('\n')
+    expect(message).toMatch(/갇힌다/)
+    expect(message).toMatch(/채집장 \(5, 2\)→\(5, 4\)/)
+  })
+
+  // 왜: 문턱을 나중에 올리는 날(85,000 → 200,000)을 위한 검사다. 그 사이 숙련의
+  //     플레이어가 안에 서 있는데 나오는 문이 사라져 있으면 세이브가 죽는다.
+  it('나오는 문이 아예 없으면 막는다', () => {
+    const d = barrier()
+    d.transitions = d.transitions.filter((t) => !(t.fromX === 5 && t.fromY === 2))
+    expect(validateTransitions(d, barrierTerrains).join('\n')).toMatch(/나가는 문: 없다/)
+  })
+
+  // 왜: 플레이어가 애초에 닿을 수 없는 구역(문 없는 골방)까지 갇힘으로 세면,
+  //     장식으로 막아 둔 자리를 그릴 때마다 빌드가 선다. 이 검사가 묻는 것은
+  //     "갈 수 있는데 못 나오는 자리가 있는가" 다.
+  it('아무 문도 없는 골방은 갇힘으로 세지 않는다', () => {
+    const closet: Record<string, MapTerrain> = {
+      ...barrierTerrains,
+      // (0,0) 을 (1,0)·(0,1) 벽으로 막아 아무 데서도 닿지 않는 한 칸을 만든다.
+      채집장: { width: 10, height: 10, walls: new Set([...BARRIER_WALL, '1,0', '0,1']) },
+    }
+    expect(validateTransitions(barrier(), closet)).toEqual([])
   })
 
   // 왜: 실제로 출하되는 전환이 스스로 이 검사를 통과하지 못하면, 위의 픽스처

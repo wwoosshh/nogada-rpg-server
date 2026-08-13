@@ -1143,6 +1143,66 @@ describe('POST /api/move', () => {
     await app.close()
   })
 
+  /**
+   * 실제로 출하된 결계 하나 — 시작 맵에서 **한 걸음에 닿는** 채집장의 것.
+   *
+   * 좌표도 계열도 적지 않는다: 결계는 CSV 가 정하고 B6 이 조건을 더할 자리라,
+   * 여기 숫자를 박으면 그날 이 배선 시험이 거짓말을 한다(deepPlacement 과 같은 자세).
+   */
+  function shippedGate(): TransitionDef {
+    const data = loadGameData()
+    const oneStep = new Set(
+      data.transitions.filter((t) => t.fromMap === startLocation(data).mapId).map((t) => t.toMap),
+    )
+    const found = data.transitions.find((t) => t.gateSkill !== undefined && oneStep.has(t.fromMap))
+    if (!found) throw new Error('시작 맵에서 한 걸음에 닿는 맵에 게이트가 걸린 전환이 없다')
+    return found
+  }
+
+  // 왜: 서비스 단위 테스트가 판정을 보지만, 라우트가 그 코드를 그대로 내보내지
+  //     않으면 게임에서는 아무 일도 안 일어난다 — 결계가 출하 첫날 장식이 된다.
+  it('결계 칸은 숙련이 모자라면 400 locked 이고 위치가 그대로다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const gate = shippedGate()
+    await step(me, transitionBetween(startLocation(loadGameData()).mapId, gate.fromMap))
+
+    const before = await me.inject({ method: 'GET', url: '/api/state' })
+    const res = await me.inject({ method: 'POST', url: '/api/move', payload: { x: gate.fromX, y: gate.fromY } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ code: 'locked' })
+
+    // 거절이 저장까지 갔는지 본다 — 라우트는 성공한 판정만 저장해야 한다.
+    const after = await me.inject({ method: 'GET', url: '/api/state' })
+    expect((after.json() as { player: unknown }).player).toEqual((before.json() as { player: unknown }).player)
+    await app.close()
+  })
+
+  it('요구치를 채운 사람은 그 칸으로 넘어간다', async () => {
+    const gate = shippedGate()
+    const before = await buildTestApp()
+    const me = await asPlayer(before)
+    const file = saveFileOf(before)
+
+    // 그 계열 숙련을 세이브에 직접 심는다 — 85,000 을 캐서 올리려면 몇 시간이다.
+    const raw = rawSaveOf(before)[me.id] as { skills: Record<string, number> }
+    raw.skills[gate.gateSkill!] = gate.gateValue!
+    writeRawCharacter(file, me.id, raw)
+
+    const app = await buildTestApp({ dataFile: file })
+    const seeded = await asPlayer(app, { resume: me })
+    await step(seeded, transitionBetween(startLocation(loadGameData()).mapId, gate.fromMap))
+
+    const res = await seeded.inject({ method: 'POST', url: '/api/move', payload: { x: gate.fromX, y: gate.fromY } })
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { player: { location: unknown } }).player.location).toEqual({
+      mapId: gate.toMap, x: gate.toX, y: gate.toY,
+    })
+
+    await app.close()
+    await before.close()
+  })
+
   it('맵을 넘어간 뒤에는 이전 맵의 화자에게 말을 걸 수 없다', async () => {
     await withElderStanding(async () => {
       const app = await buildTestApp()

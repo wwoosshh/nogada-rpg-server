@@ -294,14 +294,22 @@ function requireCategory(row: Row, context: string): string {
 }
 
 /**
- * 계열 문턱 두 칸(`gateSkill`,`gateValue`)을 읽어 레시피에 붙인다 —
- * 문을 여는 두 번째 숫자다(설계 §6-앞 9·10).
+ * 계열 문턱 두 칸(`gateSkill`,`gateValue`)을 읽는다. 없으면 `undefined`.
  *
  * **둘은 함께 있거나 함께 없어야 한다.** 한쪽만 적힌 행을 통과시키면 저자는
  * 문턱을 걸었다고 믿는데 게임에는 문이 없거나(값 없음) 무엇의 숫자인지 모르는
  * 문(기술 없음)이 선다 — 그 어긋남은 화면 어디에도 흔적을 남기지 않는다.
+ *
+ * **왜 recipes 와 transitions 가 이 하나를 나눠 쓰는가:** 두 CSV 가 같은 이름의
+ * 두 칸을 같은 규칙으로 읽는다(레시피의 계열 문턱, 전환의 결계). 규칙을 두 벌로
+ * 적으면 언젠가 한쪽에서만 한쪽 칸이 통과하고, 그때 CSV 작가가 읽는 오류 문구도
+ * 갈라진다 — 이 저장소가 부등호를 shared 하나로 모으는 것과 같은 저울이다.
+ * 계열 제약(레시피의 `crafting` 금지)처럼 CSV 마다 다른 것은 부르는 쪽이 얹는다.
  */
-function applyGate(def: RecipeDef, row: Row, ctx: string): void {
+export function readGate(
+  row: Row,
+  ctx: string,
+): { skill: SkillId; value: number } | undefined {
   const gateSkill = optionalCell(row, 'gateSkill')
   const gateValue = optionalCell(row, 'gateValue')
   if ((gateSkill === undefined) !== (gateValue === undefined)) {
@@ -309,18 +317,30 @@ function applyGate(def: RecipeDef, row: Row, ctx: string): void {
       `${ctx}: gateSkill 과 gateValue 는 함께 적거나 함께 비워야 한다 (지금 gateSkill="${gateSkill ?? ''}", gateValue="${gateValue ?? ''}")`,
     )
   }
-  if (gateSkill === undefined || gateValue === undefined) return
+  if (gateSkill === undefined || gateValue === undefined) return undefined
 
   // 오류 문구에 칸 이름을 실어 준다 — 그냥 ctx 로 부르면 `skill` 칸을 지적하는
   // 것처럼 읽혀서, 멀쩡한 칸을 들여다보게 만든다.
-  const skill = toSkillId(gateSkill, `${ctx}.gateSkill`)
-  if (skill === 'crafting') {
+  return {
+    skill: toSkillId(gateSkill, `${ctx}.gateSkill`),
+    value: toInt(gateValue, ctx, 'gateValue'),
+  }
+}
+
+/**
+ * 읽어 낸 문턱을 레시피에 붙인다 — 문을 여는 두 번째 숫자다(설계 §6-앞 9·10).
+ */
+function applyGate(def: RecipeDef, row: Row, ctx: string): void {
+  const gate = readGate(row, ctx)
+  if (!gate) return
+
+  if (gate.skill === 'crafting') {
     throw new Error(
       `${ctx}: gateSkill 은 채집 계열이어야 한다 — 조합 숙련도는 이미 requiredSkill 이 지키는 문이다`,
     )
   }
-  def.gateSkill = skill
-  def.gateValue = toInt(gateValue, ctx, 'gateValue')
+  def.gateSkill = gate.skill
+  def.gateValue = gate.value
 }
 
 export function parseRecipes(rows: Row[]): Record<string, RecipeDef> {
