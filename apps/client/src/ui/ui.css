@@ -1096,6 +1096,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 제작 간격 — 성공률과 같은 줄, 같은 색이되 절반 크기다. 망치의 두 축을 나란히
+   읽히게 하되(§6-앞 14), 이 슬롯의 머리 숫자는 성공률이라는 위계는 유지한다. */
+.craft__interval {
+  font-size: 16px;
+  color: var(--c-parchment);
+  font-variant-numeric: tabular-nums;
+}
+
 /* 잠긴 상세의 요구치 카운터 — 흐림 대상 밖 + 가장 밝은 색(§8-앞 11). */
 .craft__req {
   font-size: 32px;

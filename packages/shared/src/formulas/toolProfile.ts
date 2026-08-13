@@ -1,3 +1,4 @@
+import type { EquippedToolInfo } from '../equipment.js'
 import type { ItemDef } from '../types.js'
 import type { GatherHand } from './gatherHand.js'
 import { ACTION_INTERVAL_MIN_MS, actionIntervalMs } from './proficiency.js'
@@ -9,7 +10,12 @@ import { ACTION_INTERVAL_MIN_MS, actionIntervalMs } from './proficiency.js'
 export interface GatherToolProfile {
   /** 밴드 밖 roll 에 곱하는 배수. 1 보다 크면(맨손) 표 끝을 넘긴 몫이 실패가 된다. */
   rollFactor: number
-  /** 채집 간격에 곱하는 배수. 제작 간격은 불변이다(§3). */
+  /**
+   * 채집 간격에 곱하는 배수.
+   *
+   * **제작 간격에는 안 들어간다**(§3) — 망치의 티어가 사는 것은 성공률이고,
+   * 제작 간격은 `craftIntervalMs` 가 강화 배수만으로 만든다(제작 확장 §6-앞 14).
+   */
   intervalFactor: number
   /** 잭팟 밴드(rawRoll ≤ 10) 안에서 roll 에서 빼는 평감산 — 밴드 밖 곱과 배타다. */
   jackpotFlat: number
@@ -40,12 +46,17 @@ export function gatherToolProfile(def: ItemDef | null): GatherToolProfile {
 export const ENHANCE_CAP = 5
 
 /**
- * 채집 도구 강화 +1당 간격에 곱으로 붙는 배수(§5 — +5 = ×0.86).
+ * 도구 강화 +1당 간격에 곱으로 붙는 배수(§5 — +5 = ×0.86).
  *
  * 불변식(§6-앞 1): 인접 하위 티어 × 0.97^ENHANCE_CAP 보다 상위 티어 기본
  * intervalFactor 가 항상 작다 — 만강 구리(0.8587)보다 신품 철(0.8)이 빠르다.
  * 강화가 승급의 드라마를 먹어치우면 안 되기 때문이고, toolProfile.test.ts 가
  * 이 부등식을 그대로 강제한다.
+ *
+ * **망치도 같은 배수를 쓴다**(제작 확장 §6-앞 14, `craftIntervalMs`) — 강화의
+ * 대가는 도구가 무엇이든 같은 사다리이므로(계열 회전, §6-앞 11) 그 보상의
+ * 크기도 한 상수여야 한다. 위 불변식은 티어가 간격을 사는 채집 쪽 이야기이고,
+ * 망치는 티어가 간격을 아예 안 사므로(아래) 그 부등식의 대상이 아니다.
  */
 export const ENHANCE_INTERVAL_FACTOR = 0.97
 
@@ -96,4 +107,36 @@ export function effectiveIntervalFactor(def: ItemDef | null, enhanceLevel: numbe
  */
 export function gatherIntervalMs(proficiency: number, hand: GatherHand): number {
   return Math.max(ACTION_INTERVAL_MIN_MS, Math.round(actionIntervalMs(proficiency) * hand.intervalFactor))
+}
+
+/**
+ * 제작 한 번의 행동 간격 — 서버의 스탬프(craftService)와 화면 표시(제작 패널의
+ * 간격·숙련도 탭의 조합 줄)가 이 함수 하나를 부른다(§6-앞 10).
+ *
+ * **줄이는 것은 망치의 강화뿐이다**(제작 확장 §6-앞 14). 그전까지 제작 간격은
+ * 강화를 아예 무시했고, 그래서 망치 +5 는 네 계열의 원재료와 골드를 다 먹고
+ * 성공률 +1.5%p 만 돌려주는 — 아무도 안 타는 사다리였다. 간격이 붙으면 정제
+ * 노가다 자체가 빨라져 그 대가에 값어치가 생긴다.
+ *
+ * **티어는 여기 들어오지 않는다.** 망치의 티어가 사는 것은 성공률
+ * (`CRAFT_TOOL_TIER_CHANCE_BONUS`)이고, 간격까지 주면 승급 한 칸이 두 축을
+ * 동시에 사서 망치 하나가 채집 도구 넷을 합친 것보다 큰 물건이 된다. 그래서
+ * `effectiveIntervalFactor` 를 부르지 않는다 — 그 함수는 채집 티어의
+ * intervalFactor(구리 1.0·철 0.8·미스릴 0.6)를 곱해 오므로, 망치에 쓰면 티어가
+ * 조용히 간격까지 사게 된다. 곱하는 것은 강화 배수 하나뿐이다.
+ *
+ * 인자가 숫자가 아니라 착용 정보인 이유: 그래야 "티어를 받고도 안 쓴다"가 이
+ * 함수의 경계에서 보이고 테스트가 그것을 증명할 수 있다(미스릴 망치 +0 =
+ * 맨손). 숫자 하나만 받으면 그 규범은 호출자마다 흩어져, 언젠가 한 호출자가
+ * 티어를 섞어 넘긴다.
+ *
+ * 하한 클램프와 정수 계약은 `gatherIntervalMs` 와 같다 — 하한은 **곱한 뒤에**,
+ * 반올림은 여기서(밖에서 각자 반올림하면 화면과 서버 스탬프가 1ms 어긋난다).
+ */
+export function craftIntervalMs(proficiency: number, hammer: EquippedToolInfo | null): number {
+  const enhanceLevel = hammer?.instance.enhanceLevel ?? 0
+  return Math.max(
+    ACTION_INTERVAL_MIN_MS,
+    Math.round(actionIntervalMs(proficiency) * ENHANCE_INTERVAL_FACTOR ** enhanceLevel),
+  )
 }

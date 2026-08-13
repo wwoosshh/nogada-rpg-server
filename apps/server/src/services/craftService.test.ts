@@ -1,4 +1,4 @@
-import { calcCraftSuccess, emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
+import { calcCraftSuccess, craftIntervalMs, emptyDialogueHistory, type GameData, type MilestoneDef, type PlayerState } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { performCraft } from './craftService.js'
@@ -327,6 +327,35 @@ describe('performCraft', () => {
     const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.nextActionAt).toBe(1000 + 50)
+  })
+
+  // 왜: 스탬프가 actionIntervalMs 를 그대로 쓰던 시절, 망치 +5 는 네 계열의
+  //     원재료와 골드를 다 먹고 성공률 +1.5%p 만 돌려줬다 — 아무도 안 타는
+  //     사다리였다(§6-앞 14). 간격이 붙어야 그 대가에 값어치가 생긴다.
+  it('착용 망치의 강화 수치가 제작 간격을 줄인다 — +5 는 500ms 가 아니라 429ms 다(§6-앞 14)', () => {
+    const p = player({
+      stacks: { copper_ore: 5 },
+      instances: [{ instanceId: 'h1', itemId: 'copper_hammer', enhanceLevel: 5 }],
+      equipped: { crafting: 'h1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.player.nextActionAt).toBe(1000 + craftIntervalMs(0, { def: data.items.copper_hammer!, instance: p.instances[0]! }))
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 429)
+  })
+
+  // 왜: 티어는 이미 성공률을 산다. 간격까지 주면 승급 한 칸이 두 축을 동시에
+  //     사서, 망치 하나가 채집 도구 넷을 합친 것보다 큰 물건이 된다.
+  it('망치 티어는 제작 간격을 바꾸지 않는다 — 신품 철 망치(2등급)도 500ms 그대로다', () => {
+    const p = player({
+      stacks: { copper_ore: 5 },
+      instances: [{ instanceId: 'h1', itemId: 'iron_hammer', enhanceLevel: 0 }],
+      equipped: { crafting: 'h1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'copper_ingot', rng: alwaysSucceed, newId: nextId, now: 1000 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.player.nextActionAt).toBe(1000 + 500)
   })
 
   it('간격 위반으로 거부당하면 아무것도 변하지 않는다', () => {

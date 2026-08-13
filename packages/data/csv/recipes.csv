@@ -12,10 +12,10 @@ iron_sickle,철 낫,crafting,500,0.5,copper_ingot:3|common_herb:5,iron_sickle,1,
 silver_ingot,은 주괴,crafting,1500,0.5,silver_ore:3,silver_ingot,1,25,40,제련,,
 gold_ingot,금 주괴,crafting,5000,0.45,gold_ore:3|sapphire_ore:1,gold_ingot,1,40,70,제련,,
 mithril_ingot,미스릴 주괴,crafting,10000,0.45,mithril_ore:3|silver_ingot:1|gold_ingot:1|ice_gem:1,mithril_ingot,1,60,100,제련,,
-mithril_pickaxe,미스릴 곡괭이,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_pickaxe,1,150,250,도구,,
-mithril_chisel,미스릴 정,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_chisel,1,150,250,도구,,
-mithril_axe,미스릴 도끼,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_axe,1,150,250,도구,,
-mithril_sickle,미스릴 낫,crafting,25000,0.4,mithril_ingot:3|golden_fruit:2|millennium_leaf:2|aroma_herb:3,mithril_sickle,1,150,250,도구,,
+mithril_pickaxe,미스릴 곡괭이,crafting,25000,0.4,mithril_ingot:3|leaf_extract:2|sage_essence:2,mithril_pickaxe,1,150,250,도구,,
+mithril_chisel,미스릴 정,crafting,25000,0.4,mithril_ingot:3|leaf_extract:2|sage_essence:2,mithril_chisel,1,150,250,도구,,
+mithril_axe,미스릴 도끼,crafting,25000,0.4,mithril_ingot:3|leaf_extract:2|sage_essence:2,mithril_axe,1,150,250,도구,,
+mithril_sickle,미스릴 낫,crafting,25000,0.4,mithril_ingot:3|leaf_extract:2|sage_essence:2,mithril_sickle,1,150,250,도구,,
 compressed_log,압축 목재,crafting,0,0.95,soft_log:20,compressed_log,1,10,20,정제,wood,1000
 dense_log,고압축 목재,crafting,0,0.95,hard_log:15|compressed_log:1,dense_log,1,25,40,정제,wood,10000
 leaf_extract,농축 잎물,crafting,0,0.95,tea_leaf:10|golden_leaf:3|dense_log:1,leaf_extract,1,40,70,정제,wood,50000

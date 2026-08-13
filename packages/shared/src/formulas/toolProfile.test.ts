@@ -12,6 +12,7 @@ import {
 } from './proficiency.js'
 import { TOKEN_SPEED_FACTOR, type GatherHand } from './gatherHand.js'
 import {
+  craftIntervalMs,
   ENHANCE_CAP,
   ENHANCE_INTERVAL_FACTOR,
   effectiveIntervalFactor,
@@ -182,5 +183,64 @@ describe('gatherIntervalMs', () => {
   it('숙련 최속(50ms)에서는 도구도 증표도 더 못 줄인다 — 종반 포화는 수용한다(§6-앞 6, "초당 20회"가 계속 참이다)', () => {
     expect(gatherIntervalMs(10_000_000, hand(mithril, 5))).toBe(50)
     expect(gatherIntervalMs(10_000_000, withSpeedToken(hand(mithril, 5)))).toBe(50)
+  })
+})
+
+/**
+ * 제작 간격 — 망치의 **강화만** 줄인다(제작 확장 §6-앞 14).
+ *
+ * 강화가 제작 간격을 무시하던 시절, 망치 +5 는 네 계열의 원재료와 골드를 다 먹고
+ * 성공률 +1.5%p 만 돌려줬다 — 아무도 하지 않는 사다리였다. 간격이 붙으면 정제
+ * 노가다 자체가 빨라져 그 대가가 값어치를 갖는다.
+ */
+const copperHammer: ItemDef = testTool('copper_hammer', 'crafting', 1, { name: '구리 망치', icon: 'hammer_copper' })
+const ironHammer: ItemDef = { ...copperHammer, id: 'iron_hammer', toolTier: 2 }
+const mithrilHammer: ItemDef = { ...copperHammer, id: 'mithril_hammer', toolTier: 3 }
+
+describe('craftIntervalMs', () => {
+  it('망치가 없으면 숙련 간격 그대로다 — 제작에 맨손 페널티는 없다(망치는 게이트가 아니라 보조다)', () => {
+    expect(craftIntervalMs(0, null)).toBe(ACTION_INTERVAL_MAX_MS)
+    expect(craftIntervalMs(0, null)).toBe(actionIntervalMs(0))
+  })
+
+  // 왜: 티어는 이미 성공률(CRAFT_TOOL_TIER_CHANCE_BONUS)을 산다. 간격까지 주면 한
+  //     축의 승급이 두 번 계산되고, 채집 도구가 두 축(roll·간격)을 나눠 갖는 설계와
+  //     달리 망치는 성공률·간격을 **혼자** 독식한다 — 망치 하나가 다른 도구 넷을
+  //     합친 것보다 큰 물건이 된다. 그래서 제작 간격의 주인은 강화 하나다.
+  it('망치 티어는 제작 간격을 바꾸지 않는다 — 티어가 사는 것은 성공률이고, 두 축을 다 주면 이중 계산이다', () => {
+    for (const def of [copperHammer, ironHammer, mithrilHammer]) {
+      expect(craftIntervalMs(0, info(def, 0))).toBe(craftIntervalMs(0, null))
+    }
+    // 강화가 같으면 티어가 달라도 같은 간격이다 — 곱해지는 것이 티어가 아니라는 증거.
+    expect(craftIntervalMs(0, info(mithrilHammer, 5))).toBe(craftIntervalMs(0, info(copperHammer, 5)))
+  })
+
+  it('강화 +1 마다 ×0.97 이 곱으로 붙는다 — 채집과 같은 상수, 같은 규칙이다', () => {
+    expect(craftIntervalMs(0, info(copperHammer, 1))).toBe(
+      Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR),
+    )
+    expect(craftIntervalMs(0, info(copperHammer, ENHANCE_CAP))).toBe(
+      Math.round(ACTION_INTERVAL_MAX_MS * ENHANCE_INTERVAL_FACTOR ** ENHANCE_CAP),
+    )
+    // 만강 망치는 신품보다 71ms 빠르다 — 이 체감이 §6-앞 14 가 사려던 것이다.
+    expect(craftIntervalMs(0, info(copperHammer, ENHANCE_CAP))).toBe(429)
+  })
+
+  // 왜: 채집 쪽이 정확히 이 사고를 한 번 냈다 — 숙련도 탭이 "429.3670128499999ms"
+  //     를 그대로 찍었다. 제작 간격도 화면이 그대로 찍으므로 같은 계약을 진다.
+  it('간격은 언제나 정수다 — 강화한 망치도 맨손도 소수점 꼬리를 남기지 않는다', () => {
+    for (const hammer of [null, info(copperHammer, 1), info(copperHammer, ENHANCE_CAP), info(mithrilHammer, 3)]) {
+      for (const prof of [0, 1, 7, 123, 4_567, 98_765, 1_000_000]) {
+        expect(Number.isInteger(craftIntervalMs(prof, hammer))).toBe(true)
+      }
+    }
+  })
+
+  it('하한 50ms 는 배수를 곱한 뒤에 클램프한다 — 채집과 같은 순서다', () => {
+    // 숙련 857,700 → actionIntervalMs = 55ms(하한 위). 만강의 곱
+    // 55×0.97^5 ≈ 47.2ms 는 하한 아래다 — 하한을 곱 앞에 두는 구현이라면
+    // 47 이 그대로 나와 이 테스트가 깨진다.
+    expect(craftIntervalMs(857_700, info(copperHammer, ENHANCE_CAP))).toBe(ACTION_INTERVAL_MIN_MS)
+    expect(craftIntervalMs(10_000_000, info(copperHammer, ENHANCE_CAP))).toBe(ACTION_INTERVAL_MIN_MS)
   })
 })

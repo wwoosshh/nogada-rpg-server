@@ -1,5 +1,5 @@
 import { emptyPlayer, loadGameData } from '@nogada/data'
-import { calcCraftSuccess, equippedToolTier, type GameData, type PlayerState } from '@nogada/shared'
+import { calcCraftSuccess, craftIntervalMs, equippedToolTier, type GameData, type PlayerState } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import {
   buildCraftCards,
@@ -193,6 +193,23 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
 
   // 왜: 점멸 대신 누적이다(§8-앞 3). 스토어의 tally 를 카드에 옮겨 담고,
   //     아직 결과가 없는 레시피는 0/0 에서 시작해야 한다.
+  // 왜: 망치 강화의 대가는 네 계열의 원재료와 골드다(§6-앞 11) — 그런데 그 보상
+  //     둘 중 하나(간격)를 화면이 말하지 않으면, 플레이어는 성공률 +1.5%p 만 보고
+  //     사다리를 포기한다. 성공률과 같은 슬롯에 같은 목소리로 적는 이유다(§6-앞 14).
+  it('카드는 그 제작에 걸릴 간격을 말한다 — 망치 강화가 줄인 만큼 줄어든다', () => {
+    const bare = playerWith(0, { copper_ore: 2 })
+    const enhanced: PlayerState = {
+      ...bare,
+      instances: [{ instanceId: 'h1', itemId: 'copper_hammer', enhanceLevel: 5 }],
+      equipped: { crafting: 'h1' },
+    }
+
+    // 서버 스탬프(craftService)와 같은 함수·같은 인자다 — 두 벌로 적으면 화면이
+    // 약속한 간격과 실제로 기다리는 시간이 갈라진다(§6-앞 10).
+    expect(findCard(buildCraftCards(data, bare, {}), 'copper_ingot').intervalMs).toBe(craftIntervalMs(0, null))
+    expect(findCard(buildCraftCards(data, enhanced, {}), 'copper_ingot').intervalMs).toBe(429)
+  })
+
   it('레시피별 누적 성적을 옮겨 담고, 없는 레시피는 0 이다', () => {
     const sections = buildCraftCards(data, emptyPlayer(), {
       copper_ingot: { success: 3, fail: 1 },

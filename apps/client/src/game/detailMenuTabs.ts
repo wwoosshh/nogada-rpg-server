@@ -1,6 +1,7 @@
 import {
   achievedIds,
-  actionIntervalMs,
+  craftIntervalMs,
+  equippedToolInfo,
   gatherHandOf,
   gatherIntervalMs,
   metricValue,
@@ -140,15 +141,19 @@ function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLin
  * `gatherHandOf`)까지 반영한 `gatherIntervalMs` 로 찍는다 — `actionIntervalMs`
  * 만 쓰던 예전 값은 도구 효과(§3)가 간격 축에 생긴 뒤로 거짓말이 됐고, 속도증표
  * (§5)가 생긴 지금은 손을 통째로 넘겨야 참이다(§6-앞 13, 서버 스탬프와 같은
- * 함수·같은 손이라야 이 숫자가 참이다). 조합은 도구 축이 성공률이지 간격이
- * 아니므로(§3) `actionIntervalMs` 그대로 — 착용 망치가 이 숫자를 바꾸지 않는다.
+ * 함수·같은 손이라야 이 숫자가 참이다).
+ *
+ * 조합도 이제 자기 함수(`craftIntervalMs`)를 갖는다 — 망치 **강화**가 제작 간격을
+ * 줄이게 된 뒤로(제작 확장 §6-앞 14) `actionIntervalMs` 는 여기서도 거짓말이
+ * 됐다: 만강 망치를 든 사람에게 500ms 라고 적어 놓고 서버는 429ms 로 스탬프한다.
+ * 망치의 티어는 여전히 이 숫자를 안 바꾼다(티어가 사는 것은 성공률이다).
  */
 function buildSkillLines(data: GameData, player: PlayerState): ScrollListLine[] {
   return SKILL_IDS.map((skill) => {
     const value = player.skills[skill]
     const interval =
       skill === 'crafting'
-        ? actionIntervalMs(value)
+        ? craftIntervalMs(value, equippedToolInfo(player, skill, data.items))
         : gatherIntervalMs(value, gatherHandOf(player, skill, data.items))
     return {
       text: `${SKILL_LABELS[skill]}   숙련도 ${fmt(value)}   행동 간격 ${interval}ms`,

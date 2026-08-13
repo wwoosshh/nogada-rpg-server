@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DialogueRule, GameData, GatherTables, MilestoneDef, ShopDef, SpeakerDef } from '@nogada/shared'
+import { isSellTarget, sellPrice } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMasters, parseShops } from './shops.js'
@@ -490,6 +491,61 @@ describe('validateGameData 의 돈복사 검사', () => {
 
   it('실제로 출하되는 CSV 데이터에는 돈복사 레시피가 없다', () => {
     expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+  })
+})
+
+// ---- 정제품의 영구 수요(제작 확장 §6-앞 6) ----
+//
+// 정제품의 소비처가 강화뿐이면 그 수요는 평생 24개로 끝난다 — 3단 문을 여는 데만
+// 정제 400회가 필요한데 그렇다. 그래서 미스릴 도구 4종이 raw 재료 대신 3단
+// 정제품을 먹는다: 도구는 잃어버리고 다시 만들고 계열마다 한 벌씩 필요하므로,
+// 그 사슬에 붙은 수요는 끝나지 않는다. 이것은 검증기가 아니라 **데이터의 사실**이라
+// 여기서 출하 CSV 를 그대로 읽어 못박는다 — 누가 재료를 되돌리면 이 줄이 깨진다.
+
+describe('출하 recipes.csv 의 미스릴 도구 — 정제품 수요가 도구 사슬에 영구히 붙는다', () => {
+  const data = loadRealGameData()
+  const mithrilTools = ['mithril_pickaxe', 'mithril_chisel', 'mithril_axe', 'mithril_sickle']
+
+  it('네 종 모두 미스릴 주괴 3 + 농축 잎물 2 + 세이지 정수 2 를 먹는다', () => {
+    for (const id of mithrilTools) {
+      expect(data.recipes[id]!.inputs).toEqual([
+        { item: 'mithril_ingot', count: 3 },
+        { item: 'leaf_extract', count: 2 },
+        { item: 'sage_essence', count: 2 },
+      ])
+    }
+  })
+
+  it('3단 정제품 둘 다 도구 레시피의 재료다 — 강화가 끝나도 남는 수요가 이것이다', () => {
+    for (const refined of ['leaf_extract', 'sage_essence']) {
+      const eaters = Object.values(data.recipes).filter(
+        (r) => r.category === '도구' && r.inputs.some((i) => i.item === refined),
+      )
+      expect(eaters.length).toBeGreaterThan(0)
+    }
+  })
+
+  // 왜 숫자를 박는가: 도구는 price 0(팔 수 없다)이라 돈복사 검사가 언제나
+  // 0 ≤ 입력합으로 통과한다 — 그 검사만으로는 재료를 바꿔도 아무 말이 없다.
+  // 원가 70,875 → 54,600 은 재료가 싸진 것이 아니라 **더 깊어진 것**이다:
+  // 정제품 넷은 그 자체가 20층짜리 채집·정제의 산물이다.
+  it('입력 매도합은 54,600 이고 산출은 팔 수 없다(0) — 도구는 팔아서 버는 물건이 아니다', () => {
+    const sellSum = (id: string): number =>
+      data.recipes[id]!.inputs.reduce((sum, i) => sum + sellPrice(data.items[i.item]!) * i.count, 0)
+
+    for (const id of mithrilTools) {
+      expect(sellSum(id)).toBe(54_600)
+      expect(sellPrice(data.items[data.recipes[id]!.output.item]!)).toBe(0)
+    }
+  })
+
+  // 재료에서 빠진 셋은 죽지 않는다 — 그 계열 상점이 사 주기 때문이다(§6-앞 17 과
+  // 같은 자세). "레시피에서 빠지면 죽는다"가 참이면 이 교체 자체를 못 한다.
+  it('빠진 raw 셋(금빛 열매·천년초 잎·아로마)은 상점이 사 주므로 죽은 아이템이 아니다', () => {
+    for (const id of ['golden_fruit', 'millennium_leaf', 'aroma_herb']) {
+      const item = data.items[id]!
+      expect(Object.values(data.shops).some((shop) => isSellTarget(item, shop))).toBe(true)
+    }
   })
 })
 

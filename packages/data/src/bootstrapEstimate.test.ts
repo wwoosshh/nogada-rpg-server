@@ -1,8 +1,8 @@
 import {
   GATHER_ROLL_MAX,
   JACKPOT_BAND_MAX,
-  actionIntervalMs,
   calcCraftSuccess,
+  craftIntervalMs,
   gatherBracketFor,
   gatherHandOf,
   gatherIntervalMs,
@@ -23,7 +23,7 @@ import { loadGatherTables } from './loadGatherTables.js'
  *
  * 숫자를 어디서도 복사하지 않는다: 확률은 출하되는 표(gather-tables)를
  * gatherOutcome 과 같은 두 갈래 식으로 전수(100001가지)로 세고, 간격은
- * gatherIntervalMs·actionIntervalMs, 성공률은 calcCraftSuccess, 재료는
+ * gatherIntervalMs·craftIntervalMs, 성공률은 calcCraftSuccess, 재료는
  * recipes.csv 를 그대로 읽는다 — **표·레시피·프로필을 재조정하면 이 추정이
  * 함께 움직인다.** 그 재조정이 페이싱을 어디로 옮겼는지 아래 핀이 말한다.
  *
@@ -127,10 +127,13 @@ describe('부트스트랩 시뮬 추정 — 최악 마을(재료 둘 다 맨손)
   const oreAttempts = oreNeeded / pOre
   const logAttempts = logsNeeded / pLog
 
-  // 채집 간격은 맨손(×1.5), 제작 간격은 도구 무관 — 서버 스탬프와 같은 함수다.
+  // 채집 간격은 맨손(×1.5), 제작 간격은 망치 없는 손(강화 0 이라 배수도 1) —
+  // 둘 다 서버 스탬프와 같은 함수다. 부트스트랩에는 망치가 아직 없으므로
+  // craftIntervalMs 에 넘길 것도 null 이고, 망치 강화가 간격을 사게 된 뒤에도
+  // (제작 확장 §6-앞 14) 이 추정은 그대로다.
   const totalMs =
     (oreAttempts + logAttempts) * gatherIntervalMs(0, bareHand) +
-    (ingotAttempts + 1 / chanceTool) * actionIntervalMs(0)
+    (ingotAttempts + 1 / chanceTool) * craftIntervalMs(0, null)
   const minutes = totalMs / 60_000
 
   it('추정 전 과정이 첫 브라켓 안에서 끝난다 — 숙련 0 확률로 전체를 세어도 정직한 이유', () => {

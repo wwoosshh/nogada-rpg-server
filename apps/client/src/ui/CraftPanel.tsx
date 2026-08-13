@@ -142,6 +142,11 @@ function RecipeDetail({ card }: { card: CraftCard }): JSX.Element {
         ) : (
           <p className="craft__stat">
             성공 <span className="craft__chance">{card.chancePct}%</span>
+            {/* 망치가 사는 두 축을 나란히 적는다(§6-앞 14) — 티어는 성공률을,
+                강화는 간격을 산다. 간격을 안 적으면 만강 망치의 보상이 화면에
+                +1.5%p 로만 보여서, 네 계열을 다 먹는 그 사다리를 아무도 안 탄다. */}
+            {' · 간격 '}
+            <span className="craft__interval">{card.intervalMs}ms</span>
           </p>
         )}
       </div>

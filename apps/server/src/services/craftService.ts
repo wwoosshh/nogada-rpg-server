@@ -1,7 +1,7 @@
 import {
-  actionIntervalMs,
   calcCraftSuccess,
   canCraft,
+  craftIntervalMs,
   EFFICIENCY_MULTIPLIER,
   effectiveIntervalFactor,
   equippedToolInfo,
@@ -92,7 +92,8 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
 
   const player = structuredClone(args.player)
   const proficiency = player.skills[recipe.skill]
-  // 등급은 정의에, 강화 수치는 인스턴스에 있다 — 성공률은 둘 다 먹으므로 한 쌍으로 읽는다.
+  // 등급은 정의에, 강화 수치는 인스턴스에 있다 — 성공률은 둘 다 먹고 간격은
+  // 강화만 먹으므로(§6-앞 14), 두 축이 같은 한 쌍을 보게 한 번만 조회한다.
   const hammer = equippedToolInfo(player, recipe.skill, data.items)
   const ctx: CraftContext = {
     proficiency,
@@ -118,7 +119,10 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   const chance = calcCraftSuccess(ctx)
   const success = rng() < chance
 
-  player.nextActionAt = args.now + actionIntervalMs(proficiency)
+  // 채집 스탬프와 같은 자세다(§6-앞 10): 간격을 만드는 함수는 shared 에 하나뿐이고
+  // 화면(제작 패널·숙련도 탭)이 같은 함수를 불러 같은 숫자를 적는다. 망치의 강화가
+  // 여기 들어오는 것이 §6-앞 14 이고, 티어는 성공률 쪽에만 남는다.
+  player.nextActionAt = args.now + craftIntervalMs(proficiency, hammer)
 
   // 성공하면 전량, 실패하면 절반(올림)을 소모한다. 실패해도 대가가 있어야
   // 성공률을 올리는 행위(숙련도·망치)에 의미가 생긴다.

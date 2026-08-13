@@ -105,10 +105,11 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   const { itemId } = gatherOutcome(table, proficiency, hand, rng)
   const success = itemId !== null
 
-  // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다. 채집 간격만 손의
-  // 몫(티어 배수 × 0.97^강화 × 속도증표)이 있다 — 서버의 이 스탬프와 클라의
-  // 표시가 같은 함수(gatherIntervalMs) 하나를 부른다(§6-앞 10). 제작 스탬프는
-  // 불변이다(§3).
+  // 성패와 무관하게 간격은 걸린다. 실패도 한 번의 행동이다. 채집 간격은 손 전체의
+  // 몫(티어 배수 × 0.97^강화 × 속도증표)이다 — 서버의 이 스탬프와 클라의 표시가
+  // 같은 함수(gatherIntervalMs) 하나를 부른다(§6-앞 10). 제작 스탬프도 이제
+  // 자기 함수(craftIntervalMs)를 갖지만 그쪽이 곱하는 것은 **강화뿐**이다:
+  // 망치의 티어는 성공률을 사므로 간격까지 사면 이중 계산이다(제작 확장 §6-앞 14).
   player.nextActionAt = now + gatherIntervalMs(proficiency, hand)
 
   // ② 숙련 증가 — 성패 무관 무조건. 표 메타가 범위를 정한다(노드가 아니라

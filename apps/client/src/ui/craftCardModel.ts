@@ -1,6 +1,7 @@
 import {
   calcCraftSuccess,
   canCraft,
+  craftIntervalMs,
   equippedToolInfo,
   equippedToolTier,
   isAchieved,
@@ -73,6 +74,15 @@ export interface CraftCard {
   state: CraftCardState
   /** 성공률(반올림 %). 잠긴 레시피는 calcCraftSuccess 정의상 0. */
   chancePct: number
+  /**
+   * 이 제작 한 번에 걸리는 간격(ms) — 서버가 스탬프할 바로 그 숫자다.
+   *
+   * 카드마다 들고 있지만 레시피가 정하는 값이 아니다(조합 숙련과 착용 망치의
+   * 강화가 정한다) — 그래도 여기 사는 이유는 성공률과 **같은 슬롯에서 같은
+   * 목소리로** 읽혀야 하기 때문이다: 망치 강화가 사는 것이 그 둘이고, 한쪽만
+   * 보이면 +1.5%p 짜리 사다리로 보인다(§6-앞 14).
+   */
+  intervalMs: number
   /**
    * 잠긴 이유의 숫자. 열린 카드는 null — 말할 문턱이 없다.
    * (state === 'locked' 와 정확히 같은 조건이다: 둘 다 canCraft 하나에서 나온다.)
@@ -194,6 +204,13 @@ function buildCard(
       player.instances.filter((i) => i.itemId === recipe.output.item).length,
     state: lockedGate ? 'locked' : materialsReady ? 'ready' : 'no_materials',
     chancePct: Math.round(calcCraftSuccess(ctx) * 100),
+    // 서버 스탬프(craftService)와 같은 함수·같은 인자다 — 사본을 두면 화면이
+    // 약속한 간격과 실제로 기다리는 시간이 갈라진다(§6-앞 10). 조회를 recipe.skill
+    // 로 하는 것도 toCraftContext 와 같다.
+    intervalMs: craftIntervalMs(
+      player.skills[recipe.skill],
+      equippedToolInfo(player, recipe.skill, data.items),
+    ),
     lockedGate,
     materials,
     tally,
