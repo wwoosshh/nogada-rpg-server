@@ -96,6 +96,20 @@ export const PlayerStateSchema = z.object({
   appearance: z.string().default(DEFAULT_APPEARANCE),
   skills: z.object(skillsShape).strict(),
   stacks: z.record(z.string(), z.number().int().min(0)),
+  // gold·rewarded 와 **같은 이유로** 기본값을 단다: 이 필드는 수집의 방 아크에서
+  // 생겼으므로 그 전에 저장된 플레이어에게는 키가 통째로 없고, 필수로 두면
+  // readPlayers(store.ts)가 그 플레이어를 통째로 버린다 — 숙련도도 인벤토리도
+  // 강화한 도구도 같이. 아무것도 안 바친 세이브는 "방이 통째로 비어 있다"와 같은
+  // 뜻이라 마이그레이션 없이 빈 객체가 맞는 답이다.
+  //
+  // 기본값이 **함수**인 이유는 dialogueHistory 와 같다(§6-앞 10 이 이 규칙을
+  // 이름으로 못박았다): 참조형 리터럴을 주면 키가 없는 세이브들이 zod 가 만든
+  // **같은 객체 하나**를 공유해서, 한 사람이 바친 것이 다른 사람의 방에도
+  // 나타난다. 그때 총점은 아무도 재현할 수 없는 수가 된다.
+  //
+  // `.min(0)` 인 이유는 stacks 와 같다 — 헌납은 더하기만 하므로 음수는 어떤
+  // 경로로도 생기지 않는다.
+  donated: z.record(z.string(), z.number().int().min(0)).default(() => ({})),
   // dialogueHistory·location 과 **정확히 같은 이유로** 기본값을 단다: 이 필드는
   // 경제 아크에서 생겼으므로 그 전에 저장된 플레이어에게는 키가 통째로 없고,
   // 필수로 두면 readPlayers(store.ts)가 그 플레이어를 통째로 버린다 — 숙련도도

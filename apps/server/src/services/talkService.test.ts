@@ -91,7 +91,7 @@ function gameData(dialogue: DialogueRule[]): GameData {
       노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: '얼음채집장', x: 1, y: 1, sprite: 'npc_elder', facing: 'down' },
       안내판: { id: '안내판', name: '안내판', kind: 'sign', mapId: '얼음채집장', x: 2, y: 2, sprite: 'sign_wood', facing: 'down' },
     },
-    shops: {}, masters: [], enhanceCosts: [],
+    shops: {}, masters: [], enhanceCosts: [], collection: {},
     places: {}, schedules: {}, routes: [],
     dialogue,
   }
@@ -107,6 +107,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    donated: {},
     // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
     gold: 0,
     instances: [],

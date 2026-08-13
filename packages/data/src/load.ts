@@ -1,4 +1,4 @@
-import type { GameData } from '@nogada/shared'
+import type { CollectionThresholds, GameData } from '@nogada/shared'
 import generated from './generated/gamedata.json' with { type: 'json' }
 
 /**
@@ -23,9 +23,25 @@ export function deepFreeze<T>(value: T): T {
   return value
 }
 
+/**
+ * 구운 JSON 의 모양 — `GameData` 와 딱 한 칸만 다르다.
+ *
+ * `CollectionThresholds.steps` 는 **길이 4 고정 튜플**인데(등급이 별 넷이라는
+ * 화면의 약속), JSON 모듈의 추론은 그냥 `number[]` 다. 그래서 아래 단언이
+ * "겹치지 않는 타입"으로 거절당한다.
+ *
+ * `as unknown as GameData` 로 통째로 넘기지 않는 이유: 그 단언이 지금 해 주는
+ * 일이 **구운 파일과 타입이 서로 못 알아볼 만큼 갈라지지 않았는가**의 대조이고
+ * (필드를 하나 지우면 여기가 먼저 빨개진다), unknown 을 끼우면 그 대조가 열댓
+ * 칸 전부에서 사라진다. 어긋난 한 칸만 여기서 넓혀 준다.
+ */
+type GeneratedGameData = Omit<GameData, 'collection'> & {
+  collection: Record<string, Omit<CollectionThresholds, 'steps'> & { steps: number[] }>
+}
+
 // generated 는 ESM 모듈 캐시가 한 번만 만드는 싱글턴이므로, 동결도 모듈 초기화 시점에
 // 딱 한 번만 비용을 치른다 — loadGameData() 를 몇 번을 불러도 매번 다시 얼리지 않는다.
-const frozen = deepFreeze(generated) as GameData
+const frozen = deepFreeze(generated) as GeneratedGameData as GameData
 
 /** 빌드된 게임 데이터. 서버와 클라이언트가 모두 이 함수를 쓴다. 반환값은 깊이 동결돼 있다. */
 export function loadGameData(): GameData {

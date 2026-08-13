@@ -59,6 +59,9 @@ export function createInitialPlayer(spec: NewCharacterSpec): PlayerState {
     appearance: spec.appearance,
     skills,
     stacks: {},
+    // 방의 25칸이 전부 0등급인 채로 시작한다 — 잠긴 칸도 이름과 요구치가
+    // 보이므로(§6-앞 3) 이 빈 객체는 "없음"이 아니라 "아직"이다.
+    donated: {},
     // 빈손으로 시작한다 — 첫 골드는 캔 것을 상점에 팔아서 번다(설계 §2).
     // 시작 지급을 골드로 주면 "캔 것이 값이 된다"는 첫 순간이 사라진다.
     gold: 0,

@@ -63,7 +63,7 @@ const data: GameData = {
   placements: {},
   milestones: [],
   speakers: {},
-  shops: {}, masters: [], enhanceCosts: [],
+  shops: {}, masters: [], enhanceCosts: [], collection: {},
   places: {}, schedules: {}, routes: [],
   dialogue: [],
 }
@@ -76,6 +76,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    donated: {},
     // 이 스위트의 판정은 돈을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
     gold: 0,
     instances: [{ instanceId: 'pick1', itemId: 'copper_pickaxe', enhanceLevel: 0 }],

@@ -259,6 +259,10 @@ function contractSuite(harness: Harness): void {
     // 않으면 옛 세이브는 스키마에서 걸려 통째로 사라지고, 빈 목록이 아닌
     // 무엇으로 살아나면 달인이 준 적 없는 돈을 이미 준 것으로 기억한다.
     expect(loaded?.rewarded).toEqual([])
+    // 수집의 방도 나중에 생겼다 — 아무것도 안 바친 사람으로 살아난다. 이
+    // 기본값이 **함수**여야 하는 이유(세이브들이 객체 하나를 공유하면 남의
+    // 헌납이 내 방에 나타난다)는 스키마 쪽 스위트가 두 세이브로 못박는다.
+    expect(loaded?.donated).toEqual({})
     // 이름·외형도 나중에 생긴 필드다 — 기본값이 저장 계층까지 닿지 않으면
     // 그 세이브는 "형식 오류" 하나로 통째로 읽히지 않는다.
     expect(loaded?.appearance).toBe(DEFAULT_APPEARANCE)

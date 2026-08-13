@@ -2,6 +2,7 @@ export * from './parse.js'
 // 파서·검증만 내보낸다 — 구운 표를 읽는 loadGatherTables 는 여기(배럴)가 아니라
 // 별도 진입 `@nogada/data/gather-tables` 에 있다(loadGatherTables.ts 의 이유 참조).
 export * from './gatherTables.js'
+export * from './collection.js'
 export * from './enhanceCosts.js'
 export * from './placements.js'
 export * from './tmx.js'

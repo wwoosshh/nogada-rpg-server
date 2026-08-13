@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { GameData } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
+import { parseCollection, validateCollection } from './collection.js'
 import { parseEnhanceCosts, validateEnhanceCosts } from './enhanceCosts.js'
 import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
@@ -150,6 +151,9 @@ const data: GameData = {
   // 요구량을 숫자로 적어 주지 못하면** 플레이어가 무엇을 얼마나 모아야 하는지
   // 모른 채 버튼만 눌러 보게 된다.
   enhanceCosts: parseEnhanceCosts(readCsv('enhance_costs.csv')),
+  // 문턱표도 GameData 에 싣는다(§6-앞 5) — 강화 비용표와 같은 이유이고 채집
+  // 확률표와 반대편이다: 방은 **잠긴 칸에도** 요구치를 숫자로 적어야 한다.
+  collection: parseCollection(readCsv('collection.csv')),
   places,
   schedules,
   // 길은 아래에서 굽는다 — 참조가 성립하는지부터 보고 나서다.
@@ -165,6 +169,8 @@ const violations = [
   ...validateGameData(data, gatherTables),
   ...gatherCheck.violations,
   ...validateEnhanceCosts(data),
+  // 형평 검증은 표와 GameData 양쪽을 본다 — 문턱이 몇 분인지는 확률표만이 안다.
+  ...validateCollection(data, gatherTables),
   ...validateSpeakerPlacements(data, terrains),
   ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
@@ -224,6 +230,7 @@ console.log(
     `진열 ${Object.values(data.shops).reduce((sum, shop) => sum + shop.stock.length, 0)}, ` +
     `달인 ${data.masters.length}, ` +
     `강화비용 ${data.enhanceCosts.length}, ` +
+    `수집칸 ${Object.keys(data.collection).length}, ` +
     `전환 ${data.transitions.length}, ` +
     `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
 )

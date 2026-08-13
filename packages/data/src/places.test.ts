@@ -63,7 +63,7 @@ function dataOf(over: {
   schedules?: GameData['schedules']
 }): GameData {
   return {
-    shops: {}, masters: [], enhanceCosts: [],
+    shops: {}, masters: [], enhanceCosts: [], collection: {},
     items: {}, nodes: {}, recipes: {}, milestones: [], dialogue: [], routes: [],
     maps: { 마을: { id: '마을', name: '마을', file: 'a.tmx', width: 3, height: 3, spawn: { x: 0, y: 0 } } },
     transitions: over.transitions ?? [],

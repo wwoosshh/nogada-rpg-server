@@ -161,6 +161,39 @@ describe('PlayerStateSchema', () => {
     expect(second.rewarded).toEqual([])
   })
 
+  // 왜: donated 는 수집의 방 아크에서 생긴 필드다. gold·rewarded 와 같은 이유로
+  //     기본값이 필요하고, 아무것도 안 바친 세이브는 "방이 통째로 비어 있다"와
+  //     같은 뜻이라 빈 객체가 마이그레이션 없이 맞는 답이다.
+  it('donated 가 통째로 없는 옛 세이브를 빈 방으로 받아들인다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.donated).toEqual({})
+  })
+
+  it('적혀 있는 헌납 기록은 그대로 읽는다', () => {
+    const parsed = PlayerStateSchema.safeParse({ ...validSave(), donated: { copper_ore: 130 } })
+
+    expect(parsed.success && parsed.data.donated).toEqual({ copper_ore: 130 })
+  })
+
+  it('음수 헌납은 거부한다 — 헌납은 더하기만 하므로 음수는 손으로 고친 파일이거나 버그가 쓴 것이다', () => {
+    expect(PlayerStateSchema.safeParse({ ...validSave(), donated: { copper_ore: -1 } }).success).toBe(false)
+  })
+
+  // 왜: rewarded 와 정확히 같은 사고인데 대가가 더 크다 — 참조형 기본값이
+  //     리터럴이면 세이브 둘이 **같은 객체**를 물려받고, 한 사람이 바친 것이
+  //     다른 사람의 방과 총점에 나타난다. 그때 총점은 아무도 재현할 수 없는
+  //     수가 되고, 그 수로 열린 되사기 진열도 마찬가지다(§6-앞 10 이 이
+  //     규칙을 필드 이름과 함께 못박은 이유).
+  it('파싱할 때마다 새 빈 방을 만든다 — 세이브 둘이 같은 donated 를 공유하면 안 된다', () => {
+    const first = PlayerStateSchema.parse(validSave())
+    const second = PlayerStateSchema.parse(validSave())
+
+    first.donated['copper_ore'] = 130
+    expect(second.donated).toEqual({})
+  })
+
   it('파싱할 때마다 새 빈 이력을 만든다 — 세이브 둘이 같은 배열을 공유하면 안 된다', () => {
     const first = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())
     const second = PlayerStateSchema.parse((() => { const s = validSave(); delete s.dialogueHistory; return s })())

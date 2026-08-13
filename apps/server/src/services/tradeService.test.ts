@@ -127,6 +127,7 @@ const data: GameData = {
   shops: { 얼음상점, 여관상점 },
   masters: [],
   enhanceCosts: [],
+  collection: {},
   places: Object.fromEntries([여관앞, 눈광장, 여관안, 초소].map((p) => [p.id, p])),
   schedules: { 여관안주인: 안주인일과 },
   routes: [
@@ -153,6 +154,8 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: skills({ ice: 5_000 }),
     stacks: { ice_shard: 10, clear_ice: 4, copper_ore: 7 },
+    // 아직 아무것도 바치지 않은 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    donated: {},
     gold: 1_000,
     instances: [{ instanceId: 'pick-1', itemId: 'ice_pick', enhanceLevel: 0 }],
     equipped: { ice: 'pick-1' },

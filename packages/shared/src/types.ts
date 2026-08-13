@@ -1,3 +1,4 @@
+import type { CollectionTable } from './collection.js'
 import type { DialogueHistory, DialogueRule } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
 import type { Direction, TilePos } from './movement.js'
@@ -67,6 +68,22 @@ export interface PlayerState {
   skills: Record<SkillId, number>
   /** 재료·소모품 — itemId 를 키로 개수만 센다 */
   stacks: Record<string, number>
+  /**
+   * 수집의 방에 **바친** 누적 개수. itemId 를 키로 세고, 칸(채집물 25종)의 것만
+   * 뜻이 있다(설계 §6-앞 4·10).
+   *
+   * `stacks` 와 모양은 같지만 성격이 반대다 — 저쪽은 가진 것이고 이쪽은 **태운
+   * 것**이다. 헌납은 되돌릴 수 없으므로(§7 훅) 이 수는 줄지 않고, 그래서
+   * 등급·총점을 여기서 다시 계산할 수 있다(`collectionScore`). 등급 자체를
+   * 저장하지 않는 이유는 `celebrated` 가 달성 여부를 저장하지 않는 것과 같다:
+   * 유도할 수 있는 값을 저장하면 계산값과 어긋날 수 있다.
+   *
+   * 스키마에는 `.default(() => ({}))` 가 붙는다(protocol.ts) — gold·rewarded 와
+   * 같은 이유이고, **참조형이라 기본값이 함수여야 한다**: 리터럴을 주면 세이브
+   * 여럿이 같은 객체를 물려받아 한 사람의 헌납이 다른 사람에게도 보인다
+   * (dialogueHistory 가 emptyDialogueHistory 를 넘기는 그 자리다).
+   */
+  donated: Record<string, number>
   /**
    * 가진 돈(정수, 신규 0). 캔 것을 팔면 늘고 사면 준다(설계 §2).
    *
@@ -627,6 +644,17 @@ export interface GameData {
    * 사정이다. 찾는 문은 enhanceCostFor 하나다.
    */
   enhanceCosts: EnhanceCostDef[]
+  /**
+   * 수집의 방 문턱표. 키는 itemId 이고 칸은 채집물 25종 전부다(§6-앞 4).
+   *
+   * **확률표와 달리 이것은 GameData 에 싣는다**(§6-앞 5). 채집 표를 뺀 이유는
+   * "브라켓 경계가 곧 숨은 문턱이라 F12 로 스포일된다"였는데, 방의 문턱에는
+   * 숨길 것이 없다 — 오히려 **잠긴 칸에도 요구치를 적는 것**이 이 방의 규범이다
+   * (§6-앞 3: 숨기는 것은 없다). 화면이 "0/50" 을 못 적으면 플레이어는 무엇을
+   * 얼마나 모아야 하는지 모른 채 회색 칸만 보게 된다. 강화 비용표를 싣는 것과
+   * 같은 자리이고, 채집 표(GatherTables)와 정확히 반대편이다.
+   */
+  collection: CollectionTable
   /** 지점 등록부. 키는 지점 id 이고 맵을 넘어 유일하다. */
   places: Record<string, PlaceDef>
   /** 일과가 있는 화자만. 키는 화자 id 다 — `.sched` 가 없는 화자는 여기 없고 좌표에 고정이다. */

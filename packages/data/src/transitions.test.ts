@@ -26,7 +26,7 @@ const terrains: Record<string, MapTerrain> = {
 function data(transitions = parseTransitions(ROWS)): GameData {
   return {
     items: {}, nodes: {}, recipes: {}, milestones: [], speakers: {}, dialogue: [],
-    shops: {}, masters: [], enhanceCosts: [],
+    shops: {}, masters: [], enhanceCosts: [], collection: {},
     places: {}, schedules: {}, routes: [],
     maps: {
       [START_MAP_ID]: {
@@ -147,7 +147,7 @@ describe('validateTransitions', () => {
       // 실제 맵의 지점을 그대로 싣는다 — 일과가 들어오면 이 검사도 함께 자란다.
       places,
       schedules: {},
-      shops: {}, masters: [], enhanceCosts: [],
+      shops: {}, masters: [], enhanceCosts: [], collection: {},
       routes: [],
       dialogue: [],
     }

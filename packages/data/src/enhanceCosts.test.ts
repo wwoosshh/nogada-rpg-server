@@ -56,6 +56,7 @@ function dataWith(costs: GameData['enhanceCosts']): GameData {
     schedules: {},
     routes: [],
     dialogue: [],
+    collection: {},
     enhanceCosts: costs,
   }
 }

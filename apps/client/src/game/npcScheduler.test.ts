@@ -260,6 +260,7 @@ function gameData(over: Partial<GameData>): GameData {
     shops: {},
     masters: [],
     enhanceCosts: [],
+    collection: {},
     places: {},
     schedules: {},
     routes: [],

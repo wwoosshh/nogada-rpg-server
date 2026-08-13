@@ -33,6 +33,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    donated: {},
     // 손을 만드는 데 돈은 쓰이지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
     gold: 0,
     instances: [],

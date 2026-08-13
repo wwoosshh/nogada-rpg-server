@@ -71,6 +71,7 @@ const data: GameData = {
   shops: { 얼음상점, 여관상점, 유령상점 },
   masters: [],
   enhanceCosts: [],
+  collection: {},
   places: Object.fromEntries([여관앞, 눈광장, 여관안, 초소].map((p) => [p.id, p])),
   schedules: { 여관안주인: 안주인일과 },
   routes: [
@@ -89,6 +90,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     appearance: 'player',
     skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0 },
     stacks: {},
+    donated: {},
     gold: 0,
     instances: [],
     equipped: {},
