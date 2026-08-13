@@ -124,6 +124,25 @@ describe('parseTransitions', () => {
     const rows = [{ ...ROWS[0]!, gateSkill: 'mining', gateValue: '85000' }]
     expect(() => parseTransitions(rows)).toThrow(/gateSkill/)
   })
+
+  // 왜: 물때는 허브 결계 하나만 진다. 빈 칸을 "물때를 진다"로 읽으면 열여덟
+  //     줄 전부가 새벽마다 조용히 닫힌다.
+  it('gateTide 가 비면 물때를 안 진다', () => {
+    expect(parseTransitions([ROWS[0]!])[0]?.gateTide).toBeUndefined()
+  })
+
+  it('gateTide 에 1 을 적으면 물때를 진다', () => {
+    const rows = [{ ...ROWS[0]!, gateSkill: 'herb', gateValue: '85000', gateTide: '1' }]
+    expect(parseTransitions(rows)[0]?.gateTide).toBe(true)
+  })
+
+  // 왜: `true`·`y`·`O` 를 적은 작가는 물때를 걸었다고 믿는데, 조용히 false 로
+  //     접으면 그 문은 하루 종일 열려 있고 어느 화면에도 흔적이 안 남는다 —
+  //     `gather_tables.csv` 의 equity 칸과 같은 자리, 같은 처방이다.
+  it('gateTide 에 1 이 아닌 값을 적으면 거절한다', () => {
+    const rows = [{ ...ROWS[0]!, gateTide: 'true' }]
+    expect(() => parseTransitions(rows)).toThrow(/gateTide/)
+  })
 })
 
 describe('validateTransitions', () => {
@@ -210,6 +229,16 @@ describe('validateTransitions', () => {
   //     나오는 문에 게이트가 걸리는 순간 그 안의 사람은 영구히 갇힌다.
   it('나오는 문에 게이트를 걸면 막는다', () => {
     const d = barrier({ 나오는문: { gateSkill: 'ice', gateValue: '85000' } })
+    const message = validateTransitions(d, barrierTerrains).join('\n')
+    expect(message).toMatch(/갇힌다/)
+    expect(message).toMatch(/채집장 \(5, 2\)→\(5, 4\)/)
+  })
+
+  // 왜: 물때 게이트는 갇힘이 더 나쁘다 — 숙련은 캐면 오르지만 시각은 플레이어가
+  //     올릴 수 있는 숫자가 아니라, 나오는 문에 걸리면 몇 시간짜리 감옥이 된다.
+  //     갇힘 검사가 gateSkill 만 보면 이 줄이 조용히 통과한다(§9-앞 17).
+  it('나오는 문에 물때를 걸어도 막는다', () => {
+    const d = barrier({ 나오는문: { gateTide: '1' } })
     const message = validateTransitions(d, barrierTerrains).join('\n')
     expect(message).toMatch(/갇힌다/)
     expect(message).toMatch(/채집장 \(5, 2\)→\(5, 4\)/)

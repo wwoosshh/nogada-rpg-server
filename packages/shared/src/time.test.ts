@@ -8,8 +8,10 @@ import {
   estimateServerNow,
   gameDaysBetween,
   gameTimeAt,
+  isLowTide,
   needsResync,
   skyShade,
+  TIDE_WINDOWS,
   timeOfDay,
 } from './time.js'
 
@@ -202,5 +204,47 @@ describe('needsResync', () => {
   it('임계값 이내면 필요하지 않다', () => {
     expect(needsResync(10_000, 10_000)).toBe(false)
     expect(needsResync(10_000 + RESYNC_THRESHOLD_MS, 10_000)).toBe(false)
+  })
+})
+
+/*
+ * 물때 — 허브 결계가 지는 두 번째 조건(결계 설계 §6).
+ *
+ * 이 값들을 테스트가 붙잡는 이유는 **기다림의 길이가 곧 게임 경험**이기
+ * 때문이다. 창을 한 시간 줄이면 최대 대기가 현실 2.5분씩 늘어나는데, 그
+ * 변화는 어느 화면에도 빨갛게 뜨지 않고 플레이어의 짜증으로만 나타난다.
+ */
+describe('물때', () => {
+  // 왜: 하루 두 번이고 주기가 정확히 12시간이라는 것이 이 설계의 전부다 —
+  //     닫혀 있는 두 구간의 길이가 같아야 "언제 밟아도 최대 여섯 시간"이
+  //     성립한다. 창 하나를 옮기면 한쪽 기다림만 길어지고, 그것을 알아채는
+  //     방법은 그 시간대에 실제로 서 보는 것밖에 없다.
+  it('창은 둘이고 각각 여섯 시간이며 열두 시간 간격이다', () => {
+    expect(TIDE_WINDOWS).toEqual([
+      { start: 2, end: 8 },
+      { start: 14, end: 20 },
+    ])
+    for (const w of TIDE_WINDOWS) expect(w.end - w.start).toBe(6)
+    expect(TIDE_WINDOWS[1]!.start - TIDE_WINDOWS[0]!.start).toBe(12)
+  })
+
+  // 왜: 끝 시각이 포함이면 20시에 들어간 사람이 20시에 물이 차는 것을 보고,
+  //     시작이 제외면 02시를 기다린 사람이 03시까지 또 기다린다. 경계가 어느
+  //     쪽인지는 안내판이 "두 시부터 여덟 시까지"라고 적는 그 숫자의 뜻이다.
+  it('시작은 포함이고 끝은 제외다', () => {
+    expect(isLowTide(2)).toBe(true)
+    expect(isLowTide(7)).toBe(true)
+    expect(isLowTide(8)).toBe(false)
+    expect(isLowTide(14)).toBe(true)
+    expect(isLowTide(19)).toBe(true)
+    expect(isLowTide(20)).toBe(false)
+  })
+
+  // 왜: 물이 빠져 있는 시간이 하루의 절반이어야 "기다릴 만하다"가 성립한다.
+  //     절반보다 줄이면 결계가 시간표 암기 게임이 되고, 늘리면 물때가 조건이
+  //     아니라 장식이 된다.
+  it('하루의 절반은 물이 빠져 있다', () => {
+    const open = Array.from({ length: 24 }, (_, h) => h).filter(isLowTide)
+    expect(open.length).toBe(12)
   })
 })

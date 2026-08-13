@@ -1,9 +1,45 @@
 import { DIRECTIONS, type Direction, type GameData, type TransitionDef } from '@nogada/shared'
 import { START_MAP_ID } from './maps.js'
-import { readGate, requireCell, toInt } from './parse.js'
+import { optionalCell, readGate, requireCell, toInt } from './parse.js'
 import type { MapTerrain } from './placements.js'
 
 type Row = Record<string, string>
+
+/** `gateTide` 칸에 적는 유일한 값. 시각이 아니라 표시라 1 하나뿐이다(TransitionDef 주석). */
+const TIDE_MARK = '1'
+
+/**
+ * `gateTide` 칸을 읽는다 — 빈 칸은 아니다, `"1"` 은 맞다, 나머지는 던진다.
+ *
+ * 다른 값을 조용히 false 로 접지 않는 이유는 `gather_tables.csv` 의 `equity` 와
+ * 같다: `true`·`y`·`O` 를 적은 작가는 물때를 걸었다고 믿는데, 접어 버리면 그
+ * 문은 하루 종일 열려 있고 그 어긋남은 화면 어디에도 흔적을 안 남긴다.
+ * 오히려 **물때가 걸렸어야 할 문이 안 걸린 것**이라, 플레이해 봐도 "잘 되네"로
+ * 보인다.
+ */
+function readTideGate(row: Row, ctx: string): boolean {
+  const raw = optionalCell(row, 'gateTide')
+  if (raw === undefined) return false
+  if (raw !== TIDE_MARK) {
+    throw new Error(
+      `${ctx}: gateTide "${raw}" 는 알 수 없다 — 물때를 지는 문에만 "${TIDE_MARK}" 을 적고 나머지는 비운다 ` +
+        `(물이 빠지는 시각은 여기가 아니라 packages/shared/src/time.ts 의 TIDE_WINDOWS 가 정한다)`,
+    )
+  }
+  return true
+}
+
+/**
+ * 이 문에 게이트가 하나라도 걸렸는가 — 갇힘 방지 검사가 "게이트 없는 문"을 고를 때 쓴다.
+ *
+ * **`gateSkill` 만 보면 안 되는 이유:** 물때만 걸린 문도 못 지나가는 문이다.
+ * 그것을 게이트 없는 문으로 세면, 나오는 문에 물때가 걸린 데이터가 검사를
+ * 그대로 통과한다 — 숙련은 캐면 오르지만 시각은 플레이어가 올릴 수 있는
+ * 숫자가 아니라, 그 감옥이 더 나쁘다(§9-앞 17).
+ */
+function isGated(t: TransitionDef): boolean {
+  return t.gateSkill !== undefined || t.gateTide === true
+}
 
 function toFacing(value: string, ctx: string): Direction | null {
   if (value === '') return null
@@ -32,6 +68,10 @@ export function parseTransitions(rows: Row[]): TransitionDef[] {
       def.gateSkill = gate.skill
       def.gateValue = gate.value
     }
+    // 물때는 숙련과 **독립된 조건**이라 짝 규칙에 묶지 않는다(설계 §6). 지금은
+    // 허브 결계 하나가 둘을 함께 지지만, 둘 다 적어야 한다고 강제하면 "물때만
+    // 지는 문"이 데이터로 표현 불가능해진다 — 그럴 이유가 없다.
+    if (readTideGate(row, ctx)) def.gateTide = true
     return def
   })
 }
@@ -102,7 +142,12 @@ function walkableRegions(terrains: Record<string, MapTerrain>): {
 /** 문 하나를 CSV 작가가 찾아갈 수 있는 꼴로 적는다. 같은 맵 안이면 맵 이름은 한 번만. */
 function doorLabel(t: TransitionDef): string {
   const to = t.fromMap === t.toMap ? `(${t.toX}, ${t.toY})` : `${t.toMap} (${t.toX}, ${t.toY})`
-  const gate = t.gateSkill !== undefined ? ` [게이트 ${t.gateSkill} ${t.gateValue}]` : ''
+  // 걸린 조건을 전부 적는다 — 하나만 적으면 작가가 지운 게이트 옆에 남은
+  // 다른 게이트를 못 보고 같은 위반을 두 번 고치게 된다.
+  const conditions: string[] = []
+  if (t.gateSkill !== undefined) conditions.push(`${t.gateSkill} ${t.gateValue}`)
+  if (t.gateTide === true) conditions.push('물때')
+  const gate = conditions.length > 0 ? ` [게이트 ${conditions.join(' + ')}]` : ''
   return `${t.fromMap} (${t.fromX}, ${t.fromY})→${to}${gate}`
 }
 
@@ -172,7 +217,7 @@ function collectTrapViolations(
     if (from === undefined || to === undefined || from === to) continue
 
     push(forward, from, to)
-    if (t.gateSkill === undefined) push(backwardUngated, to, from)
+    if (!isGated(t)) push(backwardUngated, to, from)
 
     const enters = entering.get(to)
     if (enters) enters.push(t)
@@ -197,7 +242,7 @@ function collectTrapViolations(
         `(resolvePlayerLocation 은 맵과 좌표 범위만 보므로 구제하지 못한다). ` +
         `들어가는 문: ${inDoors.map(doorLabel).join(' / ') || '없다'}. ` +
         `나가는 문: ${outDoors.map(doorLabel).join(' / ') || '없다'}. ` +
-        `게이트는 들어가는 문에만 걸고 나오는 문은 gateSkill·gateValue 를 비운다`,
+        `게이트는 들어가는 문에만 걸고 나오는 문은 gateSkill·gateValue·gateTide 를 모두 비운다`,
     )
   }
   return violations

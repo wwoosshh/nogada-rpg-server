@@ -23,7 +23,7 @@ import {
 } from '../api/GameClient.js'
 import { clearToken, readToken, writeToken } from '../api/sessionToken.js'
 import type { DetailMenuTab } from '../game/detailMenuTabs.js'
-import { syncClock } from '../time/clock.js'
+import { syncClock, worldNow } from '../time/clock.js'
 import { toCraftContext } from '../ui/craftCardModel.js'
 import {
   describeServerError,
@@ -997,16 +997,29 @@ function fmt(n: number): string {
   return n.toLocaleString('ko-KR')
 }
 
+/** 시각을 두 자리로 — 안내판이 새긴 "02시" 와 화면이 적는 글자가 같아야 한다. */
+function hourText(hour: number): string {
+  return `${String(hour).padStart(2, '0')}시`
+}
+
 /**
- * 결계가 밀어냈다 — 그 문이 요구하는 숫자와 지금 손에 있는 숫자를 한 줄로 적는다.
+ * 결계가 밀어냈다 — 그 문이 요구하는 것과 지금 손에 있는 것을 한 줄로 적는다.
  *
  * > 결계가 밀어낸다 — 광물 숙련 85,000 (지금 63,240)
+ * > 결계가 밀어낸다 — 물이 빠질 때만 열린다 (02시~08시 · 14시~20시, 지금 11시)
  *
  * **부등호를 다시 적지 않는다**(결계 설계 §9-앞 13). 서버가 이미 `locked` 로
  * 판정했고, 여기서 필요한 것은 그 판정을 다시 짓는 일이 아니라 판정이 본 숫자를
  * 그대로 읽는 일이다 — 그래서 서버(moveService)와 같은 shared 술어를 부르고
- * 돌려받은 `skill`·`need`·`have` 만 쓴다. 화면이 자기 비교를 한 줄 더 적는
- * 순간, 서버가 거절한 문 앞에서 화면만 "열려 있다"고 말하는 날이 온다.
+ * 돌려받은 숫자만 쓴다. 화면이 자기 비교를 한 줄 더 적는 순간, 서버가 거절한
+ * 문 앞에서 화면만 "열려 있다"고 말하는 날이 온다. 시각도 같은 이유로 술어가
+ * 돌려준 `hour` 를 쓴다 — 여기서 시계를 한 번 더 읽으면 판정이 본 시각과 화면이
+ * 적은 시각이 갈라진다.
+ *
+ * **막힌 이유를 갈라 말한다**(§6 — 허브 결계는 조건 둘을 진다). 숙련은 캐면
+ * 열리는 문이고 물때는 기다리면 열리는 문이라, 플레이어가 할 일이 전혀 다르다.
+ * 둘 다 막혔으면 **숙련을 먼저** 말한다: 물때부터 말하면 숙련 1,000 인 사람이
+ * 여섯 시간을 기다렸다가 같은 자리에서 또 막힌다.
  *
  * **프로토콜은 그대로다.** 스토어가 `loadGameData()` 를 직접 갖고 있어
  * `TransitionDef` 의 게이트가 이미 손에 있으므로, 서버는 코드 하나만 보낸다.
@@ -1016,6 +1029,8 @@ function fmt(n: number): string {
  *
  * 게이트가 없는 칸에서 `locked` 가 오는 것은 클라와 서버의 전환표가 갈라졌다는
  * 뜻이라 적을 숫자가 없다 — 그때는 `null` 이고, 부르는 쪽이 말을 세우지 않는다.
+ * 조건이 전부 열려 있는데 `locked` 가 온 경우도 같다(시계가 서로 어긋난 찰나
+ * 따위) — 지어낼 말이 없으니 아무 말도 하지 않는다.
  */
 function describeBarrier(store: GameStore, x: number, y: number): string | null {
   const { data, player } = store
@@ -1024,10 +1039,20 @@ function describeBarrier(store: GameStore, x: number, y: number): string | null 
   const transition = data.transitions.find(
     (t) => t.fromMap === player.location.mapId && t.fromX === x && t.fromY === y,
   )
-  const gate = transition ? transitionGate(transition, player) : null
+  const gate = transition ? transitionGate(transition, player, worldNow()) : null
   if (!gate) return null
 
-  return `결계가 밀어낸다 — ${SKILL_LABELS[gate.skill]} 숙련 ${fmt(gate.need)} (지금 ${fmt(gate.have)})`
+  if (gate.skill && !gate.skill.open) {
+    const { skill, need, have } = gate.skill
+    return `결계가 밀어낸다 — ${SKILL_LABELS[skill]} 숙련 ${fmt(need)} (지금 ${fmt(have)})`
+  }
+  if (gate.tide && !gate.tide.open) {
+    const windows = gate.tide.windows
+      .map((w) => `${hourText(w.start)}~${hourText(w.end)}`)
+      .join(' · ')
+    return `결계가 밀어낸다 — 물이 빠질 때만 열린다 (${windows}, 지금 ${hourText(gate.tide.hour)})`
+  }
+  return null
 }
 
 function describeError(err: unknown): string {

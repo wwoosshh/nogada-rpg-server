@@ -7,6 +7,14 @@ export interface MoveOutcome {
 export interface MoveArgs {
   player: PlayerState
   data: GameData
+  /**
+   * 판정 시각(epoch ms). 허브 결계의 물때가 이것을 본다(설계 §6).
+   *
+   * 채집·제작·대화와 같은 자세로 라우트가 `Date.now()` 를 넣는다 — 서비스가
+   * 시계를 직접 읽으면 그 판정을 시험할 방법이 시스템 시각을 흔드는 것밖에
+   * 없고, "물이 차 있을 때 거절한다" 는 실제로 그 시각까지 기다려야 확인된다.
+   */
+  now: number
   /** 클라이언트가 **밟았다고 주장하는** 칸. 목적지가 아니다. */
   x: number
   y: number
@@ -56,7 +64,9 @@ export function moveThroughTransition(args: MoveArgs): MoveResult {
   // (§9-앞 13), 화면도 같은 함수를 부른다 — 서버가 여기에 `player.skills[...] >=
   // t.gateValue` 를 한 줄 더 적는 순간 화면이 열어 놓은 문을 서버가 이유 없이
   // 거절하는 날이 온다. 게이트 없는 문은 null 이라 그대로 지나간다.
-  const gate = transitionGate(transition, player)
+  // 허브 결계의 물때(§6)도 같은 술어 안에 있다 — 여기서 시각을 따로 재면
+  // 조건이 둘로 늘어난 만큼 갈라질 자리도 둘이 된다.
+  const gate = transitionGate(transition, player, args.now)
   if (gate && !gate.open) return { ok: false, code: 'locked' }
 
   player.location = { mapId: transition.toMap, x: transition.toX, y: transition.toY }

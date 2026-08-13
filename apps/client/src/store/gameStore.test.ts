@@ -1,7 +1,14 @@
 import { emptyPlayer, loadGameData } from '@nogada/data'
-import { SKILL_LABELS, type SkillId } from '@nogada/shared'
+import {
+  GAME_EPOCH_MS,
+  REAL_MS_PER_GAME_DAY,
+  SKILL_LABELS,
+  TIDE_WINDOWS,
+  type SkillId,
+} from '@nogada/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeToken } from '../api/sessionToken.js'
+import { resetClock } from '../time/clock.js'
 import { useGameStore } from './gameStore.js'
 
 /*
@@ -630,5 +637,74 @@ describe('결계 — 밀려날 때 화면이 숫자를 말한다(결계 설계 �
     ).rejects.toThrow()
 
     expect(useGameStore.getState().notice).toBeNull()
+  })
+})
+
+/*
+ * 허브 결계는 조건 둘을 진다 — 숙련과 물때(결계 설계 §6·§9-앞 17). 그래서
+ * 화면도 **막힌 이유를 갈라서** 말해야 한다: 하나는 캐면 열리는 문이고 하나는
+ * 기다리면 열리는 문이라, 같은 문구로 뭉치면 플레이어가 할 일을 알 수 없다.
+ */
+describe('결계 — 물때에 막힌 것과 숙련에 막힌 것을 갈라 말한다(결계 설계 §6)', () => {
+  /** 물때를 지는 문. 데이터가 진실이라 여기서도 찾아서 쓴다. */
+  const tideDoor = loadGameData().transitions.find((t) => t.gateTide === true)!
+
+  /** 결계 앞에 선 사람 — 그 계열 숙련만 채운다. */
+  function standingAtTideDoor(have: number): void {
+    const base = emptyPlayer()
+    useGameStore.setState({
+      player: {
+        ...base,
+        skills: { ...base.skills, [tideDoor.gateSkill!]: have },
+        location: { mapId: tideDoor.fromMap, x: tideDoor.fromX, y: tideDoor.fromY },
+      },
+      notice: null,
+    })
+  }
+
+  /** 게임 시각 `hour` 에 세계를 세운다. 앵커를 버려 worldNow() 가 이 시계를 읽게 한다. */
+  function atGameHour(hour: number): void {
+    resetClock()
+    vi.setSystemTime(GAME_EPOCH_MS + (hour / 24) * REAL_MS_PER_GAME_DAY)
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'locked' }, 400)),
+    )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    resetClock()
+  })
+
+  // 왜: 이 문구가 없으면 85,000 을 넘긴 사람이 보는 것은 "칸을 밟았는데 안
+  //     넘어갔다" 하나뿐이다 — 방금 채운 숙련이 헛것이었다고 읽힌다.
+  it('숙련이 되는데 물이 차 있으면 물때를 말한다', async () => {
+    standingAtTideDoor(tideDoor.gateValue!)
+    atGameHour(TIDE_WINDOWS[0]!.end)
+
+    await expect(useGameStore.getState().move(tideDoor.fromX, tideDoor.fromY)).rejects.toThrow()
+
+    expect(useGameStore.getState().notice?.text).toBe(
+      '결계가 밀어낸다 — 물이 빠질 때만 열린다 (02시~08시 · 14시~20시, 지금 08시)',
+    )
+  })
+
+  // 왜: 둘 다 막혔을 때 물때부터 말하면, 숙련 1,000 인 사람이 여섯 시간을
+  //     기다렸다가 같은 자리에서 또 막힌다. 숙련은 캐면 오르는 숫자라 먼저
+  //     말할 값어치가 있고, 물때는 그 숫자를 채운 뒤에야 뜻이 있다.
+  it('숙련도 모자라면 물때가 아니라 숙련을 말한다', async () => {
+    standingAtTideDoor(63_240)
+    atGameHour(TIDE_WINDOWS[0]!.end)
+
+    await expect(useGameStore.getState().move(tideDoor.fromX, tideDoor.fromY)).rejects.toThrow()
+
+    expect(useGameStore.getState().notice?.text).toBe(
+      `결계가 밀어낸다 — ${SKILL_LABELS[tideDoor.gateSkill!]} 숙련 ${tideDoor.gateValue!.toLocaleString('ko-KR')} (지금 63,240)`,
+    )
   })
 })

@@ -14,8 +14,9 @@ export function registerMoveRoutes(app: FastifyInstance, store: Persistence, dat
     // 갖기로 한 이유가 정확히 그것이다.
     const result = await applyToCharacter(store, requireAccount(request).characterId, (player) =>
       // 대화·채집과 달리 난수를 만들지 않는다 — 전환에는 고를 것이 없다.
-      // 어느 칸에서 어디로 가는지는 전환표가 이미 정해 두었다.
-      moveThroughTransition({ player, data, x: parsed.data.x, y: parsed.data.y }),
+      // 어느 칸에서 어디로 가는지는 전환표가 이미 정해 두었다. 시각은 다르다:
+      // 허브 결계가 물때를 지므로(설계 §6) 대화·채집과 같은 자리에서 넣는다.
+      moveThroughTransition({ player, data, now: Date.now(), x: parsed.data.x, y: parsed.data.y }),
     )
 
     if (!result.ok) {
