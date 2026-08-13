@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { RecipeDef } from '@nogada/shared'
+import type { RecipeDef, SkillId } from '@nogada/shared'
 import { parseCsv, parseRecipes } from './parse.js'
 import { parseMilestones } from './milestones.js'
 
@@ -197,14 +197,60 @@ describe('parseMilestones — 실제 출하 CSV', () => {
     expect(() => parseMilestones(readRealCsv('milestones.csv'), realRecipes)).not.toThrow()
   })
 
-  it('행 35개를 만든다', () => {
+  it('행 39개를 만든다', () => {
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
     const result = parseMilestones(readRealCsv('milestones.csv'), realRecipes)
     // 27 → 30: 주괴 3종(은·금·미스릴)의 recipes-이정표가 채집 티어 아크에서 늘었다.
     // 30 → 31: 미스릴 곡괭이(G5)의 recipes-이정표(crafting_25000)가 늘었다.
     // 31 → 35: 수집 총점 문턱 넷(10·30·60·100)이 늘었다 — 그중 둘은 되사기
     //          진열을 여는 stock 이고 둘은 title 이다(§6-앞 7).
-    expect(result).toHaveLength(35)
+    // 35 → 39: 결계 문턱 넷(계열별 85,000)이 늘었다. 아래 스위트가 왜인지 진다.
+    expect(result).toHaveLength(39)
+  })
+
+  /*
+   * 85,000 은 이 게임에서 **가장 큰 문턱**인데 오래도록 **어느 목록에도 없었다.**
+   *
+   * 이정표 탭은 못 넘은 것까지 `이름 현재 / 필요` 로 적고 그 자리 주석이
+   * "???" 를 쓰지 않는다"고 못박는다(detailMenuTabs.ts). 상점 잠금도 진척을
+   * 숫자로 적고 도감도 다음 문턱까지 몇 칸인지 센다. 그런데 결계만 빠져 있어서,
+   * 밀려난 사람이 그 숫자를 다시 보려면 결계를 한 번 더 밟거나 안내판까지 걸어
+   * 가야 했다 — "요구치를 숫자로 말하는 문"과 "잠긴 것까지 보이는 목록방"이
+   * 이 문 하나에만 적용되지 않았다.
+   *
+   * 데이터에서 찾아 도는 이유는 네 계열이 **각자의 것**을 말해야 하기 때문이다.
+   * 한 계열을 상수로 굳히면 나머지 셋이 조용히 빠져도 초록이 된다.
+   */
+  describe('결계 문턱 넷이 목록에 있다', () => {
+    const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
+    const all = parseMilestones(readRealCsv('milestones.csv'), realRecipes)
+    // 전환은 CSV 칸을 그대로 읽는다 — 파서를 부르면 이 스위트가 전환 파서의
+    // 시그니처에까지 매인다. 여기서 필요한 것은 "출하된 결계가 요구하는 숫자"
+    // 하나이고, 그것은 두 칸에 그대로 적혀 있다.
+    const gateValues = readRealCsv('transitions.csv')
+      .filter((r) => (r['gateSkill'] ?? '') !== '')
+      .map((r) => ({ skill: r['gateSkill'] as SkillId, need: Number(r['gateValue']) }))
+
+    it('결계가 걸린 전환마다 같은 계열·같은 숫자의 이정표가 하나 있다', () => {
+      expect(gateValues).toHaveLength(4)
+      for (const { skill, need } of gateValues) {
+        const carriers = all.filter(
+          (m) => m.metric.kind === 'skill' && m.metric.skill === skill && m.threshold === need,
+        )
+        expect(carriers, `${skill} ${need} 를 적은 이정표`).toHaveLength(1)
+      }
+    })
+
+    // 왜: 이름이 문을 안 가리키면 목록에서 85,000 을 찾은 사람이 그것이 결계인
+    //     줄 모른다 — 그 사람이 방금 밀려난 그 문이다.
+    it('이름이 결계라고 말한다', () => {
+      for (const { skill, need } of gateValues) {
+        const carrier = all.find(
+          (m) => m.metric.kind === 'skill' && m.metric.skill === skill && m.threshold === need,
+        )
+        expect(carrier?.name, `${skill} ${need}`).toContain('결계')
+      }
+    })
   })
 
   it('수집 문턱 넷 중 둘이 되사기를 열고 둘이 칭호다 — 게이트가 콘텐츠이고 칭호는 그 위에 얹는다', () => {

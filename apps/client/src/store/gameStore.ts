@@ -651,8 +651,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       else if (err instanceof ApiError && err.code === 'locked') {
         // 결계는 오류가 아니라 세계가 제대로 돌아간 결과다(채집의 too_fast 와
         // 같은 자세) — console 로 흘리지 않고 화면에 말로 남긴다.
-        const text = describeBarrier(get(), x, y)
-        if (text) set({ notice: { seq: ++noticeSeq, text } })
+        //
+        // **거절이 지고 온 시각으로 문구를 짓는다.** 물때는 시각으로 갈리는
+        // 조건이라, 왕복이 끝난 뒤 세계 시각을 다시 읽으면 서버가 잰 순간보다
+        // 나중이 되어 **열리는 경계에서 답이 뒤집힌다**(describeBarrier 문서).
+        // 헤더가 없는 것은 서버에 닿지도 못했을 때뿐이라 실제로는 오지 않지만,
+        // 그때는 세계 시각으로 물러난다 — 시각이 없다고 말까지 없앨 수는 없다.
+        const text = describeBarrier(get(), x, y, err.serverNowMs ?? worldNow())
+        set({ notice: { seq: ++noticeSeq, text } })
       } else console.error(err)
       // **말을 세우고도 그대로 다시 던진다.** 삼키면 호출자(WorldScene)의 성공
       // 분기가 실패를 성공으로 읽어 씬을 재시작하고, 그때 스토어의 위치는 아직
@@ -1027,32 +1033,51 @@ function hourText(hour: number): string {
  * 계열 이름은 `SKILL_LABELS` 다 — 가방 슬롯·상점 잠금·도감이 쓰는 그 글자다.
  * 한 숫자가 화면마다 다른 이름을 달면 그것이 같은 문인지 알 수 없다.
  *
- * 게이트가 없는 칸에서 `locked` 가 오는 것은 클라와 서버의 전환표가 갈라졌다는
- * 뜻이라 적을 숫자가 없다 — 그때는 `null` 이고, 부르는 쪽이 말을 세우지 않는다.
- * 조건이 전부 열려 있는데 `locked` 가 온 경우도 같다(시계가 서로 어긋난 찰나
- * 따위) — 지어낼 말이 없으니 아무 말도 하지 않는다.
+ * **판정이 본 시각을 그대로 받는다**(`judgedAtMs` — 응답 헤더 `x-server-now`).
+ * 여기서 `worldNow()` 를 읽던 시절에는 **열리는 경계에서 화면이 침묵했다**:
+ * 세계 시각은 왕복 지연과 기울임(최대 2초)만큼 서버보다 늘 나중이라, 서버가
+ * 01:59 로 재 거절한 요청을 화면은 02:00 으로 읽어 "물이 빠져 있다"고 판단했고,
+ * 그러면 아래 두 분기가 다 비껴가 아무 말도 안 남았다. 닫히는 경계(08·20시)
+ * 에서는 늦음이 답을 안 바꾸지만 **열리는 경계(02·14시)에서는 뒤집는다** —
+ * 그리고 그 창을 밟는 사람이 바로 물때를 기다리다 열리는 순간 문을 두드리는
+ * 사람이다.
+ *
+ * **그래서 이 함수는 `null` 을 돌려주지 않는다.** 숫자를 못 지어도 한 줄은
+ * 남긴다: 몸이 되밀렸는데 화면이 침묵하는 것이 가장 나쁘다 — 플레이어가 보는
+ * 것은 "칸을 밟았는데 아무 일도 안 일어났다"뿐이고, 그건 고장과 구별되지
+ * 않는다. 숫자 없는 줄이 나올 수 있는 경우는 둘뿐이고 둘 다 우리 쪽 어긋남이다:
+ * 클라와 서버의 전환표가 갈라졌거나(그 칸에 게이트가 없다), 헤더가 없어 시각을
+ * 세계 시각으로 물러나 재다가 위의 찰나를 다시 밟았거나. `locked` 는 서버가
+ * 결계에만 쓰는 코드이므로(moveService), 이유를 못 대도 "결계가 밀어낸다"는
+ * 그 자체로 참이다.
  */
-function describeBarrier(store: GameStore, x: number, y: number): string | null {
+function describeBarrier(
+  store: GameStore,
+  x: number,
+  y: number,
+  judgedAtMs: number,
+): string {
+  const pushed = '결계가 밀어낸다'
   const { data, player } = store
-  if (!player) return null
+  if (!player) return pushed
 
   const transition = data.transitions.find(
     (t) => t.fromMap === player.location.mapId && t.fromX === x && t.fromY === y,
   )
-  const gate = transition ? transitionGate(transition, player, worldNow()) : null
-  if (!gate) return null
+  const gate = transition ? transitionGate(transition, player, judgedAtMs) : null
+  if (!gate) return pushed
 
   if (gate.skill && !gate.skill.open) {
     const { skill, need, have } = gate.skill
-    return `결계가 밀어낸다 — ${SKILL_LABELS[skill]} 숙련 ${fmt(need)} (지금 ${fmt(have)})`
+    return `${pushed} — ${SKILL_LABELS[skill]} 숙련 ${fmt(need)} (지금 ${fmt(have)})`
   }
   if (gate.tide && !gate.tide.open) {
     const windows = gate.tide.windows
       .map((w) => `${hourText(w.start)}~${hourText(w.end)}`)
       .join(' · ')
-    return `결계가 밀어낸다 — 물이 빠질 때만 열린다 (${windows}, 지금 ${hourText(gate.tide.hour)})`
+    return `${pushed} — 물이 빠질 때만 열린다 (${windows}, 지금 ${hourText(gate.tide.hour)})`
   }
-  return null
+  return pushed
 }
 
 function describeError(err: unknown): string {

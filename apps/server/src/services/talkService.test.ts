@@ -67,12 +67,19 @@ const againRule = rule({
   lines: ['또 보는군.'],
 })
 
-/** 다른 화자의 규칙. 화자 필터가 서비스 경로에서도 살아 있는지 본다. */
+/**
+ * 다른 화자의 규칙. 화자 필터가 서비스 경로에서도 살아 있는지 본다.
+ *
+ * 이 줄은 오래 "깊은 얼음은 구리 정으로는 깨지지 않는다" 였다 — 결계 아크가
+ * 지운 **출하된 거짓말 셋 중 셋째**를 픽스처로 베껴 갖고 있던 것이다. 가짜
+ * 화자용 시험 자료라 출하물은 아니지만, 다음 사람이 그 문장을 grep 하면
+ * 지운 줄이 아직 살아 있는 것처럼 걸린다.
+ */
 const otherRule = rule({
   id: 'sign-greet',
   speaker: '안내판',
   event: 'greet',
-  lines: ['깊은 얼음은 구리 정으로는 깨지지 않는다.'],
+  lines: ['여기서부터 안쪽이다.'],
 })
 
 function gameData(dialogue: DialogueRule[]): GameData {
@@ -179,7 +186,7 @@ describe('performTalk', () => {
   it('다른 화자의 규칙은 나오지 않는다', () => {
     const r = talk(player(), { speakerId: '안내판' })
     if (!r.ok) throw new Error('성공해야 한다')
-    expect(r.outcome.lines).toEqual(['깊은 얼음은 구리 정으로는 깨지지 않는다.'])
+    expect(r.outcome.lines).toEqual(['여기서부터 안쪽이다.'])
   })
 
   it('고른 규칙이 recent 에 들어간다', () => {

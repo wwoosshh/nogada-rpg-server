@@ -20,10 +20,15 @@ import { useGameStore } from './gameStore.js'
  * 흉내 낸다 — InputState.test 가 입력 소스를 흉내 내는 것과 같은 자세다.
  */
 
-function jsonResponse(body: unknown, status = 200): Response {
+/**
+ * `extraHeaders` 는 서버가 얹는 헤더를 흉내 낸다 — 지금 쓰는 것은
+ * `x-server-now` 하나다(app.ts 의 onSend 훅이 모든 응답에, 거절에도 싣는다).
+ * 그 값이 있어야 "판정이 본 시각"으로 지어지는 문구를 시험할 수 있다.
+ */
+function jsonResponse(body: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
   })
 }
 
@@ -662,10 +667,15 @@ describe('결계 — 물때에 막힌 것과 숙련에 막힌 것을 갈라 말�
     })
   }
 
+  /** 게임 시각 `hour` 가 되는 실제 시각(epoch ms). */
+  function gameHourMs(hour: number): number {
+    return GAME_EPOCH_MS + (hour / 24) * REAL_MS_PER_GAME_DAY
+  }
+
   /** 게임 시각 `hour` 에 세계를 세운다. 앵커를 버려 worldNow() 가 이 시계를 읽게 한다. */
   function atGameHour(hour: number): void {
     resetClock()
-    vi.setSystemTime(GAME_EPOCH_MS + (hour / 24) * REAL_MS_PER_GAME_DAY)
+    vi.setSystemTime(gameHourMs(hour))
   }
 
   beforeEach(() => {
@@ -706,5 +716,41 @@ describe('결계 — 물때에 막힌 것과 숙련에 막힌 것을 갈라 말�
     expect(useGameStore.getState().notice?.text).toBe(
       `결계가 밀어낸다 — ${SKILL_LABELS[tideDoor.gateSkill!]} 숙련 ${tideDoor.gateValue!.toLocaleString('ko-KR')} (지금 63,240)`,
     )
+  })
+
+  // 왜: **열리는 경계에서 화면이 침묵하던 창**이 있었다. 세계 시각은 왕복
+  //     지연과 기울임(최대 2초)만큼 서버보다 늘 나중이라, 서버가 01시로 재
+  //     거절한 요청을 화면은 02시로 읽어 "물이 빠져 있다"고 판단했다 — 그러면
+  //     두 분기가 다 비껴가 아무 말도 안 남고, 플레이어는 되밀린 채 이유를
+  //     못 듣는다. 물때를 기다리다 열리는 순간 문을 두드리는 사람이 정확히
+  //     이 창을 밟는다. 그래서 문구는 **거절이 지고 온 시각**으로 짓는다.
+  it('서버가 01시로 거절했으면 화면 시계가 02시여도 그 01시를 말한다', async () => {
+    const justBeforeOpen = gameHourMs(TIDE_WINDOWS[0]!.start) - 1
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () =>
+        jsonResponse({ code: 'locked' }, 400, { 'x-server-now': String(justBeforeOpen) }),
+      ),
+    )
+    standingAtTideDoor(tideDoor.gateValue!)
+    atGameHour(TIDE_WINDOWS[0]!.start) // 화면 시계는 이미 물이 빠졌다고 본다
+
+    await expect(useGameStore.getState().move(tideDoor.fromX, tideDoor.fromY)).rejects.toThrow()
+
+    expect(useGameStore.getState().notice?.text).toBe(
+      '결계가 밀어낸다 — 물이 빠질 때만 열린다 (02시~08시 · 14시~20시, 지금 01시)',
+    )
+  })
+
+  // 왜: 몸이 되밀렸는데 화면이 침묵하는 것이 가장 나쁘다 — 플레이어가 보는
+  //     것은 "칸을 밟았는데 아무 일도 안 일어났다"뿐이고 고장과 구별되지
+  //     않는다. 시각을 못 받아 조건이 전부 열려 보이는 찰나에도 한 줄은 선다.
+  it('이유를 못 대는 찰나에도 밀려났다는 말은 남는다', async () => {
+    standingAtTideDoor(tideDoor.gateValue!)
+    atGameHour(TIDE_WINDOWS[0]!.start) // 화면 시계로는 숙련도 물때도 열려 있다
+
+    await expect(useGameStore.getState().move(tideDoor.fromX, tideDoor.fromY)).rejects.toThrow()
+
+    expect(useGameStore.getState().notice?.text).toBe('결계가 밀어낸다')
   })
 })

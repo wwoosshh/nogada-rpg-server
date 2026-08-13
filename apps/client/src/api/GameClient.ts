@@ -95,7 +95,26 @@ export interface MoveOutcomeDto {
 }
 
 export class ApiError extends Error {
-  constructor(readonly code: string) {
+  /**
+   * @param serverNowMs 이 거절을 **서버가 판정한 순간**(응답 헤더 `x-server-now`).
+   *   서버에 닿지도 못했으면 없다.
+   *
+   *   **왜 오류가 시각을 지고 오는가:** 시각으로 갈리는 거절이 있다(결계의
+   *   물때 — 결계 설계 §6). 그 거절을 화면이 설명하려면 **판정이 본 시각**을
+   *   알아야 하는데, 왕복이 끝난 뒤 클라이언트가 자기 시계를 다시 읽으면
+   *   그것은 서버가 잰 순간보다 늘 나중이다(왕복 지연 + 시계 기울임 최대 2초,
+   *   time/slew.ts). 창이 **닫히는** 경계에서는 늦어도 같은 답이 나오지만
+   *   **열리는** 경계(02:00·14:00)에서는 답이 뒤집힌다 — 서버는 01:59 로 재
+   *   거절했는데 화면은 02:00 으로 읽어 "열려 있다"가 되고, 그러면 몸은
+   *   되밀렸는데 화면이 아무 말도 못 한다. 물때를 기다리다 열리는 순간 문을
+   *   두드리는 사람이 정확히 그 창을 밟는다.
+   *
+   *   시계(clock.ts)에 맡기지 않는 이유는 그쪽이 **일부러** 이 값을 앵커로
+   *   바로 쓰지 않기 때문이다(왕복 보정이 없어 떨림이 그대로 시각에 실린다).
+   *   여기 필요한 것은 매끄러운 세계 시각이 아니라 **그 한 번의 판정이 본
+   *   시각**이라, 그 거절과 함께 온 값을 그 거절에 붙여 둔다.
+   */
+  constructor(readonly code: string, readonly serverNowMs?: number) {
     super(code)
     this.name = 'ApiError'
   }
@@ -191,8 +210,9 @@ async function request<T>(path: string, init?: RequestInit, options: RequestOpti
     throw new ApiError(NETWORK_ERROR)
   }
 
-  const serverNow = Number(res.headers.get('x-server-now'))
-  if (Number.isFinite(serverNow) && serverNow > 0) observeServerTime(serverNow)
+  const raw = Number(res.headers.get('x-server-now'))
+  const serverNowMs = Number.isFinite(raw) && raw > 0 ? raw : undefined
+  if (serverNowMs !== undefined) observeServerTime(serverNowMs)
 
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { code?: string }
@@ -204,7 +224,9 @@ async function request<T>(path: string, init?: RequestInit, options: RequestOpti
       clearToken()
       observeUnauthorized()
     }
-    throw new ApiError(body.code ?? `http_${res.status}`)
+    // 거절에도 시각을 실어 보낸다 — 시각으로 갈리는 거절이 있고(결계의 물때),
+    // 그 설명은 **판정이 본 시각**으로 지어야 한다(ApiError 의 serverNowMs 문서).
+    throw new ApiError(body.code ?? `http_${res.status}`, serverNowMs)
   }
 
   // 204 는 본문이 없다(로그아웃·캐릭터 삭제). json() 을 부르면 빈 본문에서

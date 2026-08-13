@@ -198,7 +198,10 @@ writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf
 // 문턱 전부가 F12 로 스포일된다.
 writeFileSync(join(outDir, 'gather-tables.json'), JSON.stringify(gatherTables, null, 2), 'utf8')
 
-// 결계 뒤 칸들도 **서버 전용 산출물**이다 — 확률표와 같은 취급이다(설계 §9-앞 18).
+// 결계 뒤 칸들도 **서버 전용 산출물**이다 — 확률표와 같은 취급이고 근거도 같은
+// 한 줄이다(채집 티어 스펙 §7-앞 9, 바로 위와 같은 출처). 결계 스펙 §9-앞 에는
+// 이 규범이 없다 — 오래 §9-앞 18 로 적혀 있었는데 그 번호는 "계기 절의 숫자 셋을
+// 고친다"다.
 // 읽는 문은 loadBarrierRegions() 하나이고 apps/server 만 import 한다.
 //
 // 확률표를 감추는 이유(브라켓 경계가 곧 숨은 문턱이라 F12 로 스포일된다)와는

@@ -5,9 +5,11 @@ import { loadGameData } from '@nogada/data'
 // 브라켓 경계·잭팟 확률이 곧 숨은 문턱이라 그러면 F12 로 스포일된다(설계 §7-앞 9).
 import { loadGatherTables } from '@nogada/data/gather-tables'
 // 역시 별도 진입이다 — 결계 뒤 칸들은 서버가 위조 요청을 거르는 근거이지
-// 화면이 그릴 것이 아니다(설계 §9-앞 18). 벽은 클라이언트가 맵 JSON 으로 이미
-// 보고 있으므로 감출 비밀이 있어서가 아니라, 판정의 재료를 판정받는 쪽에
-// 쥐여 줄 이유가 없어서다.
+// 화면이 그릴 것이 아니다. 서버 전용 산출물 규범은 바로 위와 같은 한 줄이
+// 출처다(채집 티어 스펙 §7-앞 9) — 결계 스펙 §9-앞 에는 그 규범이 없고,
+// 오래 §9-앞 18 로 적혀 있었는데 그 번호는 "계기 절의 숫자 셋을 고친다"다.
+// 벽은 클라이언트가 맵 JSON 으로 이미 보고 있으므로 감출 비밀이 있어서가
+// 아니라, 판정의 재료를 판정받는 쪽에 쥐여 줄 이유가 없어서다.
 import { loadBarrierRegions } from '@nogada/data/barriers'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { requireSession } from './auth/sessions.js'

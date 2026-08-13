@@ -87,7 +87,7 @@ export type GatherTables = Record<string, GatherTableDef>
 - [ ] 검증 경고: 마지막 브라켓 실패 0% 아님 / 첫 브라켓에 최상 티어 부재(잭팟 소실).
 - [ ] build.ts: gather-tables.json 별도 산출 + "데이터 빌드 완료" 에 `채집표 4` 추가. GameData 미포함 확인(클라 번들 grep).
 - [ ] `nodes.csv` 개조: `yieldItem/yieldMin/yieldMax/baseChance/tier/skillGainMin/skillGainMax` → `tableId,variant` (variant: `normal`|`deep` — 표시 전용). 기존 8개 node id 유지(.tmx 무수정). parse·validate 의 노드 검사 개조(§7-앞 11: 도달 가능성 = "기술 도구 도달 가능 → 표의 전 아이템 도달 가능", obtainable 동반 개조).
-  > **정정(2026-08-13, 결계 아크):** `variant` 는 표시 전용이 아니게 됐다 — `deep` 은 `*_deep` 표를 뜻하고 빌드가 그 짝을 강제한다(결계 §9-앞 5). 스펙 §3.2·§7-앞 10 의 정정 참조.
+  > **정정(2026-08-13, 결계 아크):** `variant` 는 표시 전용이 아니게 됐다 — `deep` 은 `*_deep` 표를 뜻하고 빌드가 그 짝을 강제한다(결계 **계획 B2** — 이 줄은 처음에 "§9-앞 5" 라고 적었는데 그 번호는 전수 시뮬의 표 목록 하드코딩 얘기다). 스펙 §3.2·§7-앞 10 의 정정 참조.
 - [ ] `requiredSkill > 0 레시피 ⊆ recipes-이정표` 역방향 검증 추가(§7-앞 5).
 - [ ] 커밋 (G1 이 검증에 막혔다면 여기서 합류 — G1 항목 참조).
 
