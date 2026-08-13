@@ -74,7 +74,12 @@ describe('validateCollection — 칸 목록은 gather_tiers.csv 가 정한다(§
   })
 
   it('채집물이 아닌 칸은 위반이다 — 정제품·증표는 만든 것이라 영원히 0등급인 칸이 된다(§6-앞 4)', () => {
-    const extra = { ...shipped.collection, mithril_ingot: { itemId: 'mithril_ingot', steps: [1, 2, 3, 4] as [number, number, number, number] } }
+    // t2·t3 를 t4 의 10%·30%(중간 두 단 형평의 대역 안)로 둔다 — 이 테스트가
+    // 보려는 것은 "칸 목록에 없는 아이템" 위반 하나이지 형평이 아니다.
+    const extra = {
+      ...shipped.collection,
+      mithril_ingot: { itemId: 'mithril_ingot', steps: [1, 100, 300, 1000] as [number, number, number, number] },
+    }
     expect(check(extra)).toEqual([expect.stringContaining('mithril_ingot')])
   })
 })
@@ -107,14 +112,23 @@ describe('validateCollection — 형평(§6-앞 5)', () => {
     expect(violations.length).toBeGreaterThan(20)
   })
 
-  it('4단이 대역보다 크면 위반이고, 메시지가 몇 분인지 적는다 — 읽는 사람은 CSV 작가다', () => {
-    const violations = check(stepsOf('copper_ore', [50, 130, 430, 13_000]))
+  // t2·t3 를 t4 와 같은 비(10%·33%)로 함께 올려 둔다 — 그러지 않으면 이 t4(13,000)
+  // 앞에서 t2·t3 가 중간 두 단 형평(아래 describe)에도 걸려, 이 테스트가 보려는
+  // "4단 형평" 위반보다 먼저 그 위반이 나서 307.5분 메시지 자체가 안 생긴다.
+  it('4단이 대역보다 크면 위반이고, 메시지가 몇 분인지·권장 범위를 적는다 — 읽는 사람은 CSV 작가다', () => {
+    const violations = check(stepsOf('copper_ore', [50, 1300, 4300, 13_000]))
     expect(violations).toEqual([expect.stringContaining('copper_ore')])
     expect(violations[0]).toMatch(/307\.5분/)
+    // 작가가 "13000 × 25 / 307.5" 를 손으로 곱하지 않게, 메시지가 그 계산을
+    // 대신 해서 대역 양 끝의 권장 문턱을 적는다.
+    expect(violations[0]).toMatch(/→ [\d,]+~[\d,]+ 사이로 적는다/)
   })
 
+  // t2·t3 도 t4(500)와 같은 비로 낮춰 둔다 — 안 그러면 500 앞에서 t3(430)가
+  // 86%가 되어 중간 두 단 형평 위반이 먼저 나고, 이 테스트가 보려는 "너무 쉽다"
+  // 라는 4단 형평 위반 자체가 안 생긴다.
   it('4단이 대역보다 작아도 위반이다 — 너무 쉬운 칸은 총점을 공짜로 만든다', () => {
-    expect(check(stepsOf('copper_ore', [50, 130, 430, 500]))).toEqual([expect.stringContaining('copper_ore')])
+    expect(check(stepsOf('copper_ore', [50, 60, 180, 500]))).toEqual([expect.stringContaining('copper_ore')])
   })
 
   it('선별증표가 없는 계열은 최적손을 지을 수 없어 형평을 못 잰다고 말한다 — 조용히 다른 손으로 재지 않는다', () => {
@@ -125,11 +139,32 @@ describe('validateCollection — 형평(§6-앞 5)', () => {
   })
 })
 
+describe('validateCollection — 중간 두 단(t2·t3)의 형평(§6-앞 5)', () => {
+  it('t2 가 t4 의 50% 를 넘으면 위반이고 허용 범위를 숫자로 말한다 — 중간 단이 4단에 붙으면 사다리가 접힌다', () => {
+    const violations = check(stepsOf('mithril_ore', [1, 6999, 7000, 7100]))
+    const t2Violation = violations.find((v) => v.includes('t2('))
+    expect(t2Violation).toBeDefined()
+    expect(t2Violation).toContain('98.6%')
+    expect(t2Violation).toContain('355~3550')
+  })
+
+  it('t2 가 t4 의 5% 미만이면 위반이다 — 반대쪽(1단)에 붙어도 같은 일이 일어난다', () => {
+    const violations = check(stepsOf('copper_ore', [10, 30, 430, 1300]))
+    const t2Violation = violations.find((v) => v.includes('t2('))
+    expect(t2Violation).toBeDefined()
+    expect(t2Violation).toContain('2.3%')
+    expect(t2Violation).toContain('65~650')
+  })
+})
+
 describe('validateCollection — 1단은 절벽 앞에서 닿는다(§6-앞 6)', () => {
   it('1단이 구리 손·첫 브라켓에서 5분을 넘기면 위반이다 — 절벽까지 한 개도 안 바치는 것이 지배 전략이 된다', () => {
     const violations = check(stepsOf('ice_shard', [600, 630, 2100, 6300]))
     expect(violations).toEqual([expect.stringContaining('ice_shard')])
     expect(violations[0]).toMatch(/11\.1분/)
+    // 4단 형평 메시지와 같은 자세다 — 작가가 "600 × 5 / 11.1" 을 손으로
+    // 곱하지 않게, 메시지가 권장 문턱 하나를 대신 계산해 적는다.
+    expect(violations[0]).toMatch(/→ [\d,]+ 으로 적는다/)
   })
 
   it('그 손으로 몇 시간이 걸리는 잭팟 칸은 1단이 한 개면 통과한다 — 더 낮출 수 없는 값이라 표를 고치라는 뜻이 되면 안 된다', () => {

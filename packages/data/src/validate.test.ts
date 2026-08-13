@@ -1729,6 +1729,24 @@ describe('validateGameData 의 되사기 게이트 검사', () => {
       'milestones[collection_4]: threshold(5) 가 수집 만점(4 = 칸 1개 × 4등급)보다 크다 — 영원히 달성할 수 없다',
     )
   })
+
+  // 왜: sage 행 하나를 collection.csv 에서 지우면 원인은 하나(칸이 빠졌다)인데,
+  //     collection.ts 의 "칸 목록" 검사와 이 만점 검사가 같은 원인을 따로 알려
+  //     위반이 둘로 보인다. 만점은 칸 수에서 유도되므로, 칸 수 자체가 틀린
+  //     상태에서 잰 만점은 뜻이 없다 — 칸 목록이 어긋나 있으면 이 검사는
+  //     묻지 않아야 한다.
+  it('칸 목록이 채집표와 어긋나 있으면 만점 검사를 건너뛴다 — 원인 하나를 위반 둘로 보고하지 않는다', () => {
+    const data = buybackData()
+    // 표는 두 번째 채집물(silver_ore)을 아는데 방에는 그 칸이 없다 — sage 행
+    // 하나를 지운 것과 같은 모양이다.
+    const tables = baseTables()
+    tables.mineral = { ...tables.mineral!, tiers: [...tables.mineral!.tiers, { itemId: 'silver_ore' }] }
+    // 칸 하나(copper_ore)짜리 방의 만점은 4 다. 100 은 그 만점보다 훨씬 크므로,
+    // 칸 목록 위반을 건너뛰지 않으면 이 검사가 여전히 빨개진다.
+    data.milestones = data.milestones.map((m) => (m.id === 'collection_4' ? { ...m, threshold: 100 } : m))
+    const violations = validateGameData(data, tables)
+    expect(violations.some((v) => v.includes('수집 만점'))).toBe(false)
+  })
 })
 
 describe('validateGameData 의 달인 등록부 검사', () => {

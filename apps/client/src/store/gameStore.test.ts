@@ -517,3 +517,24 @@ describe('사용 — 가방에서 쓴 가루가 하늘이 된다(설계 §6-앞 
     expect(useGameStore.getState().bagError).toBeNull()
   })
 })
+
+// 왜: 지금은 가방이 칸인 재료에만 [바치기] 를 그려 이 코드가 화면에서 나올 길이
+//     없다. 그래도 넣는 이유는 not_usable 이 이미 세운 자세와 대칭이 맞아야
+//     해서다 — 그 코드도 화면이 못 막는 경합(두 창)에만 오는데 문구가 있다.
+//     여기는 경합보다 더 흔한 문이 하나 더 있다: collection.csv 에서 칸 하나를
+//     빼고 배포한 직후, 그 탭을 이미 열어 둔 사람의 화면에는 옛 [바치기] 버튼이
+//     남아 있어 이 코드가 그대로 온다. 문구가 없으면 `오류: not_collectable`
+//     이라는 날것이 뜬다.
+describe('헌납 — not_collectable 문구(수집의 방 설계 §6-앞 1)', () => {
+  it('서버가 not_collectable 을 돌려주면 한국어 문구로 바뀐다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'not_collectable' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().donate('copper_ore', 1)
+
+    expect(useGameStore.getState().bagError).toBe('바칠 수 없는 물건')
+  })
+})

@@ -108,6 +108,21 @@ const EARLY_BUDGET_MINUTES = 5
 const EARLY_FLOOR = 1
 
 /**
+ * 중간 두 단(t2·t3)이 4단 대비 가져야 할 비율의 하한·상한(§6-앞 5).
+ *
+ * 화면은 등급 픽을 네 번 그린다(1단부터 4단까지 하나씩) — 중간 단이 어느 한쪽
+ * 끝에 붙으면 그 픽 중 일부가 사실상 죽는다. t2 가 t4 에 가까우면(예:
+ * t2=6999,t4=7100) 1단만 넘겨도 3단까지 거의 동시에 열려 네 눈금이 두 눈금이
+ * 되고, 반대로 t2 가 t1 에 붙으면 3·4단이 통째로 멀어지는 것으로 같은 일이
+ * 일어난다. 그래서 상한(50%) 은 4단 쪽 접힘을, 하한(5%) 은 1단 쪽 접힘을 막는다.
+ *
+ * 출하 25행은 전부 t2 ≈ t4×0.1, t3 ≈ t4×0.333 이라 이 대역 한가운데를 지나
+ * 데이터를 한 줄도 고치지 않고 통과한다.
+ */
+const MID_TIER_MIN_RATIO = 0.05
+const MID_TIER_MAX_RATIO = 0.5
+
+/**
  * 형평·조기 도달을 재는 흉내 플레이어.
  *
  * `emptyPlayer()` 를 쓰지 않는 이유: 그 함수는 `loadGameData()`(구운
@@ -211,6 +226,23 @@ function minutesText(minutes: number): string {
 }
 
 /**
+ * 실측 분을 목표 분으로 스케일링한 권장 문턱 — "현재 문턱 × 목표분 ÷ 실측분".
+ *
+ * 형평·조기 도달 위반 메시지는 지금 몇 분 걸리는지와 목표 대역을 둘 다 적지만,
+ * 그 둘에서 "그럼 얼마로 고치나"로 가려면 작가가 손으로 곱셈을 해야 했다.
+ * 시간이 문턱에 선형이라는 사실(minutesFor 가 count 에 비례한다) 하나만 있으면
+ * 그 계산을 메시지가 대신 할 수 있다 — 그래서 여기서 한 번만 하고 양쪽
+ * 위반(형평·조기 도달)이 나눠 쓴다.
+ *
+ * 실측이 무한대(그 브라켓에서 확률 0)면 스케일 자체가 뜻이 없어 null 을
+ * 돌려준다 — 그때는 권장 문턱이 아니라 표(확률)를 먼저 고쳐야 한다.
+ */
+function recommendedThreshold(current: number, measuredMinutes: number, targetMinutes: number): number | null {
+  if (!Number.isFinite(measuredMinutes) || measuredMinutes <= 0) return null
+  return Math.max(1, Math.round((current * targetMinutes) / measuredMinutes))
+}
+
+/**
  * 문턱표의 뜻을 검사한다. 위반 목록을 돌려준다(빌드가 다른 검사들과 함께 인쇄한다).
  *
  * 채집 표를 함께 받는 이유: 문턱은 **표와의 관계**로만 뜻을 갖는다. 표를 안 보면
@@ -252,19 +284,41 @@ export function validateCollection(data: GameData, tables: GatherTables): string
   // ---- 문턱의 모양 ----
   for (const def of Object.values(collection)) {
     const at = `${FILE}[${def.itemId}]`
-    const [t1] = def.steps
+    const [t1, t2, t3, t4] = def.steps
 
     if (t1 <= 0) {
       violations.push(`${at}: t1 이 ${t1} 이다 — 아무도 안 바친 칸이 1등급이 되어 총점이 처음부터 0 이 아니게 된다`)
     }
 
+    let increasing = true
     for (let i = 1; i < def.steps.length; i++) {
       const prev = def.steps[i - 1]!
       const cur = def.steps[i]!
       if (cur <= prev) {
+        increasing = false
         violations.push(
           `${at}: 문턱이 순증가가 아니다 — t${i + 1}(${cur}) 가 t${i}(${prev}) 이하다. 한 번 바쳐서 두 등급이 오르거나, 아무도 못 넘는 단이 생긴다`,
         )
+      }
+    }
+
+    // 중간 두 단(t2·t3)이 4단에 붙어 사다리가 사실상 두 눈금이 되는 것을 막는다
+    // (§6-앞 5, MID_TIER_MIN_RATIO 문서). 순증가가 이미 깨진 줄에는 묻지 않는다 —
+    // 그 경우 t4 기준으로 잰 비율 자체가 뜻이 없고, 위의 증가 위반이 원인을 이미
+    // 짚었다. 원인 하나(문턱이 어긋났다)를 위반 둘로 보고하지 않는다.
+    if (increasing) {
+      for (const [label, value] of [
+        ['t2', t2],
+        ['t3', t3],
+      ] as const) {
+        const ratio = value / t4
+        if (ratio < MID_TIER_MIN_RATIO || ratio > MID_TIER_MAX_RATIO) {
+          const min = Math.round(t4 * MID_TIER_MIN_RATIO)
+          const max = Math.round(t4 * MID_TIER_MAX_RATIO)
+          violations.push(
+            `${at}: ${label}(${value}) 가 t4(${t4}) 의 ${(ratio * 100).toFixed(1)}% 다 — 중간 두 단은 4단의 5~50%(${min}~${max}) 여야 한다. 등급 픽 4개가 실제로 네 번 켜지려면 중간 단이 양 끝에 붙으면 안 된다`,
+          )
+        }
       }
     }
   }
@@ -309,16 +363,25 @@ export function validateCollection(data: GameData, tables: GatherTables): string
       // ---- 형평(§6-앞 5) — 최적손·자기 최종 브라켓에서 4단까지 몇 분인가 ----
       const bestMinutes = minutesFor(top, bestChances[tierIndex]!, bestInterval)
       if (bestMinutes < EQUITY_MIN_MINUTES || bestMinutes > EQUITY_MAX_MINUTES) {
+        // 작가가 "13000 × 25 / 307.5" 를 손으로 곱하지 않게, 대역 양 끝을
+        // recommendedThreshold 로 스케일링해 권장 범위를 함께 적는다.
+        const lo = recommendedThreshold(top, bestMinutes, EQUITY_MIN_MINUTES)
+        const hi = recommendedThreshold(top, bestMinutes, EQUITY_MAX_MINUTES)
+        const fix = lo !== null && hi !== null ? ` → ${lo.toLocaleString('ko-KR')}~${hi.toLocaleString('ko-KR')} 사이로 적는다` : ''
         violations.push(
-          `${slot}: 4단(${top}개)이 최적손·최종 브라켓에서 ${minutesText(bestMinutes)} 걸린다 — 목표 대역은 ${EQUITY_MIN_MINUTES}~${EQUITY_MAX_MINUTES}분이다. 문턱은 그 칸의 드랍 비율에 반비례해야 하고, 균일 문턱은 계열·티어 사이를 13배까지 기울인다`,
+          `${slot}: 4단(${top}개)이 최적손·최종 브라켓에서 ${minutesText(bestMinutes)} 걸린다 — 목표 대역은 ${EQUITY_MIN_MINUTES}~${EQUITY_MAX_MINUTES}분이다. 문턱은 그 칸의 드랍 비율에 반비례해야 하고, 균일 문턱은 계열·티어 사이를 13배까지 기울인다${fix}`,
         )
       }
 
       // ---- 1단은 절벽 앞에서 닿는다(§6-앞 6) — 구리 손·첫 브라켓·숙련 0 ----
       const earlyMinutes = minutesFor(first, earlyChances[tierIndex]!, earlyInterval)
       if (first > EARLY_FLOOR && earlyMinutes > EARLY_BUDGET_MINUTES) {
+        // 위 형평 메시지와 같은 자세다 — 목표는 대역이 아니라 예산 하나(5분)라
+        // 권장 값도 하나다.
+        const rec = recommendedThreshold(first, earlyMinutes, EARLY_BUDGET_MINUTES)
+        const fix = rec !== null ? ` → ${rec.toLocaleString('ko-KR')} 으로 적는다` : ''
         violations.push(
-          `${slot}: 1단(${first}개)이 구리 손·첫 브라켓에서 ${minutesText(earlyMinutes)} 걸린다 — ${EARLY_BUDGET_MINUTES}분 안에 닿거나, 더 낮출 수 없는 ${EARLY_FLOOR}개여야 한다. 1단이 멀면 절벽(숙련 50만)까지 한 개도 안 바치는 것이 지배 전략이 되어 방의 숫자를 초반에 아무도 안 읽는다`,
+          `${slot}: 1단(${first}개)이 구리 손·첫 브라켓에서 ${minutesText(earlyMinutes)} 걸린다 — ${EARLY_BUDGET_MINUTES}분 안에 닿거나, 더 낮출 수 없는 ${EARLY_FLOOR}개여야 한다. 1단이 멀면 절벽(숙련 50만)까지 한 개도 안 바치는 것이 지배 전략이 되어 방의 숫자를 초반에 아무도 안 읽는다${fix}`,
         )
       }
     })

@@ -953,13 +953,34 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // "threshold 가 of 길이보다 크다"와 같은 자리의 검사다 — 만점보다 큰 문턱은
   // 방을 통째로 채워도 닿지 않는 줄이 목록에 영원히 남는 것이고, 그 줄은
   // 화면에서 "100 / 120" 으로 보이며 왜 안 열리는지 아무도 말해 주지 않는다.
-  const maxCollectionScore = Object.keys(data.collection).length * COLLECTION_MAX_GRADE
-  for (const milestone of data.milestones) {
-    if (milestone.metric.kind !== 'collection') continue
-    if (milestone.threshold > maxCollectionScore) {
-      violations.push(
-        `milestones[${milestone.id}]: threshold(${milestone.threshold}) 가 수집 만점(${maxCollectionScore} = 칸 ${Object.keys(data.collection).length}개 × ${COLLECTION_MAX_GRADE}등급)보다 크다 — 영원히 달성할 수 없다`,
-      )
+  //
+  // **칸 목록이 채집표(gatherTables)와 어긋나 있으면 이 검사는 건너뛴다.**
+  // 만점 자체가 칸 수에서 유도되므로, 칸 수가 틀린 상태에서 잰 만점은 뜻이
+  // 없다 — sage 행 하나를 collection.csv 에서 지우면 원인은 하나(칸이
+  // 빠졌다)인데, collection.ts 의 validateCollection 이 "칸이 없다"를 이미
+  // 알리고 이 검사까지 "만점을 넘는다"를 더하면 원인 하나가 위반 둘로 보인다.
+  // validateCollection 은 정확히 이 이유로 조기 반환을 두지만(그 파일의 "칸
+  // 목록 = 채집물 전부" 검사 옆 주석), 그 조기 반환은 그 함수 안에서만
+  // 유효하고 이 파일의 검사까지 막지는 못한다 — 그래서 여기서도 같은 판단을
+  // 한 번 더 한다.
+  const gatheredCollectionIds = new Set<string>()
+  for (const table of Object.values(gatherTables)) {
+    for (const tier of table.tiers) gatheredCollectionIds.add(tier.itemId)
+  }
+  const collectionIds = new Set(Object.keys(data.collection))
+  const collectionSlotsMismatch =
+    [...gatheredCollectionIds].some((id) => !collectionIds.has(id)) ||
+    [...collectionIds].some((id) => !gatheredCollectionIds.has(id))
+
+  if (!collectionSlotsMismatch) {
+    const maxCollectionScore = collectionIds.size * COLLECTION_MAX_GRADE
+    for (const milestone of data.milestones) {
+      if (milestone.metric.kind !== 'collection') continue
+      if (milestone.threshold > maxCollectionScore) {
+        violations.push(
+          `milestones[${milestone.id}]: threshold(${milestone.threshold}) 가 수집 만점(${maxCollectionScore} = 칸 ${collectionIds.size}개 × ${COLLECTION_MAX_GRADE}등급)보다 크다 — 영원히 달성할 수 없다`,
+        )
+      }
     }
   }
 
