@@ -23,7 +23,13 @@ const data: GameData = {
     copper_vein: {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
     },
-    // 심층 외형 — 표 모델에서 같은 표의 다른 외형일 뿐, 접근 게이트가 아니다.
+    // 심층 외형. **출하 데이터에서는 deep 이 자기 표(*_deep)를 가리키지만**
+    // (결계 §9-앞 5) 여기서는 일부러 바깥과 같은 표를 물린다 — 이 스위트가
+    // 재는 것은 "굴리는 것은 variant 가 아니라 tableId 다" 이고, 표까지 갈라
+    // 두면 아래 두 단정이 무엇 때문에 갈렸는지 구별되지 않는다.
+    //
+    // 심층으로 들어가는 것을 막는 것은 이 서비스가 아니다 — 그 앞의 결계
+    // 전환(moveService)이다. 채집 판정에는 지금도 접근 게이트가 없다.
     iron_vein: {
       id: 'iron_vein', name: '철 광맥', skill: 'mineral', tableId: 'mineral', variant: 'deep',
     },
@@ -176,12 +182,14 @@ describe('performGather', () => {
     expect(r.ok).toBe(true)
   })
 
-  it('심층 외형과 일반 외형은 같은 표를 굴린다 — 같은 roll 이면 같은 티어가 나온다', () => {
+  it('굴리는 것은 variant 가 아니라 tableId 다 — 표가 같으면 외형이 달라도 같은 roll 에 같은 티어가 나온다', () => {
     const normal = performGather({ player: player(), data, tables, instanceId: 'copper_vein-1', rng: jackpotRoll, now: 0 })
     const deep = performGather({ player: player(), data, tables, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 0 })
     if (!normal.ok || !deep.ok) throw new Error('둘 다 성공해야 한다')
-    // 둘 다 copper_vein/iron_vein 이 가리키는 표가 'mineral' 로 같으므로, 같은
-    // roll(0)이면 같은 최상 티어(mithril_ore)가 나와야 한다.
+    // 이 스위트의 두 노드는 variant 만 다르고 표는 'mineral' 로 같다. 그래서
+    // 같은 roll(0)이면 같은 최상 티어(mithril_ore)가 나온다 — 판정이 노드의
+    // 외형을 보지 않는다는 뜻이다. **출하 데이터에서 심층이 다른 것을 내는
+    // 이유는 그 표가 다르기 때문이지 이 외형 때문이 아니다.**
     expect(deep.outcome.gained).toEqual(normal.outcome.gained)
   })
 
