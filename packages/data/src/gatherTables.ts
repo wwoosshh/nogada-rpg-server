@@ -54,12 +54,18 @@ export const DEEP_YIELD_TARGET = 2.5
 export const DEEP_YIELD_TOLERANCE = 0.15
 
 /**
- * 심층 유한 브라켓의 최상위 티어가 넘을 수 없는 선 — **바깥 ∞ 의 10%**(§9-앞 7).
+ * 심층 유한 브라켓의 최상위 티어 천장을 정하는 비율 — **바깥 ∞ 의 10%**(§9-앞 7).
  *
  * 초안의 불변식은 "심층 최상위가 바깥 ∞ 보다 흔하지 않다" 였는데, 그것은 얼음에서
  * 바깥 ≤150000 의 45 를 15,000 까지, 즉 **333배**까지 통과시킨다 — 자기가 막겠다는
  * 상태(결계 뒤가 잭팟 자판기가 되어 절벽이 줄 것을 잃는다)를 그대로 허용하는
  * 불변식이다. 죄는 값이어야 불변식이다.
+ *
+ * **실제 천장은 이 비율이 아니라 `max(바깥 ∞ × 이 비율, 바깥 같은 자리 브라켓)`
+ * 이다** — 왜 max 인지는 validateDeepTables 의 규칙 2 주석이 적는다(요약: 이
+ * 천장이 막는 것은 절벽을 앞당기는 것뿐인데, 나무처럼 절벽이 이미 지나간
+ * 브라켓에는 앞당길 것이 없고, 거기에 비율을 강제하면 심층이 바깥보다 나쁜
+ * 표가 되어 규칙 3(바닥)과 정면으로 부딪친다).
  */
 export const DEEP_TOP_TIER_CEILING = 0.1
 
@@ -273,21 +279,79 @@ function validateDeepTables(tables: GatherTables, data: GameData): string[] {
       )
     }
 
-    // ---- 2. 유한 브라켓의 최상위는 바깥 ∞ 의 10% 아래다 ----
+    // 심층 브라켓의 **같은 자리 바깥 브라켓** — 그 브라켓의 상한 숙련에서 바깥이
+    // 실제로 굴리는 브라켓이다. 상한으로 재는 이유: 두 표의 사다리 모양이 언젠가
+    // 어긋나면 심층 브라켓 하나가 바깥 브라켓 여럿에 걸치는데, 그중 **가장 좋은**
+    // 것과 견주는 편이 아래 두 검사(천장·바닥)를 무르지 않게 한다.
+    const outerPeer = (bracket: GatherBracketDef): GatherBracketDef =>
+      gatherBracketFor(outer, bracket.bracketMax ?? Number.MAX_SAFE_INTEGER)
+
+    // ---- 2. 유한 브라켓의 최상위 천장 ----
+    //
+    // 천장은 `max(바깥 ∞ 의 10%, 바깥 같은 자리 브라켓)` 이다. **max 인 것은
+    // 천장이 느슨해진 것이 아니라 천장의 목적을 정확히 적은 것이다.**
+    //
+    // 이 천장이 막으려는 것은 하나뿐이다 — **절벽을 앞당기는 것**. ∞ 가 주기로
+    // 되어 있는 잭팟을 심층이 미리 나눠 주면, 수백 분을 들여 닿은 절벽이 줄
+    // 것을 잃는다. 그런데 **절벽이 이미 지나간 자리에는 앞당길 것이 없다.**
+    // 나무가 그 자리다: 나무의 절벽은 500,001 이 아니라 290,001 이고
+    // (`wood,500000` 행과 `wood,` 행이 바이트 단위로 같다 — §9-앞 8), 그래서
+    // `wood,500000` 은 이미 ∞ 값이다. 거기에 ∞×10% 를 강제하면 심층이 바깥보다
+    // **10.7배 드문** 표가 되어(금빛 열매 15% → 1.4%) 문 너머가 함정이 된다.
+    // 골드는 같아도 수집의 방 칸은 그 자리에서 멀어진다.
+    //
+    // 즉 이 천장은 "바깥보다 얼마나 더 줄 수 있는가"의 상한이지 "얼마나 줄 수
+    // 있는가"의 상한이 아니다. 바깥이 이미 주는 것을 심층이 못 주게 만드는
+    // 순간, 천장은 아래 바닥 검사와 정면으로 부딪친다.
     const outerTop = outerInfinite[0]
     if (outerTop !== undefined) {
-      const ceiling = Math.floor(outerTop * DEEP_TOP_TIER_CEILING)
+      const infiniteCeiling = Math.floor(outerTop * DEEP_TOP_TIER_CEILING)
       for (const bracket of deep.brackets) {
         if (bracket.bracketMax === null) continue
         const top = bracket.cumulative[0]
+        const peer = outerPeer(bracket)
+        const peerTop = peer.cumulative[0] ?? 0
+        const ceiling = Math.max(infiniteCeiling, peerTop)
         if (top === undefined || top <= ceiling) continue
+        // 숫자 뒤에 조사·서술격을 직접 붙이면 자릿수에 따라 문법이 어긋나므로
+        // (1500 은 "이다", 2 는 "다") 언제나 맞는 "까지다"·"이하"로 적는다.
         violations.push(
-          `${at} 브라켓(${bracketLabel(bracket)}): 최상위 티어(${tierName(0)})의 누적이 ${top} 이라 바깥 표 "${outer.id}" 의 ∞ 누적 ${outerTop} 의 ${((top / outerTop) * 100).toFixed(1)}% 다 — 심층의 유한 브라켓은 그 ${DEEP_TOP_TIER_CEILING * 100}%(${ceiling})를 넘을 수 없다. 넘으면 결계 뒤가 잭팟 자판기가 되어 절벽(∞)이 줄 것을 잃는다. gather_brackets.csv 의 그 행 cum1 을 ${ceiling} 이하로 낮춘다`,
+          `${at} 브라켓(${bracketLabel(bracket)}): 최상위 티어(${tierName(0)})의 누적이 ${top} 인데 천장은 ${ceiling} 까지다 — 바깥 표 "${outer.id}" 의 ∞ 누적 ${outerTop} 의 ${DEEP_TOP_TIER_CEILING * 100}%(${infiniteCeiling})와 바깥 같은 자리(${bracketLabel(peer)})의 ${peerTop} 중 큰 쪽이다. 넘으면 결계 뒤가 잭팟 자판기가 되어 절벽(∞)이 줄 것을 잃는다. gather_brackets.csv 의 그 행 cum1 을 ${ceiling} 이하로 적는다`,
         )
       }
     }
 
-    // ---- 3. 문 바로 위에서 분당 산출이 목표 배수다 ----
+    // ---- 3. 바닥: 심층은 어느 티어에서도 바깥보다 나쁘지 않다 ----
+    //
+    // 천장만 있고 바닥이 없던 동안, `wood_deep ≤500000` 이 바깥의 15000 대신
+    // 1400 을 지고도 빌드가 초록이었다 — 분당 산출은 ×1.00 이라 배수 검사도
+    // 조용했다. **골드가 같아도 그 문은 함정이다**: 최상위 티어를 원하는 유일한
+    // 이유는 수집의 방 칸인데, 154분을 들여 연 문 너머에서 그 칸이 10.7배 멀어진다.
+    // 이 아크가 지우러 온 것("결계 너머라는 말이 아무것도 뜻하지 않는다")과
+    // 정확히 같은 종류의 거짓말이다.
+    //
+    // 누적으로 재는 것이 요점이다. 누적 i 는 "티어 i 이상으로 희귀한 것이 나올
+    // 확률"이라, 전 티어에서 심층 ≥ 바깥이면 **어느 희귀도 문턱에서 보든** 심층이
+    // 나쁘지 않다는 뜻이 된다. 티어별 폭만 견주면 "2티어가 늘고 3티어가 줄었다"
+    // 같은 정상적인 재분배까지 위반이 된다.
+    //
+    // ∞ 는 묻지 않는다 — 규칙 1 이 이미 글자 그대로 같기를 요구하므로, 여기서
+    // 또 물으면 원인 하나가 위반 둘이 된다.
+    for (const bracket of deep.brackets) {
+      if (bracket.bracketMax === null) continue
+      const peer = outerPeer(bracket)
+      for (let i = 0; i < bracket.cumulative.length; i++) {
+        const mine = bracket.cumulative[i]
+        const theirs = peer.cumulative[i]
+        if (mine === undefined || theirs === undefined || mine >= theirs) continue
+        const rarer = mine > 0 ? `${(theirs / mine).toFixed(1)}배 ` : ''
+        violations.push(
+          `${at} 브라켓(${bracketLabel(bracket)}): 티어 ${i + 1}(${tierName(i)})의 누적이 심층 ${mine} · 바깥 ${theirs} — 결계 너머가 ${rarer}드물다. 문을 연 사람이 어느 티어에서든 손해를 보면 그 문은 함정이고(분당 골드가 같아도 수집의 방 칸은 그 자리에서 멀어진다), 그것이 이 결계가 지우러 온 거짓말과 같은 종류다. gather_brackets.csv 의 ${deep.id} ${bracketLabel(bracket)} 행 cum${i + 1} 을 바깥 같은 자리(${bracketLabel(peer)})의 ${theirs} 이상으로 적는다`,
+        )
+      }
+    }
+
+    // ---- 4. 문 바로 위에서 분당 산출이 목표 배수다 ----
     //
     // 손을 실물 카탈로그에서 짓는다(gatherMeasure) — 배수를 여기서 곱하면 장비
     // 조회가 깨진 날에도 이 검증만 초록이다.

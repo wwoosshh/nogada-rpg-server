@@ -471,14 +471,48 @@ describe('결계 — 심층 표 넷이 자기 계열 바깥 표에 매여 있다
     }
   })
 
-  it('어느 유한 브라켓도 최상위 티어가 바깥 ∞ 의 10% 를 넘지 않는다 — 결계 뒤가 잭팟 자판기가 되면 절벽이 줄 것을 잃는다', () => {
+  it('어느 유한 브라켓도 최상위 티어가 천장을 넘지 않는다 — 결계 뒤가 잭팟 자판기가 되면 절벽이 줄 것을 잃는다', () => {
+    // 천장은 `max(바깥 ∞ × 10%, 바깥 같은 자리)` 다. max 인 이유는 나무가 만들었다 —
+    // 나무의 절벽은 290,001 이라 `wood,500000` 이 이미 ∞ 값이고, 거기에 ∞×10% 를
+    // 강제하면 심층이 바깥보다 10.7배 드문 표가 된다(아래 바닥 검사가 그것을 잡는다).
     for (const [deepId, outerId] of DEEP_PAIRS) {
-      const ceiling = Math.floor(tables[outerId]!.brackets.at(-1)!.cumulative[0]! * DEEP_TOP_TIER_CEILING)
+      const outer = tables[outerId]!
+      const fromInfinite = Math.floor(outer.brackets.at(-1)!.cumulative[0]! * DEEP_TOP_TIER_CEILING)
       for (const bracket of tables[deepId]!.brackets) {
         if (bracket.bracketMax === null) continue
-        expect(bracket.cumulative[0], `${deepId} ≤${bracket.bracketMax}`).toBeLessThanOrEqual(ceiling)
+        const peerTop = gatherBracketFor(outer, bracket.bracketMax).cumulative[0]!
+        expect(bracket.cumulative[0], `${deepId} ≤${bracket.bracketMax}`).toBeLessThanOrEqual(
+          Math.max(fromInfinite, peerTop),
+        )
       }
     }
+  })
+
+  it('어느 브라켓 어느 티어에서도 심층이 바깥보다 드물지 않다 — 문 너머가 어느 축에서든 나쁘면 그 문은 함정이다', () => {
+    // 누적으로 재는 것이 요점이다: 누적 i 는 "티어 i 이상으로 희귀한 것이 나올
+    // 확률"이라, 전 티어에서 심층 ≥ 바깥이면 어느 희귀도 문턱에서 보든 심층이
+    // 나쁘지 않다는 뜻이 된다. 분당 골드만 보면 `wood_deep ≤500000` 처럼 값은
+    // 같은데 최상위가 10.7배 드문 표가 조용히 통과한다 — 골드는 같아도 수집의
+    // 방 칸은 그 자리에서 멀어진다.
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      const outer = tables[outerId]!
+      for (const bracket of tables[deepId]!.brackets) {
+        if (bracket.bracketMax === null) continue
+        const peer = gatherBracketFor(outer, bracket.bracketMax)
+        bracket.cumulative.forEach((cum, i) => {
+          expect(cum, `${deepId} ≤${bracket.bracketMax} 티어 ${i + 1}`).toBeGreaterThanOrEqual(peer.cumulative[i]!)
+        })
+      }
+    }
+  })
+
+  it('나무 심층의 ≤500000 은 바깥의 글자 그대로 복사본이다 — 나무의 절벽은 290,001 이라 그 위에서 심층은 바깥과 같다', () => {
+    // §9-앞 8: `wood,500000` 과 `wood,` 두 행이 바이트 단위로 같다. 그 구간의
+    // ×2.5 는 산술적으로 불가능하고(천장 아래 최댓값이 1,625G/회인데 필요한 값은
+    // 2,207G/회다) §4 도 "그 위에서 심층은 바깥과 같다"라고 적었다. 그러니 여기서
+    // 심층이 할 수 있는 가장 정직한 일은 **바깥을 그대로 베끼는 것**이다.
+    const at500k = (id: string) => tables[id]!.brackets.find((b) => b.bracketMax === 500_000)!
+    expect(at500k('wood_deep')).toEqual(at500k('wood'))
   })
 
   it('숙련 85,001·구리 손에서 네 계열이 전부 분당 산출 ×2.5 다 — 결계 하나가 계열마다 다른 값이 되지 않는다', () => {
@@ -557,11 +591,29 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
     ])
   })
 
-  it('심층 유한 브라켓의 최상위 티어가 바깥 ∞ 의 10% 를 넘으면 위반이다 — "∞ 보다 흔하지 않다" 는 얼음에서 333배까지 통과시킨다', () => {
+  it('심층 유한 브라켓의 최상위 티어가 천장을 넘으면 위반이다 — "∞ 보다 흔하지 않다" 는 얼음에서 333배까지 통과시킨다', () => {
     const broken = withBracket('ice_deep', 150_000, [2000, 7202, 27202, 52202, 85000])
     expect(validateGatherTables(broken, data).violations).toContain(
-      'gather[ice_deep] 브라켓(≤150000): 최상위 티어(ice_gem)의 누적이 2000 이라 바깥 표 "ice" 의 ∞ 누적 15000 의 13.3% 다 — 심층의 유한 브라켓은 그 10%(1500)를 넘을 수 없다. 넘으면 결계 뒤가 잭팟 자판기가 되어 절벽(∞)이 줄 것을 잃는다. gather_brackets.csv 의 그 행 cum1 을 1500 이하로 낮춘다',
+      'gather[ice_deep] 브라켓(≤150000): 최상위 티어(ice_gem)의 누적이 2000 인데 천장은 1500 까지다 — 바깥 표 "ice" 의 ∞ 누적 15000 의 10%(1500)와 바깥 같은 자리(≤150000)의 45 중 큰 쪽이다. 넘으면 결계 뒤가 잭팟 자판기가 되어 절벽(∞)이 줄 것을 잃는다. gather_brackets.csv 의 그 행 cum1 을 1500 이하로 적는다',
     )
+  })
+
+  it('천장이 바깥 같은 자리보다 낮아지지는 않는다 — 절벽이 이미 지나간 브라켓에는 앞당길 것이 없다', () => {
+    // 나무 ≤500000 은 바깥이 이미 ∞ 값(최상위 15000)이라, ∞×10% = 1500 만
+    // 천장으로 삼으면 **바깥을 그대로 베낀 표가 위반**이 된다. 그 규칙은 자기
+    // 목적(절벽을 앞당기지 못하게 한다)을 넘어 심층을 바깥보다 나쁘게 만든다.
+    expect(validateGatherTables(tables, data).violations).toEqual([])
+    expect(tables['wood_deep']!.brackets.find((b) => b.bracketMax === 500_000)!.cumulative[0]).toBe(15_000)
+  })
+
+  it('심층이 바깥보다 드문 티어가 하나라도 있으면 위반이고, 메시지가 몇 대 몇인지 적는다', () => {
+    // 이 결함이 실제로 출하 직전까지 살아 있었다: `wood_deep ≤500000` 이 1400 을
+    // 지고도 분당 산출은 ×1.00 이라 배수 검사가 조용했다. 천장만 있고 바닥이
+    // 없으면 "골드는 같은데 최상위가 10.7배 드문" 문이 통과한다.
+    const broken = withBracket('wood_deep', 500_000, [1400, 47672, 62672, 75672, 85672, 100000])
+    expect(validateGatherTables(broken, data).violations).toEqual([
+      'gather[wood_deep] 브라켓(≤500000): 티어 1(golden_fruit)의 누적이 심층 1400 · 바깥 15000 — 결계 너머가 10.7배 드물다. 문을 연 사람이 어느 티어에서든 손해를 보면 그 문은 함정이고(분당 골드가 같아도 수집의 방 칸은 그 자리에서 멀어진다), 그것이 이 결계가 지우러 온 거짓말과 같은 종류다. gather_brackets.csv 의 wood_deep ≤500000 행 cum1 을 바깥 같은 자리(≤500000)의 15000 이상으로 적는다',
+    ])
   })
 
   it('심층의 분당 산출이 목표 배수를 벗어나면 위반이고, 메시지가 어느 계열이 몇 배인지 적는다', () => {
