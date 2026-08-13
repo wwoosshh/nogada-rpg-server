@@ -24,6 +24,7 @@ import {
   starterToolCandidates,
 } from '@nogada/shared'
 import { dialogueLocation } from './dialogueParse.js'
+import { DEEP_TABLE_SUFFIX, isDeepTableId } from './gatherTables.js'
 import { startVillages, villageField } from './maps.js'
 import type { MapTerrain } from './placements.js'
 
@@ -364,6 +365,21 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     if (!Object.hasOwn(gatherTables, node.tableId)) {
       violations.push(
         `nodes[${node.id}]: 존재하지 않는 표 "${node.tableId}" 를 가리킨다 — gather_tables.csv 의 tableId 중 하나여야 한다`,
+      )
+    }
+    // variant 와 tableId 는 한 가지를 말하는 두 칸이다(결계 §9-앞 5).
+    //
+    // 이 아크 전까지 variant 는 채집 티어 스펙이 스스로 적어 둔 대로 "표시 전용"
+    // 이었고, 그 대가로 심층 노드 넷이 이름과 마커 색만 심층인 채 바깥과 **같은
+    // 표**를 굴렸다. 표가 갈라진 지금 이 짝이 다시 갈라지면 마커는 심층 색으로
+    // 그려지는데 분포는 바깥이거나 그 반대인데, **어느 화면에서도 되짚을 수
+    // 없다** — 확률표는 서버 전용이라 사람이 눈으로 대조할 곳조차 없다.
+    // 그래서 두 칸이 아니라 한 규칙이 되게 묶는다.
+    if (isDeepTableId(node.tableId) !== (node.variant === 'deep')) {
+      violations.push(
+        // 영문 식별자에 조사를 직접 붙이면 받침 유무로 문법이 어긋나므로
+        // (ice 는 "다", mineral 은 "이다") 괄호로 감싸고 조사는 한국어 낱말에 붙인다.
+        `nodes[${node.id}]: variant("${node.variant}") 와 tableId("${node.tableId}") 가 짝이 아니다 — variant=deep 인 노드만 "${DEEP_TABLE_SUFFIX}" 표를 굴리고 그 반대도 같다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 의 variant 나 tableId 중 하나를 고친다`,
       )
     }
     if (!placedNodeIds.has(node.id)) {

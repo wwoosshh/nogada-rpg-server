@@ -1,4 +1,6 @@
-import type { GameData, GatherBracketDef, GatherTableDef, GatherTables, GatherTierDef } from '@nogada/shared'
+import type { GameData, GatherBracketDef, GatherTableDef, GatherTables, GatherTierDef, SkillId } from '@nogada/shared'
+import { gatherBracketFor } from '@nogada/shared'
+import { goldPerMinute, measureHand } from './gatherMeasure.js'
 import { addUnique, optionalCell, requireCell, toInt, toSkillId } from './parse.js'
 
 type Row = Record<string, string>
@@ -14,6 +16,72 @@ const ROLL_MAX = 100000
 
 /** `equity` 칸에 적는 유일한 값. 숫자가 아니라 표시라 1 하나뿐이다. */
 const EQUITY_MARK = '1'
+
+/**
+ * 심층 표의 id 접미사 — **`nodes.csv` 의 `variant=deep` 과 짝을 이루는 유일한 표시**다.
+ *
+ * 표에 "심층인가" 칸을 따로 두지 않는 이유: 그 칸과 노드의 variant 가 갈라지는
+ * 날이 오고, 갈라져도 어느 화면 하나 이상해지지 않는다 — 마커는 심층 색으로
+ * 그려지고 표는 바깥을 굴린다. 그것이 이 아크가 고치러 온 상태 그 자체다
+ * (설계 계기 둘: "심층 노드가 이름과 색으로만 심층이다"). id 하나가 두 사실을
+ * 지면 `validateGameData` 가 그 짝을 한 줄로 강제할 수 있다.
+ */
+export const DEEP_TABLE_SUFFIX = '_deep'
+
+/** 그 표 id 가 결계 뒤의 표인가. `validateGameData` 의 노드 검사도 이 술어를 부른다. */
+export function isDeepTableId(tableId: string): boolean {
+  return tableId.endsWith(DEEP_TABLE_SUFFIX)
+}
+
+/**
+ * 심층이 그 브라켓에서 져야 하는 분당 산출 배수(설계 §4·§9-앞 6).
+ *
+ * **최상위 티어 배수가 아니라 분당 산출인 이유**는 나무가 반증했다: 초안의
+ * "심층 최상위 = 바깥의 20~25배"는 `wood,290000` 에서 tier2(나무 열매 3,200G)가
+ * 이미 19% 라 회당 골드의 73% 를 지고 최상위(금빛 열매 6,500G)가 그 2.03배뿐이라,
+ * 최상위만 22배로 올려도 나무는 ×1.16 인데 광물은 ×3.01 이 된다 — 같은 문인데
+ * 계열마다 2.6배 불형평이다. 그래서 통제 변수를 분당 산출로 옮기고, 그 값을
+ * 만드는 방법은 계열이 각자 정한다(나무는 최상위가 아니라 tier2 이하를 움직였다).
+ */
+export const DEEP_YIELD_TARGET = 2.5
+
+/**
+ * 목표 배수의 허용 폭. 넷이 이 안에 있으면 계열 간 격차가 최대 1.35배를 넘지 않는다.
+ *
+ * 출하 넷은 전부 2.500 에 붙어 있다(격차 1.0002배) — 이 대역은 표를 손보는
+ * 사람에게 주는 여유이지 목표가 아니다.
+ */
+export const DEEP_YIELD_TOLERANCE = 0.15
+
+/**
+ * 심층 유한 브라켓의 최상위 티어가 넘을 수 없는 선 — **바깥 ∞ 의 10%**(§9-앞 7).
+ *
+ * 초안의 불변식은 "심층 최상위가 바깥 ∞ 보다 흔하지 않다" 였는데, 그것은 얼음에서
+ * 바깥 ≤150000 의 45 를 15,000 까지, 즉 **333배**까지 통과시킨다 — 자기가 막겠다는
+ * 상태(결계 뒤가 잭팟 자판기가 되어 절벽이 줄 것을 잃는다)를 그대로 허용하는
+ * 불변식이다. 죄는 값이어야 불변식이다.
+ */
+export const DEEP_TOP_TIER_CEILING = 0.1
+
+/**
+ * 심층 ÷ 바깥 배수를 **재는 자리** — 숙련 85,001, 구리 손.
+ *
+ * 왜 한 점인가: 계열마다 절벽이 다르다(나무는 290,001, 나머지는 500,001 — §9-앞 8).
+ * 그 위에서 심층은 바깥과 같아지므로 전 구간 평균은 계열마다 다른 것을 재게 된다.
+ * 85,001 은 **결계가 실제로 열리는 순간**이고 네 계열이 공유하는 유일한 자리다.
+ *
+ * 구리 손인 이유: 1티어는 시작 지급이라 이 구간에 선 사람이 최소한 들고 있는
+ * 손이고, 배수 1.0 이라 roll 이 접히지도 늘어나지도 않아 표의 수치가 그대로
+ * 확률이 된다 — 작가가 CSV 를 보며 검산할 수 있는 유일한 손이다.
+ *
+ * 85,000 은 B4 가 `transitions.csv` 의 `gateValue` 에 적을 그 숫자다. 오늘은 문이
+ * 아직 없어 여기 상수로 산다 — 문이 생기면 이 값과 그 칸이 같은 숫자여야 한다.
+ */
+export const DEEP_MEASURE_PROFICIENCY = 85_001
+
+/** 배수·골드를 메시지에 적는 꼴 — 작가가 목표와 눈으로 견줄 수 있게. */
+const goldText = (gold: number): string => `${Math.round(gold).toLocaleString('ko-KR')}G`
+const timesText = (ratio: number): string => `${ratio.toFixed(2)}배`
 
 /**
  * `equity` 칸을 읽는다 — 빈 칸은 아니다, `"1"` 은 맞다, 나머지는 던진다.
@@ -137,6 +205,118 @@ function bracketLabel(bracket: GatherBracketDef): string {
   return bracket.bracketMax === null ? '∞' : `≤${bracket.bracketMax}`
 }
 
+/** ∞ 브라켓이 마지막에 정확히 하나 있는가. 아니면 위쪽 검사가 이미 말했으니 심층 검사는 묻지 않는다. */
+function hasFinalInfinite(table: GatherTableDef): boolean {
+  return table.brackets.at(-1)?.bracketMax === null
+}
+
+/**
+ * 심층 표가 자기 계열 **바깥 표에 매여 있는지** 검사한다(결계 §9-앞 1·6·7).
+ *
+ * 세 가지를 묻는다. 셋 다 "표 하나만 보면 온전한데 짝과 함께 보면 어긋나는" 것이라,
+ * 표 안을 보는 위쪽 검사들과 나눠 둔다.
+ *
+ * 1. **∞ 는 바깥의 복사본이다.** 수집의 방 형평 검증은 표를 순회하며 같은 25칸
+ *    문턱을 그 표의 ∞ 로 재는데(collection.ts), 오늘은 `equity` 칸이 심층 표를
+ *    그 순회에서 빼 준다. 그 가림이 걷히는 날 — 누가 equity 를 옮기거나 대표 표
+ *    규칙을 손보는 날 — 한 칸의 t4 가 두 표의 25~35분 대역을 동시에 만족해야 하는
+ *    교착이 돌아온다(실측 허용창 0.84×~1.23×). ∞ 가 복사본인 한 그 교착은
+ *    산술적으로 일어날 수 없다. **가림에 기대지 않고 성질로 막는다.**
+ * 2. **유한 브라켓의 최상위는 바깥 ∞ 의 10% 아래다.** 위 DEEP_TOP_TIER_CEILING 참고.
+ * 3. **문 바로 위에서 분당 산출이 목표 배수다.** 위 DEEP_YIELD_TARGET 참고.
+ *
+ * "유한 브라켓을 500,000 까지 깐다"(§9-앞 3)를 여기서 안 묻는 이유: 그것은 심층
+ * 표만의 규칙이 아니라 **바깥과 같은 사다리 모양**이라는 더 큰 성질의 한 조각이고,
+ * 형평 검증이 `유한 상한 최댓값 + 1` 로 간격을 재기 때문에 뜻이 생긴다 —
+ * gatherTables.test.ts 가 출하 수치로 못박는다.
+ */
+function validateDeepTables(tables: GatherTables, data: GameData): string[] {
+  const violations: string[] = []
+
+  const outerBySkill = new Map<SkillId, GatherTableDef[]>()
+  for (const table of Object.values(tables)) {
+    if (isDeepTableId(table.id)) continue
+    const list = outerBySkill.get(table.skill)
+    if (list) list.push(table)
+    else outerBySkill.set(table.skill, [table])
+  }
+
+  for (const deep of Object.values(tables)) {
+    if (!isDeepTableId(deep.id)) continue
+    const at = `gather[${deep.id}]`
+    const candidates = outerBySkill.get(deep.skill) ?? []
+
+    if (candidates.length !== 1) {
+      violations.push(
+        candidates.length === 0
+          ? `${at}: 같은 계열(${deep.skill})의 바깥 표가 없다 — 심층 표는 바깥 표의 ∞ 를 복사하고 그 분당 산출의 ${DEEP_YIELD_TARGET}배를 져야 하므로 짝이 반드시 있어야 한다. gather_tables.csv 에 "${DEEP_TABLE_SUFFIX}" 이 아닌 ${deep.skill} 계열 표를 둔다`
+          : `${at}: 같은 계열(${deep.skill})의 바깥 표가 [${candidates.map((t) => t.id).join(', ')}] ${candidates.length}개다 — 어느 것의 ∞ 를 복사하고 어느 것의 몇 배인지 정해지지 않는다. gather_tables.csv 에서 그 계열의 "${DEEP_TABLE_SUFFIX}" 아닌 표를 하나로 줄인다`,
+      )
+      continue
+    }
+    const outer = candidates[0]!
+
+    // ∞ 가 없거나 마지막이 아닌 표는 위쪽 검사가 이미 말했다 — 그 위에서 "복사본인가"
+    // 를 또 물으면 원인 하나가 위반 둘이 된다.
+    if (!hasFinalInfinite(deep) || !hasFinalInfinite(outer)) continue
+    const deepInfinite = deep.brackets.at(-1)!.cumulative
+    const outerInfinite = outer.brackets.at(-1)!.cumulative
+
+    // ---- 1. ∞ 는 바깥의 복사본이다 ----
+    const tierName = (index: number): string => deep.tiers[index]?.itemId ?? outer.tiers[index]?.itemId ?? '(없는 티어)'
+    for (let i = 0; i < Math.max(deepInfinite.length, outerInfinite.length); i++) {
+      const mine = deepInfinite[i]
+      const theirs = outerInfinite[i]
+      if (mine === theirs) continue
+      violations.push(
+        `${at} ∞ 브라켓: 티어 ${i + 1}(${tierName(i)})의 누적이 ${mine ?? '(빈 칸)'} 인데 바깥 표 "${outer.id}" 의 ∞ 는 ${theirs ?? '(빈 칸)'} 이다 — 심층 ∞ 는 바깥 ∞ 의 복사본이어야 한다. 수집의 방 형평 검증은 표를 순회하며 같은 25칸 문턱을 그 표의 ∞ 로 재므로, 둘이 갈라지면 한 칸의 t4 가 두 표의 25~35분 대역을 동시에 만족해야 하는 교착이 된다. gather_brackets.csv 의 ${deep.id} ∞ 행을 ${outer.id} 의 ∞ 행과 같게 적는다`,
+      )
+    }
+
+    // ---- 2. 유한 브라켓의 최상위는 바깥 ∞ 의 10% 아래다 ----
+    const outerTop = outerInfinite[0]
+    if (outerTop !== undefined) {
+      const ceiling = Math.floor(outerTop * DEEP_TOP_TIER_CEILING)
+      for (const bracket of deep.brackets) {
+        if (bracket.bracketMax === null) continue
+        const top = bracket.cumulative[0]
+        if (top === undefined || top <= ceiling) continue
+        violations.push(
+          `${at} 브라켓(${bracketLabel(bracket)}): 최상위 티어(${tierName(0)})의 누적이 ${top} 이라 바깥 표 "${outer.id}" 의 ∞ 누적 ${outerTop} 의 ${((top / outerTop) * 100).toFixed(1)}% 다 — 심층의 유한 브라켓은 그 ${DEEP_TOP_TIER_CEILING * 100}%(${ceiling})를 넘을 수 없다. 넘으면 결계 뒤가 잭팟 자판기가 되어 절벽(∞)이 줄 것을 잃는다. gather_brackets.csv 의 그 행 cum1 을 ${ceiling} 이하로 낮춘다`,
+        )
+      }
+    }
+
+    // ---- 3. 문 바로 위에서 분당 산출이 목표 배수다 ----
+    //
+    // 손을 실물 카탈로그에서 짓는다(gatherMeasure) — 배수를 여기서 곱하면 장비
+    // 조회가 깨진 날에도 이 검증만 초록이다.
+    const hand = measureHand(deep.skill, data.items, 1, false, 0)
+    if (!hand) {
+      violations.push(
+        `${at}: ${deep.skill} 계열의 1티어 도구를 items.csv 에서 찾을 수 없어 분당 산출을 잴 수 없다 — 그 손이 이 배수를 재는 기준이다`,
+      )
+      continue
+    }
+    const at85k = DEEP_MEASURE_PROFICIENCY
+    const deepBracket = gatherBracketFor(deep, at85k)
+    const deepGold = goldPerMinute(deep, deepBracket, at85k, hand, data.items)
+    const outerGold = goldPerMinute(outer, gatherBracketFor(outer, at85k), at85k, hand, data.items)
+    // 바깥이 0G 인 계열은 배수 자체가 뜻이 없다 — 그 표는 다른 검사가 말할 일이다.
+    if (outerGold <= 0) continue
+    const ratio = deepGold / outerGold
+    const low = DEEP_YIELD_TARGET * (1 - DEEP_YIELD_TOLERANCE)
+    const high = DEEP_YIELD_TARGET * (1 + DEEP_YIELD_TOLERANCE)
+    if (ratio < low || ratio > high) {
+      violations.push(
+        `${at}: 숙련 ${at85k.toLocaleString('ko-KR')}·구리 손의 분당 산출이 ${goldText(deepGold)} 로 바깥 표 "${outer.id}"(${goldText(outerGold)})의 ${timesText(ratio)}다 — 목표는 ${timesText(DEEP_YIELD_TARGET)}(±${DEEP_YIELD_TOLERANCE * 100}% → ${low.toFixed(2)}~${timesText(high)})다. 네 계열이 같은 배수를 져야 결계 하나가 계열마다 다른 값이 되지 않는다. gather_brackets.csv 의 ${deep.id} ${bracketLabel(deepBracket)} 행 누적을 희귀 쪽으로 옮긴다`,
+      )
+    }
+  }
+
+  return violations
+}
+
 export interface GatherTablesCheck {
   /** 빌드를 세우는 오류. */
   violations: string[]
@@ -257,6 +437,9 @@ export function validateGatherTables(tables: GatherTables, data: GameData): Gath
       )
     }
   }
+
+  // 표 하나만 봐서는 알 수 없는 것 — 심층 표와 그 계열 바깥 표의 관계(결계 §9-앞 1·6·7).
+  violations.push(...validateDeepTables(tables, data))
 
   return { violations, warnings }
 }

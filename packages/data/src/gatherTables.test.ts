@@ -3,10 +3,38 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { GameData, GatherTables, ItemDef, NodeDef } from '@nogada/shared'
+import { gatherBracketFor } from '@nogada/shared'
 import { testItem } from '@nogada/shared/testing'
 import { parseCsv } from './parse.js'
-import { parseGatherTables, validateGatherTables } from './gatherTables.js'
+import { goldPerMinute, measureHand } from './gatherMeasure.js'
+import {
+  DEEP_MEASURE_PROFICIENCY,
+  DEEP_TOP_TIER_CEILING,
+  DEEP_YIELD_TARGET,
+  DEEP_YIELD_TOLERANCE,
+  isDeepTableId,
+  parseGatherTables,
+  validateGatherTables,
+} from './gatherTables.js'
+import { loadGameData } from './load.js'
 import { loadGatherTables } from './loadGatherTables.js'
+
+/**
+ * 심층 ÷ 바깥 분당 산출 — **재는 자리는 문 바로 위(85,001)·구리 손 하나**다.
+ *
+ * 검증(gatherTables.ts)과 같은 자(gatherMeasure.ts)를 부른다. 여기서 확률을
+ * 다시 세면 증명이 판정과 다른 식을 보게 된다(§6-앞 14 의 교훈).
+ */
+function deepOuterRatio(tables: GatherTables, data: GameData, deepId: string, outerId: string): number {
+  const deep = tables[deepId]!
+  const outer = tables[outerId]!
+  const hand = measureHand(deep.skill, data.items, 1, false, 0)!
+  const at = DEEP_MEASURE_PROFICIENCY
+  return (
+    goldPerMinute(deep, gatherBracketFor(deep, at), at, hand, data.items) /
+    goldPerMinute(outer, gatherBracketFor(outer, at), at, hand, data.items)
+  )
+}
 
 // ---- 픽스처 ----
 //
@@ -357,11 +385,197 @@ describe('실제로 출하되는 채집표', () => {
 })
 
 describe('loadGatherTables — 서버 전용 진입의 내용물', () => {
-  it('빌드가 구운 네 표를 동결된 채로 돌려준다', () => {
+  it('빌드가 구운 여덟 표(바깥 넷 + 심층 넷)를 동결된 채로 돌려준다', () => {
     // gamedata.json 과 별개 파일(gather-tables.json)에서 온다 — GameData 에
-    // 실리지 않는 것이 이 산출물의 존재 이유다(§7-앞 9).
+    // 실리지 않는 것이 이 산출물의 존재 이유다(§7-앞 9). **심층 표도 이쪽에
+    // 실려야 한다**(결계 §9-앞 12): 확률표가 클라 번들로 새는 순간 결계 뒤의
+    // 분포까지 F12 로 스포일된다.
     const tables = loadGatherTables()
-    expect(Object.keys(tables).sort()).toEqual(['herb', 'ice', 'mineral', 'wood'])
-    expect(Object.isFrozen(tables.ice!.brackets[0])).toBe(true)
+    expect(Object.keys(tables).sort()).toEqual([
+      'herb', 'herb_deep', 'ice', 'ice_deep', 'mineral', 'mineral_deep', 'wood', 'wood_deep',
+    ])
+    expect(Object.isFrozen(tables.ice_deep!.brackets[0])).toBe(true)
+  })
+})
+
+// ---- 결계: 심층 표 넷 ----
+//
+// 심층 노드는 이제 자기 표를 굴린다. 그 표가 **바깥 표에 매여 있는** 방식이
+// 이 아크의 값어치이고 동시에 빌드가 서는 조건이라(§9-앞 1·3·6·7), 출하 수치
+// 자체를 여기서 못박는다. 아래 검증 스위트(위반이 실제로 뜨는가)와 짝이다 —
+// 이쪽은 "출하 데이터가 그 규칙을 지킨 채로 나간다"를 본다.
+
+/** 심층 표와 그 계열 바깥 표의 짝. 이 넷이 결계 뒤의 전부다. */
+const DEEP_PAIRS = [
+  ['ice_deep', 'ice'],
+  ['wood_deep', 'wood'],
+  ['mineral_deep', 'mineral'],
+  ['herb_deep', 'herb'],
+] as const
+
+/** 결계가 열리는 문턱 — 이 값 **바로 위**가 심층 표를 재는 자리다(아래 주석). */
+const BARRIER_SKILL = 85_000
+
+describe('결계 — 심층 표 넷이 자기 계열 바깥 표에 매여 있다(§9-앞 1·3·6·7)', () => {
+  const tables = loadRealTables()
+  const data = loadGameData()
+
+  it('심층 표의 id 는 바깥 표 id 에 "_deep" 을 붙인 것이고, 티어 사다리는 바깥과 같은 종이다', () => {
+    // 사다리가 같아야 수집의 방 만점이 100(25칸 × 4등급)에서 안 움직인다 —
+    // 심층 전용 아이템은 이 아크의 범위 밖이다(설계 §7 훅).
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      expect(isDeepTableId(deepId)).toBe(true)
+      expect(isDeepTableId(outerId)).toBe(false)
+      expect(tables[deepId]!.tiers).toEqual(tables[outerId]!.tiers)
+      expect(tables[deepId]!.skill).toBe(tables[outerId]!.skill)
+    }
+    const slots = new Set(Object.values(tables).flatMap((t) => t.tiers.map((tier) => tier.itemId)))
+    expect(slots.size).toBe(25)
+  })
+
+  it('∞ 브라켓이 바깥 ∞ 와 티어별로 글자 그대로 같다 — equity 로 형평 검증을 가려도 이 성질까지 사라지면 안 된다', () => {
+    // **이 단언이 이 파일에서 가장 값비싼 한 줄이다.** 수집의 방 형평 검증은
+    // 표를 순회하며 같은 25칸 문턱을 그 표의 ∞ 로 재는데(collection.ts), 오늘은
+    // equity 칸이 심층 표를 그 순회에서 빼 준다. 언젠가 누가 equity 를 옮기거나
+    // 그 가림을 걷어내면, 한 칸의 t4 가 두 표의 ∞ 양쪽에서 25~35분 대역을 동시에
+    // 만족해야 하는 교착이 그날 돌아온다(실측 허용창 0.84×~1.23×). ∞ 가 복사본인
+    // 한 그 교착은 산술적으로 일어날 수 없다.
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      expect(tables[deepId]!.brackets.at(-1)!).toEqual(tables[outerId]!.brackets.at(-1)!)
+      expect(tables[deepId]!.brackets.at(-1)!.bracketMax).toBeNull()
+    }
+  })
+
+  it('유한 브라켓이 500,000 까지 깔려 있다 — 85,000 에서 끝나면 형평 검증의 간격이 50ms 가 아니라 67ms 가 된다', () => {
+    // 형평 검증은 `유한 상한 최댓값 + 1` 로 최종 브라켓의 간격을 잰다
+    // (collection.ts 의 finalBracketProficiency). 심층 유한 브라켓이 85,000 에서
+    // 끝나면 그 자리가 85,001 이 되어 최적손 간격이 67ms 다 — ∞ 를 글자 그대로
+    // 복사해도 4단이 40.2분이 나와 25~35분 대역을 벗어난다(§9-앞 3).
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      const finite = (id: string) =>
+        Math.max(...tables[id]!.brackets.map((b) => b.bracketMax).filter((m): m is number => m !== null))
+      expect(finite(deepId)).toBe(500_000)
+      expect(finite(deepId)).toBe(finite(outerId))
+    }
+  })
+
+  it('결계 아래(≤85,000) 브라켓은 바깥과 글자 그대로 같다 — 문이 열리기 전에는 심층도 바깥이다', () => {
+    // 심층 배치는 결계 뒤에만 있지만(B3·B4), 표가 그것에 기대면 안 된다.
+    // 문턱 아래 구간을 바깥과 같게 두면 "결계를 못 넘은 사람이 심층 노드 앞에
+    // 섰을 때"가 애초에 이득도 손해도 아닌 상태가 된다.
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      const below = (id: string) =>
+        tables[id]!.brackets.filter((b) => b.bracketMax !== null && b.bracketMax <= BARRIER_SKILL)
+      expect(below(deepId)).toEqual(below(outerId))
+      expect(below(deepId).length).toBeGreaterThan(0)
+    }
+  })
+
+  it('어느 유한 브라켓도 최상위 티어가 바깥 ∞ 의 10% 를 넘지 않는다 — 결계 뒤가 잭팟 자판기가 되면 절벽이 줄 것을 잃는다', () => {
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      const ceiling = Math.floor(tables[outerId]!.brackets.at(-1)!.cumulative[0]! * DEEP_TOP_TIER_CEILING)
+      for (const bracket of tables[deepId]!.brackets) {
+        if (bracket.bracketMax === null) continue
+        expect(bracket.cumulative[0], `${deepId} ≤${bracket.bracketMax}`).toBeLessThanOrEqual(ceiling)
+      }
+    }
+  })
+
+  it('숙련 85,001·구리 손에서 네 계열이 전부 분당 산출 ×2.5 다 — 결계 하나가 계열마다 다른 값이 되지 않는다', () => {
+    // 재는 자리를 문 바로 위(85,001)·구리 손으로 고정한 이유: 그것이 이 문이
+    // 실제로 열리는 순간이고, 구리는 그 구간에 서 있는 사람이 최소한 들고 있는
+    // 손이다(1티어는 시작 지급이다). 간격은 표와 무관하므로 이 배수는 회당 기대
+    // 매도가의 비와 정확히 같고, 그래서 손을 바꿔도 순위가 흔들리지 않는다.
+    const ratios = DEEP_PAIRS.map(([deepId, outerId]) => deepOuterRatio(tables, data, deepId, outerId))
+    for (const [index, ratio] of ratios.entries()) {
+      expect(ratio, DEEP_PAIRS[index]![0]).toBeGreaterThan(DEEP_YIELD_TARGET * (1 - DEEP_YIELD_TOLERANCE))
+      expect(ratio, DEEP_PAIRS[index]![0]).toBeLessThan(DEEP_YIELD_TARGET * (1 + DEEP_YIELD_TOLERANCE))
+    }
+    // 대역만 보면 2.13 과 2.87 이 나란히 통과한다(서로 35% 차이) — 출하 수치는
+    // 넷이 한 점에 모여 있고, 그것이 흐트러지는 날 여기가 먼저 말한다.
+    expect(Math.max(...ratios) / Math.min(...ratios)).toBeLessThan(1.01)
+  })
+
+  it('목표 배수와 재는 자리가 문서와 같은 숫자다 — 2.5배·85,001·±15%', () => {
+    // 검증이 읽는 상수를 테스트가 그대로 되읽으면 "둘이 같다"만 증명된다.
+    // 리터럴로 한 번 못박아 두면 상수가 조용히 움직이는 날 여기가 빨개진다.
+    expect(DEEP_YIELD_TARGET).toBe(2.5)
+    expect(DEEP_YIELD_TOLERANCE).toBe(0.15)
+    expect(DEEP_TOP_TIER_CEILING).toBe(0.1)
+    expect(DEEP_MEASURE_PROFICIENCY).toBe(BARRIER_SKILL + 1)
+  })
+
+  it('어느 숙련에서도 심층이 바깥보다 나쁘지 않다 — 결계를 넘은 대가가 손해인 구간이 없다', () => {
+    // 브라켓 하나만 ×2.5 로 맞추면 그 위 구간에서 바깥이 심층을 앞지를 수 있다
+    // (얼음 바깥 ≤500000 은 179G/회인데 심층 ≤150000 은 156G/회다). 그러면
+    // 결계 뒤가 특정 숙련대에서 함정이 된다 — 각 브라켓의 경계에서 되잰다.
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      const deep = tables[deepId]!
+      const outer = tables[outerId]!
+      const hand = measureHand(deep.skill, data.items, 1, false, 0)!
+      for (const bracket of deep.brackets) {
+        const probe = bracket.bracketMax ?? 1_000_000
+        const deepGold = goldPerMinute(deep, bracket, probe, hand, data.items)
+        const outerGold = goldPerMinute(outer, gatherBracketFor(outer, probe), probe, hand, data.items)
+        expect(deepGold, `${deepId} 숙련 ${probe}`).toBeGreaterThanOrEqual(outerGold)
+      }
+    }
+  })
+
+  it('심층 표의 equity 칸은 비어 있다 — 계열마다 25칸을 재는 표는 바깥 하나뿐이다(§9-앞 1·2)', () => {
+    for (const [deepId, outerId] of DEEP_PAIRS) {
+      expect(tables[deepId]!.equity).toBe(false)
+      expect(tables[outerId]!.equity).toBe(true)
+    }
+  })
+})
+
+describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가면 빌드가 선다', () => {
+  const tables = loadRealTables()
+  const data = loadGameData()
+
+  /** 출하 표에서 브라켓 하나의 누적만 바꾼 사본. 원본은 건드리지 않는다. */
+  function withBracket(tableId: string, bracketMax: number | null, cumulative: number[]): GatherTables {
+    const table = tables[tableId]!
+    return {
+      ...tables,
+      [tableId]: {
+        ...table,
+        brackets: table.brackets.map((b) => (b.bracketMax === bracketMax ? { ...b, cumulative } : b)),
+      },
+    }
+  }
+
+  it('출하 여덟 표는 위반도 경고도 없다', () => {
+    expect(validateGatherTables(tables, data)).toEqual({ violations: [], warnings: [] })
+  })
+
+  it('심층 ∞ 가 바깥 ∞ 와 한 칸이라도 다르면 위반이다 — 형평 검증의 교착이 그날 돌아온다', () => {
+    const broken = withBracket('ice_deep', null, [15000, 34500, 49000, 69000, 100000])
+    expect(validateGatherTables(broken, data).violations).toEqual([
+      'gather[ice_deep] ∞ 브라켓: 티어 2(pure_ice_crystal)의 누적이 34500 인데 바깥 표 "ice" 의 ∞ 는 34000 이다 — 심층 ∞ 는 바깥 ∞ 의 복사본이어야 한다. 수집의 방 형평 검증은 표를 순회하며 같은 25칸 문턱을 그 표의 ∞ 로 재므로, 둘이 갈라지면 한 칸의 t4 가 두 표의 25~35분 대역을 동시에 만족해야 하는 교착이 된다. gather_brackets.csv 의 ice_deep ∞ 행을 ice 의 ∞ 행과 같게 적는다',
+    ])
+  })
+
+  it('심층 유한 브라켓의 최상위 티어가 바깥 ∞ 의 10% 를 넘으면 위반이다 — "∞ 보다 흔하지 않다" 는 얼음에서 333배까지 통과시킨다', () => {
+    const broken = withBracket('ice_deep', 150_000, [2000, 7202, 27202, 52202, 85000])
+    expect(validateGatherTables(broken, data).violations).toContain(
+      'gather[ice_deep] 브라켓(≤150000): 최상위 티어(ice_gem)의 누적이 2000 이라 바깥 표 "ice" 의 ∞ 누적 15000 의 13.3% 다 — 심층의 유한 브라켓은 그 10%(1500)를 넘을 수 없다. 넘으면 결계 뒤가 잭팟 자판기가 되어 절벽(∞)이 줄 것을 잃는다. gather_brackets.csv 의 그 행 cum1 을 1500 이하로 낮춘다',
+    )
+  })
+
+  it('심층의 분당 산출이 목표 배수를 벗어나면 위반이고, 메시지가 어느 계열이 몇 배인지 적는다', () => {
+    // 바깥 ≤290000 을 그대로 베낀 심층 — 결계를 넘어도 값이 그대로인 상태다.
+    const broken = withBracket('wood_deep', 290_000, [100, 19100, 34100, 49100, 64100, 95000])
+    expect(validateGatherTables(broken, data).violations).toEqual([
+      'gather[wood_deep]: 숙련 85,001·구리 손의 분당 산출이 191,729G 로 바깥 표 "wood"(191,729G)의 1.00배다 — 목표는 2.50배(±15% → 2.13~2.88배)다. 네 계열이 같은 배수를 져야 결계 하나가 계열마다 다른 값이 되지 않는다. gather_brackets.csv 의 wood_deep ≤290000 행 누적을 희귀 쪽으로 옮긴다',
+    ])
+  })
+
+  it('짝이 될 바깥 표가 없는 심층 표는 위반이다 — 무엇을 복사하고 무엇의 몇 배인지 물을 상대가 없다', () => {
+    const { ice: _outer, ...orphaned } = tables
+    expect(validateGatherTables(orphaned, data).violations).toContain(
+      'gather[ice_deep]: 같은 계열(ice)의 바깥 표가 없다 — 심층 표는 바깥 표의 ∞ 를 복사하고 그 분당 산출의 2.5배를 져야 하므로 짝이 반드시 있어야 한다. gather_tables.csv 에 "_deep" 이 아닌 ice 계열 표를 둔다',
+    )
   })
 })

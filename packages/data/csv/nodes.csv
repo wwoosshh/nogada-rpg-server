@@ -1,9 +1,9 @@
 id,name,skill,tableId,variant
 ice_vein,얼음 광맥,ice,ice,normal
-deep_ice_vein,심층 얼음 광맥,ice,ice,deep
+deep_ice_vein,심층 얼음 광맥,ice,ice_deep,deep
 young_tree,어린 나무,wood,wood,normal
-old_tree,고목,wood,wood,deep
+old_tree,고목,wood,wood_deep,deep
 copper_vein,구리 광맥,mineral,mineral,normal
-iron_vein,철 광맥,mineral,mineral,deep
+iron_vein,철 광맥,mineral,mineral_deep,deep
 herb_patch,약초 군락,herb,herb,normal
-rare_herb_patch,귀한 약초 군락,herb,herb,deep
+rare_herb_patch,귀한 약초 군락,herb,herb_deep,deep

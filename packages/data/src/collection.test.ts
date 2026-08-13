@@ -85,9 +85,14 @@ describe('validateCollection — 출하 데이터', () => {
   })
 
   it('칸이 채집물 25종 전부이고 만점이 100 이다 — 25 × 4(§6-앞 4)', () => {
-    const gathered = Object.values(tables).flatMap((t) => t.tiers.map((tier) => tier.itemId))
+    // **집합으로 센다.** 표가 계열마다 둘(바깥·심층)이 된 뒤로 같은 아이템이
+    // 두 표의 사다리에 나타난다 — 그것이 결계의 요점이다(문 너머는 같은 25종을
+    // 캐지만 분포가 다르다). 목록으로 세면 25칸이 50줄로 보이고, 그 순간 이
+    // 단언은 "심층 표가 새 칸을 만들지 않았다"는 **지켜야 할 성질**을 증명하는
+    // 대신 표 개수를 세는 단언이 된다.
+    const gathered = new Set(Object.values(tables).flatMap((t) => t.tiers.map((tier) => tier.itemId)))
     expect(Object.keys(shipped.collection).sort()).toEqual([...gathered].sort())
-    const everything = Object.fromEntries(gathered.map((id) => [id, Number.MAX_SAFE_INTEGER]))
+    const everything = Object.fromEntries([...gathered].map((id) => [id, Number.MAX_SAFE_INTEGER]))
     expect(collectionScore(everything, shipped.collection)).toBe(25 * COLLECTION_MAX_GRADE)
   })
 })

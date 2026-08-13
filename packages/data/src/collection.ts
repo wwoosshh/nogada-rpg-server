@@ -2,24 +2,13 @@ import type {
   CollectionTable,
   CollectionThresholds,
   GameData,
-  GatherHand,
   GatherTableDef,
   GatherTables,
   ItemDef,
-  PlayerState,
   SkillId,
 } from '@nogada/shared'
-import {
-  COLLECTION_MAX_GRADE,
-  DEFAULT_APPEARANCE,
-  ENHANCE_CAP,
-  GATHER_ROLL_MAX,
-  SKILL_IDS,
-  emptyDialogueHistory,
-  gatherHandOf,
-  gatherIntervalMs,
-  gatherRoll,
-} from '@nogada/shared'
+import { COLLECTION_MAX_GRADE, ENHANCE_CAP, gatherIntervalMs } from '@nogada/shared'
+import { measureHand, tierChances } from './gatherMeasure.js'
 import { addUnique, requireCell, toInt } from './parse.js'
 
 type Row = Record<string, string>
@@ -34,9 +23,6 @@ const FILE = 'collection.csv'
  * 작가는 문턱표를 열고 equity 칸을 찾다가 없는 칸을 찾게 된다.
  */
 const GATHER_TABLES_FILE = 'gather_tables.csv'
-
-/** roll 의 정의역 크기 — roll ∈ 0~100000 이므로 확률의 분모는 100001 이다. */
-const DOMAIN = GATHER_ROLL_MAX + 1
 
 /**
  * 문턱표를 CSV 에서 조립한다 — 수집의 방 25칸의 요구치다(설계 §6-앞 5).
@@ -131,91 +117,12 @@ const EARLY_FLOOR = 1
 const MID_TIER_MIN_RATIO = 0.05
 const MID_TIER_MAX_RATIO = 0.5
 
-/**
- * 형평·조기 도달을 재는 흉내 플레이어.
- *
- * `emptyPlayer()` 를 쓰지 않는 이유: 그 함수는 `loadGameData()`(구운
- * gamedata.json)를 읽는데, 이 검증은 **그 파일을 굽기 전에** 빌드 안에서
- * 돌아간다 — 지난 빌드의 산출물로 이번 표를 재게 되고, 첫 빌드(생성 폴더가
- * 비어 있는 클론)에서는 아예 못 읽는다. 손을 만드는 데 필요한 칸은 셋
- * (`equipped`·`instances`·`stacks`)뿐이고 나머지는 자리표시자다.
- */
-function fakePlayer(): PlayerState {
-  return {
-    id: 'collection-check',
-    name: '',
-    appearance: DEFAULT_APPEARANCE,
-    skills: Object.fromEntries(SKILL_IDS.map((skill) => [skill, 0])) as Record<SkillId, number>,
-    stacks: {},
-    gold: 0,
-    instances: [],
-    equipped: {},
-    nextActionAt: 0,
-    celebrated: [],
-    rewarded: [],
-    donated: {},
-    dialogueHistory: emptyDialogueHistory(),
-    weather: null,
-    location: { mapId: '', x: 0, y: 0 },
-  }
-}
-
-/**
- * 그 계열의 손 하나를 **게임과 같은 경로로** 짓는다(`gatherHandOf`).
- *
- * 배수를 여기서 직접 곱하지 않는 이유는 gatherSimulation.test.ts 와 같다:
- * 장비 조회나 증표 곱이 깨진 날에도 이 검증만 초록이면, 검증이 현실이 아니라
- * 사본을 지키게 된다. 도구는 등급을 **카탈로그에서 유도한다** — 3티어를 상수로
- * 박으면 4티어 도구가 생기는 날 "최적손"이 조용히 옛 손이 된다.
- */
-function handOf(
-  skill: SkillId,
-  items: Record<string, ItemDef>,
-  toolTier: number | null,
-  sight: boolean,
-  enhanceLevel: number,
-): GatherHand | null {
-  const player = fakePlayer()
-
-  if (toolTier !== null) {
-    const tool = Object.values(items).find((item) => item.toolSkill === skill && item.toolTier === toolTier)
-    if (!tool) return null
-    player.instances = [{ instanceId: 'check', itemId: tool.id, enhanceLevel }]
-    player.equipped = { [skill]: 'check' }
-  }
-
-  if (sight) {
-    const token = Object.values(items).find((item) => item.tokenEffect === 'sight' && item.skill === skill)
-    if (!token) return null
-    player.stacks[token.id] = 1
-  }
-
-  return gatherHandOf(player, skill, items)
-}
-
 /** 그 계열 카탈로그의 가장 높은 도구 등급. 도구가 하나도 없으면 null(맨손밖에 없는 계열이다). */
 function topToolTier(skill: SkillId, items: Record<string, ItemDef>): number | null {
   const tiers = Object.values(items)
     .filter((item) => item.toolSkill === skill && item.toolTier !== undefined)
     .map((item) => item.toolTier!)
   return tiers.length === 0 ? null : Math.max(...tiers)
-}
-
-/**
- * 그 브라켓에서 그 손이 각 티어를 뽑을 **정확한** 확률.
- *
- * 표본이 아니라 전수다(rawRoll 100001 가지) — 확률이 걸린 검증에서 "안 나왔다"와
- * "못 나온다"를 구별하지 못하면 곱하기 하나가 틀린 표가 조용히 통과한다.
- * 판정과 같은 함수(`gatherRoll`)를 부르는 것도 같은 이유다(설계 §6-앞 14 의 교훈).
- */
-function tierChances(cumulative: readonly number[], hand: GatherHand): number[] {
-  const counts = new Array<number>(cumulative.length).fill(0)
-  for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
-    const roll = gatherRoll(rawRoll, hand.profile)
-    const index = cumulative.findIndex((cum) => roll <= cum)
-    if (index >= 0) counts[index]! += 1
-  }
-  return counts.map((count) => count / DOMAIN)
 }
 
 /** 최종(∞) 브라켓에 **막 들어선** 숙련 — 그보다 높아도 간격은 이미 하한(50ms)이라 답이 같다. */
@@ -384,14 +291,14 @@ export function validateCollection(data: GameData, tables: GatherTables): string
     const at = `${FILE}(${table.id} 계열)`
 
     const topTier = topToolTier(skill, data.items)
-    const best = topTier === null ? null : handOf(skill, data.items, topTier, true, ENHANCE_CAP)
+    const best = topTier === null ? null : measureHand(skill, data.items, topTier, true, ENHANCE_CAP)
     if (!best) {
       violations.push(
         `${at}: ${skill} 계열의 최적손(가장 높은 등급 도구 + 선별증표)을 items.csv 에서 찾을 수 없어 형평을 잴 수 없다`,
       )
       continue
     }
-    const copper = handOf(skill, data.items, 1, false, 0)
+    const copper = measureHand(skill, data.items, 1, false, 0)
     if (!copper) {
       violations.push(`${at}: ${skill} 계열의 1티어 도구를 items.csv 에서 찾을 수 없어 1단 도달 시간을 잴 수 없다`)
       continue

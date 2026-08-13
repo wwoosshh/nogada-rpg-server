@@ -261,6 +261,31 @@ describe('validateGameData', () => {
     )
   })
 
+  // ---- 결계: 마커 색(variant)과 실제 분포(tableId)는 한 가지를 말하는 두 칸이다 ----
+  //
+  // 이 아크 전까지 variant 는 "표시 전용"이었고, 그 대가로 심층 노드 넷이 이름과
+  // 마커 색만 심층인 채 바깥과 **같은 표**를 굴렸다(설계 계기 둘). 표가 갈라진
+  // 지금은 둘이 다시 갈라지는 날을 빌드가 막는다 — 갈라져도 어느 화면 하나
+  // 이상해지지 않는다는 것이 정확히 그때의 문제였다.
+
+  it('deep 노드가 바깥 표를 가리키면 위반이다 — 화면은 심층이라 그리고 표는 바깥을 굴린다', () => {
+    const data = baseData()
+    data.nodes.copper_vein!.variant = 'deep'
+    expect(validateGameData(data, baseTables())).toContain(
+      'nodes[copper_vein]: variant("deep") 와 tableId("mineral") 가 짝이 아니다 — variant=deep 인 노드만 "_deep" 표를 굴리고 그 반대도 같다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 의 variant 나 tableId 중 하나를 고친다',
+    )
+  })
+
+  it('normal 노드가 심층 표를 가리켜도 위반이다 — 결계 앞의 노드가 결계 뒤의 분포를 낸다', () => {
+    const data = baseData()
+    data.nodes.copper_vein!.tableId = 'mineral_deep'
+    const tables = baseTables()
+    tables.mineral_deep = { ...tables.mineral!, id: 'mineral_deep', equity: false }
+    expect(validateGameData(data, tables)).toContain(
+      'nodes[copper_vein]: variant("normal") 와 tableId("mineral_deep") 가 짝이 아니다 — variant=deep 인 노드만 "_deep" 표를 굴리고 그 반대도 같다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 의 variant 나 tableId 중 하나를 고친다',
+    )
+  })
+
   it('없는 아이템을 재료로 쓰는 레시피를 잡아낸다', () => {
     const data = baseData()
     data.recipes.copper_ingot!.inputs = [{ item: 'ghost_ore', count: 1 }]

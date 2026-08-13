@@ -167,7 +167,12 @@ describe('§8-4 네 표 전 티어가 실제로 드랍된다', () => {
   // ∞ 브라켓(최종 표)에서는 모든 티어의 폭이 수천 이상이라 1만 번이면 전부 나온다.
   // "어느 숙련에서도 안 나오는 티어"는 폭 0 인데, 그건 빌드 검증(순증가)이 먼저
   // 막고, 여기서는 실제 판정 경로로 한 번 더 증명한다.
-  for (const tableId of ['ice', 'wood', 'mineral', 'herb'] as const) {
+  //
+  // 표 목록을 **출하 표에서 유도한다**(결계 §9-앞 5). 네 이름을 손으로 적어 두면
+  // 표가 늘어나는 날 새 표가 이 증명에서 조용히 빠진다 — 실제로 심층 표 넷이
+  // 그렇게 빠질 뻔했고, 그 자리는 §6-앞 14 가 "확률 정확히 0 인 조합 14개"를
+  // 잡아낸 바로 그 검사다.
+  for (const tableId of Object.keys(tables)) {
     it(`${tableId}: 최종 브라켓에서 사다리의 전 티어가 나오고 실패는 0% 다(§8-3)`, () => {
       const table = tables[tableId]!
       const result = simulate(table, 1_000_000, 1, 10_000)
@@ -233,7 +238,8 @@ describe('§6-앞 14 어떤 손으로도 모든 티어가 나온다 — 전 표�
     }
   })
 
-  for (const tableId of ['ice', 'wood', 'mineral', 'herb'] as const) {
+  // 여기도 표 목록을 출하 표에서 유도한다(결계 §9-앞 5) — 위 §8-4 와 같은 이유다.
+  for (const tableId of Object.keys(tables)) {
     const table = tables[tableId]!
     // 같은 배수·평감산이면 roll 분포가 글자 그대로 같다 — 강화 두 값이 여기서
     // 합쳐져 표당 16 손이 8 벌의 전수 셈이 된다(위 등식이 그것을 보증한다).
