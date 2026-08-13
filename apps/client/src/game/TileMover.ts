@@ -43,6 +43,8 @@ export class TileMover {
   private readonly onArrive: ((tile: TilePos) => 'stop' | void) | undefined
   private current: TilePos
   private target: TilePos
+  /** 방금 끝낸(또는 진행 중인) 걸음이 시작된 칸. `stepBack()` 이 되밀 자리다. */
+  private steppedFrom: TilePos
   private elapsed = 0
   private stepping = false
 
@@ -53,7 +55,30 @@ export class TileMover {
     this.onArrive = opts.onArrive
     this.current = { ...opts.start }
     this.target = { ...opts.start }
+    this.steppedFrom = { ...opts.start }
     this.facing = opts.facing ?? 'down'
+  }
+
+  /**
+   * 방금 밟은 칸에서 **직전 칸으로 되민다** — 결계가 거절한 걸음을 무르는 자리
+   * (결계 설계 §9-앞 14).
+   *
+   * **왜 이것이 mover 의 일인가:** 전환 판정은 걸음이 끝난 뒤(onArrive) 서버
+   * 왕복으로 이뤄지므로, 거절이 돌아왔을 때 플레이어는 이미 그 칸 위에 서
+   * 있다. 어디로 되밀지를 씬이 계산하면(바라보는 방향의 반대 칸) 걸음이 시작된
+   * 자리를 아는 유일한 주인 밖에서 그 사실을 다시 짓게 되고, 벽 속으로 되밀
+   * 값을 넘길 수 있는 문도 함께 열린다. 여기가 아는 칸은 **방금 서 있던 칸**
+   * 이므로 걸을 수 있는지 다시 물을 필요도 없다.
+   *
+   * 진행 중이던 걸음은 함께 버린다 — 남겨 두면 그 걸음이 도착을 한 번 더 알려
+   * 되밀린 사람이 같은 결계를 곧바로 다시 밟는다. 바라보는 방향은 되돌리지
+   * 않는다: 밀려난 사람은 자기를 민 것을 그대로 마주 보고 선다.
+   */
+  stepBack(): void {
+    this.current = { ...this.steppedFrom }
+    this.target = { ...this.steppedFrom }
+    this.stepping = false
+    this.elapsed = 0
   }
 
   get tile(): TilePos {
@@ -107,6 +132,7 @@ export class TileMover {
     const next = frontTile(this.current, dir)
     if (!this.isWalkable(next)) return
 
+    this.steppedFrom = { ...this.current }
     this.target = next
     this.stepping = true
     this.elapsed = carryMs

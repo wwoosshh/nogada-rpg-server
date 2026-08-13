@@ -75,4 +75,47 @@ describe('TileMover', () => {
     expect(count).toBe(0)
     expect(mover.tile).toEqual({ x: 0, y: 0 })
   })
+
+  // 왜: 결계는 걸음이 끝난 **뒤에** 서버가 거절한다(결계 설계 §9-앞 14). 그 응답이
+  //     올 때 플레이어는 이미 결계 칸 위에 서 있고, 되밀지 않으면 "밀려난다"고
+  //     적은 설계와 성공 기준이 화면에서 거짓이 된다.
+  it('되밀면 방금 걸음이 시작된 칸으로 돌아간다', () => {
+    const mover = new TileMover({ start: { x: 0, y: 0 }, isWalkable: walkAnywhere() })
+
+    mover.update(STEP_MS, 'right')
+    mover.update(STEP_MS, null) // (1,0) 도착 — 방향을 놓아 다음 걸음은 잇지 않는다
+    expect(mover.tile).toEqual({ x: 1, y: 0 })
+
+    mover.stepBack()
+
+    expect(mover.tile).toEqual({ x: 0, y: 0 })
+    expect(mover.moving).toBe(false)
+    // 밀려난 사람은 자기를 민 것을 그대로 마주 본다 — 방향은 되돌리지 않는다.
+    expect(mover.facing).toBe('right')
+  })
+
+  // 왜: 되밀림은 지금 이 프레임의 사실이다. 반쯤 진행된 걸음을 남겨 두면 그
+  //     걸음이 도착을 한 번 더 알려, 되밀린 사람이 곧바로 한 칸 더 걸어 나간다.
+  //     (전환 칸에서는 onArrive 가 'stop' 을 돌려줘 이 상태가 생기지 않지만,
+  //     그 계약이 깨지는 날 되밀림이 반쪽이 되는 것은 화면에서만 보인다.)
+  it('되밀면 진행 중이던 걸음도 함께 버린다 — 도착은 한 번뿐이다', () => {
+    const arrived: TilePos[] = []
+    const mover = new TileMover({
+      start: { x: 0, y: 0 },
+      isWalkable: walkAnywhere(),
+      onArrive: (tile) => void arrived.push(tile),
+    })
+
+    mover.update(STEP_MS, 'right')
+    mover.update(STEP_MS, 'right') // (1,0) 도착 + 다음 걸음 시작
+    expect(mover.moving).toBe(true)
+
+    mover.stepBack()
+    mover.update(STEP_MS, null)
+
+    expect(mover.moving).toBe(false)
+    // 무른 것은 **진행 중이던 그 걸음**이라 그 걸음이 시작된 칸으로 돌아간다.
+    expect(mover.tile).toEqual({ x: 1, y: 0 })
+    expect(arrived).toEqual([{ x: 1, y: 0 }])
+  })
 })

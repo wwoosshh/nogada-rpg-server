@@ -1,4 +1,5 @@
-import { emptyPlayer } from '@nogada/data'
+import { emptyPlayer, loadGameData } from '@nogada/data'
+import { SKILL_LABELS, type SkillId } from '@nogada/shared'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeToken } from '../api/sessionToken.js'
 import { useGameStore } from './gameStore.js'
@@ -536,5 +537,98 @@ describe('헌납 — not_collectable 문구(수집의 방 설계 §6-앞 1)', ()
     await useGameStore.getState().donate('copper_ore', 1)
 
     expect(useGameStore.getState().bagError).toBe('바칠 수 없는 물건')
+  })
+})
+
+/*
+ * 결계에 막힌 걸음은 이 저장소에서 **화면이 숫자를 말하는 유일한 거절**이다
+ * (결계 설계 §5·§9-앞 13). 저숙련으로 결계를 밟았을 때 아무 말이 없으면
+ * 플레이어가 보는 것은 "칸을 밟았는데 안 넘어갔다" 하나뿐이라, 그 문이
+ * 숫자를 올리면 열리는 문이라는 사실이 화면 어디에도 없다.
+ */
+describe('결계 — 밀려날 때 화면이 숫자를 말한다(결계 설계 §5)', () => {
+  /**
+   * 게이트가 걸린 전환들. 넷을 손으로 적지 않는 이유는 **데이터가 진실**이기
+   * 때문이다 — 결계가 하나 늘거나 요구치가 바뀌면 이 테스트가 그것을 함께 진다.
+   */
+  const barriers = loadGameData().transitions.flatMap((t) =>
+    t.gateSkill !== undefined && t.gateValue !== undefined
+      ? [{ transition: t, skill: t.gateSkill, need: t.gateValue }]
+      : [],
+  )
+
+  /** 결계 앞에 선 저숙련자 한 명 — 그 계열만 need 아래로 채운다. */
+  function standingAt(mapId: string, x: number, y: number, skill: SkillId, have: number): void {
+    const base = emptyPlayer()
+    useGameStore.setState({
+      player: {
+        ...base,
+        skills: { ...base.skills, [skill]: have },
+        location: { mapId, x, y },
+      },
+      notice: null,
+    })
+  }
+
+  // 왜: 문구가 계열 이름과 두 숫자를 품어야 "얼마나 남았는가"가 화면에 있다.
+  //     넷을 한 번에 도는 이유는 **각자의 것을 말해야** 하기 때문이다 — 한
+  //     계열의 이름이나 요구치를 상수로 굳히면 나머지 셋이 남의 숫자를 말한다.
+  it('네 결계가 각자의 계열 이름과 요구치·현재치를 말한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'locked' }, 400)),
+    )
+    expect(barriers.length).toBe(4)
+
+    for (const { transition, skill, need } of barriers) {
+      standingAt(transition.fromMap, transition.fromX, transition.fromY, skill, 63240)
+
+      await expect(
+        useGameStore.getState().move(transition.fromX, transition.fromY),
+      ).rejects.toThrow()
+
+      expect(useGameStore.getState().notice?.text).toBe(
+        `결계가 밀어낸다 — ${SKILL_LABELS[skill]} 숙련 ${need.toLocaleString('ko-KR')} (지금 63,240)`,
+      )
+    }
+  })
+
+  // 왜: 삼키면 WorldScene 의 성공 분기가 실패를 성공으로 읽어 씬을 재시작하고,
+  //     그때 스토어의 위치는 아직 옛것이라 플레이어가 **마지막 전환 도착 칸**
+  //     으로 순간이동한다. 말을 세우는 것과 다시 던지는 것은 함께 가야 한다.
+  it('문구를 세우고도 실패는 그대로 다시 던진다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'locked' }, 400)),
+    )
+    const first = barriers[0]!
+    const before = emptyPlayer().location
+    standingAt(first.transition.fromMap, first.transition.fromX, first.transition.fromY, first.skill, 0)
+
+    await expect(
+      useGameStore.getState().move(first.transition.fromX, first.transition.fromY),
+    ).rejects.toThrow()
+
+    // 거절된 걸음은 위치를 한 칸도 옮기지 않는다 — 서버가 준 player 가 없다.
+    expect(useGameStore.getState().player?.location.mapId).toBe(first.transition.fromMap)
+    expect(before.mapId).not.toBe(first.transition.fromMap)
+  })
+
+  // 왜: `no_transition` 은 클라와 서버가 서로 다른 전환표를 보고 있다는 뜻이라
+  //     플레이어에게 보여 줄 숫자가 없다. 그 자리까지 문구를 지어내면 화면이
+  //     "결계"라고 말해 놓고 올려야 할 숙련이 애초에 없는 상태가 된다.
+  it('결계가 아닌 거절에는 말이 없다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'no_transition' }, 400)),
+    )
+    const first = barriers[0]!
+    standingAt(first.transition.fromMap, first.transition.fromX, first.transition.fromY, first.skill, 0)
+
+    await expect(
+      useGameStore.getState().move(first.transition.fromX, first.transition.fromY),
+    ).rejects.toThrow()
+
+    expect(useGameStore.getState().notice).toBeNull()
   })
 })

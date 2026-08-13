@@ -2,6 +2,8 @@ import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
   equippedToolTier,
+  SKILL_LABELS,
+  transitionGate,
   type CreateCharacterRequest,
   type GameData,
   type MilestoneDef,
@@ -629,8 +631,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
    * 서 있던 칸이 아니라 **마지막 전환 도착 칸**으로 되돌아가 순간이동한 것처럼
    * 보인다. 대사창처럼 "아무것도 안 일어난다"로 끝낼 수 있는 실패가 아니다.
    *
-   * 머리 위 글자로 알리지도 않는다. 전환이 거절되는 경우는 클라이언트와 서버가
-   * 서로 다른 전환표를 보고 있을 때뿐이라 플레이어에게 보여 줄 말이 없다.
+   * **거절 중 하나는 말이 있다 — 결계다**(결계 설계 §5). 이 주석은 오래도록
+   * "전환이 거절되는 경우는 클라이언트와 서버가 서로 다른 전환표를 보고 있을
+   * 때뿐이라 보여 줄 말이 없다"고 적혀 있었고, 그때는 사실이었다. 결계 아크가
+   * 그 문장을 거짓으로 만들었다: `locked` 는 **숫자를 올리면 열리는** 문이라
+   * 화면이 요구치와 현재치를 말해야 한다. 남은 하나(`no_transition`)는 여전히
+   * 표 불일치뿐이라 말이 없다.
+   *
+   * 문구는 화자가 없는 말이므로 대사창 자리(notice)로 간다 — 머리 위 글자는
+   * 걸음과 함께 흘러가고, 이 말은 "왜 못 지나갔는가"라서 읽힐 시간이 있어야 한다.
    */
   move: async (x, y) => {
     try {
@@ -639,7 +648,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch (err) {
       // 서버와 끊겼으면 세계를 다시 그릴 게 아니라 게이트가 할 일이다 — 채집과 같다.
       if (isNetworkFailure(err)) set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
-      else console.error(err)
+      else if (err instanceof ApiError && err.code === 'locked') {
+        // 결계는 오류가 아니라 세계가 제대로 돌아간 결과다(채집의 too_fast 와
+        // 같은 자세) — console 로 흘리지 않고 화면에 말로 남긴다.
+        const text = describeBarrier(get(), x, y)
+        if (text) set({ notice: { seq: ++noticeSeq, text } })
+      } else console.error(err)
+      // **말을 세우고도 그대로 다시 던진다.** 삼키면 호출자(WorldScene)의 성공
+      // 분기가 실패를 성공으로 읽어 씬을 재시작하고, 그때 스토어의 위치는 아직
+      // 옛것이라 플레이어가 마지막 전환 도착 칸으로 순간이동한다.
       throw err
     }
   },
@@ -973,6 +990,44 @@ function pushMilestones(set: SetFn, achieved: readonly MilestoneDef[]): void {
 
 function labelOf(data: GameData, itemId: string): string {
   return data.items[itemId]?.name ?? itemId
+}
+
+/** 이 저장소가 숫자를 적는 방식. 상단 바·가방·제작·상점이 전부 이 글자꼴이다. */
+function fmt(n: number): string {
+  return n.toLocaleString('ko-KR')
+}
+
+/**
+ * 결계가 밀어냈다 — 그 문이 요구하는 숫자와 지금 손에 있는 숫자를 한 줄로 적는다.
+ *
+ * > 결계가 밀어낸다 — 광물 숙련 85,000 (지금 63,240)
+ *
+ * **부등호를 다시 적지 않는다**(결계 설계 §9-앞 13). 서버가 이미 `locked` 로
+ * 판정했고, 여기서 필요한 것은 그 판정을 다시 짓는 일이 아니라 판정이 본 숫자를
+ * 그대로 읽는 일이다 — 그래서 서버(moveService)와 같은 shared 술어를 부르고
+ * 돌려받은 `skill`·`need`·`have` 만 쓴다. 화면이 자기 비교를 한 줄 더 적는
+ * 순간, 서버가 거절한 문 앞에서 화면만 "열려 있다"고 말하는 날이 온다.
+ *
+ * **프로토콜은 그대로다.** 스토어가 `loadGameData()` 를 직접 갖고 있어
+ * `TransitionDef` 의 게이트가 이미 손에 있으므로, 서버는 코드 하나만 보낸다.
+ *
+ * 계열 이름은 `SKILL_LABELS` 다 — 가방 슬롯·상점 잠금·도감이 쓰는 그 글자다.
+ * 한 숫자가 화면마다 다른 이름을 달면 그것이 같은 문인지 알 수 없다.
+ *
+ * 게이트가 없는 칸에서 `locked` 가 오는 것은 클라와 서버의 전환표가 갈라졌다는
+ * 뜻이라 적을 숫자가 없다 — 그때는 `null` 이고, 부르는 쪽이 말을 세우지 않는다.
+ */
+function describeBarrier(store: GameStore, x: number, y: number): string | null {
+  const { data, player } = store
+  if (!player) return null
+
+  const transition = data.transitions.find(
+    (t) => t.fromMap === player.location.mapId && t.fromX === x && t.fromY === y,
+  )
+  const gate = transition ? transitionGate(transition, player) : null
+  if (!gate) return null
+
+  return `결계가 밀어낸다 — ${SKILL_LABELS[gate.skill]} 숙련 ${fmt(gate.need)} (지금 ${fmt(gate.have)})`
 }
 
 function describeError(err: unknown): string {
