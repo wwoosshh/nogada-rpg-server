@@ -902,9 +902,17 @@ export function validateGatherTables(tables: GatherTables, data: GameData): Gath
 
     // 최종 브라켓 실패 0% 는 원작 준용값이지 강제가 아니다 — 다만 벗어나면
     // "끝까지 올려도 빈손이 나온다" 는 큰 체감 변화라 작가가 알아야 한다(§7-앞 5).
+    //
+    // **특수 표는 묻지 않는다.** 그 표의 ∞ 꼬리는 작가가 고른 것이 아니라 이미
+    // 선 규범 둘이 **강제한** 결과다: 위 SPECIAL_YIELD_MAX 가 값을 바깥 아래로
+    // 누르고, collection 의 형평 하한이 잡티어의 몫을 그 계열 대표 표보다 얇게
+    // 묶는다(실측: 얼음 ∞ 에서 상한이 약 16%). 그 둘을 지키면 나머지는 꽝이 될
+    // 수밖에 없고, 그것이 특수 노드가 "골드가 아니라 열쇠를 파는 자리"인 이유
+    // 그 자체다(노드 종류 §4). 여기서 매번 경고하면 작가가 고칠 수 없는 것을
+    // 고치라고 말하는 셈이고, 그런 경고는 읽히지 않는 경고가 된다.
     const last = table.brackets.at(-1)!
     const lastCum = last.cumulative.at(-1)
-    if (last.bracketMax === null && lastCum !== undefined && lastCum < ROLL_MAX) {
+    if (!isSpecialTableId(table.id) && last.bracketMax === null && lastCum !== undefined && lastCum < ROLL_MAX) {
       warnings.push(
         `${at}: 최종(∞) 브라켓에 실패가 남는다 — 마지막 누적이 ${lastCum} 이라 ${ROLL_MAX - lastCum}/${ROLL_MAX + 1} 은 빈손이다. 원작 준용은 ${ROLL_MAX}(실패 0%)이다`,
       )

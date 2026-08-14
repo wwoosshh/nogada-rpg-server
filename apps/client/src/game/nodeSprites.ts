@@ -30,6 +30,7 @@
 const NODE_SPRITES: Record<string, string> = {
   ice_vein: 'ice_vein.png',
   deep_ice_vein: 'deep_ice_vein.png',
+  red_ice_vein: 'red_ice_vein.png',
   young_tree: 'young_tree.png',
   old_tree: 'old_tree.png',
   copper_vein: 'copper_vein.png',

@@ -310,7 +310,7 @@ describe('parseNodes', () => {
  * 맵에서 얼굴 없이 서고, 그 사실은 빌드가 아니라 게임을 켠 사람이 먼저 본다.
  */
 describe('parseNodes — 출하 데이터', () => {
-  it('출하 nodes.csv 여덟 행이 전부 자기 그림 이름을 싣는다', () => {
+  it('출하 nodes.csv 아홉 행이 전부 자기 그림 이름을 싣는다', () => {
     const csvDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'csv')
     const nodes = parseNodes(parseCsv(readFileSync(join(csvDir, 'nodes.csv'), 'utf8')))
 
@@ -321,6 +321,7 @@ describe('parseNodes — 출하 데이터', () => {
     expect(sprites).toEqual({
       ice_vein: 'ice_vein',
       deep_ice_vein: 'deep_ice_vein',
+      red_ice_vein: 'red_ice_vein',
       young_tree: 'young_tree',
       old_tree: 'old_tree',
       copper_vein: 'copper_vein',
@@ -334,14 +335,20 @@ describe('parseNodes — 출하 데이터', () => {
   //     조건을 지면 그 순간 기존 채집이 달라지는데(그 노드가 하루의 일부만
   //     열린다), 그 변화는 게임을 켜 그 시간대에 서 봐야만 보인다. 여기서
   //     한 줄로 못박아 두면 조건을 실수로 얻은 행이 빌드에서 빨개진다.
-  it('출하 여덟 행은 조건을 하나도 지지 않는다 — 이 아크는 기존 채집을 안 바꾼다', () => {
+  // 조건을 지는 것은 **특수 노드뿐**이다. 보통·심층 여덟이 하나라도 조건을 얻으면
+  // 이 아크가 "기존 채집을 안 바꾼다"고 한 약속이 깨진 것이라, 목록을 전수로 고정한다.
+  it('조건을 지는 노드는 특수뿐이고, 그 조건이 무엇인지까지 고정한다', () => {
     const csvDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'csv')
     const nodes = parseNodes(parseCsv(readFileSync(join(csvDir, 'nodes.csv'), 'utf8')))
 
-    const conditioned = Object.values(nodes)
-      .filter((n) => n.requireWeather !== undefined || n.requireTime !== undefined)
-      .map((n) => n.id)
-    expect(conditioned).toEqual([])
+    const conditioned = Object.fromEntries(
+      Object.values(nodes)
+        .filter((n) => n.requireWeather !== undefined || n.requireTime !== undefined)
+        .map((n) => [n.id, { weather: n.requireWeather, time: n.requireTime, variant: n.variant }]),
+    )
+    expect(conditioned).toEqual({
+      red_ice_vein: { weather: 'snow', time: undefined, variant: 'special' },
+    })
   })
 })
 

@@ -923,7 +923,13 @@ describe('노드 조건 — 닫힌 노드 앞에서 무엇이 필요한지 말�
   //     뜻이다. 그때도 침묵하면 안 되지만 없는 조건을 지어내서도 안 된다.
   it('조건 없는 노드가 닫혔다고 오면 조건을 지어내지 않는다', async () => {
     atGameHour(12)
-    const 출하노드 = Object.values(loadGameData().placements)[0]!
+    // 조건 없는 노드를 고른다 — 특수 노드는 조건을 지므로 그것을 집으면
+    // 이 테스트가 재려는 것("조건이 없는데 닫혔다고 오면")이 성립하지 않는다.
+    const data = loadGameData()
+    const 출하노드 = Object.values(data.placements).find((p) => {
+      const node = data.nodes[p.nodeId]!
+      return node.requireWeather === undefined && node.requireTime === undefined
+    })!
     await useGameStore.getState().gather(출하노드.instanceId)
     expect(useGameStore.getState().notice?.text).toBe('지금은 캘 수 없다')
   })

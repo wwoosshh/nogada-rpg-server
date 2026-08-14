@@ -119,6 +119,7 @@ assets/licensed/
 | `hammer_mithril` | icon940 | 망치 (청회색 머리) |
 | `shard_ice` | icon880 | 얼음 조각 |
 | `crystal_ice` | icon914 | 맑은 얼음 결정 |
+| `gem_hot_ice` | icon979 | 뜨거운 얼음 — `gem_ice`(999)와 **같은 실루엣의 붉은 것**이다. 특수 노드의 재료가 그 계열 잭팟과 한 핏줄로 읽혀야 "이것도 얼음이다"가 그림에서 성립한다 |
 | `log_soft` | icon958 | 무른 통나무 |
 | `log_hard` | icon959 | 단단한 통나무 |
 | `herb_common` | icon288 | 흔한 약초 |
@@ -220,7 +221,7 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 64종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 60종을 쓴다
+# 아이템 아이콘 65종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 61종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
 # 없는 예비 배정 4종. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
 # mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
@@ -262,6 +263,7 @@ sickle_mithril:460
 crystal_pale:918
 gem_blue:982
 gem_ice:999
+gem_hot_ice:979
 leaf_tea:289
 leaf_gold:290
 fruit_red:304
@@ -328,7 +330,7 @@ magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repa
 클라이언트가 아는 목록은 `apps/client/src/game/nodeSprites.ts` 다. 화자와 같은 규칙으로
 **모르는 id 를 만나면 그 자리에서 던지므로**, 이 표와 그 파일과 CSV 셋이 함께 움직인다.
 
-**여덟 장 전부 32×32 한 칸이다.** 두 칸짜리 큰 나무를 쓰면 밑변 정렬과 y 정렬 깊이가
+**아홉 장 전부 32×32 한 칸이다.** 두 칸짜리 큰 나무를 쓰면 밑변 정렬과 y 정렬 깊이가
 따라오는데(`apps/client/src/game/depth.ts` 의 `node = 5` 는 평면이다), 그것은 노드에 얼굴을
 붙이는 일이 살 값이 아니다.
 
@@ -345,6 +347,7 @@ magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repa
 | `iron_vein` | `iron_vein.png` | 65 (r8c1) | `32x32+32+256` | 명도 행렬 + ×0.75 | 구리와 **한 채굴장에 나란히 서므로** 실루엣이 아니라 금속색이 갈라야 한다. 같은 바위에서 색을 빼고 어둡게 한 것 |
 | `ice_vein` | `ice_vein.png` | 64 (r8c0) | `32x32+0+256` | R↔B 교환 + ×1.7 | **팩에 얼음이 없다.** 작은 바위의 빨강과 파랑을 맞바꾸면 황동빛이 청록이 된다. 밝혀서 옅은 조각으로 |
 | `deep_ice_vein` | `deep_ice_vein.png` | 65 (r8c1) | `32x32+32+256` | R↔B 교환 | 같은 교환을 큰 바위에 하고 **밝히지 않은 것**. 크고 짙다 |
+| `red_ice_vein` | `red_ice_vein.png` | 64 (r8c0) | `32x32+0+256` | 붉게(R ×1.9, G ×0.55, B ×0.35) | **얼음 광맥과 같은 바위**를 붉게 돌린 것 — 같은 자리에 서는 두 노드가 한 계열임을 실루엣이 말하고 색만 갈린다. 뜨거운 얼음이 여기서만 난다 |
 
 **팩의 셋째 바위(타일 66)는 쓰지 않는다.** 밑동이 반투명 디더라서 광물채굴장의 어두운 갈색
 지면 위에 놓으면 바위가 아니라 **구덩이로 읽힌다** — 실제로 얹어 보고 기각했다. 철을 그 바위가
@@ -387,7 +390,7 @@ freely`)은 **개변 허가이지 재배포 허가가 아니다.** `.gitignore` 
 그 줄은 그림보다 **먼저** 들어갔다. 이 경로는 기본값이 추적이라 한 번 커밋되면 그 커밋 자체가
 위반이기 때문이다.
 
-여덟 장이 모두 `pipoya-basechip.png` 에서 나오므로 **위 타일셋 복원을 먼저 끝내야 한다.**
+아홉 장이 모두 `pipoya-basechip.png` 에서 나오므로 **위 타일셋 복원을 먼저 끝내야 한다.**
 
 ```bash
 mkdir -p apps/client/public/nodes
@@ -418,6 +421,12 @@ magick "$S" -crop 32x32+32+256 +repage \
 magick "$S" -crop 32x32+0+256  +repage -color-matrix "0 0 1 0 1 0 1 0 0" \
   -channel RGB -evaluate multiply 1.7 +channel "$N/ice_vein.png"
 magick "$S" -crop 32x32+32+256 +repage -color-matrix "0 0 1 0 1 0 1 0 0" "$N/deep_ice_vein.png"
+
+# 붉은 얼음 — 같은 작은 바위를 붉게 돌린다. 얼음이 R↔B 교환이라면 이것은 R 을 키우고
+# 나머지를 눌러, 두 노드가 같은 실루엣에 반대 색으로 선다.
+magick "$S" -crop 32x32+0+256 +repage \
+  -color-matrix "1.9 0 0 0 0.55 0 0 0 0.35" \
+  -define png:color-type=6 "$N/red_ice_vein.png"
 ```
 
 **색 변주를 `-modulate`(HSL)로 하지 않은 것이 이 블록의 핵심이다.** 위 두 연산은 화소마다의

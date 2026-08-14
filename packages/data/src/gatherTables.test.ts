@@ -403,7 +403,7 @@ describe('실제로 출하되는 채집표', () => {
 })
 
 describe('loadGatherTables — 서버 전용 진입의 내용물', () => {
-  it('빌드가 구운 여덟 표(바깥 넷 + 심층 넷)를 동결된 채로 돌려준다', () => {
+  it('빌드가 구운 아홉 표(바깥 넷 + 심층 넷 + 특수 하나)를 동결된 채로 돌려준다', () => {
     // gamedata.json 과 별개 파일(gather-tables.json)에서 온다 — GameData 에
     // 실리지 않는 것이 이 산출물의 존재 이유다. **심층 표도 이쪽에 실려야
     // 한다**: 확률표가 클라 번들로 새는 순간 결계 뒤의 분포까지 F12 로
@@ -415,7 +415,7 @@ describe('loadGatherTables — 서버 전용 진입의 내용물', () => {
     // 결계 §9-앞 어디에도 없다.
     const tables = loadGatherTables()
     expect(Object.keys(tables).sort()).toEqual([
-      'herb', 'herb_deep', 'ice', 'ice_deep', 'mineral', 'mineral_deep', 'wood', 'wood_deep',
+      'herb', 'herb_deep', 'ice', 'ice_deep', 'ice_special', 'mineral', 'mineral_deep', 'wood', 'wood_deep',
     ])
     expect(Object.isFrozen(tables.ice_deep!.brackets[0])).toBe(true)
   })
@@ -495,7 +495,14 @@ describe('결계 — 심층 표 넷이 자기 계열 바깥 표에 매여 있다
       expect(tables[deepId]!.tiers).toEqual(tables[outerId]!.tiers)
       expect(tables[deepId]!.skill).toBe(tables[outerId]!.skill)
     }
-    const slots = new Set(Object.values(tables).flatMap((t) => t.tiers.map((tier) => tier.itemId)))
+    // **특수 표를 빼고 센다.** 방의 칸은 특수 표를 세지 않으므로(collection.ts,
+    // 노드 종류 §6-5) 여기서 세는 것도 같은 집합이어야 만점 100 이 안 움직인다 —
+    // 갈라지면 "사다리가 같다"는 이 테스트가 도감과 다른 세계를 지키게 된다.
+    const slots = new Set(
+      Object.values(tables)
+        .filter((t) => !isSpecialTableId(t.id))
+        .flatMap((t) => t.tiers.map((tier) => tier.itemId)),
+    )
     expect(slots.size).toBe(25)
   })
 

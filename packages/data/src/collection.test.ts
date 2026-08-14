@@ -3,6 +3,7 @@ import { COLLECTION_MAX_GRADE, collectionScore } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { parseCollection, validateCollection } from './collection.js'
 import { loadGameData } from './load.js'
+import { isSpecialTableId } from './gatherTables.js'
 import { loadGatherTables } from './loadGatherTables.js'
 
 type Row = Record<string, string>
@@ -90,7 +91,13 @@ describe('validateCollection — 출하 데이터', () => {
     // 캐지만 분포가 다르다). 목록으로 세면 25칸이 50줄로 보이고, 그 순간 이
     // 단언은 "심층 표가 새 칸을 만들지 않았다"는 **지켜야 할 성질**을 증명하는
     // 대신 표 개수를 세는 단언이 된다.
-    const gathered = new Set(Object.values(tables).flatMap((t) => t.tiers.map((tier) => tier.itemId)))
+    // **특수 표는 빼고 센다**(노드 종류 §6-5). 특수 재료는 수집물이 아니라 4단
+    // 도구를 여는 열쇠라 칸을 만들지 않는다 — 세면 만점이 100 에서 움직인다.
+    const gathered = new Set(
+      Object.values(tables)
+        .filter((t) => !isSpecialTableId(t.id))
+        .flatMap((t) => t.tiers.map((tier) => tier.itemId)),
+    )
     expect(Object.keys(shipped.collection).sort()).toEqual([...gathered].sort())
     const everything = Object.fromEntries([...gathered].map((id) => [id, Number.MAX_SAFE_INTEGER]))
     expect(collectionScore(everything, shipped.collection)).toBe(25 * COLLECTION_MAX_GRADE)

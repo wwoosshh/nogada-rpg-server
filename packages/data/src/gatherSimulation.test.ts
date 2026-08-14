@@ -19,6 +19,7 @@ import {
 } from '@nogada/shared'
 import { emptyPlayer } from './emptyPlayer.js'
 import { loadGameData } from './load.js'
+import { isSpecialTableId } from './gatherTables.js'
 import { loadGatherTables } from './loadGatherTables.js'
 
 /**
@@ -180,7 +181,15 @@ describe('§8-4 네 표 전 티어가 실제로 드랍된다', () => {
         expect(result.counts.get(tier.itemId) ?? 0).toBeGreaterThan(0)
       }
       // 최종 브라켓의 마지막 누적은 100000 — 어떤 roll 도 빈손이 아니다.
-      expect(result.failures).toBe(0)
+      //
+      // **특수 표에는 물을 수 없다.** 그 표의 ∞ 꼬리는 작가가 고른 것이 아니라
+      // 이미 선 규범 둘이 강제한 결과다: SPECIAL_YIELD_MAX 가 값을 바깥 아래로
+      // 누르고, 도감 형평 하한이 잡티어의 몫을 대표 표보다 얇게 묶는다(실측:
+      // 얼음 ∞ 에서 상한 약 16%). 둘을 지키면 나머지는 꽝이 될 수밖에 없고,
+      // 그것이 특수 노드가 "골드가 아니라 열쇠를 파는 자리"인 이유다.
+      // **전 티어가 나온다(위)는 특수 표에도 그대로 묻는다** — 확률 0 금지는
+      // 유일 출처를 지키는 규범이라 오히려 여기서 더 중요하다.
+      if (!isSpecialTableId(tableId)) expect(result.failures).toBe(0)
     })
   }
 })

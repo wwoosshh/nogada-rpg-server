@@ -604,12 +604,12 @@ describe('runGatherCommand', () => {
     ).toThrow(/ice 기술의 도구가 아니다.*copper_chisel/)
   })
 
-  it('모르는 표를 거부하고 있는 표를 나열한다 — 목록에 심층 표 넷도 있다', () => {
+  it('모르는 표를 거부하고 있는 표를 나열한다 — 목록에 심층 넷과 특수도 있다', () => {
     // 심층 표가 목록에 뜨는 것은 사고가 아니라 요구다: 작가가 결계 뒤의 분포를
     // 시뮬레이터로 볼 수 없으면, 그 표를 눈으로 검산할 곳이 아예 없어진다
     // (확률표는 서버 전용이라 화면에도 안 나온다).
     expect(() => runGatherCommand(realData, realTables, gatherCmd({ tableId: 'fish' }), { seed: 1 })).toThrow(
-      /표 "fish" 를 모른다.*herb, herb_deep, ice, ice_deep, mineral, mineral_deep, wood, wood_deep/,
+      /표 "fish" 를 모른다.*herb, herb_deep, ice, ice_deep, ice_special, mineral, mineral_deep, wood, wood_deep/,
     )
   })
 
