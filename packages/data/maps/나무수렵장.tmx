@@ -136,6 +136,13 @@
   </object>
  </objectgroup>
  <objectgroup id="6" name="nodes">
+  <object id="14" x="640" y="640">
+   <properties>
+    <property name="nodeId" value="thunderstruck_tree"/>
+    <property name="instanceId" value="thunderstruck_tree-1"/>
+   </properties>
+   <point/>
+  </object>
   <object id="2" x="176" y="336">
    <properties>
     <property name="nodeId" value="old_tree"/>

@@ -17,8 +17,17 @@ function parseCreditsIconHeredoc(): Map<string, string> {
   const credits = readFileSync(join(repoRoot, 'assets', 'CREDITS.md'), 'utf8')
   const map = new Map<string, string>()
   for (const rawLine of credits.split('\n')) {
-    const match = /^([a-z_]+):(\d+)$/.exec(rawLine.trim())
-    if (match) map.set(match[1]!, match[2]!)
+    const line = rawLine.trim()
+    const copied = /^([a-z_]+):(\d+)$/.exec(line)
+    if (copied) map.set(copied[1]!, copied[2]!)
+    // **색으로 파생한 아이콘**도 복원 가능한 이름이다(4단 도구 넷 · 벼락 심재).
+    // 팩에 없는 그림이라 `name:num` 줄이 아니라 magick 한 줄로 만들어지는데, 이
+    // 문서만으로 재구성된다는 점에서는 같다. 값에 `derived:` 를 붙여 아래
+    // "두 이름이 같은 원본 번호를 가리키지 않는다" 검사와 섞이지 않게 한다 —
+    // 파생본이 원본과 같은 번호를 쓰는 것은 정상이고(미스릴 도구 → 별똥 도구)
+    // 그것을 중복으로 세면 그 검사가 옳은 데이터를 거절한다.
+    const derived = /"\$I\/([a-z_]+)\.png"$/.exec(line)
+    if (derived) map.set(derived[1]!, `derived:${derived[1]!}`)
   }
   return map
 }

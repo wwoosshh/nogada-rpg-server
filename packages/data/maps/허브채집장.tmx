@@ -128,6 +128,13 @@
   </object>
  </objectgroup>
  <objectgroup id="5" name="nodes">
+  <object id="14" x="704" y="352">
+   <properties>
+    <property name="nodeId" value="frostbloom_patch"/>
+    <property name="instanceId" value="frostbloom_patch-1"/>
+   </properties>
+   <point/>
+  </object>
   <object id="2" x="880" y="432">
    <properties>
     <property name="nodeId" value="rare_herb_patch"/>

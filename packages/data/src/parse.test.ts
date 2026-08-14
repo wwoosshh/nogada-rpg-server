@@ -310,7 +310,7 @@ describe('parseNodes', () => {
  * 맵에서 얼굴 없이 서고, 그 사실은 빌드가 아니라 게임을 켠 사람이 먼저 본다.
  */
 describe('parseNodes — 출하 데이터', () => {
-  it('출하 nodes.csv 아홉 행이 전부 자기 그림 이름을 싣는다', () => {
+  it('출하 nodes.csv 열두 행이 전부 자기 그림 이름을 싣는다', () => {
     const csvDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'csv')
     const nodes = parseNodes(parseCsv(readFileSync(join(csvDir, 'nodes.csv'), 'utf8')))
 
@@ -322,6 +322,9 @@ describe('parseNodes — 출하 데이터', () => {
       ice_vein: 'ice_vein',
       deep_ice_vein: 'deep_ice_vein',
       red_ice_vein: 'red_ice_vein',
+      thunderstruck_tree: 'thunderstruck_tree',
+      meteor_vein: 'meteor_vein',
+      frostbloom_patch: 'frostbloom_patch',
       young_tree: 'young_tree',
       old_tree: 'old_tree',
       copper_vein: 'copper_vein',
@@ -348,6 +351,9 @@ describe('parseNodes — 출하 데이터', () => {
     )
     expect(conditioned).toEqual({
       red_ice_vein: { weather: 'snow', time: undefined, variant: 'special' },
+      thunderstruck_tree: { weather: 'rain', time: undefined, variant: 'special' },
+      meteor_vein: { weather: undefined, time: 'night', variant: 'special' },
+      frostbloom_patch: { weather: undefined, time: 'tide', variant: 'special' },
     })
   })
 })

@@ -141,6 +141,13 @@
   </object>
  </objectgroup>
  <objectgroup id="5" name="nodes">
+  <object id="14" x="416" y="576">
+   <properties>
+    <property name="nodeId" value="meteor_vein"/>
+    <property name="instanceId" value="meteor_vein-1"/>
+   </properties>
+   <point/>
+  </object>
   <object id="2" x="592" y="624">
    <properties>
     <property name="nodeId" value="iron_vein"/>

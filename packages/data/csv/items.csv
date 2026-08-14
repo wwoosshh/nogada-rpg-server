@@ -60,3 +60,10 @@ snow_powder,눈 가루,material,,,cloud_snow,100,ice,,snow,60
 heavy_rain_powder,굵은 비 가루,material,,,cloud_storm,400,ice,,rain,180
 heavy_snow_powder,함박눈 가루,material,,,snowflake,400,ice,,snow,180
 hot_ice,뜨거운 얼음,material,,,gem_hot_ice,24000,ice,,,
+lightning_heartwood,벼락 심재,material,,,heartwood_lightning,24000,wood,,,
+star_iron,별똥 쇳물,material,,,ore_star,24000,mineral,,,
+frost_bloom,서리꽃,material,,,bloom_frost,24000,herb,,,
+starfall_chisel,별똥 정,tool,ice,4,chisel_starfall,0,,,,
+starfall_axe,별똥 도끼,tool,wood,4,axe_starfall,0,,,,
+starfall_pickaxe,별똥 곡괭이,tool,mineral,4,pickaxe_starfall,0,,,,
+starfall_sickle,별똥 낫,tool,herb,4,sickle_starfall,0,,,,

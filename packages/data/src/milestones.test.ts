@@ -208,7 +208,7 @@ describe('parseMilestones — 실제 출하 CSV', () => {
     expect(() => parseMilestones(readRealCsv('milestones.csv'), realRecipes)).not.toThrow()
   })
 
-  it('행 39개를 만든다', () => {
+  it('행 40개를 만든다', () => {
     const realRecipes = parseRecipes(readRealCsv('recipes.csv'))
     const result = parseMilestones(readRealCsv('milestones.csv'), realRecipes)
     // 27 → 30: 주괴 3종(은·금·미스릴)의 recipes-이정표가 채집 티어 아크에서 늘었다.
@@ -216,7 +216,9 @@ describe('parseMilestones — 실제 출하 CSV', () => {
     // 31 → 35: 수집 총점 문턱 넷(10·30·60·100)이 늘었다 — 그중 둘은 되사기
     //          진열을 여는 stock 이고 둘은 title 이다(§6-앞 7).
     // 35 → 39: 결계 문턱 넷(계열별 85,000)이 늘었다. 아래 스위트가 왜인지 진다.
-    expect(result).toHaveLength(39)
+    // 39 → 40: 별똥 도구 넷의 recipes-이정표(crafting_50000) 한 줄이 늘었다 —
+    //          미스릴 넷이 crafting_25000 한 줄에 실린 것과 같은 모양이다.
+    expect(result).toHaveLength(40)
   })
 
   /*

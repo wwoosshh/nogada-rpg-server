@@ -8,3 +8,6 @@ mineral_deep,mineral,1,2,
 herb,herb,1,2,1
 herb_deep,herb,1,2,
 ice_special,ice,1,2,
+wood_special,wood,1,2,
+mineral_special,mineral,1,2,
+herb_special,herb,1,2,

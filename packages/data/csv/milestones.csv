@@ -38,3 +38,4 @@ collection_10,collection,,10,방에 자리가 잡히다,수집의 방에 빈 칸
 collection_30,collection,,30,흔한 것을 되살 수 있다,상점이 흔한 채집물을 정가에 되팔기 시작했다,stock,
 collection_60,collection,,60,귀한 것도 되살 수 있다,상점이 귀한 채집물까지 정가에 되팔기 시작했다,stock,
 collection_100,collection,,100,방을 가득 채우다,스물다섯 칸이 모두 가득 찼다,title,
+crafting_50000,skill,crafting,50000,별똥 도구를 만들 수 있다,별똥 도구를 만들 수 있게 됐다,recipes,starfall_chisel|starfall_axe|starfall_pickaxe|starfall_sickle

@@ -85,6 +85,10 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
       'mithril_chisel',
       'mithril_axe',
       'mithril_sickle',
+      'starfall_chisel',
+      'starfall_axe',
+      'starfall_pickaxe',
+      'starfall_sickle',
     ])
   })
 

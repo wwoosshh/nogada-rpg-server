@@ -8,3 +8,6 @@ iron_vein,철 광맥,mineral,mineral_deep,deep,iron_vein,,
 herb_patch,약초 군락,herb,herb,normal,herb_patch,,
 rare_herb_patch,귀한 약초 군락,herb,herb_deep,deep,rare_herb_patch,,
 red_ice_vein,붉은 얼음 광맥,ice,ice_special,special,red_ice_vein,snow,
+thunderstruck_tree,벼락 맞은 나무,wood,wood_special,special,thunderstruck_tree,rain,
+meteor_vein,별똥 자리,mineral,mineral_special,special,meteor_vein,,night
+frostbloom_patch,서리 핀 군락,herb,herb_special,special,frostbloom_patch,,tide

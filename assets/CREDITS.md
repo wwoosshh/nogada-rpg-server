@@ -119,6 +119,10 @@ assets/licensed/
 | `hammer_mithril` | icon940 | 망치 (청회색 머리) |
 | `shard_ice` | icon880 | 얼음 조각 |
 | `crystal_ice` | icon914 | 맑은 얼음 결정 |
+| `ore_star` | icon966 | 별똥 쇳물 — 금빛 사방별. 광석이 아니라 **떨어진 것**으로 읽혀야 그 노드의 이름이 산다 |
+| `bloom_frost` | icon971 | 서리꽃 — 흰 꽃 다발 |
+| `heartwood_lightning` | icon959 을 희게 | 벼락 심재 — 단단한 통나무를 흰재로 돌린 것 |
+| `chisel_starfall`·`axe_starfall`·`pickaxe_starfall`·`sickle_starfall` | 미스릴 도구 넷을 보랏빛으로 | 4단 도구 — 실루엣이 계열을, 색이 등급을 말한다 |
 | `gem_hot_ice` | icon979 | 뜨거운 얼음 — `gem_ice`(999)와 **같은 실루엣의 붉은 것**이다. 특수 노드의 재료가 그 계열 잭팟과 한 핏줄로 읽혀야 "이것도 얼음이다"가 그림에서 성립한다 |
 | `log_soft` | icon958 | 무른 통나무 |
 | `log_hard` | icon959 | 단단한 통나무 |
@@ -264,6 +268,8 @@ crystal_pale:918
 gem_blue:982
 gem_ice:999
 gem_hot_ice:979
+ore_star:966
+bloom_frost:971
 leaf_tea:289
 leaf_gold:290
 fruit_red:304
@@ -298,6 +304,23 @@ cloud_snow:122
 cloud_storm:124
 snowflake:152
 ICONS
+
+# 아이콘 다섯은 **팩에 없어서 색으로 만든다.** 4단 도구 넷은 미스릴 도구의 실루엣에
+# 별똥의 보랏빛을 입힌 것이고(설계 4.5 의 「형태 × 재질 색상」을 처음 실제로 쓴 자리),
+# 벼락 심재는 단단한 통나무를 흰재로 돌린 것이다. 노드 그림과 같은 규칙으로 sRGB
+# 정수 산술만 쓴다 — -modulate(HSL)는 이 문서만으로 재현되지 않는다.
+#
+# **한 줄에 하나씩 적는다.** 반복문으로 묶으면 짧아지지만, 이 문서를 읽어 손으로
+# 복원하는 사람도 대조 검사(itemIcons.test.ts)도 그 이름을 못 찾는다.
+I=apps/client/public/icons
+S4="1.15 0.25 0.35 0.35 0.75 0.25 0.55 0.25 1.25"
+
+magick "$SRC/icon929.png" -color-matrix "$S4" -define png:color-type=6 "$I/chisel_starfall.png"
+magick "$SRC/icon462.png" -color-matrix "$S4" -define png:color-type=6 "$I/axe_starfall.png"
+magick "$SRC/icon545.png" -color-matrix "$S4" -define png:color-type=6 "$I/pickaxe_starfall.png"
+magick "$SRC/icon460.png" -color-matrix "$S4" -define png:color-type=6 "$I/sickle_starfall.png"
+
+magick "$SRC/icon959.png"   -color-matrix "0.55 0.45 0.3 0.5 0.55 0.35 0.6 0.5 0.55"   -channel RGB -evaluate multiply 1.35 +channel   -define png:color-type=6 "$I/heartwood_lightning.png"
 ```
 
 안내판(`kind=sign`)만 캐릭터 시트가 아니라 **타일셋에서 잘라 온다.** 마을들이 이미 세워 둔
@@ -330,7 +353,7 @@ magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repa
 클라이언트가 아는 목록은 `apps/client/src/game/nodeSprites.ts` 다. 화자와 같은 규칙으로
 **모르는 id 를 만나면 그 자리에서 던지므로**, 이 표와 그 파일과 CSV 셋이 함께 움직인다.
 
-**아홉 장 전부 32×32 한 칸이다.** 두 칸짜리 큰 나무를 쓰면 밑변 정렬과 y 정렬 깊이가
+**열두 장 전부 32×32 한 칸이다.** 두 칸짜리 큰 나무를 쓰면 밑변 정렬과 y 정렬 깊이가
 따라오는데(`apps/client/src/game/depth.ts` 의 `node = 5` 는 평면이다), 그것은 노드에 얼굴을
 붙이는 일이 살 값이 아니다.
 
@@ -348,6 +371,9 @@ magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repa
 | `ice_vein` | `ice_vein.png` | 64 (r8c0) | `32x32+0+256` | R↔B 교환 + ×1.7 | **팩에 얼음이 없다.** 작은 바위의 빨강과 파랑을 맞바꾸면 황동빛이 청록이 된다. 밝혀서 옅은 조각으로 |
 | `deep_ice_vein` | `deep_ice_vein.png` | 65 (r8c1) | `32x32+32+256` | R↔B 교환 | 같은 교환을 큰 바위에 하고 **밝히지 않은 것**. 크고 짙다 |
 | `red_ice_vein` | `red_ice_vein.png` | 64 (r8c0) | `32x32+0+256` | 붉게(R ×1.9, G ×0.55, B ×0.35) | **얼음 광맥과 같은 바위**를 붉게 돌린 것 — 같은 자리에 서는 두 노드가 한 계열임을 실루엣이 말하고 색만 갈린다. 뜨거운 얼음이 여기서만 난다 |
+| `thunderstruck_tree` | `thunderstruck_tree.png` | 43 (r5c3) | `32x32+96+160` | 희게(회색축 혼합 + ×1.3) | **고목과 같은 가지**를 흰재로 돌린 것. 벼락이 지나간 나무다 |
+| `meteor_vein` | `meteor_vein.png` | 65 (r8c1) | `32x32+32+256` | 보랏빛(R·B 를 서로 섞어 올린다) | **구리 광맥과 같은 바위**. 별똥이 박힌 자리라 금속색이 아니라 보랏빛이다 |
+| `frostbloom_patch` | `frostbloom_patch.png` | 53 (r6c5) | `32x32+160+192` | 희게(회색축 혼합 + ×1.25) | **귀한 약초와 같은 포기**의 꽃이 분홍에서 서리로 바뀐 것 |
 
 **팩의 셋째 바위(타일 66)는 쓰지 않는다.** 밑동이 반투명 디더라서 광물채굴장의 어두운 갈색
 지면 위에 놓으면 바위가 아니라 **구덩이로 읽힌다** — 실제로 얹어 보고 기각했다. 철을 그 바위가
@@ -390,7 +416,7 @@ freely`)은 **개변 허가이지 재배포 허가가 아니다.** `.gitignore` 
 그 줄은 그림보다 **먼저** 들어갔다. 이 경로는 기본값이 추적이라 한 번 커밋되면 그 커밋 자체가
 위반이기 때문이다.
 
-아홉 장이 모두 `pipoya-basechip.png` 에서 나오므로 **위 타일셋 복원을 먼저 끝내야 한다.**
+열두 장이 모두 `pipoya-basechip.png` 에서 나오므로 **위 타일셋 복원을 먼저 끝내야 한다.**
 
 ```bash
 mkdir -p apps/client/public/nodes
@@ -427,6 +453,20 @@ magick "$S" -crop 32x32+32+256 +repage -color-matrix "0 0 1 0 1 0 1 0 0" "$N/dee
 magick "$S" -crop 32x32+0+256 +repage \
   -color-matrix "1.9 0 0 0 0.55 0 0 0 0.35" \
   -define png:color-type=6 "$N/red_ice_vein.png"
+
+# 나머지 셋도 같은 자세다 — 그 계열이 이미 쓰는 그림을 색으로 돌린다.
+# 실루엣이 "무슨 계열인가"를, 색이 "특수인가"를 말한다.
+magick "$S" -crop 32x32+96+160 +repage \
+  -color-matrix "0.85 0.55 0.5 0.75 0.75 0.55 0.7 0.6 0.85" \
+  -channel RGB -evaluate multiply 1.3 +channel \
+  -define png:color-type=6 "$N/thunderstruck_tree.png"
+magick "$S" -crop 32x32+32+256 +repage \
+  -color-matrix "1.1 0.2 0.35 0.3 0.6 0.2 0.55 0.2 1.2" \
+  -define png:color-type=6 "$N/meteor_vein.png"
+magick "$S" -crop 32x32+160+192 +repage \
+  -color-matrix "0.9 0.55 0.55 0.65 0.9 0.6 0.7 0.7 1.0" \
+  -channel RGB -evaluate multiply 1.25 +channel \
+  -define png:color-type=6 "$N/frostbloom_patch.png"
 ```
 
 **색 변주를 `-modulate`(HSL)로 하지 않은 것이 이 블록의 핵심이다.** 위 두 연산은 화소마다의

@@ -609,7 +609,7 @@ describe('runGatherCommand', () => {
     // 시뮬레이터로 볼 수 없으면, 그 표를 눈으로 검산할 곳이 아예 없어진다
     // (확률표는 서버 전용이라 화면에도 안 나온다).
     expect(() => runGatherCommand(realData, realTables, gatherCmd({ tableId: 'fish' }), { seed: 1 })).toThrow(
-      /표 "fish" 를 모른다.*herb, herb_deep, ice, ice_deep, ice_special, mineral, mineral_deep, wood, wood_deep/,
+      /표 "fish" 를 모른다.*herb, herb_deep, herb_special, ice, ice_deep, ice_special, mineral, mineral_deep, mineral_special, wood, wood_deep, wood_special/,
     )
   })
 

@@ -403,7 +403,7 @@ describe('실제로 출하되는 채집표', () => {
 })
 
 describe('loadGatherTables — 서버 전용 진입의 내용물', () => {
-  it('빌드가 구운 아홉 표(바깥 넷 + 심층 넷 + 특수 하나)를 동결된 채로 돌려준다', () => {
+  it('빌드가 구운 열두 표(바깥 넷 + 심층 넷 + 특수 넷)를 동결된 채로 돌려준다', () => {
     // gamedata.json 과 별개 파일(gather-tables.json)에서 온다 — GameData 에
     // 실리지 않는 것이 이 산출물의 존재 이유다. **심층 표도 이쪽에 실려야
     // 한다**: 확률표가 클라 번들로 새는 순간 결계 뒤의 분포까지 F12 로
@@ -415,7 +415,10 @@ describe('loadGatherTables — 서버 전용 진입의 내용물', () => {
     // 결계 §9-앞 어디에도 없다.
     const tables = loadGatherTables()
     expect(Object.keys(tables).sort()).toEqual([
-      'herb', 'herb_deep', 'ice', 'ice_deep', 'ice_special', 'mineral', 'mineral_deep', 'wood', 'wood_deep',
+      'herb', 'herb_deep', 'herb_special',
+      'ice', 'ice_deep', 'ice_special',
+      'mineral', 'mineral_deep', 'mineral_special',
+      'wood', 'wood_deep', 'wood_special',
     ])
     expect(Object.isFrozen(tables.ice_deep!.brackets[0])).toBe(true)
   })

@@ -375,7 +375,7 @@ export function validateCollection(data: GameData, tables: GatherTables): string
     const topTier = topToolTier(table.skill, data.items)
     const best = topTier === null ? null : measureHand(table.skill, data.items, topTier, true, ENHANCE_CAP)
     if (!best) {
-      violations.push(`${at}: ${table.skill} 계열의 최적손을 items.csv 에서 찾을 수 없어 형평을 잴 수 없다`)
+      violations.push(`${at}: ${table.skill} 계열의 최적손을 items.csv 에서 찾을 수 없어 특수 표의 형평을 잴 수 없다`)
       continue
     }
     const chances = tierChances(table.brackets.at(-1)!.cumulative, best)

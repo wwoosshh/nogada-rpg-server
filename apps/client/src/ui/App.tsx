@@ -18,6 +18,7 @@ export function App(): JSX.Element {
     if (connection !== 'online') return
     if (!hostRef.current || gameRef.current) return
     gameRef.current = createPhaserGame(hostRef.current)
+    ;(window as unknown as { __debugGame?: Phaser.Game }).__debugGame = gameRef.current
     return () => {
       gameRef.current?.destroy(true)
       gameRef.current = null

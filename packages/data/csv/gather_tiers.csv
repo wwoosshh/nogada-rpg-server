@@ -51,3 +51,9 @@ herb_deep,6,lavender
 herb_deep,7,common_herb
 ice_special,1,hot_ice
 ice_special,2,ice_shard
+wood_special,1,lightning_heartwood
+wood_special,2,soft_log
+mineral_special,1,star_iron
+mineral_special,2,copper_ore
+herb_special,1,frost_bloom
+herb_special,2,common_herb

@@ -23,3 +23,11 @@ toolTier,level,itemId,count,gold
 3,5,lavender,120,480000
 3,5,pure_ice,120,480000
 3,5,iron_ore,120,480000
+4,1,hard_log,120,120000
+4,2,lavender,240,216000
+4,3,pure_ice,360,360000
+4,4,iron_ore,600,600000
+4,5,hard_log,240,960000
+4,5,lavender,240,960000
+4,5,pure_ice,240,960000
+4,5,iron_ore,240,960000

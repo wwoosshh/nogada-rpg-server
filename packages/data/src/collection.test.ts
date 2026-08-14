@@ -38,6 +38,17 @@ const check = (
 ): string[] => validateCollection(dataWith(collection, items), measured)
 
 /**
+ * **대표 표가 낸 위반만** 골라 본다.
+ *
+ * 아래 형평 스위트는 문턱 하나를 일부러 흔들어 그 칸의 4단이 대역 밖으로 나가는
+ * 것을 본다. 그런데 문턱을 흔들면 **특수 표 쪽 검사도 함께 반응한다** — 같은 칸을
+ * 다른 표로 재는 검사가 하나 더 있기 때문이다(노드 종류 §6-4). 그것은 옳은 반응이라
+ * 끌 것이 아니고, 다만 이 스위트가 보려는 것이 아니다. 특수 표 쪽은 자기 스위트가
+ * 따로 진다.
+ */
+const outerOnly = (violations: string[]): string[] => violations.filter((v) => !v.includes('특수 표'))
+
+/**
  * 출하 얼음 표 옆에 심층 표 하나를 세운 사본 — B2 가 놓을 자리를 미리 흉내 낸다.
  *
  * 심층 표의 확률을 일부러 어긋나게 둔다. 첫 브라켓은 거의 아무것도 안 나오는
@@ -153,9 +164,11 @@ describe('validateCollection — 형평(§6-앞 5)', () => {
   // 앞에서 t2·t3 가 중간 두 단 형평(아래 describe)에도 걸려, 이 테스트가 보려는
   // "4단 형평" 위반보다 먼저 그 위반이 나서 307.5분 메시지 자체가 안 생긴다.
   it('4단이 대역보다 크면 위반이고, 메시지가 몇 분인지·권장 범위를 적는다 — 읽는 사람은 CSV 작가다', () => {
-    const violations = check(stepsOf('copper_ore', [50, 1300, 4300, 13_000]))
+    const violations = outerOnly(check(stepsOf('copper_ore', [50, 1300, 4300, 13_000])))
     expect(violations).toEqual([expect.stringContaining('copper_ore')])
-    expect(violations[0]).toMatch(/307\.5분/)
+    // 4단 도구가 선 뒤로 "최적손"이 3단에서 4단으로 올라가 이 값이 307.5 → 290.9 가
+    // 됐다(노드 종류 B8). 재는 손이 바뀌면 이 숫자도 바뀌는 것이 옳다.
+    expect(violations[0]).toMatch(/290\.9분/)
     // 작가가 "13000 × 25 / 307.5" 를 손으로 곱하지 않게, 메시지가 그 계산을
     // 대신 해서 대역 양 끝의 권장 문턱을 적는다.
     expect(violations[0]).toMatch(/→ [\d,]+~[\d,]+ 사이로 적는다/)
@@ -165,14 +178,14 @@ describe('validateCollection — 형평(§6-앞 5)', () => {
   // 86%가 되어 중간 두 단 형평 위반이 먼저 나고, 이 테스트가 보려는 "너무 쉽다"
   // 라는 4단 형평 위반 자체가 안 생긴다.
   it('4단이 대역보다 작아도 위반이다 — 너무 쉬운 칸은 총점을 공짜로 만든다', () => {
-    expect(check(stepsOf('copper_ore', [50, 60, 180, 500]))).toEqual([expect.stringContaining('copper_ore')])
+    expect(outerOnly(check(stepsOf('copper_ore', [50, 60, 180, 500])))).toEqual([expect.stringContaining('copper_ore')])
   })
 
   it('선별증표가 없는 계열은 최적손을 지을 수 없어 형평을 못 잰다고 말한다 — 조용히 다른 손으로 재지 않는다', () => {
     // 손이 없으면 그 계열의 일곱 칸이 전부 "재지 못했다"인데, 원인은 하나다 —
     // 그래서 위반도 계열마다 하나다(칸마다 일곱 번 같은 말을 하지 않는다).
     const { mineral_sight_token: _removed, ...items } = shipped.items
-    expect(check(shipped.collection, items)).toEqual([expect.stringContaining('최적손')])
+    expect(outerOnly(check(shipped.collection, items))).toEqual([expect.stringContaining('최적손')])
   })
 })
 
@@ -260,7 +273,8 @@ describe('validateCollection — 1단은 절벽 앞에서 닿는다(§6-앞 6)',
  *
  * **최적손은 roll 을 접으므로**(rollFactor × 선별) 바깥 표의 마지막 티어는 그 접힘
  * 위쪽을 잃는데, 특수 표의 두 칸짜리 사다리는 전부 접힘 아래라 몫을 그대로 지킨다.
- * 그래서 "바깥과 같은 31%" 로는 모자라고 실측 상한이 약 16,000 이다. 특수 표가 그보다 두껍게 주면
+ * 그래서 "바깥과 같은 31%" 로는 모자란다. 실측 상한은 **최적손이 몇 단이냐에 따라
+ * 움직인다** — 3단 도구까지였을 때 약 16,000 이었고, 4단(별똥)이 선 뒤 약 14,000 이다. 특수 표가 그보다 두껍게 주면
  * 그 칸의 t4 문턱이 대표 표만 보고 정해진 뜻을 잃는다.
  */
 function withIceSpecial(shardShareAtInfinite: number): GatherTables {
@@ -295,10 +309,13 @@ describe('validateCollection — 특수 표는 칸을 안 만들고, 그래도 �
     expect(check(shipped.collection, undefined, blind)).toHaveLength(1)
   })
 
+  /** 얼음 특수 표가 낸 말만 본다 — 이제 네 계열이 다 출하돼 있고, 이 스위트는 얼음 하나를 흔든다. */
+  const iceOnly = (violations: string[]): string[] => violations.filter((v) => v.includes('ice_special') || v.includes('hot_ice'))
+
   it('특수 표만 가진 아이템은 칸이 없어도 된다 — 특수 재료는 수집물이 아니라 열쇠다', () => {
     // `hot_ice` 는 `collection.csv` 에 없다. 특수 표를 칸 유도에서 안 빼면
     // "채집물인데 칸이 없다"로 빌드가 선다.
-    expect(check(shipped.collection, undefined, withIceSpecial(15_000))).toEqual([])
+    expect(iceOnly(check(shipped.collection, undefined, withIceSpecial(13_000)))).toEqual([])
   })
 
   /**
@@ -307,11 +324,11 @@ describe('validateCollection — 특수 표는 칸을 안 만들고, 그래도 �
    * 29.8분 → 5.3분이 된다. 형평이 대표 표만 보면 이 표는 초록이다.
    */
   it('특수 표가 같은 칸의 훨씬 빠른 출처가 되면 위반이다 — 형평은 특수 표까지 봐야 한다', () => {
-    const violations = check(shipped.collection, undefined, withIceSpecial(99_000))
+    const violations = iceOnly(check(shipped.collection, undefined, withIceSpecial(99_000)))
     expect(violations.join('\n')).toMatch(/ice_shard[\s\S]*ice_special/)
   })
 
   it('특수 표가 대표 표보다 느린 출처면 아무 말도 안 한다 — 옆길은 느려도 된다', () => {
-    expect(check(shipped.collection, undefined, withIceSpecial(15_000))).toEqual([])
+    expect(iceOnly(check(shipped.collection, undefined, withIceSpecial(13_000)))).toEqual([])
   })
 })
