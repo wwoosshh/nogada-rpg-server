@@ -22,6 +22,7 @@ import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
+import { nodeSpriteFile, nodeSpriteKey } from '../nodeSprites.js'
 import { NpcSprite, SpeakerPoseChannel } from '../NpcSprite.js'
 import { NpcScheduler, schedulesForMap, speakersForMap, type NpcCommand } from '../npcScheduler.js'
 import { npcSprite, npcSpriteKey } from '../npcSprites.js'
@@ -272,6 +273,32 @@ export class WorldScene extends Phaser.Scene {
       } else {
         this.load.image(key, `sprites/${def.file}`)
       }
+    }
+
+    // 노드 그림도 **이 맵에 놓인 것만** 올린다 — 화자 시트와 같은 이유다. 여덟
+    // 장은 다 합쳐도 6KB 라 지금은 전부 올려도 티가 안 나지만, 노드 종류는 채집장이
+    // 늘어나는 만큼 늘어나므로 "다 올린다"는 타일셋 여섯 장처럼 끝이 있는 목록이
+    // 아니다. 타일셋을 다 올리는 것은 맵 JSON 을 아직 안 읽어 **어느 시트를 쓰는지
+    // 모르기 때문**인데, 배치는 이미 스토어에 있어서 여기서도 알 수 있다.
+    //
+    // **create() 가 아니라 preload() 여야 한다.** spawnNodes() 는 create() 안이고,
+    // 그때 로더에 넣으면 큐가 이미 끝난 뒤라 그 프레임에는 텍스처가 없다 —
+    // 노드가 전부 빈 네모로 서고, 로더를 다시 돌리지 않는 한 영영 그대로다.
+    //
+    // 여기 거는 필터는 spawnNodes() 의 것과 같아야 한다. 갈라지면 그림은 올렸는데
+    // 세울 노드가 없거나, 세울 노드는 있는데 그림이 없다.
+    const loadedNodes = new Set<string>()
+    for (const placement of Object.values(useGameStore.getState().data.placements)) {
+      if (placement.mapId !== mapId) continue
+      // 배치가 가리키는 노드 정의가 없으면 그림도 없다. 그 경우를 여기서 막지 않는
+      // 것은 spawnNodes() 가 이미 경고하고 넘어가기 때문이다 — 같은 사실에 두 개의
+      // 다른 처리를 두면 어느 쪽이 참인지 화면만 봐서는 알 수 없다.
+      const def = useGameStore.getState().data.nodes[placement.nodeId]
+      if (!def || loadedNodes.has(def.sprite)) continue
+      loadedNodes.add(def.sprite)
+      // 모르는 이름이면 여기서 던진다(nodeSprites.ts) — 그 채집장이 안 뜨는 편이
+      // 그 노드만 남의 그림으로 서는 것보다 낫다.
+      this.load.image(nodeSpriteKey(def.sprite), `nodes/${nodeSpriteFile(def.sprite)}`)
     }
   }
 
@@ -884,7 +911,7 @@ export class WorldScene extends Phaser.Scene {
         y: placement.y * TILE + TILE / 2,
         instanceId: placement.instanceId,
         label: def.name,
-        variant: def.variant,
+        sprite: def.sprite,
       })
     }
   }
