@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { NODE_VARIANTS } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 
 describe('parseCsv', () => {
@@ -236,8 +237,17 @@ describe('parseNodes', () => {
 
   it('알 수 없는 variant 값을 거부한다 — 마커 색의 출처라 오타가 조용히 기본색이 되면 안 된다', () => {
     expect(() => parseNodes([validNodeRow({ variant: 'depe' })])).toThrow(
-      'nodes.csv[copper_vein]: variant "depe" 는 알 수 없다 (허용값: normal, deep)',
+      'nodes.csv[copper_vein]: variant "depe" 는 알 수 없다 (허용값: normal, deep, special)',
     )
+  })
+
+  // 허용 목록을 `NODE_VARIANTS` 에서 유도하는 이유를 여기서 문다: 등급이 늘어나는
+  // 날 이 목록을 손으로 안 고쳐도 파서가 그 등급을 받아야 한다. 손으로 적혀
+  // 있으면 타입은 통과하고 CSV 만 영원히 거절당하는데, 그 갈라짐은 아무도 안 짖는다.
+  it('등급 전수가 파싱을 통과한다 — 타입에 있는 등급이 CSV 에서 거절당하면 안 된다', () => {
+    for (const variant of NODE_VARIANTS) {
+      expect(parseNodes([validNodeRow({ variant })]).copper_vein!.variant).toBe(variant)
+    }
   })
 
   it('tableId 가 비어 있으면 거부한다 — 표 없는 노드는 아무것도 내놓지 못한다', () => {

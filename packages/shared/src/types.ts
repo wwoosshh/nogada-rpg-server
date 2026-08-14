@@ -300,6 +300,19 @@ export interface MasterDef {
   gold: number
 }
 
+/**
+ * 노드의 등급 — 목록이 먼저이고 타입이 거기서 나온다.
+ *
+ * `SKILL_IDS` 처럼 타입과 배열을 따로 적지 **않는** 이유: 등급은 표 id 의 접미사와
+ * 짝을 이루고(`gatherTables.ts` 의 전사 함수), 그 짝은 `Record<NodeVariant, …>` 로
+ * 전수를 강제한다. 타입에만 값을 더하고 이 배열을 잊으면 파서가 그 등급을 영원히
+ * 거절하는데 — CSV 는 거절당하고 타입은 통과하니 — 어느 검사도 안 짖는다.
+ * 배열에서 타입을 뽑으면 그 갈라짐이 존재할 수 없다.
+ */
+export const NODE_VARIANTS = ['normal', 'deep', 'special'] as const
+
+export type NodeVariant = (typeof NODE_VARIANTS)[number]
+
 export interface NodeDef {
   id: string
   name: string
@@ -313,20 +326,27 @@ export interface NodeDef {
    */
   tableId: string
   /**
-   * 이 노드가 결계 안쪽인가 바깥인가. 마커 색의 출처이기도 하다.
+   * 이 노드가 어느 등급인가 — 결계 안(`deep`)인가, 바깥(`normal`)인가, 조건이
+   * 열릴 때만 서는 옆길(`special`)인가. 마커 색의 출처이기도 하다.
    *
    * **채집 티어 스펙은 이 칸을 "표시 전용"이라 적었고 그것이 대가를 치렀다**
    * (결계 설계 계기 둘): 심층 노드 넷이 이름과 색만 심층인 채 바깥과 같은 표를
-   * 굴렸고, 얼음안내판은 그 위에서 거짓말을 했다. 지금은 `deep` 이면 `tableId`
-   * 가 반드시 `*_deep` 이고(결계 계획 B2, validateGameData 가 강제한다 — 오래
+   * 굴렸고, 얼음안내판은 그 위에서 거짓말을 했다. 지금은 등급마다 `tableId` 의
+   * 접미사가 정해져 있고(결계 계획 B2, validateGameData 가 강제한다 — 오래
    * "§9-앞 5" 로 적혀 있었는데 그 번호는 전수 시뮬의 표 목록 하드코딩 얘기다) 그 표가
-   * 분당 산출 ×2.5 를 진다. 즉 이 칸은 **판정에 쓰인다** — 직접 읽히는 것이
+   * 자기 등급의 산출을 진다. 즉 이 칸은 **판정에 쓰인다** — 직접 읽히는 것이
    * 아니라 자기와 짝지어진 표를 통해서다.
+   *
+   * **2값이 3값이 되면서 그 강제가 부등식으로 바뀌었다.** 옛 검사는
+   * `isDeepTableId(tableId) !== (variant === 'deep')` 한 줄이라 `special` + 접미사
+   * 없는 표를 양쪽 다 false 로 읽어 통과시킨다 — 아크 A 가 노드에 그림을 달았으므로
+   * 그 거짓말은 이제 화면에서 보인다(붉은 얼음 광맥이 보통 얼음을 준다).
+   * 그래서 검사가 전사 함수(`variantOfTableId`)를 부르는 등식이 됐다.
    *
    * 판정에 쓰이는 티어는 여전히 없다(도구 등급 게이트는 §7-앞 8 에서 은퇴했다).
    * 심층을 지키는 것은 노드의 자격 검사가 아니라 **그 앞의 결계 전환**이다.
    */
-  variant: 'normal' | 'deep'
+  variant: NodeVariant
   /**
    * 이 노드가 맵에 세우는 그림의 **이름**. 파일 경로가 아니다.
    *

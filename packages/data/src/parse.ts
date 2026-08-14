@@ -1,13 +1,14 @@
 import type {
   ItemDef,
   NodeDef,
+  NodeVariant,
   RecipeDef,
   RecipeInput,
   SkillId,
   TokenEffect,
   WeatherKind,
 } from '@nogada/shared'
-import { SKILL_IDS, TOKEN_EFFECTS, WEATHER_KINDS } from '@nogada/shared'
+import { NODE_VARIANTS, SKILL_IDS, TOKEN_EFFECTS, WEATHER_KINDS } from '@nogada/shared'
 
 type Row = Record<string, string>
 
@@ -93,6 +94,10 @@ function toFloat(value: string, context: string, field: string, min: number, max
 
 function isSkillId(value: string): value is SkillId {
   return (SKILL_IDS as readonly string[]).includes(value)
+}
+
+function isNodeVariant(value: string): value is NodeVariant {
+  return (NODE_VARIANTS as readonly string[]).includes(value)
 }
 
 /** CSV 의 skill/toolSkill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. 오타가 조용히 통과하는 것을 막는다. */
@@ -251,9 +256,12 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
   for (const row of rows) {
     const id = requireCell(row, 'id', 'nodes.csv')
     const ctx = `nodes.csv[${id}]`
+    // 허용 목록을 여기 손으로 안 적는 이유: 등급이 늘어나는 날 이 줄을 잊으면
+    // 타입에는 있는 등급이 CSV 에서만 영원히 거절당하는데, 그 갈라짐은 어느
+    // 검사도 안 짖는다 — 작가는 오타를 의심하며 자기 CSV 만 들여다본다.
     const variant = requireCell(row, 'variant', ctx)
-    if (variant !== 'normal' && variant !== 'deep') {
-      throw new Error(`${ctx}: variant "${variant}" 는 알 수 없다 (허용값: normal, deep)`)
+    if (!isNodeVariant(variant)) {
+      throw new Error(`${ctx}: variant "${variant}" 는 알 수 없다 (허용값: ${NODE_VARIANTS.join(', ')})`)
     }
     const def: NodeDef = {
       id,

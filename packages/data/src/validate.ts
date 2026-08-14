@@ -12,6 +12,7 @@ import type {
 import {
   COLLECTION_MAX_GRADE,
   EVENT_ORDER,
+  NODE_VARIANTS,
   ONCE_EVENTS,
   SKILL_IDS,
   actionIntervalMs,
@@ -25,7 +26,7 @@ import {
   starterToolCandidates,
 } from '@nogada/shared'
 import { dialogueLocation } from './dialogueParse.js'
-import { DEEP_TABLE_SUFFIX, isDeepTableId } from './gatherTables.js'
+import { suffixOfVariant, variantOfTableId } from './gatherTables.js'
 import { startVillages, villageField } from './maps.js'
 import type { MapTerrain } from './placements.js'
 
@@ -379,11 +380,29 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     // 그려지는데 분포는 바깥이거나 그 반대인데, **어느 화면에서도 되짚을 수
     // 없다** — 확률표는 서버 전용이라 사람이 눈으로 대조할 곳조차 없다.
     // 그래서 두 칸이 아니라 한 규칙이 되게 묶는다.
-    if (isDeepTableId(node.tableId) !== (node.variant === 'deep')) {
+    //
+    // **등급이 2값에서 3값이 되면서 이 검사의 모양이 바뀌었다.** 옛 한 줄은
+    // `isDeepTableId(tableId) !== (variant === 'deep')` 이었는데, 그것은
+    // `variant='special'` + 접미사 없는 표를 **양쪽 다 false** 로 읽어 통과시킨다 —
+    // 부등식이라 등급이 늘어난 만큼 새는 자리가 늘어난다. 아크 A 가 노드에 그림을
+    // 달았으므로 그 거짓말은 이제 화면에서 보인다(붉은 얼음 광맥이 보통 얼음을 준다).
+    // 그래서 전사 함수를 부르는 **등식**으로 바꾼다: 등급이 넷째로 늘어나도 이 줄은
+    // 그대로 옳다.
+    const tableVariant = variantOfTableId(node.tableId)
+    if (tableVariant !== node.variant) {
+      // 접미사 문자열을 여기서 알지 않는다 — 전사 함수만 부른다. 그래야 고칠 자리를
+      // 일러 주는 이 문장이 접미사가 바뀌는 날 함께 따라온다.
+      const base = node.tableId.slice(0, node.tableId.length - suffixOfVariant(tableVariant).length)
+      const suggested = `${base}${suffixOfVariant(node.variant)}`
+      const menu = NODE_VARIANTS.map(
+        (v) => `${v} → ${suffixOfVariant(v) === '' ? '접미사 없음' : `"${suffixOfVariant(v)}"`}`,
+      ).join(', ')
       violations.push(
         // 영문 식별자에 조사를 직접 붙이면 받침 유무로 문법이 어긋나므로
         // (ice 는 "다", mineral 은 "이다") 괄호로 감싸고 조사는 한국어 낱말에 붙인다.
-        `nodes[${node.id}]: variant("${node.variant}") 와 tableId("${node.tableId}") 가 짝이 아니다 — variant=deep 인 노드만 "${DEEP_TABLE_SUFFIX}" 표를 굴리고 그 반대도 같다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 의 variant 나 tableId 중 하나를 고친다`,
+        // 고칠 자리를 일러 주는 끝 문장이 "쪽에 맞추거나"·"처럼"인 것도 같은 이유다 —
+        // 등급 이름과 표 id 에 조사가 직접 닿지 않는다.
+        `nodes[${node.id}]: variant("${node.variant}") 와 tableId("${node.tableId}") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(${menu}) 이 tableId 는 "${tableVariant}" 등급의 표다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "${tableVariant}" 쪽에 맞추거나 tableId 를 "${suggested}" 처럼 적는다`,
       )
     }
     if (!placedNodeIds.has(node.id)) {

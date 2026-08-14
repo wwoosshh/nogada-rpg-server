@@ -3,13 +3,13 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DialogueRule, GameData, GatherTables, MilestoneDef, ShopDef, SpeakerDef } from '@nogada/shared'
-import { isSellTarget, sellPrice } from '@nogada/shared'
+import { NODE_VARIANTS, isSellTarget, sellPrice } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseMasters, parseShops } from './shops.js'
 import { parseCollection } from './collection.js'
 import { parseEnhanceCosts } from './enhanceCosts.js'
-import { parseGatherTables } from './gatherTables.js'
+import { parseGatherTables, suffixOfVariant } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
 import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
@@ -272,7 +272,7 @@ describe('validateGameData', () => {
     const data = baseData()
     data.nodes.copper_vein!.variant = 'deep'
     expect(validateGameData(data, baseTables())).toContain(
-      'nodes[copper_vein]: variant("deep") 와 tableId("mineral") 가 짝이 아니다 — variant=deep 인 노드만 "_deep" 표를 굴리고 그 반대도 같다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 의 variant 나 tableId 중 하나를 고친다',
+      'nodes[copper_vein]: variant("deep") 와 tableId("mineral") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(normal → 접미사 없음, deep → "_deep", special → "_special") 이 tableId 는 "normal" 등급의 표다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "normal" 쪽에 맞추거나 tableId 를 "mineral_deep" 처럼 적는다',
     )
   })
 
@@ -282,8 +282,43 @@ describe('validateGameData', () => {
     const tables = baseTables()
     tables.mineral_deep = { ...tables.mineral!, id: 'mineral_deep', equity: false }
     expect(validateGameData(data, tables)).toContain(
-      'nodes[copper_vein]: variant("normal") 와 tableId("mineral_deep") 가 짝이 아니다 — variant=deep 인 노드만 "_deep" 표를 굴리고 그 반대도 같다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 의 variant 나 tableId 중 하나를 고친다',
+      'nodes[copper_vein]: variant("normal") 와 tableId("mineral_deep") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(normal → 접미사 없음, deep → "_deep", special → "_special") 이 tableId 는 "deep" 등급의 표다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "deep" 쪽에 맞추거나 tableId 를 "mineral" 처럼 적는다',
     )
+  })
+
+  // **등급이 셋이 되면서 옛 검사가 새는 자리가 생겼다.** 옛 한 줄은
+  // `isDeepTableId(tableId) !== (variant === 'deep')` 이라, special + 접미사 없는
+  // 표를 **양쪽 다 false** 로 읽어 통과시킨다. 아크 A 가 노드에 그림을 달았으므로
+  // 그 거짓말은 이제 화면에서 보인다 — 붉은 얼음 광맥이 보통 얼음을 준다.
+
+  it('special 노드가 바깥 표를 가리키면 위반이다 — 옛 두 값 검사가 정확히 여기서 샜다', () => {
+    const data = baseData()
+    data.nodes.copper_vein!.variant = 'special'
+    expect(validateGameData(data, baseTables())).toContain(
+      'nodes[copper_vein]: variant("special") 와 tableId("mineral") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(normal → 접미사 없음, deep → "_deep", special → "_special") 이 tableId 는 "normal" 등급의 표다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "normal" 쪽에 맞추거나 tableId 를 "mineral_special" 처럼 적는다',
+    )
+  })
+
+  it('normal 노드가 특수 표를 가리켜도 위반이다 — 유일 출처가 아무 노드에서나 나오면 조건이 뜻을 잃는다', () => {
+    const data = baseData()
+    data.nodes.copper_vein!.tableId = 'mineral_special'
+    const tables = baseTables()
+    tables.mineral_special = { ...tables.mineral!, id: 'mineral_special', equity: false }
+    expect(validateGameData(data, tables)).toContain(
+      'nodes[copper_vein]: variant("normal") 와 tableId("mineral_special") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(normal → 접미사 없음, deep → "_deep", special → "_special") 이 tableId 는 "special" 등급의 표다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "special" 쪽에 맞추거나 tableId 를 "mineral" 처럼 적는다',
+    )
+  })
+
+  it('짝이 맞는 세 등급은 이 검사를 통과한다 — 등급을 늘린 것이 새 거짓말을 만들면 안 된다', () => {
+    for (const variant of NODE_VARIANTS) {
+      const data = baseData()
+      const tables = baseTables()
+      const tableId = `mineral${suffixOfVariant(variant)}`
+      data.nodes.copper_vein!.variant = variant
+      data.nodes.copper_vein!.tableId = tableId
+      tables[tableId] = { ...tables.mineral!, id: tableId, equity: tableId === 'mineral' }
+      expect(validateGameData(data, tables).filter((v) => v.includes('짝이 아니다'))).toEqual([])
+    }
   })
 
   it('없는 아이템을 재료로 쓰는 레시피를 잡아낸다', () => {

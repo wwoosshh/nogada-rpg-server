@@ -1,9 +1,9 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { GameData, GatherBracketDef, GatherTables, ItemDef, NodeDef, SkillId } from '@nogada/shared'
-import { gatherBracketFor, sellPrice } from '@nogada/shared'
+import { NODE_VARIANTS, gatherBracketFor, sellPrice } from '@nogada/shared'
 import { testItem } from '@nogada/shared/testing'
 import { parseCsv } from './parse.js'
 import { goldPerMinute, measureHand, tierChances } from './gatherMeasure.js'
@@ -13,8 +13,11 @@ import {
   DEEP_YIELD_TOLERANCE,
   barrierGateValues,
   isDeepTableId,
+  isSpecialTableId,
   parseGatherTables,
+  suffixOfVariant,
   validateGatherTables,
+  variantOfTableId,
 } from './gatherTables.js'
 import { loadGameData } from './load.js'
 import { loadGatherTables } from './loadGatherTables.js'
@@ -735,6 +738,124 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
     expect(validateGatherTables(orphaned, data).violations).toContain(
       'gather[ice_deep]: 같은 계열(ice)의 바깥 표가 없다 — 심층 표는 바깥 표의 ∞ 를 복사하고 그 분당 산출의 2.5배를 져야 하므로 짝이 반드시 있어야 한다. gather_tables.csv 에 "_deep" 이 아닌 ice 계열 표를 둔다',
     )
+  })
+
+  /**
+   * 같은 계열에 특수 표를 하나 세운 세계 — 표도 그것을 가리키는 노드도 함께 준다.
+   *
+   * 노드까지 주는 이유: 고아 표 검사가 "어느 노드도 안 가리킨다"로 먼저 짖으면
+   * 이 스위트가 재려는 것(심층↔바깥 짝짓기가 특수 표를 세었는가)이 그 소음에
+   * 묻힌다. 표는 `ice` 의 사본이라 나머지 검사에는 아무 할 말이 없다.
+   */
+  function withIceSpecial(): { tables: GatherTables; data: GameData } {
+    const outer = tables['ice']!
+    return {
+      tables: { ...tables, ice_special: { ...outer, id: 'ice_special', equity: false } },
+      data: {
+        ...data,
+        nodes: {
+          ...data.nodes,
+          red_ice_vein: {
+            id: 'red_ice_vein', name: '붉은 얼음 광맥', skill: 'ice',
+            tableId: 'ice_special', variant: 'special', sprite: 'red_ice_vein',
+          },
+        },
+      },
+    }
+  }
+
+  // **바깥 표의 정의가 "심층이 아닌 표"이던 시절의 대가다.** `ice_special` 이
+  // 서는 순간 `ice` 의 짝이 둘이 되어 `candidates.length !== 1` 이 참이 되고,
+  // 그 자리의 continue 가 ∞복사·천장·바닥·결계문·배수 **다섯을 한꺼번에** 건너뛴다.
+  // 특수 노드는 결계 밖에 서므로 이 상태는 아크 B 가 데이터를 한 줄 더하는
+  // 그날 바로 온다 — 심층 검증 전체가 조용히 꺼지는데, 꺼졌다는 말은 어디에도 안 뜬다.
+  it('같은 계열에 특수 표가 서도 심층은 바깥 표를 하나로 찾는다 — 접미사가 없는 표만 바깥이다', () => {
+    const { tables: withSpecial, data: withNode } = withIceSpecial()
+    expect(validateGatherTables(withSpecial, withNode)).toEqual({ violations: [], warnings: [] })
+  })
+
+  it('특수 표가 선 뒤에도 심층 검증 다섯이 그대로 문다 — 짝짓기 실패로 통째로 건너뛰면 안 된다', () => {
+    // 위 테스트만으로는 부족하다: 다섯을 건너뛰어도 위반은 0건이 되므로 초록이
+    // "검사가 돌았다"를 뜻하지 않는다. 그래서 같은 세계에서 심층 ∞ 를 한 칸
+    // 깨뜨려 두고, 그 위반이 **여전히 나오는지**를 묻는다.
+    const { tables: withSpecial, data: withNode } = withIceSpecial()
+    const broken = {
+      ...withSpecial,
+      ice_deep: {
+        ...withSpecial['ice_deep']!,
+        brackets: withSpecial['ice_deep']!.brackets.map((b) =>
+          b.bracketMax === null ? { ...b, cumulative: [15000, 34500, 49000, 69000, 100000] } : b,
+        ),
+      },
+    }
+    expect(validateGatherTables(broken, withNode).violations).toContain(
+      'gather[ice_deep] ∞ 브라켓: 티어 2(pure_ice_crystal)의 누적이 34500 인데 바깥 표 "ice" 의 ∞ 는 34000 이다 — 심층 ∞ 는 바깥 ∞ 의 복사본이어야 한다. 수집의 방 형평 검증은 표를 순회하며 같은 25칸 문턱을 그 표의 ∞ 로 재므로, 둘이 갈라지면 한 칸의 t4 가 두 표의 25~35분 대역을 동시에 만족해야 하는 교착이 된다. gather_brackets.csv 의 ice_deep ∞ 행을 ice 의 ∞ 행과 같게 적는다',
+    )
+  })
+})
+
+// ---- 등급↔접미사 전사 ----
+//
+// 등급(`nodes.csv` 의 variant)과 표 id 의 접미사는 한 가지를 말하는 두 표시다.
+// 둘을 잇는 자리가 여럿이 되면 갈라지고, **갈라져도 어느 화면 하나 이상해지지
+// 않는다** — 확률표는 서버 전용이라 사람이 눈으로 대조할 곳조차 없다. 그것이
+// 심층 노드 넷이 이름과 색만 심층이던 상태의 정확한 원인이다.
+
+describe('등급↔접미사 전사 — 잇는 자리가 하나뿐이어야 한다', () => {
+  it('등급 전수가 자기 접미사를 붙인 표 id 에서 그대로 되읽힌다', () => {
+    // `NODE_VARIANTS` 를 도는 이유: 등급이 넷째로 늘어나는 날 이 왕복이 자동으로
+    // 그 등급까지 묻는다. 셋을 손으로 적으면 그날 새 등급만 조용히 안 재인다.
+    for (const variant of NODE_VARIANTS) {
+      expect(variantOfTableId(`ice${suffixOfVariant(variant)}`)).toBe(variant)
+    }
+  })
+
+  it('접미사가 등급마다 서로 다르다 — 둘이 같으면 되읽기가 한쪽을 영원히 삼킨다', () => {
+    expect(new Set(NODE_VARIANTS.map(suffixOfVariant)).size).toBe(NODE_VARIANTS.length)
+  })
+
+  it('바깥 표만 접미사가 없다 — "접미사가 없는 표가 바깥"이라는 정의가 여기서 나온다', () => {
+    expect(suffixOfVariant('normal')).toBe('')
+    expect(variantOfTableId('ice')).toBe('normal')
+  })
+
+  it('두 술어는 전사 함수와 같은 답을 낸다 — 셋이 갈라지면 어느 쪽이 옳은지 물을 곳이 없다', () => {
+    for (const id of ['ice', 'ice_deep', 'ice_special']) {
+      expect(isDeepTableId(id)).toBe(variantOfTableId(id) === 'deep')
+      expect(isSpecialTableId(id)).toBe(variantOfTableId(id) === 'special')
+    }
+  })
+
+  /**
+   * 접미사 문자열을 아는 소스 파일이 `gatherTables.ts` 하나뿐인지 되읽는다.
+   *
+   * 규범은 "전사 함수 **하나**가 등급↔접미사를 소유한다"인데, 그 규범을 무는
+   * 것은 타입 검사가 아니라 이 순회뿐이다 — 다른 파일이 `id.endsWith('_deep')`
+   * 를 한 줄 적어도 컴파일도 테스트도 전부 통과하고, 그 줄이 이 파일과 갈라지는
+   * 날 마커 색과 실제 분포가 어긋난다. 테스트 파일은 뺀다: 기대 문자열에 접미사가
+   * 그대로 적히는 것이 오히려 검사의 값어치다(메시지가 바뀌면 빨개져야 한다).
+   */
+  it('접미사 문자열을 직접 적은 소스는 gatherTables.ts 하나뿐이다', () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+    const owner = join('packages', 'data', 'src', 'gatherTables.ts')
+    const skipDirs = new Set(['node_modules', 'dist', 'generated', '.git'])
+    const literal = /(['"`])_(?:deep|special)\1/
+
+    const offenders: string[] = []
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          if (!skipDirs.has(entry.name)) walk(full)
+        } else if (/\.tsx?$/.test(entry.name) && !entry.name.includes('.test.')) {
+          const rel = relative(root, full)
+          if (rel !== owner && literal.test(readFileSync(full, 'utf8'))) offenders.push(rel)
+        }
+      }
+    }
+    for (const top of ['packages', 'apps']) walk(join(root, top))
+
+    expect(offenders).toEqual([])
   })
 })
 

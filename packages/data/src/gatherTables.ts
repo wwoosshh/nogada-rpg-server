@@ -4,10 +4,11 @@ import type {
   GatherTableDef,
   GatherTables,
   GatherTierDef,
+  NodeVariant,
   SkillId,
   TransitionDef,
 } from '@nogada/shared'
-import { gatherBracketFor } from '@nogada/shared'
+import { NODE_VARIANTS, gatherBracketFor } from '@nogada/shared'
 import { goldPerMinute, measureHand } from './gatherMeasure.js'
 import { addUnique, optionalCell, requireCell, toInt, toSkillId } from './parse.js'
 
@@ -36,9 +37,62 @@ const EQUITY_MARK = '1'
  */
 export const DEEP_TABLE_SUFFIX = '_deep'
 
+/** 특수 표의 id 접미사 — `variant=special` 과 짝을 이룬다. 이유는 심층과 같다. */
+export const SPECIAL_TABLE_SUFFIX = '_special'
+
+/**
+ * 등급 → 접미사. **이 저장소에서 등급과 접미사를 잇는 유일한 자리다.**
+ *
+ * `Record<NodeVariant, string>` 인 것이 검사의 절반이다 — 등급이 넷째로 늘어나면
+ * 이 객체가 컴파일 단계에서 빨개진다. 나머지 절반(되읽기가 왕복하는가, 접미사가
+ * 서로 다른가, 다른 파일이 접미사를 따로 적지 않았는가)은 gatherTables.test.ts 가
+ * 문다. 둘을 잇는 자리가 여럿이 되면 갈라지고, **갈라져도 어느 화면 하나
+ * 이상해지지 않는다** — 확률표는 서버 전용이라 사람이 눈으로 대조할 곳조차 없다.
+ *
+ * `normal` 이 빈 문자열인 것에 뜻이 있다: 바깥 표의 정의가 "심층이 아닌 표"가
+ * 아니라 **"접미사가 없는 표"** 라는 것. 옛 정의는 `ice_special` 이 서는 순간
+ * `ice` 의 짝을 둘로 만들어 심층 검증 다섯을 한꺼번에 껐다.
+ */
+const SUFFIX_BY_VARIANT: Record<NodeVariant, string> = {
+  normal: '',
+  deep: DEEP_TABLE_SUFFIX,
+  special: SPECIAL_TABLE_SUFFIX,
+}
+
+/** 그 등급의 표 id 가 져야 하는 접미사. 바깥(normal)은 빈 문자열이다. */
+export function suffixOfVariant(variant: NodeVariant): string {
+  return SUFFIX_BY_VARIANT[variant]
+}
+
+/**
+ * 그 표 id 가 말하는 등급. 접미사가 붙은 것부터 보고, 남는 것이 바깥이다.
+ *
+ * 순서가 뜻을 가진다 — 접미사끼리 겹치면(예: `_deep` 과 `_x_deep`) 먼저 보는 쪽이
+ * 이긴다. 겹치지 않는다는 것은 테스트가 등급 전수 왕복으로 문다.
+ */
+export function variantOfTableId(tableId: string): NodeVariant {
+  for (const variant of NODE_VARIANTS) {
+    const suffix = suffixOfVariant(variant)
+    if (suffix !== '' && tableId.endsWith(suffix)) return variant
+  }
+  return 'normal'
+}
+
 /** 그 표 id 가 결계 뒤의 표인가. `validateGameData` 의 노드 검사도 이 술어를 부른다. */
 export function isDeepTableId(tableId: string): boolean {
-  return tableId.endsWith(DEEP_TABLE_SUFFIX)
+  return variantOfTableId(tableId) === 'deep'
+}
+
+/**
+ * 그 표 id 가 조건이 열릴 때만 굴려지는 특수 표인가.
+ *
+ * 도감의 칸 유도가 `!table.equity` 가 아니라 이 술어로 좁혀야 하는 자리다
+ * (설계 §6-5): `equity` 는 "형평을 재는 대표 표"라는 뜻이라 심층도 false 이고,
+ * 그것으로 좁히면 `ice.equity=false` 같은 고장 상태가 "얼음 조각은 채집물이
+ * 아니다"로 번진다.
+ */
+export function isSpecialTableId(tableId: string): boolean {
+  return variantOfTableId(tableId) === 'special'
 }
 
 /**
@@ -304,7 +358,12 @@ function validateDeepTables(tables: GatherTables, data: GameData): string[] {
 
   const outerBySkill = new Map<SkillId, GatherTableDef[]>()
   for (const table of Object.values(tables)) {
-    if (isDeepTableId(table.id)) continue
+    // **바깥은 "심층이 아닌 표"가 아니라 "접미사가 없는 표"다.** 부정으로 적던
+    // 시절에는 `ice_special` 이 서는 순간 `ice` 의 짝이 둘이 되고, 바로 아래
+    // `candidates.length !== 1` 의 continue 가 ∞복사·천장·바닥·결계문·배수
+    // **다섯을 한꺼번에** 건너뛴다 — 심층 검증 전체가 조용히 꺼지는데 꺼졌다는
+    // 말은 어디에도 안 뜬다(위반은 짝짓기 실패 한 줄로만 남는다).
+    if (variantOfTableId(table.id) !== 'normal') continue
     const list = outerBySkill.get(table.skill)
     if (list) list.push(table)
     else outerBySkill.set(table.skill, [table])
