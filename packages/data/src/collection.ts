@@ -205,7 +205,7 @@ export function validateCollection(data: GameData, tables: GatherTables): string
   for (const itemId of Object.keys(collection)) {
     if (!gathered.has(itemId)) {
       violations.push(
-        `${FILE}[${itemId}]: 채집물이 아니다 — gather_tiers.csv 에 없는 아이템은 캘 수 없으니 영원히 0등급인 칸이 된다. 정제품·가루·주괴·증표는 "모았다"가 아니라 "만들었다"라 칸이 아니다`,
+        `${FILE}[${itemId}]: 채집물이 아니다 — 바깥·심층 표의 사다리에 없는 아이템은 이 방이 세지 않으니 영원히 0등급인 칸이 된다(특수 표는 칸을 안 만든다). 정제품·가루·주괴·증표는 "모았다"가 아니라 "만들었다"라 칸이 아니다`,
       )
     }
   }

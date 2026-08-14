@@ -225,7 +225,8 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
-# 아이템 아이콘 65종 — 위 매핑 표와 같은 내용이다. items.csv 는 이 중 61종을 쓴다
+# 아이템 아이콘 72종(여기 복사 67 + 아래 색 파생 5) — 위 매핑 표와 같은 내용이다.
+# items.csv 는 이 중 68종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
 # 없는 예비 배정 4종. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
 # mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
@@ -484,7 +485,7 @@ magick "$S" -crop 32x32+160+192 +repage \
 이 표만 보고 같은 파일을 만들 수 있다** — 이 문서 하나로 재구성된다는 맨 위 규칙이
 "명령이 적혀 있다"가 아니라 **"산술이 적혀 있다"** 수준으로 지켜진다.
 
-규격 확인 (여덟 줄이 전부 `32x32` 여야 한다):
+규격 확인 (열두 줄이 전부 `32x32` 여야 한다):
 
 ```powershell
 Add-Type -AssemblyName System.Drawing

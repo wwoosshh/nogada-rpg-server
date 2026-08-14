@@ -18,7 +18,13 @@ export function App(): JSX.Element {
     if (connection !== 'online') return
     if (!hostRef.current || gameRef.current) return
     gameRef.current = createPhaserGame(hostRef.current)
-    ;(window as unknown as { __debugGame?: Phaser.Game }).__debugGame = gameRef.current
+    // 개발 빌드에서만 창에 매단다. 브라우저 검증이 씬·카메라·표시목록을 들여다볼
+    // 통로가 필요한데(아크 A·B 의 마무리 태스크가 이것으로 다섯 맵을 돌았다),
+    // 가드가 없으면 출하 번들에도 그대로 남는다 — 판정은 서버가 하므로 치트가
+    // 되지는 않지만, 내보낼 이유가 없는 것을 내보내는 것은 그 자체로 부채다.
+    if (import.meta.env.DEV) {
+      ;(window as unknown as { __debugGame?: Phaser.Game }).__debugGame = gameRef.current
+    }
     return () => {
       gameRef.current?.destroy(true)
       gameRef.current = null

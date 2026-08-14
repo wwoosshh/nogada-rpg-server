@@ -52,6 +52,29 @@ describe('아이템 아이콘 — items.csv 와 CREDITS.md 복원 heredoc 대조
     expect(new Set(icons).size).toBe(icons.length)
   })
 
+  /**
+   * 대장 첫 줄이 적는 **개수 셋**이 실제와 같은가.
+   *
+   * 그 줄은 사람이 손으로 세어 적는데, 아크 B 에서 한 커밋이 두 줄을 더하면서 안
+   * 올려 65/61 이 72/68 과 어긋난 채 남았다. 문서가 자기 내용과 다른 수를 말하면
+   * 다음 사람이 "빠진 게 있나" 를 세느라 시간을 쓴다 — 그 셈을 여기서 한다.
+   */
+  it('CREDITS.md 첫 줄의 아이콘 개수 셋이 실제와 같다', () => {
+    const credits = readFileSync(join(repoRoot, 'assets', 'CREDITS.md'), 'utf8')
+    const header = /# 아이템 아이콘 (\d+)종\(여기 복사 (\d+) \+ 아래 색 파생 (\d+)\)[\s\S]*?이 중 (\d+)종을 쓴다/.exec(credits)
+    expect(header, 'CREDITS.md 의 아이콘 개수 머리글').not.toBeNull()
+    const [, total, copiedText, derivedText, usedText] = header!
+
+    const copied = [...credits.matchAll(/^[a-z_]+:\d+$/gm)].length
+    const derived = new Set([...credits.matchAll(/"\$I\/([a-z_]+)\.png"/g)].map((m) => m[1]!)).size
+    const used = new Set(Object.values(loadGameData().items).map((i) => i.icon)).size
+
+    expect(Number(copiedText)).toBe(copied)
+    expect(Number(derivedText)).toBe(derived)
+    expect(Number(total)).toBe(copied + derived)
+    expect(Number(usedText)).toBe(used)
+  })
+
   // 왜: heredoc 에서 두 이름이 같은 원본 번호를 가리키면, 겉보기엔 서로 다른
   //     아이콘 이름인데 실제로 복원되는 그림은 한 장뿐이다 — (b)가 잡아내지
   //     못하는 잠복 중복이다.

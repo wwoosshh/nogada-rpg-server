@@ -140,7 +140,7 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 화면도 같은 함수를 부른다 — 결계가 transitionGate 에 모인 그 자리, 그 이유다.
   // 여기서 노드의 조건 칸과 `player.weather` 를 직접 견주는 줄을 한 줄 적는 순간
   // 화면이 열린 노드로 그려 놓고 서버만 거절하는 날이 온다. 조건 없는 노드는
-  // null 이라 그대로 지나간다 — 출하 여덟 노드가 전부 그쪽이다.
+  // null 이라 그대로 지나간다 — 출하 열두 노드 중 보통·심층 여덟이 그쪽이다.
   // (그 칸 이름이 이 파일에 없는 것 자체를 nodeAvailability.test.ts 가 문다.)
   //
   // **자리 검사 둘 다음, 간격 검사 앞이다.** 맵·벽과 같은 이유다: 눈이 와야

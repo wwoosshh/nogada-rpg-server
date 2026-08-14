@@ -95,7 +95,7 @@ describe('노드 스프라이트 — nodes.csv · 매니페스트 · CREDITS 대
   // 왜: 표에 적혀 있어도 복원 명령이 그 파일을 안 만들면 결과는 같다 — 새
   //     환경에서 그 노드만 빈 그림이다. 표와 명령은 CREDITS 안에서도 서로 다른
   //     두 곳이라, 한쪽만 고치는 일이 실제로 일어난다.
-  it('CREDITS.md 의 복원 명령이 여덟 장을 전부 만든다', () => {
+  it('CREDITS.md 의 복원 명령이 열두 장을 전부 만든다', () => {
     const section = creditsNodeSection()
     for (const id of NODE_SPRITE_IDS) {
       expect(section, `복원 명령의 "${id}"`).toContain(`$N/${nodeSpriteFile(id)}`)

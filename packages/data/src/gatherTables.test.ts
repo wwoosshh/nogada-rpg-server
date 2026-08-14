@@ -696,7 +696,7 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
     }
   }
 
-  it('출하 여덟 표는 위반도 경고도 없다', () => {
+  it('출하 열두 표는 위반도 경고도 없다', () => {
     expect(validateGatherTables(tables, data)).toEqual({ violations: [], warnings: [] })
   })
 

@@ -93,6 +93,18 @@ export function measureHand(
 }
 
 /** 그 브라켓에서 그 손이 각 티어를 뽑을 **정확한** 확률(전수 셈). */
+/**
+ * **브라우저에서 센 것을 표의 누적과 직접 견주지 마라.** 손이 roll 을 접는다.
+ *
+ * 아크 B 의 마무리 검증이 정확히 그 실수를 했다: 별똥 정(4단, rollFactor 0.7 ·
+ * jackpotFlat 4)을 낀 채 200회를 캐고, 그 결과를 **구리손 표 확률**(얼음 조각
+ * 13.00%)과 견줘 "설계대로다" 라고 적었다. 그 손의 실제 확률은 **18.57%** 라
+ * 200회 기대가 26 이 아니라 37.1 이고, 관측 27 은 −1.84σ 였다. 데이터는 옳았고
+ * 견준 자가 틀렸다.
+ *
+ * 손 통과 확률은 언제나 이 함수로 낸다 — `measureHand(...)` 로 그 사람의 손을 짓고
+ * `tierChances(bracket.cumulative, hand)` 를 부른다.
+ */
 export function tierChances(cumulative: readonly number[], hand: GatherHand): number[] {
   const counts = new Array<number>(cumulative.length).fill(0)
   for (let rawRoll = 0; rawRoll <= GATHER_ROLL_MAX; rawRoll++) {
