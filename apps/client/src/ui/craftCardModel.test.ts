@@ -6,6 +6,8 @@ import {
   canAffordCraft,
   craftRepeatUnlocked,
   defaultCraftSelection,
+  defaultSelectionIn,
+  type CraftCard,
   type CraftCardSection,
 } from './craftCardModel.js'
 
@@ -273,5 +275,35 @@ describe('craftRepeatUnlocked — 홀드 반복은 해금되는 기능이다(§8
   it('조합 반복 이정표 전에는 false, 달성하면 true', () => {
     expect(craftRepeatUnlocked(data, playerWith(9_999))).toBe(false)
     expect(craftRepeatUnlocked(data, playerWith(10_000))).toBe(true)
+  })
+})
+
+describe('탭 하나가 열릴 때 어디에 커서를 놓는가', () => {
+  /*
+   * 목록이 탭으로 갈리면서 기본 선택이 두 번 필요해졌다 — 패널을 열 때 한 번,
+   * 탭을 옮길 때 또 한 번. 옮긴 탭에 없는 레시피가 선택된 채로 남으면 왼쪽
+   * 목록에는 아무것도 안 켜져 있는데 오른쪽 상세는 딴 것을 말한다.
+   * 규칙은 전체와 같다(§8-뒤): **그 탭의 첫 제작 가능, 없으면 그 탭의 첫**.
+   */
+  // 이 함수가 보는 것은 `recipeId` 와 `state` 둘뿐이라 나머지는 짓지 않는다 —
+  // 카드 한 장을 통째로 지어 두면 무엇이 판정에 쓰이는지가 픽스처에 묻힌다.
+  const card = (id: string, state: CraftCard['state']): CraftCard =>
+    ({ recipeId: id, state }) as CraftCard
+
+  it('그 탭의 첫 제작 가능한 것을 고른다 — 열자마자 버튼이 살아 있어야 한다', () => {
+    const section = {
+      category: '제련',
+      cards: [card('a', 'locked'), card('b', 'ready'), card('c', 'ready')],
+    }
+    expect(defaultSelectionIn(section)).toBe('b')
+  })
+
+  it('제작 가능한 것이 하나도 없으면 그 탭의 첫 줄을 고른다 — 빈 상세는 안 만든다', () => {
+    const section = { category: '도구', cards: [card('x', 'locked'), card('y', 'no_materials')] }
+    expect(defaultSelectionIn(section)).toBe('x')
+  })
+
+  it('빈 탭은 null 이다 — 없는 것을 고르지 않는다', () => {
+    expect(defaultSelectionIn({ category: '정제', cards: [] })).toBeNull()
   })
 })

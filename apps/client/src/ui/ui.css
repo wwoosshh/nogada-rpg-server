@@ -974,8 +974,32 @@
  * 스크롤이 개시되면 브라우저가 click 자체를 삼킨다 — 스크롤 중 선택이
  * 튀지 않는 것은 그 기본 동작으로 충분하다.
  */
-.craft__list {
+/*
+ * 왼쪽 기둥 — 탭 줄과 목록이 세로로 붙는다. 이 감싸개가 flex 비율(2)을 지고
+ * 목록은 그 안에서 남는 높이를 전부 먹는다. 감싸개 없이 탭과 목록을 형제로
+ * 두면 탭 줄까지 비율에 끼어 상세가 좁아진다.
+ */
+.craft__side {
   flex: 2 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * 계열 탭 — 상점(.shop__tabs)과 같은 자리, 같은 클래스(.screen__tab). 목록이
+ * 27줄이라 한 줄로 쌓으면 아래쪽 계열이 스크롤 밖에서 존재를 잃는다.
+ * flex: none 은 목록이 남는 높이를 다 먹게 하려는 것이고, 넷이라 한 줄에 든다.
+ */
+.craft__tabs {
+  flex: none;
+  display: flex;
+  gap: var(--space-1);
+  padding-bottom: var(--space-1);
+}
+
+.craft__list {
+  flex: 1 1 0;
   min-width: 0;
   overflow-y: auto;
   touch-action: pan-y;

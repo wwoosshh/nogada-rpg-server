@@ -259,3 +259,18 @@ export function defaultCraftSelection(sections: CraftCardSection[]): string | nu
   const ready = flat.find((c) => c.state === 'ready')
   return ready?.recipeId ?? flat[0]?.recipeId ?? null
 }
+
+/**
+ * 탭 하나 안에서의 기본 선택 — 규칙은 위와 같다(첫 ready, 없으면 첫).
+ *
+ * **왜 따로 있는가:** 목록이 탭으로 갈리면서 기본 선택이 두 번 필요해졌다 —
+ * 패널을 열 때 한 번, 탭을 옮길 때 또 한 번. 옮긴 탭에 없는 레시피가 선택된 채로
+ * 남으면 왼쪽 목록에는 아무 줄도 안 켜져 있는데 오른쪽 상세는 딴 것을 말한다.
+ *
+ * `defaultCraftSelection` 을 한 절만 담아 부르지 않는 이유는 **부르는 쪽이 헷갈려서**다:
+ * 그쪽은 "전 목록에서"라는 뜻을 이름에 담고 있고, 여기는 "이 탭에서"다. 규칙이
+ * 같다는 사실은 아래 한 줄이 지고, 규칙이 갈리는 날 두 이름이 그것을 먼저 말한다.
+ */
+export function defaultSelectionIn(section: CraftCardSection): string | null {
+  return defaultCraftSelection([section])
+}

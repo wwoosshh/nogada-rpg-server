@@ -1,8 +1,9 @@
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import {
   buildCraftCards,
   defaultCraftSelection,
+  defaultSelectionIn,
   type CraftCard,
   type CraftCardSection,
 } from './craftCardModel.js'
@@ -187,29 +188,55 @@ function RecipeDetail({ card }: { card: CraftCard }): JSX.Element {
  */
 function CraftView({ sections }: { sections: CraftCardSection[] }): JSX.Element {
   const [selectedId, setSelectedId] = useState(() => defaultCraftSelection(sections))
+  // 열자마자 보이는 탭은 **기본 선택이 사는 탭**이다. 첫 탭을 고정으로 켜면
+  // "지금 만들 수 있는 것에 커서를 먼저 놓는다"(설계 §8-뒤)가 그 탭 밖에서만
+  // 성립해, 열자마자 제작 버튼이 죽어 있는 화면이 흔해진다.
+  const [category, setCategory] = useState(
+    () => sections.find((s) => s.cards.some((c) => c.recipeId === selectedId))?.category,
+  )
 
-  const flat = sections.flatMap((s) => s.cards)
-  const selected = flat.find((c) => c.recipeId === selectedId) ?? flat[0]
+  const active = sections.find((s) => s.category === category) ?? sections[0]
+  const cards = active?.cards ?? []
+  // 상세는 **열린 탭 안에서만** 찾는다. 탭을 옮기면 선택도 따라 옮기지만(아래
+  // onClick), 데이터가 새로 와서 그 레시피가 이 탭에서 사라지는 경우가 남는다.
+  const selected = cards.find((c) => c.recipeId === selectedId) ?? cards[0]
 
   return (
     <div className="craft__body">
-      <nav className="craft__list">
-        {sections.map((section) => (
-          <Fragment key={section.category}>
-            <h3 className="craft__section">{section.category}</h3>
-            <ul className="craft__rows">
-              {section.cards.map((card) => (
-                <RecipeRow
-                  key={card.recipeId}
-                  card={card}
-                  selected={card.recipeId === selected?.recipeId}
-                  onSelect={setSelectedId}
-                />
-              ))}
-            </ul>
-          </Fragment>
-        ))}
-      </nav>
+      <div className="craft__side">
+        {/* 탭 문법은 상점의 그것을 그대로 쓴다(`screen__tab`) — 같은 조작이 두
+            화면에서 다른 모양이면 손가락이 매번 다시 배운다. 목록이 27줄이라
+            한 줄로 쌓으면 아래쪽 계열은 스크롤 밖에서 존재를 잃는다. */}
+        <nav className="craft__tabs">
+          {sections.map((section) => (
+            <button
+              key={section.category}
+              type="button"
+              className={`screen__tab${section.category === active?.category ? ' screen__tab--on' : ''}`}
+              onClick={() => {
+                setCategory(section.category)
+                // 옮긴 탭에 없는 레시피가 선택된 채로 남으면 왼쪽에는 아무 줄도
+                // 안 켜져 있는데 오른쪽 상세는 딴 것을 말한다.
+                setSelectedId(defaultSelectionIn(section))
+              }}
+            >
+              {section.category}
+            </button>
+          ))}
+        </nav>
+        <nav className="craft__list">
+          <ul className="craft__rows">
+            {cards.map((card) => (
+              <RecipeRow
+                key={card.recipeId}
+                card={card}
+                selected={card.recipeId === selected?.recipeId}
+                onSelect={setSelectedId}
+              />
+            ))}
+          </ul>
+        </nav>
+      </div>
       {selected !== undefined && <RecipeDetail card={selected} />}
     </div>
   )
