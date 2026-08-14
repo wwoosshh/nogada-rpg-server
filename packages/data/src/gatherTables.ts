@@ -164,6 +164,15 @@ export const SPECIAL_YIELD_MAX = 1.0
 export const SPECIAL_YIELD_MIN_STEP = 1.2
 
 /**
+ * 특수 표의 **빈손 비율이 브라켓 사이에서 갈릴 수 있는 폭**.
+ *
+ * 값이 아니라 폭을 죄는 이유는 위 순회의 주석이 적는다 — 성긴 것은 설계이고,
+ * 한 표 안에서 갈라지는 것만이 사고다. 5%p 는 출하 넷이 전부 0.0%p 인 자리에
+ * 작가가 반올림으로 흔들 여지만 남긴 값이다.
+ */
+export const SPECIAL_FAILURE_SPREAD_MAX = 0.05
+
+/**
  * 그 계열 결계의 문턱들 — `transitions.csv` 의 `gateSkill`·`gateValue` 에서 **유도한다.**
  *
  * **문이 생겼다.** 이 자리에는 `DEEP_MEASURE_PROFICIENCY = 85_001` 이 상수로 살았고,
@@ -764,6 +773,30 @@ function validateSpecialTables(tables: GatherTables, data: GameData): string[] {
           `${at} 브라켓(${bracketLabel(range.bracket)}): 숙련 ${lo.toLocaleString('ko-KR')}~${hi.toLocaleString('ko-KR')}·구리 손의 분당 산출이 ${goldText(specialGold)} 로 바깥 표 "${outer.id}" 의 같은 구간(${bracketLabel(span.bracket)}, ${goldText(outerGold)})의 ${timesText(ratio)}다 — 천장은 ${timesText(SPECIAL_YIELD_MAX)} 미만이다. 특수 노드가 보통 노드를 이기는 순간 최적해가 하나가 되고 그 계열의 보통 배치가 전부 배경이 된다. gather_brackets.csv 의 ${special.id} ${bracketLabel(range.bracket)} 행 누적을 흔한 쪽으로 옮기거나, 잡티어를 그 계열 최저가 아이템으로 바꾼다`,
         )
       }
+    }
+
+    // ---- 실패율이 브라켓 사이에서 흔들리지 않는다 ----
+    //
+    // **∞ 만 꽝이 폭증하던 자리가 있었다.** 도감 형평 하한이 특수 표의 잡티어 몫을
+    // 그 계열 대표 표보다 얇게 묶는데(collection.ts), 그 제약은 ∞ 브라켓 하나에만
+    // 걸린다 — 유한 브라켓은 아무도 안 재므로 작가가 두껍게 적을 수 있다. 그러면
+    // 실패율이 유한 5~40% / ∞ 87~97% 로 갈라지고, **숙련이 오르는데 그 노드의
+    // 분당 골드가 떨어지는** 구간이 생긴다(실측: ice 15,738 → 8,786G/분,
+    // mineral 22,297 → 6,937). 플레이어에게 그것은 설계가 아니라 고장이다.
+    //
+    // 그래서 실패율의 **폭**을 죈다. 값 자체는 안 정한다 — 특수 노드가 성긴 자리인
+    // 것은 설계이고(§4: 골드가 아니라 열쇠를 판다), 그 성김이 계열마다 다른 것도
+    // 형평 하한이 계열마다 다른 자연스러운 결과다. 금지하는 것은 **한 표 안에서
+    // 갈라지는 것** 하나뿐이다.
+    const failures = specialRanges
+      .filter((r) => r.lo <= r.hi)
+      .map((r) => ({ bracket: r.bracket, fail: 1 - tierChances(r.bracket.cumulative, hand).reduce((a, b) => a + b, 0) }))
+    const worst = failures.reduce((a, b) => (b.fail > a.fail ? b : a), failures[0]!)
+    const best = failures.reduce((a, b) => (b.fail < a.fail ? b : a), failures[0]!)
+    if (worst.fail - best.fail > SPECIAL_FAILURE_SPREAD_MAX) {
+      violations.push(
+        `${at}: 빈손 비율이 브라켓 사이에서 ${percentText(best.fail)}(${bracketLabel(best.bracket)}) ~ ${percentText(worst.fail)}(${bracketLabel(worst.bracket)}) 로 ${percentText(worst.fail - best.fail)} 갈린다 — 폭은 ${percentText(SPECIAL_FAILURE_SPREAD_MAX)} 까지다. 도감 형평 하한은 ∞ 브라켓 하나만 재므로 유한 브라켓을 두껍게 적으면 여기서 갈라지고, 그러면 숙련이 오르는데 그 노드의 분당 골드가 떨어지는 구간이 생긴다(플레이어에게는 고장으로 읽힌다). gather_brackets.csv 의 ${special.id} 유한 브라켓들의 마지막 누적을 ∞ 행과 같은 폭으로 맞춘다`,
+      )
     }
 
     // ---- 바닥(절대) — 최상위 티어가 브라켓마다 더 자주 나온다 ----

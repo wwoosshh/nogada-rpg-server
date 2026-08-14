@@ -764,6 +764,8 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
    * 성공률 곡선을 은퇴시킨 그 이유에 정확히 걸린다.
    */
   const SPECIAL_CUM1 = [20, 25, 31, 38, 46, 61]
+  /** 잡티어(얼음 조각)가 차지하는 몫 — 출하 `ice_special` 과 같은 값이다. */
+  const SPECIAL_JUNK_SHARE = 13_000
 
   function iceSpecial(): GatherTableDef {
     const outer = tables['ice']!
@@ -775,9 +777,11 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
         { itemId: 'hot_ice' },
         { itemId: 'ice_shard' },
       ],
+      // 잡티어 몫은 **브라켓마다 같다** — 유한 브라켓만 두껍게 적으면 빈손 비율이
+      // 갈라지고, 그것이 SPECIAL_FAILURE_SPREAD_MAX 가 막는 상태다.
       brackets: outer.brackets.map((bracket, i) => ({
         bracketMax: bracket.bracketMax,
-        cumulative: [SPECIAL_CUM1[i]!, bracket.cumulative.at(-1)!],
+        cumulative: [SPECIAL_CUM1[i]!, SPECIAL_CUM1[i]! + SPECIAL_JUNK_SHARE],
       })),
     }
   }
@@ -868,6 +872,8 @@ describe('validateGatherTables — 특수 표는 바깥을 안 이기고, 스스
   const tables0 = loadGatherTables()
 
   const SPECIAL_CUM1 = [20, 25, 31, 38, 46, 61]
+  /** 잡티어(얼음 조각)가 차지하는 몫 — 출하 `ice_special` 과 같은 값이다. */
+  const SPECIAL_JUNK_SHARE = 13_000
 
   function iceSpecial(overrides: Partial<GatherTableDef> = {}): GatherTableDef {
     const outer = tables0['ice']!
@@ -879,9 +885,11 @@ describe('validateGatherTables — 특수 표는 바깥을 안 이기고, 스스
         { itemId: 'hot_ice' },
         { itemId: 'ice_shard' },
       ],
+      // 잡티어 몫은 **브라켓마다 같다** — 유한 브라켓만 두껍게 적으면 빈손 비율이
+      // 갈라지고, 그것이 SPECIAL_FAILURE_SPREAD_MAX 가 막는 상태다.
       brackets: outer.brackets.map((bracket, i) => ({
         bracketMax: bracket.bracketMax,
-        cumulative: [SPECIAL_CUM1[i]!, bracket.cumulative.at(-1)!],
+        cumulative: [SPECIAL_CUM1[i]!, SPECIAL_CUM1[i]! + SPECIAL_JUNK_SHARE],
       })),
       ...overrides,
     }
