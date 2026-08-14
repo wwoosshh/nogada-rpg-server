@@ -322,6 +322,113 @@ magick apps/client/public/tilesets/pipoya-basechip.png -crop 32x64+160+896 +repa
   apps/client/public/sprites/sign_wood.png
 ```
 
+### 노드 스프라이트 대장
+
+맵 위의 채집 노드가 세우는 그림. `csv/nodes.csv` 의 `sprite` 칸 → 파일 → 원본 타일이고,
+클라이언트가 아는 목록은 `apps/client/src/game/nodeSprites.ts` 다. 화자와 같은 규칙으로
+**모르는 id 를 만나면 그 자리에서 던지므로**, 이 표와 그 파일과 CSV 셋이 함께 움직인다.
+
+**여덟 장 전부 32×32 한 칸이다.** 두 칸짜리 큰 나무를 쓰면 밑변 정렬과 y 정렬 깊이가
+따라오는데(`apps/client/src/game/depth.ts` 의 `node = 5` 는 평면이다), 그것은 노드에 얼굴을
+붙이는 일이 살 값이 아니다.
+
+원본은 `[Base]BaseChip_pipo.png`(8열)이고 **타일 번호 = 행 × 8 + 열**이다. 아래 crop 좌표는
+`pipoya-basechip.png` 기준인데, 그 시트가 원본의 0–63행을 그대로 뜬 것이라 원본 좌표와 같다.
+
+| id | 파일 | 원본 타일 | crop | 가공 | 왜 이 그림인가 |
+|---|---|---|---|---|---|
+| `young_tree` | `young_tree.png` | 40 (r5c0) | `32x32+0+160` | — | 밝은 초록 잎이 꽉 찬 덤불. 고목과 **잎↔가지**로 갈리므로 색이 아니라 실루엣이 등급을 말한다 |
+| `old_tree` | `old_tree.png` | 43 (r5c3) | `32x32+96+160` | — | 잎이 하나도 없고 가지만 뻗은 나무. 단단한 통나무가 나올 나무로 읽힌다 |
+| `herb_patch` | `herb_patch.png` | 48 (r6c0) | `32x32+0+192` | — | 꽃 없는 초록 잎 포기. 팩에서 가장 "풀" 다운 그림이다 |
+| `rare_herb_patch` | `rare_herb_patch.png` | 53 (r6c5) | `32x32+160+192` | — | 같은 크기의 포기가 분홍 꽃으로 덮였다. **꽃의 유무**가 등급이다 |
+| `copper_vein` | `copper_vein.png` | 65 (r8c1) | `32x32+32+256` | — | 팩에서 가장 밝은 바위. 황동빛을 그대로 쓴다 |
+| `iron_vein` | `iron_vein.png` | 65 (r8c1) | `32x32+32+256` | 명도 행렬 + ×0.75 | 구리와 **한 채굴장에 나란히 서므로** 실루엣이 아니라 금속색이 갈라야 한다. 같은 바위에서 색을 빼고 어둡게 한 것 |
+| `ice_vein` | `ice_vein.png` | 64 (r8c0) | `32x32+0+256` | R↔B 교환 + ×1.7 | **팩에 얼음이 없다.** 작은 바위의 빨강과 파랑을 맞바꾸면 황동빛이 청록이 된다. 밝혀서 옅은 조각으로 |
+| `deep_ice_vein` | `deep_ice_vein.png` | 65 (r8c1) | `32x32+32+256` | R↔B 교환 | 같은 교환을 큰 바위에 하고 **밝히지 않은 것**. 크고 짙다 |
+
+**팩의 셋째 바위(타일 66)는 쓰지 않는다.** 밑동이 반투명 디더라서 광물채굴장의 어두운 갈색
+지면 위에 놓으면 바위가 아니라 **구덩이로 읽힌다** — 실제로 얹어 보고 기각했다. 철을 그 바위가
+아니라 구리와 같은 바위의 색 변주로 간 이유가 이것이다.
+
+**노드가 쓰는 타일은 그 맵의 소품에서 비웠다.** 고른 그림들은 팩의 자연 소품이고, 채집장들이
+이미 같은 타일을 배경으로 깔고 있었다 — 나무수렵장의 `t40` ×26·`t43` ×6, 허브채집장의
+`t48` ×37·`t53` ×26, 광물채굴장의 `t65` ×12. 그대로 두면 **같은 그림 30여 개 중 여덟 개만
+캘 수 있는** 화면이 되어,
+갈색 네모였을 때보다 오히려 구별이 나빠진다. 그래서 그림을 바꾸는 대신 그 맵들의 소품 107칸을
+그 맵에 이미 깔려 있던 다른 타일로 옮겼다(`packages/data/maps/*.tmx`). 얼음 둘은 색을 돌려
+그 맵에서 유일해졌으므로 얼음채집장은 손대지 않았다.
+
+**그 유일성은 맵 단위다 — 그 노드가 서는 맵에서만 그 타일이 노드다.** 맵을 넘으면 아직
+겹친다: 허브채집장에 `t40` ×36(어린 나무 그림), 나무수렵장에 `t48` ×41(약초 군락 그림),
+얼음채집장·광물채굴장에 `t43`(고목 그림). 각 노드는 자기 맵에만 서므로 한 화면에서 헷갈릴 일이
+없고, 전 맵으로 넓히면 월드맵과 마을 넷까지 200칸 가까이 번져 값보다 비싸다. 그래서 일부러
+맵 단위에서 멈춘 것이지 빠뜨린 것이 아니다.
+
+> **새 채집장을 그리는 사람에게:** 그 맵에 노드를 놓았다면, 위 표의 여덟 타일 가운데 **그 맵에
+> 서는 노드가 쓰는 것**을 그 맵의 `decor`·`walls` 에서 빼야 한다. 안 빼면 캘 수 있는 것과 배경이
+> 같은 그림이 되어, 색칠한 네모였던 시절보다 구별이 나빠진다. `walls` 안에서의 gid 치환은
+> 통행을 바꾸지 않는다 — 벽의 기준이 "어느 타일인가"가 아니라 "비어 있지 않은가"이기 때문이다
+> (`placements.ts` 의 `parseTerrain`, `WorldScene.isWalkable`).
+
+`nodes/` 도 `tilesets/`·`sprites/`·`icons/` 와 같이 **커밋하지 않는다.** 잘라 낸 것도 색을 돌린
+것도 Pipoya 의 `Not redistribute or resell this assets` 아래 있다 — 편집 허용(`Use and edit
+freely`)은 **개변 허가이지 재배포 허가가 아니다.** `.gitignore` 의 넷째 줄이 그 자리이고,
+그 줄은 그림보다 **먼저** 들어갔다. 이 경로는 기본값이 추적이라 한 번 커밋되면 그 커밋 자체가
+위반이기 때문이다.
+
+여덟 장이 모두 `pipoya-basechip.png` 에서 나오므로 **위 타일셋 복원을 먼저 끝내야 한다.**
+
+```bash
+mkdir -p apps/client/public/nodes
+S=apps/client/public/tilesets/pipoya-basechip.png
+N=apps/client/public/nodes
+
+magick "$S" -crop 32x32+0+160   +repage "$N/young_tree.png"
+magick "$S" -crop 32x32+96+160  +repage "$N/old_tree.png"
+magick "$S" -crop 32x32+0+192   +repage "$N/herb_patch.png"
+magick "$S" -crop 32x32+160+192 +repage "$N/rare_herb_patch.png"
+magick "$S" -crop 32x32+32+256  +repage "$N/copper_vein.png"
+
+# 철 — 같은 바위에서 색을 빼고(명도 행렬) 4분의 3으로 어둡게 한다.
+# png:color-type=6 이 없으면 세 채널이 같아진 김에 회색조 PNG 로 저장돼,
+# 여덟 장 중 하나만 색 타입이 달라진다.
+magick "$S" -crop 32x32+32+256 +repage \
+  -color-matrix "0.299 0.587 0.114 0.299 0.587 0.114 0.299 0.587 0.114" \
+  -channel RGB -evaluate multiply 0.75 +channel \
+  -define png:color-type=6 "$N/iron_vein.png"
+
+# 얼음 — 빨강과 파랑 채널을 맞바꾼다. 보통 등급만 1.7배 밝힌다.
+magick "$S" -crop 32x32+0+256  +repage -color-matrix "0 0 1 0 1 0 1 0 0" \
+  -channel RGB -evaluate multiply 1.7 +channel "$N/ice_vein.png"
+magick "$S" -crop 32x32+32+256 +repage -color-matrix "0 0 1 0 1 0 1 0 0" "$N/deep_ice_vein.png"
+```
+
+**색 변주를 `-modulate`(HSL)로 하지 않은 것이 이 블록의 핵심이다.** 위 두 연산은 화소마다의
+**순수 sRGB 정수 산술**이라 감마도 HSL 반올림도 끼지 않는다:
+
+| 연산 | 산술 |
+|---|---|
+| `-color-matrix "0 0 1 0 1 0 1 0 0"` | `(r,g,b) → (b,g,r)` |
+| `-color-matrix "0.299 0.587 0.114"` ×3행 | `(r,g,b) → (l,l,l)`, `l = 0.299r + 0.587g + 0.114b` |
+| `-channel RGB -evaluate multiply m` | `c → min(255, round(c×m))`. 알파는 건드리지 않는다 |
+
+화소를 실제로 재어 확인한 것이다. 원본 `(96,79,21)` 이 얼음에서 `(36,134,163)` 이 되는데
+그것이 `round(21×1.7), round(79×1.7), round(96×1.7)` 과 같고, 철에서는 `l = 77.471` →
+`round(77.471 × 0.75) = 58` → `(58,58,58)` 이다. **그러므로 ImageMagick 이 없는 환경에서도
+이 표만 보고 같은 파일을 만들 수 있다** — 이 문서 하나로 재구성된다는 맨 위 규칙이
+"명령이 적혀 있다"가 아니라 **"산술이 적혀 있다"** 수준으로 지켜진다.
+
+규격 확인 (여덟 줄이 전부 `32x32` 여야 한다):
+
+```powershell
+Add-Type -AssemblyName System.Drawing
+Get-ChildItem apps\client\public\nodes\*.png | ForEach-Object {
+  $i = [System.Drawing.Bitmap]::new($_.FullName)
+  "{0,-20} {1}x{2}" -f $_.Name, $i.Width, $i.Height
+  $i.Dispose()
+}
+```
+
 ### 플레이어 외형 대장
 
 캐릭터를 만들 때 고르는 외형. `packages/shared` 의 `APPEARANCES` → 파일 → 원본이고,
