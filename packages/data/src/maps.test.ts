@@ -5,7 +5,7 @@ import type { GameData, NodeDef } from '@nogada/shared'
 
 const NODES: Record<string, NodeDef> = {
   ice_vein: {
-    id: 'ice_vein', name: '얼음 광맥', skill: 'ice', tableId: 'ice', variant: 'normal',
+    id: 'ice_vein', name: '얼음 광맥', skill: 'ice', tableId: 'ice', variant: 'normal', sprite: 'ice_vein',
   },
 }
 

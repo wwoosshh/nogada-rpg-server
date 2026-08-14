@@ -243,7 +243,7 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
 /**
  * 노드는 이제 표를 가리킬 뿐이다 — 무엇이 얼마나 나오는지는 전부 확률표
  * (gather_tables 3파일)가 정하고, 노드에 남는 것은 자리(어느 기술·어느 표)와
- * 외형(variant)뿐이다(설계 §3.2). tableId 가 실재하는 표인지는 표를 함께 보는
+ * 외형(variant·sprite)뿐이다(설계 §3.2). tableId 가 실재하는 표인지는 표를 함께 보는
  * validateGameData 가 검사한다.
  */
 export function parseNodes(rows: Row[]): Record<string, NodeDef> {
@@ -261,6 +261,15 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
       skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
       tableId: requireCell(row, 'tableId', ctx),
       variant,
+      // 이름만 읽고 파일은 풀지 않는다 — 어느 파일인지는 클라이언트 매니페스트의
+      // 몫이다(설계 §5, §9-앞 12). 여기서 존재 여부를 검사할 수도 없다: 검사하려면
+      // 데이터가 클라이언트의 파일 목록을 알아야 하고, 그건 대응을 클라이언트에 둔
+      // 이유와 정면으로 어긋난다(npcSprites.ts 가 같은 이유로 그 자리에서 던진다).
+      //
+      // 그래서 여기서 물을 수 있는 것은 "적혀는 있는가" 하나뿐이고, 그것은
+      // requireCell 로 세게 묻는다. 빈 칸을 통과시키면 그 노드만 맵에서 색칠한
+      // 네모로 남는데, 화면만 봐서는 "아직 안 그린 것"과 구별되지 않아 오래 산다.
+      sprite: requireCell(row, 'sprite', ctx),
     }
     addUnique(out, id, def, 'nodes.csv')
   }

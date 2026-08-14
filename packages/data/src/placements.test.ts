@@ -9,7 +9,7 @@ import { parseTmx } from './tmx.js'
 
 const nodes: Record<string, NodeDef> = {
   copper_vein: {
-    id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
+    id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal', sprite: 'copper_vein',
   },
 }
 

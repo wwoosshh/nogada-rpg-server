@@ -85,7 +85,9 @@ function parsedIce(): GatherTables {
 }
 
 function node(id: string, skill: NodeDef['skill'], tableId: string): NodeDef {
-  return { id, name: id, skill, tableId, variant: 'normal' }
+  // sprite 는 이 스위트가 재는 것과 무관하다(표 검증은 그림을 읽지 않는다) —
+  // 타입이 요구하니 id 를 그대로 준다.
+  return { id, name: id, skill, tableId, variant: 'normal', sprite: id }
 }
 
 /** validateGatherTables 가 보는 것은 items·nodes 뿐이다 — 나머지는 빈 채로 채운다. */

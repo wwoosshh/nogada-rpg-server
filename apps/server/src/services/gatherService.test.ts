@@ -26,7 +26,7 @@ const data: GameData = {
   },
   nodes: {
     copper_vein: {
-      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
+      id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal', sprite: 'copper_vein',
     },
     // 심층 외형. **출하 데이터에서는 deep 이 자기 표(*_deep)를 가리키지만**
     // (결계 계획 B2 — `variant='deep' ⟺ tableId 가 *_deep`, 빌드가 그 짝을
@@ -38,12 +38,12 @@ const data: GameData = {
     // 심층으로 들어가는 것을 막는 것은 이 서비스가 아니다 — 그 앞의 결계
     // 전환(moveService)이다. 채집 판정에는 지금도 접근 게이트가 없다.
     iron_vein: {
-      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tableId: 'mineral', variant: 'deep',
+      id: 'iron_vein', name: '철 광맥', skill: 'mineral', tableId: 'mineral', variant: 'deep', sprite: 'iron_vein',
     },
     // 플레이어의 기본 도구(광물)와 기술이 다른 노드 — "엉뚱한 기술의 도구 =
     // 맨손"(§6-앞 9)이 서비스 경로에서 지켜지는지 확인하는 무대다.
     herb_patch: {
-      id: 'herb_patch', name: '약초 군락', skill: 'herb', tableId: 'herb', variant: 'normal',
+      id: 'herb_patch', name: '약초 군락', skill: 'herb', tableId: 'herb', variant: 'normal', sprite: 'herb_patch',
     },
   },
   recipes: {},

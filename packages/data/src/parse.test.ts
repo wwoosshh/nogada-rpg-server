@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 
@@ -196,6 +199,7 @@ describe('parseNodes', () => {
   function validNodeRow(overrides: Record<string, string> = {}): Record<string, string> {
     return {
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
+      sprite: 'copper_vein',
       ...overrides,
     }
   }
@@ -204,7 +208,24 @@ describe('parseNodes', () => {
     const nodes = parseNodes([validNodeRow()])
     expect(nodes.copper_vein).toEqual({
       id: 'copper_vein', name: '구리 광맥', skill: 'mineral', tableId: 'mineral', variant: 'normal',
+      sprite: 'copper_vein',
     })
+  })
+
+  // 값을 일부러 id 와 다르게 준다 — 이 칸이 id 에서 유도되는 것이 아니라 작가가
+  // 적은 이름을 그대로 실어 나른다는 것이, 출하 데이터(8행 모두 sprite = id)만
+  // 봐서는 구별되지 않기 때문이다. 언젠가 두 노드가 한 그림을 나눠 쓰면 그 차이가 산다.
+  it('sprite 는 id 에서 유도하지 않고 적힌 이름을 그대로 싣는다', () => {
+    const nodes = parseNodes([validNodeRow({ sprite: 'old_tree' })])
+    expect(nodes.copper_vein!.sprite).toBe('old_tree')
+  })
+
+  // 그림 없는 노드를 통과시키면 그 노드만 맵에서 색칠한 네모로 남는데, 화면만
+  // 봐서는 "아직 안 그린 것"과 구별되지 않아 오래 산다 — 이 아크가 없애려는 바로 그 상태다.
+  it('sprite 가 비어 있으면 거부한다 — 얼굴 없는 노드가 조용히 네모로 남으면 안 된다', () => {
+    expect(() => parseNodes([validNodeRow({ sprite: '' })])).toThrow(
+      'nodes.csv[copper_vein]: 필수 항목 "sprite" 가 비어 있다',
+    )
   })
 
   it('알 수 없는 skill 값을 거부한다', () => {
@@ -229,6 +250,33 @@ describe('parseNodes', () => {
     expect(() => parseNodes([validNodeRow(), validNodeRow()])).toThrow(
       'nodes.csv: 중복된 id "copper_vein"',
     )
+  })
+})
+
+/**
+ * 위 스위트는 손으로 지은 행을 본다 — 새 필수 칸이 생겼을 때 정작 **출하되는
+ * CSV** 가 그것을 갖췄는지는 거기서 드러나지 않는다. 한 행만 비어도 그 노드는
+ * 맵에서 얼굴 없이 서고, 그 사실은 빌드가 아니라 게임을 켠 사람이 먼저 본다.
+ */
+describe('parseNodes — 출하 데이터', () => {
+  it('출하 nodes.csv 여덟 행이 전부 자기 그림 이름을 싣는다', () => {
+    const csvDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'csv')
+    const nodes = parseNodes(parseCsv(readFileSync(join(csvDir, 'nodes.csv'), 'utf8')))
+
+    // 값을 여기 그대로 적는다(집합 대조가 아니라 전수 고정) — 이 표가 곧 A3 의
+    // 클라이언트 매니페스트·CREDITS 대장 표와 대조될 셋 중 하나이고, 셋 중
+    // 하나가 조용히 바뀌는 것이 이 아크가 가장 두려워하는 사고다.
+    const sprites = Object.fromEntries(Object.values(nodes).map((n) => [n.id, n.sprite]))
+    expect(sprites).toEqual({
+      ice_vein: 'ice_vein',
+      deep_ice_vein: 'deep_ice_vein',
+      young_tree: 'young_tree',
+      old_tree: 'old_tree',
+      copper_vein: 'copper_vein',
+      iron_vein: 'iron_vein',
+      herb_patch: 'herb_patch',
+      rare_herb_patch: 'rare_herb_patch',
+    })
   })
 })
 
