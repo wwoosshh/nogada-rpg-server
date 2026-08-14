@@ -32,11 +32,25 @@ const BARE_HAND: GatherToolProfile = { rollFactor: 1.45, intervalFactor: 1.5, ja
  * 기술 불일치를 null 로 만들어 오므로 여기 도착하는 def 는 이미 "그 기술의
  * 도구이거나 맨손"이다. 도구가 아니거나 티어가 없는 정의도 맨손이다 — 티어 0 을
  * 조용히 ×1.0 으로 접는 기본값은 금지다(구 toolGatherFactor 의 사고 유형).
+ *
+ * **채집 도구의 승급은 세 축을 함께 산다** — 아래 갈래마다 rollFactor·
+ * intervalFactor·jackpotFlat 이 같이 좋아진다. 이것은 `craftIntervalMs`(아래)가
+ * 망치 티어를 성공률 **하나**에 묶은 것과 반대로 보이지만 같은 규범의 다른
+ * 답이지, 둘 중 하나가 틀린 것이 아니다: 망치는 제작이라는 한 동사에만 붙어
+ * 채집 도구 넷의 자리를 혼자 차지하므로 축을 하나로 묶어야 그 크기가 넷과
+ * 맞고, 채집 도구는 계열마다 따로 만들어 따로 드는 물건이라 맨손(1.45/1.5/0)
+ * 부터 이미 세 축을 나눠 진다. 축을 셋 지는 사다리에서 한 칸이 한 축만 올리면
+ * 그 승급은 다른 쪽 한 칸보다 작아진다 — 그래서 여기서는 셋을 다 올린다.
+ * **두 주석을 하나의 규칙으로 읽지 마라.**
+ *
+ * 사다리는 4단(별똥)에서 끝난다 — `>=` 를 마지막 칸에 두어, 데이터가 5단을
+ * 들고 와도 프로필이 조용히 더 세지지 않는다.
  */
 export function gatherToolProfile(def: ItemDef | null): GatherToolProfile {
   if (!def || def.kind !== 'tool') return BARE_HAND
   const tier = def.toolTier ?? 0
-  if (tier >= 3) return { rollFactor: 0.8, intervalFactor: 0.6, jackpotFlat: 3 }
+  if (tier >= 4) return { rollFactor: 0.7, intervalFactor: 0.45, jackpotFlat: 4 }
+  if (tier === 3) return { rollFactor: 0.8, intervalFactor: 0.6, jackpotFlat: 3 }
   if (tier === 2) return { rollFactor: 0.9, intervalFactor: 0.8, jackpotFlat: 2 }
   if (tier === 1) return { rollFactor: 1.0, intervalFactor: 1.0, jackpotFlat: 0 }
   return BARE_HAND
@@ -122,8 +136,11 @@ export function gatherIntervalMs(proficiency: number, hand: GatherHand): number 
  * (`CRAFT_TOOL_TIER_CHANCE_BONUS`)이고, 간격까지 주면 승급 한 칸이 두 축을
  * 동시에 사서 망치 하나가 채집 도구 넷을 합친 것보다 큰 물건이 된다. 그래서
  * `effectiveIntervalFactor` 를 부르지 않는다 — 그 함수는 채집 티어의
- * intervalFactor(구리 1.0·철 0.8·미스릴 0.6)를 곱해 오므로, 망치에 쓰면 티어가
- * 조용히 간격까지 사게 된다. 곱하는 것은 강화 배수 하나뿐이다.
+ * intervalFactor(구리 1.0·철 0.8·미스릴 0.6·별똥 0.45)를 곱해 오므로, 망치에
+ * 쓰면 티어가 조용히 간격까지 사게 된다. 곱하는 것은 강화 배수 하나뿐이다.
+ *
+ * **이 "한 축" 규범을 채집 도구로 옮기지 마라.** `gatherToolProfile`(위)은 한
+ * 칸마다 세 축을 함께 올리고, 그것이 맞다 — 이유는 그 주석에 적어 두었다.
  *
  * 인자가 숫자가 아니라 착용 정보인 이유: 그래야 "티어를 받고도 안 쓴다"가 이
  * 함수의 경계에서 보이고 테스트가 그것을 증명할 수 있다(미스릴 망치 +0 =

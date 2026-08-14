@@ -12,11 +12,13 @@ const data: GameData = {
     // 3등급 — auto-equip 비교가 2등급 전용이 아니라 임의 등급 간 비교라는 것을
     // 이 픽스처로 못박는다(G5).
     mithril_pickaxe: testTool('mithril_pickaxe', 'mineral', 3, { name: '미스릴 곡괭이', icon: 'pickaxe_reinforced' }),
-    // 합성 4등급 — 실제 카탈로그에 없다. 간격 프로필 버킷(toolProfile 의 tier≥3)
-    // 이 미스릴과 같아 신품 유효배수가 0.6 으로 **동률**이다: 원시 tier 비교
-    // (4>3)와 유효배수 비교(§6-앞 2)가 서로 다른 답을 내는 유일한 픽스처라,
-    // "동률·열세면 교체하지 않는다"를 이것으로만 못박을 수 있다.
-    legend_pickaxe: testTool('legend_pickaxe', 'mineral', 4, { name: '전설 곡괭이', icon: 'pickaxe_legend' }),
+    starfall_pickaxe: testTool('starfall_pickaxe', 'mineral', 4, { name: '별똥 곡괭이', icon: 'pickaxe_star' }),
+    // 합성 5등급 — 실제 카탈로그에 없다. 사다리가 4단에서 끝나므로(toolProfile 의
+    // tier≥4) 신품 유효배수가 별똥과 0.45 로 **동률**이다: 원시 tier 비교(5>4)와
+    // 유효배수 비교(§6-앞 2)가 서로 다른 답을 내는 유일한 픽스처라, "동률·열세면
+    // 교체하지 않는다"를 이것으로만 못박을 수 있다. 사다리 끝이 옮겨 가면 이
+    // 등급도 함께 올려야 한다 — 4단을 낼 때 3에서 여기로 옮겼다.
+    legend_pickaxe: testTool('legend_pickaxe', 'mineral', 5, { name: '전설 곡괭이', icon: 'pickaxe_legend' }),
     copper_hammer: testTool('copper_hammer', 'crafting', 1, { name: '구리 망치', icon: 'hammer_copper' }),
     iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
   },
@@ -377,11 +379,11 @@ describe('performCraft', () => {
 
 describe('performCraft — 자동 착용은 원시 tier 가 아니라 유효 효과로 견준다(§6-앞 2)', () => {
   it('tier 가 높아도 유효 간격배수가 나쁘면 교체하지 않는다 — 신품이 강화 투자를 덮어쓰지 못한다', () => {
-    // 착용 미스릴 +5 의 유효배수 0.6×0.97^5 ≈ 0.515, 신품 전설(4티어)은 0.6 —
-    // 신품이 더 느리다. 원시 tier 비교(4>3)였다면 여기서 교체가 일어난다.
+    // 착용 별똥 +5 의 유효배수 0.45×0.97^5 ≈ 0.386, 신품 전설(5티어)은 0.45 —
+    // 신품이 더 느리다. 원시 tier 비교(5>4)였다면 여기서 교체가 일어난다.
     const p = player({
       stacks: { copper_ingot: 3 },
-      instances: [{ instanceId: 'm1', itemId: 'mithril_pickaxe', enhanceLevel: 5 }],
+      instances: [{ instanceId: 'm1', itemId: 'starfall_pickaxe', enhanceLevel: 5 }],
       equipped: { mineral: 'm1' },
     })
     const r = performCraft({ player: p, data, recipeId: 'legend_pickaxe', rng: alwaysSucceed, newId: () => 'legend1', now: 0 })
@@ -396,10 +398,10 @@ describe('performCraft — 자동 착용은 원시 tier 가 아니라 유효 효
   })
 
   it('유효배수가 동률이면 교체하지 않는다', () => {
-    // 신품 미스릴(0.6) 착용 중 신품 전설(0.6) — 티어 숫자만 다르고 배수는 같다.
+    // 신품 별똥(0.45) 착용 중 신품 전설(0.45) — 티어 숫자만 다르고 배수는 같다.
     const p = player({
       stacks: { copper_ingot: 3 },
-      instances: [{ instanceId: 'm1', itemId: 'mithril_pickaxe', enhanceLevel: 0 }],
+      instances: [{ instanceId: 'm1', itemId: 'starfall_pickaxe', enhanceLevel: 0 }],
       equipped: { mineral: 'm1' },
     })
     const r = performCraft({ player: p, data, recipeId: 'legend_pickaxe', rng: alwaysSucceed, newId: () => 'legend1', now: 0 })

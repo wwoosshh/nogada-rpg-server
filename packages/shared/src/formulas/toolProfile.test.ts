@@ -24,6 +24,9 @@ import {
 const copper: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' })
 const iron: ItemDef = { ...copper, id: 'iron_pickaxe', toolTier: 2 }
 const mithril: ItemDef = { ...copper, id: 'mithril_pickaxe', toolTier: 3 }
+const starfall: ItemDef = { ...copper, id: 'starfall_pickaxe', toolTier: 4 }
+/** 아직 없는 5단 — 사다리 끝이 4 에서 멈추는지 묻기 위해서만 존재한다. */
+const beyond: ItemDef = { ...copper, id: 'unwritten_pickaxe', toolTier: 5 }
 
 /** 착용 정보 리터럴 — 간격이 보는 것은 def 의 티어와 instance 의 강화 수치뿐이다. */
 function info(def: ItemDef, enhanceLevel: number): EquippedToolInfo {
@@ -58,6 +61,35 @@ describe('gatherToolProfile', () => {
     expect(gatherToolProfile(copper)).toEqual({ rollFactor: 1.0, intervalFactor: 1.0, jackpotFlat: 0 })
     expect(gatherToolProfile(iron)).toEqual({ rollFactor: 0.9, intervalFactor: 0.8, jackpotFlat: 2 })
     expect(gatherToolProfile(mithril)).toEqual({ rollFactor: 0.8, intervalFactor: 0.6, jackpotFlat: 3 })
+  })
+
+  // 왜: 4단은 세 축이 **함께** 좋아진다. 망치 쪽(craftIntervalMs 주석)이 티어를
+  //     성공률 하나에 묶은 것과 반대로 보이지만 다른 규칙이 아니다 — 망치는
+  //     제작이라는 한 동사에만 붙어 채집 도구 넷의 자리를 혼자 차지하므로 축을
+  //     하나로 묶어야 하고, 채집 도구는 계열마다 따로 만들어 따로 드는 물건이라
+  //     처음부터 세 축(roll·간격·잭팟)을 나눠 진다(맨손 1.45/1.5/0 부터 그렇다).
+  //     승급 한 칸의 크기가 두 쪽에서 비슷하려면, 축을 셋 지는 쪽은 셋을 다
+  //     올려야 한다. 이 두 규범을 하나로 읽으면 4단이 간격만 받고 죽는다.
+  it('별똥(4단) ×0.7/×0.45/−4 — 세 축이 함께 오른다, 축을 셋 지는 사다리에서 승급 한 칸의 크기다', () => {
+    expect(gatherToolProfile(starfall)).toEqual({ rollFactor: 0.7, intervalFactor: 0.45, jackpotFlat: 4 })
+  })
+
+  // 왜: 사다리의 끝은 데이터가 아니라 이 함수가 정한다. 5단 아이템이 실수로
+  //     들어와도 프로필이 조용히 더 좋아지면 안 되고, 4단과 같아야 한다 —
+  //     구 `>= 3` 이 4단을 미스릴로 접어 두던 것과 같은 사고를 4 위에서 막는다.
+  it('5단 이상은 4단과 같은 프로필이다 — 사다리는 여기서 끝나고, 위쪽은 조용히 더 세지지 않는다', () => {
+    expect(gatherToolProfile(beyond)).toEqual(gatherToolProfile(starfall))
+  })
+
+  // 왜: 설계 §2-2 가 파는 것은 "분당 산출 +33%" 이고, 그 문장은 재야 참이 된다.
+  //     측정 조건을 못박는다 — 숙련 0(기준 간격 500ms) · 신품(+0) · 증표 없는
+  //     손 · 척도는 분당 채집 횟수(60,000ms ÷ 간격). 조건이 없는 +33% 는 어느
+  //     손에서 잰 것인지 알 수 없어 다음 사람이 검증할 수 없다.
+  it('신품 별똥은 신품 미스릴보다 분당 채집 횟수가 4/3 배다 — 숙련 0·증표 없음에서 200회 → 267회(간격 300ms → 225ms)', () => {
+    const perMinute = (def: ItemDef): number => 60_000 / gatherIntervalMs(0, hand(def))
+    expect(gatherIntervalMs(0, hand(mithril))).toBe(300)
+    expect(gatherIntervalMs(0, hand(starfall))).toBe(225)
+    expect(perMinute(starfall) / perMinute(mithril)).toBeCloseTo(4 / 3, 10)
   })
 
   it('도구가 아니거나 티어가 없는 정의는 맨손 프로필이다 — 조용한 ×1.0 기본값 금지(§6-앞 9)', () => {
@@ -102,6 +134,12 @@ describe('티어 대 강화의 불변식 — 강화가 승급의 드라마를 �
   it('철을 +5 로 만강해도 신품 미스릴이 더 빠르다 — 0.6 < 0.8×0.97^5(≈0.687)', () => {
     expect(gatherToolProfile(mithril).intervalFactor).toBeLessThan(
       gatherToolProfile(iron).intervalFactor * maxEnhance,
+    )
+  })
+
+  it('미스릴을 +5 로 만강해도 신품 별똥이 더 빠르다 — 0.45 < 0.6×0.97^5(≈0.5155), 새 칸도 같은 부등식을 진다', () => {
+    expect(gatherToolProfile(starfall).intervalFactor).toBeLessThan(
+      gatherToolProfile(mithril).intervalFactor * maxEnhance,
     )
   })
 
