@@ -9,6 +9,7 @@ import type {
 } from '@nogada/shared'
 import { COLLECTION_MAX_GRADE, ENHANCE_CAP, gatherIntervalMs } from '@nogada/shared'
 import { measureHand, tierChances } from './gatherMeasure.js'
+import { isSpecialTableId } from './gatherTables.js'
 import { addUnique, requireCell, toInt } from './parse.js'
 
 type Row = Record<string, string>
@@ -177,8 +178,20 @@ export function validateCollection(data: GameData, tables: GatherTables): string
   // 캘 수 있는데 방에 자리가 없고(만점이 100 이 아니게 된다), 잉여면 방에
   // 자리가 있는데 아무도 캘 수 없다(영원히 0등급인 칸 — 화면이 "0/50"을
   // 적어 놓고 아무도 채울 수 없다).
+  //
+  // **특수 표는 세지 않는다**(노드 종류 §6-5). 특수 재료는 수집물이 아니라 4단
+  // 도구를 여는 열쇠다 — t4 문턱을 정직하게 적으면 시간당 몇 개짜리 재료의 칸은
+  // 수백 시간이 되어 칸이 아니라 벽이 되고(실측: 숙련 150k 에서 칸당 평균
+  // 6,152분), `collection_100` 의 "스물다섯 칸이 모두 가득 찼다"가 빌드 초록인 채
+  // 거짓말이 된다.
+  //
+  // **술어가 `!table.equity` 가 아닌 이유:** `equity` 는 "형평을 재는 대표 표"라는
+  // 뜻이고 심층 표도 false 다. 그것으로 좁히면 `ice.equity=false` 같은 고장
+  // 상태에서 원인 하나(대표 표가 없다)가 "얼음 조각은 채집물이 아니다" 다섯 줄을
+  // 더 낳는다 — 바로 아래가 금지하는 그 자세다.
   const gathered = new Map<string, { table: GatherTableDef; tierIndex: number }>()
   for (const table of Object.values(tables)) {
+    if (isSpecialTableId(table.id)) continue
     table.tiers.forEach((tier, tierIndex) => gathered.set(tier.itemId, { table, tierIndex }))
   }
 
@@ -339,6 +352,44 @@ export function validateCollection(data: GameData, tables: GatherTables): string
           `${slot}: 1단(${first}개)이 구리 손·첫 브라켓에서 ${minutesText(earlyMinutes)} 걸린다 — ${EARLY_BUDGET_MINUTES}분 안에 닿거나, 더 낮출 수 없는 ${EARLY_FLOOR}개여야 한다. 1단이 멀면 절벽(숙련 50만)까지 한 개도 안 바치는 것이 지배 전략이 되어 방의 숫자를 초반에 아무도 안 읽는다${fix}`,
         )
       }
+    })
+  }
+
+  // ---- 특수 표도 형평에 재인다(노드 종류 §6-4) ----
+  //
+  // 특수 표는 `equity` 가 false 라 위 순회에서 빠진다. 그것이 옳은 것은 **대역
+  // 양쪽**을 요구하는 것이고(특수 표는 느려도 된다 — 옆길이니까), 옳지 않은 것은
+  // **하한**이다: 특수 표가 같은 칸의 훨씬 빠른 출처가 되면 도감의 안전망이
+  // 아무 소리 없이 무너진다.
+  //
+  // **천장을 잘 통과할수록 더 깨진다**는 것이 이 검사가 필요한 이유다. 특수 표의
+  // ∞ 를 그 계열 최저가로 채우면 분당 골드가 바깥의 0.01배로 내려가
+  // (gatherTables 의 SPECIAL_YIELD_MAX 를 100배 여유로 통과) 그 칸의 t4 도달은
+  // 29.8분 → 5.3분이 된다. 두 검사가 서로 반대 방향을 보므로 둘 다 있어야 한다.
+  //
+  // 상한을 안 묻는 것이 대표 표와 갈리는 자리다 — 특수 표에서 무엇이 느리게
+  // 나오는 것은 설계이고, 빠르게 나오는 것만 사고다.
+  for (const table of Object.values(tables)) {
+    if (!isSpecialTableId(table.id)) continue
+    const at = `${FILE}(${table.id} 계열)`
+    const topTier = topToolTier(table.skill, data.items)
+    const best = topTier === null ? null : measureHand(table.skill, data.items, topTier, true, ENHANCE_CAP)
+    if (!best) {
+      violations.push(`${at}: ${table.skill} 계열의 최적손을 items.csv 에서 찾을 수 없어 형평을 잴 수 없다`)
+      continue
+    }
+    const chances = tierChances(table.brackets.at(-1)!.cumulative, best)
+    const interval = gatherIntervalMs(finalBracketProficiency(table), best)
+    table.tiers.forEach((tier, tierIndex) => {
+      // 칸이 없는 티어(특수 재료 자신)는 형평이 재는 대상이 아니다 — 위 칸 유도가
+      // 일부러 뺐고, 없는 문턱으로 시간을 재면 그 자리에서 던진다.
+      const def = collection[tier.itemId]
+      if (!def) return
+      const minutes = minutesFor(def.steps[COLLECTION_MAX_GRADE - 1]!, chances[tierIndex]!, interval)
+      if (minutes >= EQUITY_MIN_MINUTES) return
+      violations.push(
+        `${FILE}[${tier.itemId}]: 4단이 특수 표 "${table.id}" 의 최적손·최종 브라켓에서 ${minutesText(minutes)} 걸린다 — 대표 표가 재는 하한 ${EQUITY_MIN_MINUTES}분보다 빠르다. 특수 표는 형평 순회에서 빠지므로 이 칸의 문턱은 대표 표만 보고 정해졌는데, 같은 칸을 훨씬 빨리 주는 출처가 생기면 그 문턱이 뜻을 잃는다. gather_brackets.csv 의 ${table.id} ∞ 행에서 이 티어의 몫을 줄인다`,
+      )
     })
   }
 

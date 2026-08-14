@@ -240,3 +240,71 @@ describe('validateCollection — 1단은 절벽 앞에서 닿는다(§6-앞 6)',
     expect(violations[0]).toMatch(/416\.7분/)
   })
 })
+
+// ---- 특수 표(노드 종류 §6-4·6-5) ----
+//
+// 특수 표는 `equity` 가 false 라 위 형평 순회에서 빠진다. 그 가림이 **칸 목록에도**
+// 필요하고(특수 재료는 수집물이 아니라 열쇠다), 동시에 **형평에는 필요하지 않다** —
+// 특수 표가 같은 아이템의 훨씬 빠른 출처가 되면 도감의 안전망이 조용히 무너진다.
+
+/**
+ * 얼음 특수 표 하나를 세운 사본. **∞ 에서 잡티어(얼음 조각)가 차지하는 몫**을
+ * 인자로 받는다 — 그 몫이 곧 이 표가 그 칸의 얼마나 빠른 출처인가다.
+ *
+ * **최적손은 roll 을 접으므로**(rollFactor × 선별) 바깥 표의 마지막 티어는 그 접힘
+ * 위쪽을 잃는데, 특수 표의 두 칸짜리 사다리는 전부 접힘 아래라 몫을 그대로 지킨다.
+ * 그래서 "바깥과 같은 31%" 로는 모자라고 실측 상한이 약 16,000 이다. 특수 표가 그보다 두껍게 주면
+ * 그 칸의 t4 문턱이 대표 표만 보고 정해진 뜻을 잃는다.
+ */
+function withIceSpecial(shardShareAtInfinite: number): GatherTables {
+  const outer = tables['ice']!
+  const cum1 = [20, 25, 31, 38, 46, 61]
+  const special: GatherTableDef = {
+    ...outer,
+    id: 'ice_special',
+    equity: false,
+    tiers: [{ itemId: 'hot_ice' }, { itemId: 'ice_shard' }],
+    brackets: outer.brackets.map((bracket, i) => ({
+      bracketMax: bracket.bracketMax,
+      cumulative: [
+        cum1[i]!,
+        bracket.bracketMax === null ? cum1[i]! + shardShareAtInfinite : bracket.cumulative.at(-1)!,
+      ],
+    })),
+  }
+  return { ...tables, ice_special: special }
+}
+
+describe('validateCollection — 특수 표는 칸을 안 만들고, 그래도 형평에는 재인다', () => {
+  /**
+   * 칸 유도를 좁히는 술어가 `!table.equity` 면 안 되는 이유를 이 스위트가 진다.
+   * `equity` 는 "형평을 재는 대표 표"라는 뜻이라 심층 표도 false 다 — 그것으로
+   * 좁히면 `ice.equity=false` 같은 **고장 상태**에서 원인 하나(대표 표가 없다)가
+   * "얼음 조각은 채집물이 아니다" 다섯 줄을 더 낳는다. 이 파일 자신이 금지한
+   * 자세다(원인 하나를 위반 둘로 보고하지 않는다).
+   */
+  it('대표 표가 없는 고장 상태에서도 위반은 한 줄이다 — 칸 목록이 equity 에 딸려 오면 안 된다', () => {
+    const blind = { ...tables, ice: { ...tables['ice']!, equity: false } }
+    expect(check(shipped.collection, undefined, blind)).toHaveLength(1)
+  })
+
+  it('특수 표만 가진 아이템은 칸이 없어도 된다 — 특수 재료는 수집물이 아니라 열쇠다', () => {
+    // `hot_ice` 는 `collection.csv` 에 없다. 특수 표를 칸 유도에서 안 빼면
+    // "채집물인데 칸이 없다"로 빌드가 선다.
+    expect(check(shipped.collection, undefined, withIceSpecial(15_000))).toEqual([])
+  })
+
+  /**
+   * **천장을 잘 통과할수록 형평이 더 깨진다.** 특수 표의 ∞ 를 얼음 조각으로 채우면
+   * 그 표의 분당 골드는 바깥의 0.01배로 내려가(천장 통과) 도감 t4 도달은
+   * 29.8분 → 5.3분이 된다. 형평이 대표 표만 보면 이 표는 초록이다.
+   */
+  it('특수 표가 같은 칸의 훨씬 빠른 출처가 되면 위반이다 — 형평은 특수 표까지 봐야 한다', () => {
+    const violations = check(shipped.collection, undefined, withIceSpecial(99_000))
+    expect(violations.join('\n')).toMatch(/ice_shard[\s\S]*ice_special/)
+  })
+
+  it('특수 표가 대표 표보다 느린 출처면 아무 말도 안 한다 — 옆길은 느려도 된다', () => {
+    expect(check(shipped.collection, undefined, withIceSpecial(15_000))).toEqual([])
+  })
+})
