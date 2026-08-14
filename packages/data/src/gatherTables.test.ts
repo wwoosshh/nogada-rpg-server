@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { GameData, GatherBracketDef, GatherTables, ItemDef, NodeDef, SkillId } from '@nogada/shared'
+import type { GameData, GatherBracketDef, GatherTableDef, GatherTables, ItemDef, NodeDef, SkillId } from '@nogada/shared'
 import { NODE_VARIANTS, gatherBracketFor, sellPrice } from '@nogada/shared'
 import { testItem } from '@nogada/shared/testing'
 import { parseCsv } from './parse.js'
@@ -741,18 +741,60 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
   })
 
   /**
+   * **설계 §5 의 분 목표에서 역산한** 얼음 특수 표. 이 스위트와 아래 특수 스위트가
+   * 같은 것을 쓴다 — 픽스처가 둘이면 한쪽만 규범을 만족하게 되는 날이 온다.
+   *
+   * 사다리는 둘뿐이다: 뜨거운 얼음(잭팟)과 그 계열 최저가(얼음 조각). 특수 노드가
+   * 파는 것은 골드가 아니라 열쇠이므로 잡티어를 싼 것으로 채운다(설계 §6-9 —
+   * 매도가 단조 감소는 고칠 테스트가 아니라 지킬 제약이다).
+   *
+   * `cum1` 은 구리손·브라켓 하한에서 "뜨거운 얼음 1개까지 N분"을 만족하는 값이다
+   * (37.5 / 22 / 17 / 15 / 4 / 2분 → 22 / 23 / 22 / 22 / 47 / 61). 성공률(마지막
+   * 누적)은 바깥과 같게 두었다 — 꽝을 늘려 특수를 낮추는 것은 저장소가 채집에서
+   * 성공률 곡선을 은퇴시킨 그 이유에 정확히 걸린다.
+   */
+  const SPECIAL_CUM1 = [20, 25, 31, 38, 46, 61]
+
+  function iceSpecial(): GatherTableDef {
+    const outer = tables['ice']!
+    return {
+      ...outer,
+      id: 'ice_special',
+      equity: false,
+      tiers: [
+        { itemId: 'hot_ice' },
+        { itemId: 'ice_shard' },
+      ],
+      brackets: outer.brackets.map((bracket, i) => ({
+        bracketMax: bracket.bracketMax,
+        cumulative: [SPECIAL_CUM1[i]!, bracket.cumulative.at(-1)!],
+      })),
+    }
+  }
+
+  /** 뜨거운 얼음이 없는 세계에서는 특수 표의 티어가 실재하지 않는다 — 아이템도 함께 준다. */
+  function withHotIce(source: GameData): GameData {
+    return {
+      ...source,
+      items: {
+        ...source.items,
+        hot_ice: testItem('hot_ice', { name: '뜨거운 얼음', price: 24000, skill: 'ice' }),
+      },
+    }
+  }
+
+  /**
    * 같은 계열에 특수 표를 하나 세운 세계 — 표도 그것을 가리키는 노드도 함께 준다.
    *
    * 노드까지 주는 이유: 고아 표 검사가 "어느 노드도 안 가리킨다"로 먼저 짖으면
    * 이 스위트가 재려는 것(심층↔바깥 짝짓기가 특수 표를 세었는가)이 그 소음에
-   * 묻힌다. 표는 `ice` 의 사본이라 나머지 검사에는 아무 할 말이 없다.
+   * 묻힌다. 표는 §5 목표를 만족하므로 특수 검사에도 아무 할 말이 없다.
    */
   function withIceSpecial(): { tables: GatherTables; data: GameData } {
-    const outer = tables['ice']!
     return {
-      tables: { ...tables, ice_special: { ...outer, id: 'ice_special', equity: false } },
+      tables: { ...tables, ice_special: iceSpecial() },
       data: {
-        ...data,
+        ...withHotIce(data),
         nodes: {
           ...data.nodes,
           red_ice_vein: {
@@ -794,6 +836,135 @@ describe('validateGatherTables — 심층 표가 바깥에서 떨어져 나가�
     }
     expect(validateGatherTables(broken, withNode).violations).toContain(
       'gather[ice_deep] ∞ 브라켓: 티어 2(pure_ice_crystal)의 누적이 34500 인데 바깥 표 "ice" 의 ∞ 는 34000 이다 — 심층 ∞ 는 바깥 ∞ 의 복사본이어야 한다. 수집의 방 형평 검증은 표를 순회하며 같은 25칸 문턱을 그 표의 ∞ 로 재므로, 둘이 갈라지면 한 칸의 t4 가 두 표의 25~35분 대역을 동시에 만족해야 하는 교착이 된다. gather_brackets.csv 의 ice_deep ∞ 행을 ice 의 ∞ 행과 같게 적는다',
+    )
+  })
+})
+
+// ---- 특수 표: 천장은 상대, 바닥은 절대 ----
+//
+// 심층은 `DEEP_YIELD_TARGET ± TOLERANCE` 로 양쪽을 죈다. 특수에 같은 자를 쓸 수
+// 없다는 것이 실측으로 확정됐다: §5 목표를 만족하는 표의 비가 0.712 → 0.587 →
+// 0.518 → 0.363 → 0.148 → **0.014** 로 내려가는데, 마지막 계단이 ×0.09 인 것은
+// **바깥 ∞ 가 한 칸에 ×11.4 로 터지기 때문**이다(얼음의 보석이 15%). 비를 0.1 위로
+// 유지하려면 뜨거운 얼음의 정가가 67만이 되어야 하고, 그것은 "특수 노드는 골드가
+// 아니라 열쇠를 판다"(설계 §4)를 정면으로 뒤집는다.
+//
+// 그런데 같은 표의 **자기 진행**은 단조다(1,958 → 3,560 → 5,062 → 6,769 →
+// 14,227 → 23,543). 그래서 천장은 상대(바깥을 절대 안 이긴다), 바닥은 절대(자기
+// 분당 골드가 브라켓마다 최소 ×SPECIAL_YIELD_MIN_STEP 오른다)로 나눈다.
+
+describe('validateGatherTables — 특수 표는 바깥을 안 이기고, 스스로는 계속 오른다', () => {
+  const data0 = loadGameData()
+  const tables0 = loadGatherTables()
+
+  const SPECIAL_CUM1 = [20, 25, 31, 38, 46, 61]
+
+  function iceSpecial(overrides: Partial<GatherTableDef> = {}): GatherTableDef {
+    const outer = tables0['ice']!
+    return {
+      ...outer,
+      id: 'ice_special',
+      equity: false,
+      tiers: [
+        { itemId: 'hot_ice' },
+        { itemId: 'ice_shard' },
+      ],
+      brackets: outer.brackets.map((bracket, i) => ({
+        bracketMax: bracket.bracketMax,
+        cumulative: [SPECIAL_CUM1[i]!, bracket.cumulative.at(-1)!],
+      })),
+      ...overrides,
+    }
+  }
+
+  /** 표를 세우려면 그 표를 가리키는 노드와 그 티어의 아이템이 함께 있어야 한다. */
+  function world(special: GatherTableDef): { tables: GatherTables; data: GameData } {
+    return {
+      tables: { ...tables0, ice_special: special },
+      data: {
+        ...data0,
+        items: {
+          ...data0.items,
+          hot_ice: testItem('hot_ice', { name: '뜨거운 얼음', price: 24000, skill: 'ice' }),
+        },
+        nodes: {
+          ...data0.nodes,
+          red_ice_vein: {
+            id: 'red_ice_vein', name: '붉은 얼음 광맥', skill: 'ice',
+            tableId: 'ice_special', variant: 'special', sprite: 'red_ice_vein',
+          },
+        },
+      },
+    }
+  }
+
+  const violationsOf = (special: GatherTableDef): string[] => {
+    const { tables: t, data: d } = world(special)
+    return validateGatherTables(t, d).violations
+  }
+
+  it('§5 의 분 목표에서 역산한 표는 위반도 경고도 없다 — 목표와 규범이 함께 설 수 있다', () => {
+    const { tables: t, data: d } = world(iceSpecial())
+    expect(validateGatherTables(t, d)).toEqual({ violations: [], warnings: [] })
+  })
+
+  it('바깥과 글자 그대로 같은 특수 표는 천장 위반이다 — 그것이 "두 번째 상점"이다', () => {
+    const outer = tables0['ice']!
+    const copied = iceSpecial({ tiers: outer.tiers, brackets: outer.brackets })
+    expect(violationsOf(copied).join('\n')).toMatch(/천장/)
+  })
+
+  /**
+   * **∞ 를 안 재면 이 검사는 아무것도 안 지킨다.** 심층은 ∞ 를 건너뛰는 것이 옳다
+   * (규칙 1 이 "바깥의 복사본"으로 이미 재고, 그래서 배수는 산술적으로 1.000 이다).
+   * 특수에는 복사 규칙이 없으므로 ∞ 는 **어떤 검사도 안 받는 구간**이 되는데,
+   * 플레이어가 그 노드 앞에서 보내는 시간의 대부분이 ∞ 다(숙련 500,000 도달 =
+   * 584.2분, 그 뒤로 영원히).
+   */
+  it('∞ 브라켓만 바깥을 넘겨도 천장이 문다 — 유한 브라켓만 재면 584분 뒤가 무측정이다', () => {
+    // 유한 브라켓 다섯은 §5 목표 그대로 두고 ∞ 하나만 밀어 올린다. 바깥 ∞ 의
+    // 분당 골드(구리손·숙련 500,001)를 넘기는 `cum1` 은 16,853 이므로 20,000 이면
+    // 확실히 넘는다 — 유한 쪽만 재는 구현에서는 이 표가 초록이다.
+    const infiniteRich = iceSpecial({
+      brackets: iceSpecial().brackets.map((b) =>
+        b.bracketMax === null ? { ...b, cumulative: [20000, b.cumulative[1]!] } : b,
+      ),
+    })
+    expect(violationsOf(infiniteRich).join('\n')).toMatch(/∞[\s\S]*천장/)
+  })
+
+  /**
+   * 천장 하나로는 ×0.016 과 ×0.999 를 구별하지 못한다 — 폭 ×52.3 이 전부 초록이다.
+   * §3 이 "계열마다 다른 사다리 모양"이라고 부른 조종간이 통째로 검증 밖에 있게 된다.
+   */
+  it('자기 분당 골드가 브라켓 사이에 안 오르면 바닥 위반이다 — 천장만으로는 못 잡는다', () => {
+    const flat = iceSpecial({
+      brackets: iceSpecial().brackets.map((b) => ({ ...b, cumulative: [22, b.cumulative[1]!] })),
+    })
+    const found = violationsOf(flat).join('\n')
+    expect(found).toMatch(/바닥/)
+    // 천장은 전부 통과한다 — 바닥이 없으면 이 표가 초록이었다는 뜻이다.
+    expect(found).not.toMatch(/천장/)
+  })
+
+  /**
+   * 심층의 `:558` 은 문턱 아래에서 바깥과 **같기를** 요구한다. 그 근거는 "문턱
+   * 아래에는 그 표를 굴릴 사람이 없다"인데, **특수 노드는 결계 밖에 서므로**
+   * (설계 §6-7) 문턱 아래가 곧 특수 표가 실제로 굴려지는 자리다. 그 요구를 복사하면
+   * §5 의 "숙련 0 에서 37.5분"이 그 자리에서 위반이 된다.
+   */
+  it('문턱 아래에서 바깥과 달라도 통과한다 — 특수 노드는 결계 밖에 선다', () => {
+    // §5 표의 첫 두 브라켓(≤500·≤5000)은 얼음 결계 문턱 85,000 아래이고
+    // 바깥과 값이 다르다. 그것이 위반이 아님을 위 초록 테스트가 이미 말하지만,
+    // **왜** 아닌지를 여기서 못박는다 — 심층 쪽 문구가 특수에 새면 잡는다.
+    expect(violationsOf(iceSpecial()).join('\n')).not.toMatch(/문턱/)
+  })
+
+  it('짝이 될 바깥 표가 없는 특수 표는 위반이다 — 무엇보다 낮아야 하는지 물을 상대가 없다', () => {
+    const { tables: t, data: d } = world(iceSpecial())
+    const { ice: _outer, ...orphaned } = t
+    expect(validateGatherTables(orphaned, d).violations.join('\n')).toMatch(
+      /gather\[ice_special\][\s\S]*바깥 표가 없다/,
     )
   })
 })

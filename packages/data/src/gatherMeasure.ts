@@ -123,6 +123,25 @@ export function goldPerMinute(
   hand: GatherHand,
   items: Record<string, ItemDef>,
 ): number {
+  return (goldPerAttempt(table, bracket, hand, items) * 60_000) / gatherIntervalMs(proficiency, hand)
+}
+
+/**
+ * 한 번 캘 때의 **기대 매도가** — 위 분당 산출에서 간격을 뺀 것.
+ *
+ * **표만 정하는 값이다.** 숙련도 인자가 없는 것이 요점이다: 간격은 모든 표가
+ * 똑같이 받는 선물이라, 표끼리 견줄 때는 약분되지만 **한 표를 자기 자신과 견줄
+ * 때는 안 약분된다.** 특수 표의 바닥(gatherTables 의 SPECIAL_YIELD_MIN_STEP)이
+ * 분당으로 재던 동안 `cum1` 을 브라켓마다 똑같이 눕혀도 통과했다 — 500ms 가
+ * 297ms 가 되는 것만으로 ×1.68 이 되기 때문이다. 그것은 표가 오른 것이 아니라
+ * 숙련도가 오른 것이고, 작가가 CSV 에서 손댈 수 있는 것은 이쪽뿐이다.
+ */
+export function goldPerAttempt(
+  table: GatherTableDef,
+  bracket: GatherBracketDef,
+  hand: GatherHand,
+  items: Record<string, ItemDef>,
+): number {
   const chances = tierChances(bracket.cumulative, hand)
   let perAttempt = 0
   table.tiers.forEach((tier, index) => {
@@ -131,5 +150,5 @@ export function goldPerMinute(
     // 오타 하나가 빌드를 검증 목록 대신 스택 트레이스로 세운다.
     if (def) perAttempt += (chances[index] ?? 0) * sellPrice(def)
   })
-  return (perAttempt * 60_000) / gatherIntervalMs(proficiency, hand)
+  return perAttempt
 }

@@ -9,7 +9,7 @@ import type {
   TransitionDef,
 } from '@nogada/shared'
 import { NODE_VARIANTS, gatherBracketFor } from '@nogada/shared'
-import { goldPerMinute, measureHand } from './gatherMeasure.js'
+import { goldPerMinute, measureHand, tierChances } from './gatherMeasure.js'
 import { addUnique, optionalCell, requireCell, toInt, toSkillId } from './parse.js'
 
 type Row = Record<string, string>
@@ -133,6 +133,37 @@ export const DEEP_YIELD_TOLERANCE = 0.15
 export const DEEP_TOP_TIER_CEILING = 0.1
 
 /**
+ * 특수 표의 **천장** — 그 계열 바깥 표의 같은 구간보다 낮아야 한다(설계 §6-3).
+ *
+ * 이것을 안 걸면 특수 노드가 보통 노드를 지배해 **표 넷과 배치 32개가 그날 죽는다**
+ * (설계 §7 실패 B). 아크 A 가 여덟 노드에 얼굴을 준 그 다음 아크가 그것을 죽이는
+ * 모양이 된다.
+ */
+export const SPECIAL_YIELD_MAX = 1.0
+
+/**
+ * 특수 표의 **바닥** — 자기 분당 산출이 브라켓마다 최소 이만큼 오른다(설계 §6-3).
+ *
+ * **왜 바닥이 비가 아닌가.** 심층은 `DEEP_YIELD_TARGET ± TOLERANCE` 로 양쪽을
+ * 같은 자(바깥 대비 비)로 죈다. 특수에 그 자를 쓰면 **어떤 값으로도 만족할 수
+ * 없다** — 설계 §5 의 분 목표를 만족하는 얼음 특수 표를 구리손·브라켓 하한에서
+ * 재면 비가 0.712 → 0.587 → 0.518 → 0.363 → 0.148 → **0.014** 로 내려가는데,
+ * 마지막 계단이 ×0.09 인 것은 바깥 ∞ 가 한 칸에 **×11.4** 로 터지기 때문이다
+ * (얼음의 보석이 15%). 비를 0.1 위로 유지하려면 뜨거운 얼음의 정가가 67만이
+ * 되어야 하고, 그것은 "특수 노드는 골드가 아니라 열쇠를 판다"(설계 §4)를 정면으로
+ * 뒤집는다.
+ *
+ * **그런데 같은 표의 자기 진행은 단조다**(1,958 → 3,560 → 5,062 → 6,769 →
+ * 14,227 → 23,543, 계단마다 평균 ×1.7). 그래서 천장은 상대, 바닥은 절대다.
+ *
+ * 바닥이 없으면 천장 하나가 **×0.016 과 ×0.999 를 구별하지 않는다** — 폭 ×52.3 이
+ * 전부 초록이고, 설계 §3 이 "계열마다 다른 사다리 모양"이라고 부른 조종간이
+ * 통째로 검증 밖에 있게 된다. 천장만 있던 시절의 대가는 이 파일이 이미 한 번
+ * 적었다(위 DEEP_TOP_TIER_CEILING 주석).
+ */
+export const SPECIAL_YIELD_MIN_STEP = 1.2
+
+/**
  * 그 계열 결계의 문턱들 — `transitions.csv` 의 `gateSkill`·`gateValue` 에서 **유도한다.**
  *
  * **문이 생겼다.** 이 자리에는 `DEEP_MEASURE_PROFICIENCY = 85_001` 이 상수로 살았고,
@@ -159,6 +190,7 @@ export function barrierGateValues(transitions: readonly TransitionDef[], skill: 
 
 /** 배수·골드를 메시지에 적는 꼴 — 작가가 목표와 눈으로 견줄 수 있게. */
 const goldText = (gold: number): string => `${Math.round(gold).toLocaleString('ko-KR')}G`
+const percentText = (chance: number): string => `${(chance * 100).toFixed(3)}%`
 const timesText = (ratio: number): string => `${ratio.toFixed(2)}배`
 
 /**
@@ -641,6 +673,132 @@ function validateDeepTables(tables: GatherTables, data: GameData): string[] {
   return violations
 }
 
+/**
+ * 특수 표가 자기 계열 **바깥 표를 안 이기는지**, 그리고 **스스로는 계속 오르는지**
+ * 검사한다(노드 종류 §6-3).
+ *
+ * 심층 검사(`validateDeepTables`)의 규칙 5 와 같은 구간 쌍 기계를 쓰지만 **순회를
+ * 그대로 재사용하지는 않는다.** 그 순회에는 심층 전용 갈래가 여섯 있고, 넷은
+ * 특수에서 뜻이 반대이거나 없다. 각각에 대해 이 함수가 내린 판단:
+ *
+ * | 심층의 갈래 | 특수에서 |
+ * |---|---|
+ * | 1티어 손이 없으면 못 잰다 | **같다** — 잴 자가 없으면 아무것도 못 묻는다 |
+ * | 결계 문턱을 모르면 안 잰다 | **없다** — 특수 노드는 결계 밖이라 문턱이 이 표와 무관하다 |
+ * | ∞ 브라켓은 건너뛴다 | **안 건너뛴다** — 아래 |
+ * | 문턱 아래에서는 바깥과 같기를 요구한다 | **요구하지 않는다** — 아래 |
+ * | 바깥이 이미 ∞ 를 주는 구간은 면제한다 | **면제하지 않는다** — 천장은 어디서나 만족 가능하다 |
+ * | 바깥이 0G 면 안 잰다 | **같다** — 비의 분모가 0 이다 |
+ *
+ * **∞ 를 재는 이유.** 심층의 ∞ 는 바깥의 복사본이고 규칙 1 이 그것을 따로 재므로
+ * 배수는 산술적으로 1.000 이다 — 거기서 또 재는 것은 같은 말을 두 번 하는 것이다.
+ * 특수에는 복사 규칙이 없으므로 ∞ 를 건너뛰면 **어떤 검사도 안 받는 구간**이 되는데,
+ * 플레이어가 그 노드 앞에서 보내는 시간의 **대부분이 ∞ 다**(구리손으로 숙련
+ * 500,000 도달이 584.2분, 그 뒤로 영원히).
+ *
+ * **문턱 아래를 안 묻는 이유.** 심층에서 그 요구가 옳은 근거는 "문턱 아래에는 그
+ * 표를 굴릴 사람이 없다"인데, 특수 배치는 **모든 결계 밖**이어야 하므로(설계 §6-7,
+ * transitions.ts 의 배치 검사가 문다) 문턱 아래가 곧 특수 표가 실제로 굴려지는
+ * 자리다. 그 요구를 복사하면 설계 §5 의 "숙련 0 에서 37.5분에 하나"가 그 자리에서
+ * 위반이 된다 — 규범 둘이 서로를 부순다.
+ *
+ * **재는 자리는 구간의 하한이다.** 구간 안에서 간격은 줄기만 하므로(actionIntervalMs)
+ * 하한이 최악이고, ∞ 는 한 숫자가 아니다 — 같은 표·같은 손으로 숙련 500,001 에서
+ * 1,679,054G/분, 1,000,000 에서 2,451,419G/분이다. 점을 안 정하면 그 검사는
+ * 참·거짓을 물을 수 없다.
+ */
+function validateSpecialTables(tables: GatherTables, data: GameData): string[] {
+  const violations: string[] = []
+
+  const outerBySkill = new Map<SkillId, GatherTableDef[]>()
+  for (const table of Object.values(tables)) {
+    if (variantOfTableId(table.id) !== 'normal') continue
+    const list = outerBySkill.get(table.skill)
+    if (list) list.push(table)
+    else outerBySkill.set(table.skill, [table])
+  }
+
+  for (const special of Object.values(tables)) {
+    if (!isSpecialTableId(special.id)) continue
+    const at = `gather[${special.id}]`
+    const candidates = outerBySkill.get(special.skill) ?? []
+    if (candidates.length === 0) {
+      violations.push(
+        `${at}: 같은 계열(${special.skill})의 바깥 표가 없다 — 특수 표는 그 계열 바깥 표보다 낮아야 하므로 무엇보다 낮은지 물을 상대가 반드시 있어야 한다. gather_tables.csv 에 접미사 없는 ${special.skill} 계열 표를 둔다`,
+      )
+      continue
+    }
+    if (candidates.length > 1) {
+      violations.push(
+        `${at}: 같은 계열(${special.skill})의 바깥 표가 [${candidates.map((t) => t.id).join(', ')}] ${candidates.length}개다 — 어느 것보다 낮아야 하는지 정해지지 않는다. 접미사 없는 표는 계열마다 하나여야 한다`,
+      )
+      continue
+    }
+    const outer = candidates[0]!
+
+    // 손을 실물 카탈로그에서 짓는다 — 심층 검사와 같은 자여야 두 규범이 같은
+    // 세계를 잰다(gatherMeasure).
+    const hand = measureHand(special.skill, data.items, 1, false, 0)
+    if (!hand) {
+      violations.push(
+        `${at}: ${special.skill} 계열의 1티어 도구를 items.csv 에서 찾을 수 없어 분당 산출을 잴 수 없다 — 그 손이 천장과 바닥을 재는 기준이다`,
+      )
+      continue
+    }
+
+    const specialRanges = bracketRanges(special)
+    const outerRanges = bracketRanges(outer)
+
+    // ---- 천장(상대) — ∞ 를 포함한 모든 구간에서 바깥보다 낮다 ----
+    for (const range of specialRanges) {
+      if (range.lo > range.hi) continue
+      for (const span of spansOf(outerRanges, range)) {
+        const lo = Math.max(range.lo, span.lo)
+        const hi = Math.min(range.hi, span.hi)
+        const outerGold = goldPerMinute(outer, span.bracket, lo, hand, data.items)
+        if (outerGold <= 0) continue
+        const specialGold = goldPerMinute(special, range.bracket, lo, hand, data.items)
+        const ratio = specialGold / outerGold
+        if (ratio < SPECIAL_YIELD_MAX) continue
+        violations.push(
+          `${at} 브라켓(${bracketLabel(range.bracket)}): 숙련 ${lo.toLocaleString('ko-KR')}~${hi.toLocaleString('ko-KR')}·구리 손의 분당 산출이 ${goldText(specialGold)} 로 바깥 표 "${outer.id}" 의 같은 구간(${bracketLabel(span.bracket)}, ${goldText(outerGold)})의 ${timesText(ratio)}다 — 천장은 ${timesText(SPECIAL_YIELD_MAX)} 미만이다. 특수 노드가 보통 노드를 이기는 순간 최적해가 하나가 되고 그 계열의 보통 배치가 전부 배경이 된다. gather_brackets.csv 의 ${special.id} ${bracketLabel(range.bracket)} 행 누적을 흔한 쪽으로 옮기거나, 잡티어를 그 계열 최저가 아이템으로 바꾼다`,
+        )
+      }
+    }
+
+    // ---- 바닥(절대) — 최상위 티어가 브라켓마다 더 자주 나온다 ----
+    //
+    // **재는 것이 골드가 아니라 최상위 티어의 확률인 이유.** 특수 표가 존재하는
+    // 이유는 그 한 아이템이고(설계 §2 — 4단 도구를 여는 열쇠), 잡티어는 일부러
+    // 그 계열 최저가로 채워 분당 골드를 낮게 만드는 자리다(천장). 그래서 회당
+    // 기대 매도가는 잡티어가 지배하고 — 실측으로 §5 목표표의 회당 값이
+    // 17.6 → 19.0 → 20.1 → 23.9G 로 ×1.1 씩만 움직인다 — 그것을 바닥으로 쓰면
+    // 열쇠가 얼마나 자주 나오는지와 무관한 것을 죄게 된다.
+    //
+    // **간격이 아니라 확률인 이유도 같다.** 분당으로 재면 500ms 가 297ms 가 되는
+    // 것만으로 ×1.68 이 되어, `cum1` 을 브라켓마다 똑같이 눕힌 표도 통과했다(실측).
+    // 그것은 표가 오른 것이 아니라 숙련도가 오른 것이다. 작가가 CSV 에서 손댈 수
+    // 있는 것은 이 확률 하나뿐이므로, 규범도 그것을 죄어야 고칠 자리가 분명해진다.
+    let previous: { bracket: GatherBracketDef; chance: number } | null = null
+    for (const range of specialRanges) {
+      if (range.lo > range.hi) continue
+      const chance = tierChances(range.bracket.cumulative, hand)[0] ?? 0
+      if (previous !== null) {
+        const step = previous.chance > 0 ? chance / previous.chance : Number.POSITIVE_INFINITY
+        if (step < SPECIAL_YIELD_MIN_STEP) {
+          const top = special.tiers[0]?.itemId ?? '최상위 티어'
+          violations.push(
+            `${at} 브라켓(${bracketLabel(range.bracket)}): 구리 손으로 ${top} 가 나올 확률이 ${percentText(chance)} 로 앞 브라켓(${bracketLabel(previous.bracket)}, ${percentText(previous.chance)})의 ${timesText(step)}다 — 바닥은 ${timesText(SPECIAL_YIELD_MIN_STEP)} 이상이다. 특수 표가 파는 것은 골드가 아니라 그 한 아이템이므로, 스스로 오르는지는 그 확률로 재야 한다(회당 골드는 잡티어가, 분당 골드는 간격이 지배한다). gather_brackets.csv 의 ${special.id} ${bracketLabel(range.bracket)} 행 첫 누적을 올린다`,
+          )
+        }
+      }
+      previous = { bracket: range.bracket, chance }
+    }
+  }
+
+  return violations
+}
+
 export interface GatherTablesCheck {
   /** 빌드를 세우는 오류. */
   violations: string[]
@@ -764,6 +922,8 @@ export function validateGatherTables(tables: GatherTables, data: GameData): Gath
 
   // 표 하나만 봐서는 알 수 없는 것 — 심층 표와 그 계열 바깥 표의 관계(결계 §9-앞 1·6·7).
   violations.push(...validateDeepTables(tables, data))
+  // 같은 모양의 다른 약속 — 특수 표는 바깥을 **안 이기고** 스스로는 계속 오른다(노드 종류 §6-3).
+  violations.push(...validateSpecialTables(tables, data))
 
   return { violations, warnings }
 }
