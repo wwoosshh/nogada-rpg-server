@@ -332,6 +332,64 @@ describe('validateTransitions — 결계와 그 안의 배치', () => {
     ])
   })
 
+  // ---- 특수 배치의 거울(노드 종류 §6-7) ----
+  //
+  // 심층은 "결계 안에 있어야 한다"이고 특수는 정확히 반대다. 특수 재료는 **유일
+  // 출처**라 결계 안에 들어가면 그 아이템이 통째로 153.8분짜리 문 뒤로 사라진다 —
+  // 심층은 밖에 같은 계열 normal 이 여덟 개 그대로 있어서 저숙련이 잃는 것이
+  // 없지만, 특수는 대신 캘 자리가 세상에 없다.
+
+  /** 얼음 특수 노드 하나를 세운 사본 — 배치 자리는 인자로 받는다. */
+  function withSpecialAt(mapId: string, x: number, y: number): GameData {
+    return variant({
+      nodes: {
+        ...real.nodes,
+        red_ice_vein: {
+          id: 'red_ice_vein', name: '붉은 얼음 광맥', skill: 'ice',
+          tableId: 'ice_special', variant: 'special', sprite: 'red_ice_vein',
+        },
+      },
+      placements: {
+        ...real.placements,
+        'red_ice_vein-1': { instanceId: 'red_ice_vein-1', nodeId: 'red_ice_vein', mapId, x, y },
+      },
+    })
+  }
+
+  it('특수 배치가 결계 **안**에 있으면 막는다 — 유일 출처가 문 뒤로 사라진다', () => {
+    // (2, 1) 은 얼음 결계 안이다 — 심층 넷이 거기 산다.
+    const trapped = withSpecialAt('얼음채집장', 2, 1)
+    expect(validateTransitions(trapped, realTerrains).join('\n')).toMatch(/red_ice_vein-1[\s\S]*결계 안/)
+  })
+
+  it('특수 배치가 결계 밖이면 아무 말도 안 한다 — 거기가 그 노드의 자리다', () => {
+    expect(validateTransitions(withSpecialAt('얼음채집장', 10, 20), realTerrains)).toEqual([])
+  })
+
+  // 왜: 개발맵은 눈의마을 서문에서 숙련 0 으로 걸어 들어간다. 결계 아크가 그
+  //     함정을 한 번 밟고 고쳤고(개발맵 배치 13개가 전부 normal 인 이유),
+  //     특수는 유일 출처라 그 문이 더 넓다 — 게임 전체의 그 재료를 숙련 0 에
+  //     내주는 것과 같다.
+  it('특수 배치가 개발맵에 있으면 막는다 — 숙련 0 으로 걸어 들어가는 문이다', () => {
+    expect(validateTransitions(withSpecialAt('개발맵', 15, 15), realTerrains).join('\n')).toMatch(
+      /red_ice_vein-1[\s\S]*개발맵/,
+    )
+  })
+
+  // 왜: 둘이면 "제일 가까운 것"이 다시 답이 되고, 아크가 고치러 온 문제
+  //     (한 채집장의 normal 여덟이 서로 죽인다)가 특수 노드에서 그대로 복사된다.
+  it('한 맵에 특수 배치가 둘이면 막는다 — 채집장당 정확히 하나다', () => {
+    const twice = withSpecialAt('얼음채집장', 10, 20)
+    const doubled = variant({
+      nodes: twice.nodes,
+      placements: {
+        ...twice.placements,
+        'red_ice_vein-2': { instanceId: 'red_ice_vein-2', nodeId: 'red_ice_vein', mapId: '얼음채집장', x: 12, y: 20 },
+      },
+    })
+    expect(validateTransitions(doubled, realTerrains).join('\n')).toMatch(/얼음채집장[\s\S]*2개/)
+  })
+
   // 왜: 반대는 **묻지 않는다.** 결계의 약속은 "심층은 문 뒤에만 있다"이지 "문
   //     뒤에는 심층만 있다"가 아니다 — 결계 안의 normal 노드는 아무에게도 손해가
   //     아니다(같은 노드가 밖에 8개 그대로 있으므로 저숙련이 잃는 것이 없다,

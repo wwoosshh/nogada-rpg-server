@@ -7,21 +7,9 @@ import {
   type PlaceDef,
   type RouteStep,
 } from '@nogada/shared'
+import { DEV_ONLY_MAP_IDS as EXCLUDED_MAP_IDS } from './maps.js'
 import type { MapTerrain } from './placements.js'
 import { formatMinute } from './schedule.js'
-
-/**
- * 경로 그래프에서 빼는 맵.
- *
- * 개발맵은 눈의마을 서문에 문이 하나 붙어 있지만 개발 전용 시험장이다 —
- * 그래프에 넣으면 주민이 시험장을 가로지르는 지름길이 생기고, 그 맵을 고칠
- * 때마다 마을 사람들의 하루가 흔들린다.
- *
- * 맵 이름을 바꾸면 이 목록도 함께 바꾼다. 여기 없는 이름을 적어 두어도
- * 조용히 아무 일도 일어나지 않으므로(그런 맵은 애초에 그래프에 없다) 검사할
- * 것이 없다.
- */
-const EXCLUDED_MAP_IDS: readonly string[] = ['개발맵']
 
 function keyOf(step: RouteStep): string {
   return `${step.mapId}:${step.x},${step.y}`

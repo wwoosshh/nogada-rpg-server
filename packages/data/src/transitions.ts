@@ -6,7 +6,7 @@ import {
   type NodeDef,
   type TransitionDef,
 } from '@nogada/shared'
-import { START_MAP_ID } from './maps.js'
+import { DEV_ONLY_MAP_IDS, START_MAP_ID } from './maps.js'
 import { optionalCell, readGate, requireCell, toInt } from './parse.js'
 import type { MapTerrain } from './placements.js'
 
@@ -417,6 +417,43 @@ function collectBarrierContentViolations(
     if (barrierAt(placement.mapId, placement.x, placement.y) >= 0) continue
     violations.push(
       `placements[${placement.instanceId}]: 심층 노드 "${node.id}"(variant=deep) 가 결계 밖 ${placement.mapId} (${placement.x}, ${placement.y}) 에 놓였다 — 그 표(${node.tableId})는 문 너머에서만 굴려지기로 하고 지은 표라(설계 §9-앞 3·4), 밖에 하나만 놓이면 숙련 0 인 사람이 입구에서 그 분포를 굴린다. 그 맵의 .tmx 에서 이 오브젝트를 결계 안쪽 칸으로 옮기거나, nodeId 를 같은 계열 normal 노드로 바꾼다`,
+    )
+  }
+
+  // ---- 1-거울. 특수 배치는 결계 **밖**·개발맵 아님·채집장당 하나 ----
+  //
+  // 심층의 거울이지만 부호가 반대인 이유는 **대체 공급처**다. 심층이 밖으로 새면
+  // 저숙련이 결계 뒤의 분포를 공짜로 굴리는 것이 문제인데, 특수가 안으로 들어가면
+  // 그 아이템이 **세상에서 사라진다** — 심층은 밖에 같은 계열 normal 이 여덟 개
+  // 그대로 있지만(설계 §2) 특수 재료는 그 노드 하나가 유일 출처다(노드 종류 §6-7).
+  const specials = placements.filter((p) => data.nodes[p.nodeId]?.variant === 'special')
+
+  for (const placement of specials) {
+    const node = data.nodes[placement.nodeId]!
+    if (barrierAt(placement.mapId, placement.x, placement.y) >= 0) {
+      violations.push(
+        `placements[${placement.instanceId}]: 특수 노드 "${node.id}"(variant=special) 가 결계 안 ${placement.mapId} (${placement.x}, ${placement.y}) 에 놓였다 — 그 재료(${node.tableId})는 이 노드가 유일한 출처라, 문 뒤에 두면 그 아이템이 게임에서 통째로 사라진다(심층과 반대다: 심층은 밖에 같은 계열 normal 이 그대로 있다). 그 맵의 .tmx 에서 이 오브젝트를 결계 바깥 칸으로 옮긴다`,
+      )
+    }
+    if (DEV_ONLY_MAP_IDS.includes(placement.mapId)) {
+      violations.push(
+        `placements[${placement.instanceId}]: 특수 노드 "${node.id}" 가 개발맵 (${placement.x}, ${placement.y}) 에 놓였다 — 개발맵은 눈의마을 서문에서 숙련 0 으로 걸어 들어간다. 특수 재료는 유일 출처라 그 문이 곧 "게임 전체의 그 재료를 숙련 0 에 내준다" 가 된다(개발맵 배치가 전부 normal 인 것은 결계 아크가 그 함정을 한 번 밟고 고친 결과다). 그 채집장의 .tmx 로 옮긴다`,
+      )
+    }
+  }
+
+  // 맵마다 하나 — 둘이면 "제일 가까운 것"이 다시 답이 되고, 이 아크가 고치러 온
+  // 문제(한 채집장의 normal 여덟이 서로 죽인다)가 특수 노드에서 그대로 복사된다.
+  const specialsByMap = new Map<string, string[]>()
+  for (const placement of specials) {
+    const list = specialsByMap.get(placement.mapId)
+    if (list) list.push(placement.instanceId)
+    else specialsByMap.set(placement.mapId, [placement.instanceId])
+  }
+  for (const [mapId, ids] of specialsByMap) {
+    if (ids.length <= 1) continue
+    violations.push(
+      `maps[${mapId}]: 특수 배치가 [${ids.join(', ')}] ${ids.length}개다 — 채집장당 정확히 하나여야 한다. 둘이면 입구에서 가까운 쪽이 언제나 답이 되어 나머지가 그 자리에서 죽고, 그것은 이 아크가 normal 여덟에 대해 고치러 온 문제 그 자체다. 그 맵의 .tmx 에서 하나만 남긴다`,
     )
   }
 
