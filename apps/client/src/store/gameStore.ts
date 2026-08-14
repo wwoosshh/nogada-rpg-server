@@ -2,8 +2,10 @@ import { loadGameData } from '@nogada/data'
 import {
   calcCraftSuccess,
   equippedToolTier,
+  nodeAvailable,
   SKILL_LABELS,
   transitionGate,
+  WEATHER_LABELS,
   type CreateCharacterRequest,
   type GameData,
   type MilestoneDef,
@@ -544,6 +546,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
         set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
         return
       }
+      // 조건이 안 맞는 노드다(설계 §3). too_fast 와 같이 **오류가 아니라 세계가
+      // 제대로 돌아간 결과**라 console 로 흘리지 않지만, 저쪽과 달리 조용히
+      // 넘기지도 않는다 — 간격은 몇 초 뒤 저절로 풀리는 것을 플레이어가 이미
+      // 알지만, 닫힌 노드는 무엇이 있어야 열리는지 아무도 말해 주지 않는다.
+      //
+      // 문구가 앉는 자리는 **머리 위가 아니라 대사창(notice)** 이다 — 결계가 그
+      // 자리를 고른 이유와 같다: 이 말은 "왜 못 캤는가"라서 읽힐 시간이 있어야
+      // 한다. 그리고 그 창이 열리는 동안 세계 입력이 잠기므로(DialogueScene),
+      // A 를 누른 채 있는 사람이 닫힌 노드에 요청을 쏟아붓는 일도 함께 막힌다.
+      //
+      // **거절이 지고 온 시각으로 문구를 짓는다** — describeBarrier 와 같은 이유다.
+      if (err instanceof ApiError && err.code === 'node_closed') {
+        const text = describeClosedNode(get(), instanceId, err.serverNowMs ?? worldNow())
+        set({ notice: { seq: ++noticeSeq, text } })
+        return
+      }
       pushAction(set, describeError(err), 'bad')
       console.error(err)
     }
@@ -1009,6 +1027,24 @@ function hourText(hour: number): string {
 }
 
 /**
+ * 그 낱말에 주격 조사를 붙인다 — 눈**이**, 비**가**.
+ *
+ * **왜 손으로 안 적는가:** 이 저장소는 조사가 변하는 낱말에 직접 닿지 않게 하는
+ * 규율이 있다(validate.ts·content-cli.ts 는 한국어 명사를 사이에 끼워 피한다).
+ * 여기서는 피할 자리가 없다 — 문장의 주어가 곧 그 하늘의 이름이다. 그래서
+ * 규칙 쪽을 코드로 옮긴다: 받침이 있으면 "이", 없으면 "가". 날씨가 하나
+ * 늘어나는 날(`WEATHER_KINDS`) 그 이름이 무엇이든 이 줄은 맞는 문장을 만든다.
+ *
+ * 한글 음절이 아니면 손대지 않는다 — 지어낼 규칙이 없고, 조사 없이 남는 편이
+ * 틀린 조사가 붙는 것보다 낫다.
+ */
+function subject(word: string): string {
+  const last = word.codePointAt(word.length - 1)
+  if (last === undefined || last < 0xac00 || last > 0xd7a3) return word
+  return `${word}${(last - 0xac00) % 28 === 0 ? '가' : '이'}`
+}
+
+/**
  * 결계가 밀어냈다 — 그 문이 요구하는 것과 지금 손에 있는 것을 한 줄로 적는다.
  *
  * > 결계가 밀어낸다 — 광물 숙련 85,000 (지금 63,240)
@@ -1078,6 +1114,72 @@ function describeBarrier(
     return `${pushed} — 물이 빠질 때만 열린다 (${windows}, 지금 ${hourText(gate.tide.hour)})`
   }
   return pushed
+}
+
+/**
+ * 그 노드가 지금 안 열린다 — 무엇이 있어야 열리는지를 한 줄로 적는다(설계 §9-1).
+ *
+ * > 눈이 올 때만 캘 수 있다
+ * > 눈이 올 때만 캘 수 있다 (지금 비)
+ * > 물이 빠질 때만 캘 수 있다 (02시~08시 · 14시~20시, 지금 11시)
+ * > 밤에만 캘 수 있다 (21시~24시 · 00시~04시, 지금 12시)
+ *
+ * **결계 문구(describeBarrier)와 같은 문법이고 같은 규율이다.** 조건 비교를 여기서
+ * 다시 짓지 않고 서버와 **같은 술어**(nodeAvailable)를 불러 돌려받은 값만 읽는다 —
+ * 화면이 자기 비교를 한 줄 더 적는 순간, 서버가 거절한 노드 앞에서 화면만
+ * "열려 있다"고 말하는 날이 온다. 시각도 술어가 돌려준 `hour` 를 쓴다.
+ *
+ * **문구가 "밀어낸다"가 아닌 이유:** 이 사람은 밀려나지 않았다. 노드 앞에 그대로
+ * 서 있고, 다만 지금 캘 수 없을 뿐이다 — 결계는 몸을 되미는 일이라 그 말이 참이지만
+ * 여기서 같은 말을 쓰면 화면이 일어나지 않은 일을 적는 것이 된다.
+ *
+ * **막힌 이유를 갈라 말하고, 둘 다 막혔으면 날씨를 먼저 말한다.** 결계가 물때보다
+ * 숙련을 먼저 말하는 그 저울이다: 시각은 기다리는 것 말고 할 수 있는 일이 없지만
+ * 날씨는 **가루로 부른다**(§3 — 이 아크가 얼음 가루에 처음으로 채집용 쓸모를
+ * 준다). 물때부터 말하면 여섯 시간을 기다린 사람이 같은 자리에서 눈이 없어 또 막힌다.
+ *
+ * **아무것도 안 내릴 때 "지금 맑음"을 적지 않는다.** 하늘에는 'clear' 가 없고
+ * (weather.ts 가 자리표시를 거부한다) 화면이 낱말을 지어내면 안 된다 — 이름이
+ * 있는 하늘이 걸려 있을 때만 괄호가 선다. 그때는 적어 줘야 한다: 비 가루를 방금
+ * 쓴 사람이 왜 안 열리는지를 그 괄호가 말한다.
+ *
+ * **판정이 본 시각을 그대로 받는다**(`judgedAtMs` — 응답 헤더 `x-server-now`).
+ * 이유는 describeBarrier 문서에 있다: 세계 시각은 서버보다 늘 나중이라 **열리는
+ * 경계**(02·14·21시)에서 답이 뒤집히고, 그 창을 밟는 사람이 바로 물때를 기다리다
+ * 열리는 순간 A 를 누르는 사람이다.
+ *
+ * **`null` 을 돌려주지 않는 것도 같다.** A 를 눌렀는데 화면이 침묵하면 플레이어가
+ * 보는 것은 "아무 일도 안 일어났다"뿐이고 그건 고장과 구별되지 않는다.
+ * `node_closed` 는 서버가 조건에만 쓰는 코드이므로(gatherService), 이유를 못 대도
+ * "지금은 캘 수 없다"는 그 자체로 참이다.
+ */
+function describeClosedNode(
+  store: GameStore,
+  instanceId: string,
+  judgedAtMs: number,
+): string {
+  const closed = '지금은 캘 수 없다'
+  const { data, player } = store
+  if (!player) return closed
+
+  const placement = Object.hasOwn(data.placements, instanceId) ? data.placements[instanceId] : undefined
+  const node = placement ? data.nodes[placement.nodeId] : undefined
+  const gate = node ? nodeAvailable(node, player.weather, judgedAtMs) : null
+  if (!gate) return closed
+
+  if (gate.weather && !gate.weather.open) {
+    const { need, now } = gate.weather
+    const sky = now === undefined ? '' : ` (지금 ${WEATHER_LABELS[now]})`
+    return `${subject(WEATHER_LABELS[need])} 올 때만 캘 수 있다${sky}`
+  }
+  if (gate.time && !gate.time.open) {
+    const windows = gate.time.windows.map((w) => `${hourText(w.start)}~${hourText(w.end)}`).join(' · ')
+    // 조건 이름마다 다른 말이 붙는다 — "밤에만"과 "물이 빠질 때만"은 세계의 서로
+    // 다른 사실이고, 뭉치면("조건이 맞을 때만") 화면이 아무것도 말하지 않은 것이 된다.
+    const when = gate.time.need === 'night' ? '밤에만' : '물이 빠질 때만'
+    return `${when} 캘 수 있다 (${windows}, 지금 ${hourText(gate.time.hour)})`
+  }
+  return closed
 }
 
 function describeError(err: unknown): string {

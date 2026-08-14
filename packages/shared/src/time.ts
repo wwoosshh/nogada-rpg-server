@@ -171,6 +171,33 @@ export function isLowTide(hour: number): boolean {
   return TIDE_WINDOWS.some((w) => hour >= w.start && hour < w.end)
 }
 
+/**
+ * 밤이 걸치는 시각 창들 — **화면이 밤을 숫자로 적을 수 있게** 옮겨 적은 것이다.
+ *
+ * **물때와 방향이 반대다.** `TIDE_WINDOWS` 는 정의이고 `isLowTide` 가 그것에서
+ * 파생되지만, 밤은 `timeOfDay` 가 이미 오래전부터 정의였다(대사 조건이 그것을
+ * 읽는다). 여기서 새 정의를 세우면 같은 시각에 대사는 밤이라 하고 노드는
+ * 아니라 하는 날이 오므로, `isNight` 는 이 목록이 아니라 `timeOfDay` 를 본다 —
+ * 이 상수는 **표시 전용**이고, 둘이 갈라지지 않는지는 time.test.ts 가 24시간
+ * 전수로 문다.
+ *
+ * 자정을 넘는 한 덩어리를 `{ start: 21, end: 4 }` 로 적지 않는 이유: 창 하나의
+ * 뜻이 `[start, end)` 라는 것이 `TideWindow` 의 전부이고, 그 뜻을 창마다 다르게
+ * 하면 같은 구조를 읽어 문구를 조립하는 화면이 이 하나에만 거꾸로 나온다.
+ */
+export const NIGHT_WINDOWS: readonly TideWindow[] = [
+  { start: 21, end: 24 },
+  { start: 0, end: 4 },
+] as const
+
+/**
+ * 그 시각이 밤인가. **`timeOfDay` 가 유일한 정의다** — 여기서 21·4 를 다시 적으면
+ * 밤의 뜻이 둘이 된다.
+ */
+export function isNight(hour: number): boolean {
+  return timeOfDay(hour) === 'night'
+}
+
 export interface SkyShade {
   /** 0(정오) ~ 1(자정) */
   darkness: number

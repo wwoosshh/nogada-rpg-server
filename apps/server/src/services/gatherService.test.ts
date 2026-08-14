@@ -11,6 +11,7 @@ import {
   type GameData,
   type GatherTables,
   type MilestoneDef,
+  type NodeDef,
   type PlayerState,
 } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
@@ -575,5 +576,123 @@ describe('performGather — 결계 뒤 노드', () => {
     const p = player({ location: 바깥, nextActionAt: 8000 })
     const r = performGather({ player: p, data, tables, barriers, instanceId: 'iron_vein-1', rng: jackpotRoll, now: 5000 })
     expect(r).toEqual({ ok: false, code: 'wrong_side' })
+  })
+})
+
+/**
+ * 노드가 지는 조건 — 날씨·시각(설계 §3). 결계와 **다른 것을 막는다**: 결계는
+ * 그 앞에 설 수 있는가를 막고, 이것은 그 앞에 선 사람이 지금 캘 수 있는가를 막는다.
+ *
+ * 판정은 서비스가 짓지 않는다. 부등호는 shared 의 `nodeAvailable` 하나뿐이고
+ * (결계의 transitionGate 가 선 그 자리다) 화면도 같은 함수로 문구를 짓는다.
+ */
+describe('performGather — 노드 조건', () => {
+  const 눈올때: NodeDef = {
+    id: 'red_ice_vein', name: '붉은 얼음 광맥', skill: 'mineral', tableId: 'mineral',
+    variant: 'special', sprite: 'red_ice_vein', requireWeather: 'snow',
+  }
+  const 물때에: NodeDef = {
+    id: 'frost_bloom', name: '서리 핀 군락', skill: 'mineral', tableId: 'mineral',
+    variant: 'special', sprite: 'frost_bloom', requireTime: 'tide',
+  }
+
+  const 조건세계: GameData = {
+    ...data,
+    nodes: { ...data.nodes, red_ice_vein: 눈올때, frost_bloom: 물때에 },
+    placements: {
+      ...data.placements,
+      'red_ice_vein-1': { instanceId: 'red_ice_vein-1', nodeId: 'red_ice_vein', mapId: '얼음채집장', x: 11, y: 3 },
+      'frost_bloom-1': { instanceId: 'frost_bloom-1', nodeId: 'frost_bloom', mapId: '얼음채집장', x: 13, y: 3 },
+    },
+  }
+
+  /** 게임 12시 — 밤도 아니고 물때도 아니다(TIDE_WINDOWS 2~8 · 14~20). */
+  const 낮 = GAME_EPOCH_MS + 12 * 60 * REAL_MS_PER_GAME_MINUTE
+  /** 게임 3시 — 물이 빠져 있다. */
+  const 물빠진시각 = GAME_EPOCH_MS + 3 * 60 * REAL_MS_PER_GAME_MINUTE
+
+  const 눈 = (untilMs: number): PlayerState['weather'] => ({ kind: 'snow', untilMs })
+
+  it('조건이 안 맞으면 node_closed 로 거부한다', () => {
+    const r = performGather({
+      player: player(), data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'red_ice_vein-1', rng: jackpotRoll, now: 낮,
+    })
+    expect(r).toEqual({ ok: false, code: 'node_closed' })
+  })
+
+  it('조건이 맞으면 그대로 캐진다 — 조건은 가용성이고 굴림에는 손대지 않는다', () => {
+    const r = performGather({
+      player: player({ weather: 눈(낮 + 1) }), data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'red_ice_vein-1', rng: jackpotRoll, now: 낮,
+    })
+    if (!r.ok) throw new Error('눈이 오는 동안에는 캐져야 한다')
+    // 같은 주사위·같은 표라 조건 없는 노드와 결과가 한 글자도 다르지 않다.
+    expect(r.outcome.gained).toEqual({ itemId: 'mithril_ore', count: 1 })
+  })
+
+  it('물때 조건은 물이 빠졌을 때만 열린다', () => {
+    const 닫힘 = performGather({
+      player: player(), data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'frost_bloom-1', rng: jackpotRoll, now: 낮,
+    })
+    expect(닫힘).toEqual({ ok: false, code: 'node_closed' })
+
+    const 열림 = performGather({
+      player: player(), data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'frost_bloom-1', rng: jackpotRoll, now: 물빠진시각,
+    })
+    expect(열림.ok).toBe(true)
+  })
+
+  // 왜: 출하된 여덟 노드가 전부 조건 칸이 빈 행이다. 빈 칸을 "언제나 열림" 이
+  //     아니라 다른 무엇으로 읽는 순간 이 아크가 기존 채집을 통째로 바꾼다 —
+  //     그것이 이 태스크가 하지 않기로 한 유일한 일이다.
+  it('조건 칸이 빈 노드는 밤에도 낮에도 언제나 열린다', () => {
+    for (const now of [낮, 물빠진시각, 0]) {
+      const r = performGather({
+        player: player(), data: 조건세계, tables, barriers: noBarriers,
+        instanceId: 'copper_vein-1', rng: jackpotRoll, now,
+      })
+      expect(r.ok, `now=${now}`).toBe(true)
+    }
+  })
+
+  // 왜: **거절이 노가다를 느리게 하면 안 된다**(moveService 의 그 주석과 같은
+  //     이유). 간격을 먼저 읽으면 닫힌 노드 앞에서 A 를 누른 사람이 too_fast 를
+  //     받는데, 그 글자는 "조금 있다 다시 두드리면 된다" 로 읽힌다 — 실제로는
+  //     눈이 와야 열리므로 몇 초를 기다려도 답이 안 바뀐다. 자리 검사 둘(맵·벽)이
+  //     간격보다 앞에 선 그 이유가 여기에도 그대로 선다.
+  it('간격이 남아 있어도 too_fast 가 아니라 node_closed 다 — 거절이 nextActionAt 을 읽지 않는다', () => {
+    const p = player({ nextActionAt: 낮 + 8000 })
+    const r = performGather({
+      player: p, data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'red_ice_vein-1', rng: jackpotRoll, now: 낮,
+    })
+    expect(r).toEqual({ ok: false, code: 'node_closed' })
+  })
+
+  // 왜: 읽지 않는 것만으로는 부족하다 — 거절이 스탬프를 찍으면 닫힌 노드를 한 번
+  //     두드린 것만으로 그 사람의 다음 채집이 밀린다. 거절에는 player 가 실리지
+  //     않으므로 저장될 것 자체가 없다(applyToCharacter 는 ok:false 에 아무것도 쓰지 않는다).
+  it('거절은 nextActionAt 을 쓰지도 않는다 — 실을 player 자체가 없다', () => {
+    const p = player({ nextActionAt: 0 })
+    const r = performGather({
+      player: p, data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'red_ice_vein-1', rng: jackpotRoll, now: 낮,
+    })
+    expect('outcome' in r).toBe(false)
+    expect(p.nextActionAt).toBe(0)
+  })
+
+  // 왜: 맵부터 다르면 wrong_map 이 먼저다 — 결계 검사와 같은 저울이다. 조건을
+  //     먼저 말하면 "눈을 부르면 된다" 로 읽히는데, 정작 그 사람은 다른 맵에 있다.
+  it('맵부터 다르면 node_closed 가 아니라 wrong_map 이다', () => {
+    const p = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
+    const r = performGather({
+      player: p, data: 조건세계, tables, barriers: noBarriers,
+      instanceId: 'red_ice_vein-1', rng: jackpotRoll, now: 낮,
+    })
+    expect(r).toEqual({ ok: false, code: 'wrong_map' })
   })
 })

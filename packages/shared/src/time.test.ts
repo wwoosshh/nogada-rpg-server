@@ -9,7 +9,9 @@ import {
   gameDaysBetween,
   gameTimeAt,
   isLowTide,
+  isNight,
   needsResync,
+  NIGHT_WINDOWS,
   skyShade,
   TIDE_WINDOWS,
   timeOfDay,
@@ -246,5 +248,34 @@ describe('물때', () => {
   it('하루의 절반은 물이 빠져 있다', () => {
     const open = Array.from({ length: 24 }, (_, h) => h).filter(isLowTide)
     expect(open.length).toBe(12)
+  })
+})
+
+/**
+ * 밤 — 물때와 달리 **창이 파생값이다**. 밤의 정의는 오래전부터 timeOfDay 하나였고
+ * (대사 조건이 그것을 쓴다) NIGHT_WINDOWS 는 그 정의를 화면이 숫자로 적을 수 있게
+ * 옮겨 적은 것뿐이다. 옮겨 적은 이상 갈라질 수 있으므로 여기서 묶는다.
+ */
+describe('밤', () => {
+  // 왜: 이 검사가 없으면 timeOfDay 의 21·4 를 고치는 사람이 NIGHT_WINDOWS 를
+  //     그대로 두고, 그날부터 별똥 자리는 22시에 열리면서 화면은 "23시부터"라고
+  //     적는다. 판정과 표시가 갈라지는 그 어긋남은 시간대에 실제로 서 봐야만
+  //     보인다 — 24시간을 전수로 견주는 것이 이 규범을 무는 유일한 방법이다.
+  it('창이 밤의 정의(timeOfDay)와 24시간 내내 일치한다', () => {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const inWindow = NIGHT_WINDOWS.some((w) => hour >= w.start && hour < w.end)
+      expect(inWindow, `${hour}시`).toBe(timeOfDay(hour) === 'night')
+      expect(isNight(hour), `${hour}시`).toBe(timeOfDay(hour) === 'night')
+    }
+  })
+
+  // 왜: 자정을 넘는 한 덩어리를 `{ start: 21, end: 4 }` 로 적으면 TideWindow 의
+  //     뜻(`[start, end)`)이 창마다 달라지고, 같은 구조를 읽는 화면 문구 조립이
+  //     그 하나에만 거꾸로 나온다("21시~04시"가 아니라 "21시부터 4시까지 빼고").
+  it('자정을 넘는 창을 둘로 쪼개 둔다 — 창 하나의 뜻은 언제나 [start, end) 다', () => {
+    expect(NIGHT_WINDOWS).toEqual([
+      { start: 21, end: 24 },
+      { start: 0, end: 4 },
+    ])
   })
 })

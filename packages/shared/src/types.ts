@@ -313,6 +313,22 @@ export const NODE_VARIANTS = ['normal', 'deep', 'special'] as const
 
 export type NodeVariant = (typeof NODE_VARIANTS)[number]
 
+/**
+ * 노드가 지는 시각 조건 — 밤이거나 물때다(노드 종류 설계 §3).
+ *
+ * `NODE_VARIANTS` 와 같은 방향으로 적는다(목록이 먼저, 타입은 거기서). 이유도
+ * 같다: 조건이 하나 늘어나는 날 파서의 허용 목록을 손으로 안 고쳐도 되도록.
+ *
+ * **시각을 숫자로 적지 않는다.** `transitions.csv` 의 `gateTide` 가 시각이 아니라
+ * 표시인 것과 같은 이유다(time.ts 의 `TIDE_WINDOWS` 문서) — 창을 데이터에 적게
+ * 하면 그 숫자가 노드마다 갈라지고, 갈라져도 화면 어디에도 흔적이 안 남는다.
+ * 여기 있는 것은 "어느 세계의 사실을 보는가" 하나이고, 그 사실의 숫자는
+ * `time.ts` 가 소유한다.
+ */
+export const NODE_TIME_REQUIREMENTS = ['night', 'tide'] as const
+
+export type NodeTimeRequirement = (typeof NODE_TIME_REQUIREMENTS)[number]
+
 export interface NodeDef {
   id: string
   name: string
@@ -364,6 +380,29 @@ export interface NodeDef {
    * 색칠한 네모로 남는데, 그 상태는 "아직 안 그린 것"과 화면상 구별되지 않는다.
    */
   sprite: string
+  /**
+   * 이 하늘일 때만 캘 수 있다. 비면 하늘을 안 본다(설계 §3).
+   *
+   * **`variant` 와 갈리는 지점:** variant 는 자기와 짝지어진 표를 통해 **무엇이
+   * 나오는가**에 닿지만, 이 칸은 **언제 캘 수 있는가**만 정한다 — 굴림
+   * (`gatherOutcome`)의 인자가 되지 않는다. 조건을 판정 경로에 넣으면 같은
+   * 노드가 날씨에 따라 다른 분포를 갖게 되고, 그 차이는 표를 읽어도 안 보인다.
+   *
+   * **`undefined` 가 "언제나 열림" 이다.** 출하 여덟 행이 전부 그쪽이라
+   * (parse.test.ts 가 그것을 문다) 이 아크는 기존 채집을 한 톨도 바꾸지 않는다.
+   * 'clear' 같은 자리표시를 두지 않는 이유는 `activeWeather` 와 같다 — 없는
+   * 하늘에 이름을 주면 부정으로 건 조건이 맑은 날 참이 되기 시작한다.
+   */
+  requireWeather?: WeatherKind
+  /**
+   * 이 시각 조건이 맞을 때만 캘 수 있다. 비면 시계를 안 본다(설계 §3).
+   *
+   * `requireWeather` 와 함께 걸 수 있고, 그러면 **둘 다** 만족돼야 열린다 —
+   * 판정은 `nodeAvailable`(nodeAvailability.ts) 하나가 짓는다. 여기서 짝을
+   * 금지하지 않는 이유는 결계가 숙련과 물때를 함께 지는 것과 같다: 조건을
+   * 배타로 만들면 "눈 오는 밤" 같은 자리를 데이터가 표현할 수 없다.
+   */
+  requireTime?: NodeTimeRequirement
 }
 
 /** 채집 사다리의 한 단. 표의 tiers 순서가 곧 의미다 — 희귀 → 흔함. */

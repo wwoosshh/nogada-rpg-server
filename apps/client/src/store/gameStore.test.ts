@@ -754,3 +754,177 @@ describe('결계 — 물때에 막힌 것과 숙련에 막힌 것을 갈라 말�
     expect(useGameStore.getState().notice?.text).toBe('결계가 밀어낸다')
   })
 })
+
+/*
+ * 노드가 지는 조건 — 날씨·시각(노드 종류 설계 §3·§9-1). 결계가 밀려날 때 숫자를
+ * 말하는 그 자리와 같은 문법이고, 같은 이유로 **판정이 본 시각**으로 짓는다.
+ *
+ * 결계와 갈리는 지점은 하나다: 결계는 그 앞에 설 수 있는가를 막고 이것은 그 앞에
+ * 선 사람이 지금 캘 수 있는가를 막는다. 그래서 문구도 "밀어낸다"가 아니라
+ * "캘 수 있다"로 적힌다 — 이 사람은 밀려나지 않았고 그 자리에 그대로 서 있다.
+ */
+describe('노드 조건 — 닫힌 노드 앞에서 무엇이 필요한지 말한다(노드 종류 설계 §9-1)', () => {
+  const 눈올때 = {
+    id: 'red_ice_vein', name: '붉은 얼음 광맥', skill: 'ice' as SkillId, tableId: 'ice_special',
+    variant: 'special' as const, sprite: 'red_ice_vein', requireWeather: 'snow' as const,
+  }
+  const 밤에 = { ...눈올때, id: 'starfall_site', requireWeather: undefined, requireTime: 'night' as const }
+  const 물때에 = { ...눈올때, id: 'frost_bloom', requireWeather: undefined, requireTime: 'tide' as const }
+  const 눈오는물때 = { ...눈올때, id: 'both', requireTime: 'tide' as const }
+  const 비올때 = { ...눈올때, id: 'lightning_tree', requireWeather: 'rain' as const }
+
+  /** 조건을 진 노드 넷을 세계에 얹는다 — 출하 8행은 전부 조건이 없다(그것이 이 아크의 약속이다). */
+  function worldWithClosedNodes(): void {
+    const base = loadGameData()
+    useGameStore.setState({
+      data: {
+        ...base,
+        nodes: {
+          ...base.nodes,
+          red_ice_vein: 눈올때, starfall_site: 밤에, frost_bloom: 물때에, both: 눈오는물때,
+          lightning_tree: 비올때,
+        },
+        placements: {
+          ...base.placements,
+          'red_ice_vein-1': { instanceId: 'red_ice_vein-1', nodeId: 'red_ice_vein', mapId: '얼음채집장', x: 11, y: 3 },
+          'starfall_site-1': { instanceId: 'starfall_site-1', nodeId: 'starfall_site', mapId: '얼음채집장', x: 12, y: 3 },
+          'frost_bloom-1': { instanceId: 'frost_bloom-1', nodeId: 'frost_bloom', mapId: '얼음채집장', x: 13, y: 3 },
+          'both-1': { instanceId: 'both-1', nodeId: 'both', mapId: '얼음채집장', x: 14, y: 3 },
+          'lightning_tree-1': { instanceId: 'lightning_tree-1', nodeId: 'lightning_tree', mapId: '얼음채집장', x: 15, y: 3 },
+        },
+      },
+      notice: null,
+    })
+  }
+
+  function gameHourMs(hour: number): number {
+    return GAME_EPOCH_MS + (hour / 24) * REAL_MS_PER_GAME_DAY
+  }
+
+  function atGameHour(hour: number): void {
+    resetClock()
+    vi.setSystemTime(gameHourMs(hour))
+  }
+
+  /** 그 하늘을 지금 이 사람에게 걸어 둔다. 만료는 시각 비교 하나다(weather.ts). */
+  function standingWithWeather(weather: { kind: 'rain' | 'snow'; untilMs: number } | null): void {
+    useGameStore.setState({ player: { ...emptyPlayer(), weather } })
+  }
+
+  function rejectClosed(serverNowMs?: number): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () =>
+        jsonResponse(
+          { code: 'node_closed' },
+          400,
+          serverNowMs === undefined ? {} : { 'x-server-now': String(serverNowMs) },
+        ),
+      ),
+    )
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    worldWithClosedNodes()
+    standingWithWeather(null)
+    rejectClosed()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    resetClock()
+  })
+
+  // 왜: 이 문구가 없으면 붉은 얼음 광맥 앞에서 A 를 누른 사람이 보는 것은
+  //     "아무 일도 안 일어났다" 하나뿐이고, 그것은 고장과 구별되지 않는다.
+  //     조건이 §3 의 중심인데 화면이 조건을 한 번도 말하지 않는 상태가 된다.
+  it('날씨 조건을 말한다', async () => {
+    atGameHour(12)
+    await useGameStore.getState().gather('red_ice_vein-1')
+    expect(useGameStore.getState().notice?.text).toBe('눈이 올 때만 캘 수 있다')
+  })
+
+  // 왜: 하늘에는 'clear' 가 없다(weather.ts 가 자리표시를 거부한다) — 아무것도
+  //     안 내릴 때 "지금 맑음"을 지어내면 화면이 데이터에 없는 낱말을 만든다.
+  //     다른 하늘이 걸려 있을 때만 그 이름이 있고, 그때는 적어 줘야 한다:
+  //     비 가루를 방금 쓴 사람이 왜 안 열리는지를 그 괄호가 말한다.
+  it('다른 하늘이 걸려 있으면 그 하늘의 이름을 함께 적는다', async () => {
+    atGameHour(12)
+    standingWithWeather({ kind: 'rain', untilMs: gameHourMs(12) + 60_000 })
+    await useGameStore.getState().gather('red_ice_vein-1')
+    expect(useGameStore.getState().notice?.text).toBe('눈이 올 때만 캘 수 있다 (지금 비)')
+  })
+
+  // 왜: 하늘의 이름은 데이터가 준다(WEATHER_LABELS) — 그러면 조사가 그 낱말에
+  //     직접 닿는다. "비이 올 때만" 이 나오는 순간 화면이 한국어를 못 쓰는
+  //     것으로 보이고, 그 줄은 이 아크가 자랑하려는 바로 그 문장이다. 그래서
+  //     받침 규칙을 코드가 지고, 두 하늘 다 문장으로 확인한다.
+  it('받침이 없는 하늘에는 다른 조사가 붙는다 — "비가"', async () => {
+    atGameHour(12)
+    await useGameStore.getState().gather('lightning_tree-1')
+    expect(useGameStore.getState().notice?.text).toBe('비가 올 때만 캘 수 있다')
+  })
+
+  // 왜: 물때는 기다리면 열리는 조건이라 **몇 시에** 열리는지가 곧 할 일이다.
+  //     결계의 안내판이 시각을 숫자로 새긴 그 이유가 여기에도 그대로 선다.
+  it('물때 조건은 창과 지금 시각을 함께 말한다', async () => {
+    atGameHour(11)
+    await useGameStore.getState().gather('frost_bloom-1')
+    expect(useGameStore.getState().notice?.text).toBe(
+      '물이 빠질 때만 캘 수 있다 (02시~08시 · 14시~20시, 지금 11시)',
+    )
+  })
+
+  it('밤 조건도 창과 지금 시각을 함께 말한다', async () => {
+    atGameHour(12)
+    await useGameStore.getState().gather('starfall_site-1')
+    expect(useGameStore.getState().notice?.text).toBe(
+      '밤에만 캘 수 있다 (21시~24시 · 00시~04시, 지금 12시)',
+    )
+  })
+
+  // 왜: 둘 다 막혔으면 **부를 수 있는 쪽**을 먼저 말한다. 시각은 기다리는 것
+  //     말고 할 수 있는 일이 없지만 날씨는 가루로 부른다(§3) — 물때부터 말하면
+  //     여섯 시간을 기다린 사람이 같은 자리에서 눈이 없어 또 막힌다. 결계가
+  //     물때보다 숙련을 먼저 말하는 그 저울과 같다.
+  it('둘 다 막혔으면 시각이 아니라 날씨를 먼저 말한다', async () => {
+    atGameHour(11)
+    await useGameStore.getState().gather('both-1')
+    expect(useGameStore.getState().notice?.text).toBe('눈이 올 때만 캘 수 있다')
+  })
+
+  // 왜: 결계가 밟은 그 창이다. 세계 시각은 왕복 지연과 기울임(최대 2초)만큼
+  //     서버보다 늘 나중이라, 서버가 01시로 재 거절한 요청을 화면이 02시로
+  //     읽으면 조건이 열려 보여 아무 말도 안 남는다. 물때를 기다리다 열리는
+  //     순간 A 를 누르는 사람이 정확히 이 창을 밟는다.
+  it('서버가 01시로 거절했으면 화면 시계가 02시여도 그 01시를 말한다', async () => {
+    rejectClosed(gameHourMs(TIDE_WINDOWS[0]!.start) - 1)
+    atGameHour(TIDE_WINDOWS[0]!.start)
+
+    await useGameStore.getState().gather('frost_bloom-1')
+
+    expect(useGameStore.getState().notice?.text).toBe(
+      '물이 빠질 때만 캘 수 있다 (02시~08시 · 14시~20시, 지금 01시)',
+    )
+  })
+
+  // 왜: 이유를 못 대는 찰나에도 침묵하지 않는다 — 결계의 그 자리와 같은 이유다.
+  //     A 를 눌렀는데 아무 일도 안 일어난 화면은 고장과 구별되지 않는다.
+  //     `node_closed` 는 서버가 조건에만 쓰는 코드이므로 "지금은 캘 수 없다"는
+  //     이유를 못 대도 그 자체로 참이다.
+  it('이유를 못 대는 찰나에도 캘 수 없다는 말은 남는다', async () => {
+    atGameHour(TIDE_WINDOWS[0]!.start) // 화면 시계로는 물이 빠져 있다
+    await useGameStore.getState().gather('frost_bloom-1')
+    expect(useGameStore.getState().notice?.text).toBe('지금은 캘 수 없다')
+  })
+
+  // 왜: 조건이 없는 노드에서 이 코드가 오는 것은 클라와 서버의 데이터가 갈라졌다는
+  //     뜻이다. 그때도 침묵하면 안 되지만 없는 조건을 지어내서도 안 된다.
+  it('조건 없는 노드가 닫혔다고 오면 조건을 지어내지 않는다', async () => {
+    atGameHour(12)
+    const 출하노드 = Object.values(loadGameData().placements)[0]!
+    await useGameStore.getState().gather(출하노드.instanceId)
+    expect(useGameStore.getState().notice?.text).toBe('지금은 캘 수 없다')
+  })
+})

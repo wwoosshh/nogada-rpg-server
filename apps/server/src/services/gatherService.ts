@@ -5,6 +5,7 @@ import {
   gatherIntervalMs,
   gatherOutcome,
   newlyAchieved,
+  nodeAvailable,
   rollInt,
   type BarrierRegions,
   type GameData,
@@ -53,7 +54,21 @@ export interface GatherOutcome {
 
 // cannot_gather 는 은퇴했다(§2 — 맨손 채집 허용): 도구는 접근 게이트가 아니라
 // 페널티의 부재이고, 맨손의 숫자(roll ×1.45·간격 ×1.5)는 gatherToolProfile 이 진다.
-export type GatherErrorCode = 'unknown_node' | 'wrong_map' | 'wrong_side' | 'too_fast'
+//
+// `node_closed` 는 "그 노드는 있고 당신은 그 앞에 서 있는데 지금은 안 열린다" 다 —
+// 날씨·시각 조건이다(노드 종류 설계 §3). **다른 거절과 뭉치지 않는 이유**는
+// `MoveErrorCode` 가 `no_transition` 과 `locked` 를 나눈 그 이유와 같다: 플레이어가
+// 할 일이 다르다. `wrong_side` 는 화면이 말할 것이 없는(정상 조작으로 도달할 수
+// 없는) 거절이지만, 이쪽은 **가루를 쓰거나 기다리면 열리는** 노드라 화면이 무엇이
+// 필요한지 말해야 한다. 그 문구를 짓는 것은 화면의 몫이고(gameStore), 여기서는
+// 코드만 나눠 준다 — 조건 자체는 응답에 싣지 않는다. 화면이 GameData 로 이미
+// 그 노드를 알고 있어 같은 술어를 부를 수 있기 때문이다(결계와 같은 자세).
+export type GatherErrorCode =
+  | 'unknown_node'
+  | 'wrong_map'
+  | 'wrong_side'
+  | 'node_closed'
+  | 'too_fast'
 
 export type GatherResult = { ok: true; outcome: GatherOutcome } | { ok: false; code: GatherErrorCode }
 
@@ -119,6 +134,26 @@ export function performGather(args: PerformGatherArgs): GatherResult {
     return { ok: false, code: 'wrong_side' }
   }
 
+  // 그리고 **지금 이 노드가 열려 있는가** — 날씨·시각 조건이다(설계 §3).
+  //
+  // **판정을 여기서 짓지 않는다.** 부등호는 shared 의 nodeAvailable 하나뿐이고
+  // 화면도 같은 함수를 부른다 — 결계가 transitionGate 에 모인 그 자리, 그 이유다.
+  // 여기서 노드의 조건 칸과 `player.weather` 를 직접 견주는 줄을 한 줄 적는 순간
+  // 화면이 열린 노드로 그려 놓고 서버만 거절하는 날이 온다. 조건 없는 노드는
+  // null 이라 그대로 지나간다 — 출하 여덟 노드가 전부 그쪽이다.
+  // (그 칸 이름이 이 파일에 없는 것 자체를 nodeAvailability.test.ts 가 문다.)
+  //
+  // **자리 검사 둘 다음, 간격 검사 앞이다.** 맵·벽과 같은 이유다: 눈이 와야
+  // 열리는 노드 앞에서 too_fast 를 받으면 "조금 있다 다시 두드리면 된다"로
+  // 읽히는데, 몇 초를 기다려도 답이 안 바뀐다.
+  //
+  // **그래서 이 거절은 `nextActionAt` 을 읽지도 쓰지도 않는다**(moveService 가
+  // 결계에 부딪힌 요청을 쿨다운으로 벌하지 않는 그 이유). 닫힌 노드를 한 번
+  // 두드린 것만으로 그 사람의 노가다가 느려지면 안 된다 — 거절에는 player 가
+  // 실리지 않으므로 저장될 것 자체가 없다.
+  const gate = nodeAvailable(node, player.weather, now)
+  if (gate && !gate.open) return { ok: false, code: 'node_closed' }
+
   const proficiency = player.skills[node.skill]
   // 이 기술로 캐는 지금 이 손 — 착용한 도구(없거나 엉뚱한 기술이면 맨손, §6-앞 9)와
   // 가지고 있는 그 계열 증표(설계 §5)가 여기서 한 번 합쳐진다. 게이트는 없다(§2):
@@ -127,12 +162,12 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 증표를 세는 날이 온다.
   const hand = gatherHandOf(player, node.skill, data.items)
 
-  // 검사 순서: 대상 존재 → 같은 맵 → 같은 벽 구역 → 간격 → 난수.
+  // 검사 순서: 대상 존재 → 같은 맵 → 같은 벽 구역 → 노드 조건 → 간격 → 난수.
   // (도구 자격 검사는 은퇴했다.)
   //
-  // 자리 검사 둘이 간격보다 앞인 이유는, 맵이 다르거나 벽 반대편이면 언제
-  // 두드려도 닿을 수 없기 때문이다 — too_fast 로 답하면 "조금 있다 다시
-  // 두드리면 된다"로 읽힌다.
+  // 자리 검사 둘과 조건 검사가 간격보다 앞인 이유는 같다: 맵이 다르거나 벽
+  // 반대편이면 언제 두드려도 닿을 수 없고, 눈이 안 오면 몇 초를 기다려도 답이
+  // 안 바뀐다 — too_fast 로 답하면 셋 다 "조금 있다 다시 두드리면 된다"로 읽힌다.
   //
   // 간격 검사가 난수보다 앞인 이유는, 거부된 요청이 시드를 소비하면 연타로 판정
   // 결과를 흔들 수 있기 때문이다.

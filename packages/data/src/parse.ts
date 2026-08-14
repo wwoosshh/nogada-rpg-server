@@ -1,6 +1,7 @@
 import type {
   ItemDef,
   NodeDef,
+  NodeTimeRequirement,
   NodeVariant,
   RecipeDef,
   RecipeInput,
@@ -8,7 +9,7 @@ import type {
   TokenEffect,
   WeatherKind,
 } from '@nogada/shared'
-import { NODE_VARIANTS, SKILL_IDS, TOKEN_EFFECTS, WEATHER_KINDS } from '@nogada/shared'
+import { NODE_TIME_REQUIREMENTS, NODE_VARIANTS, SKILL_IDS, TOKEN_EFFECTS, WEATHER_KINDS } from '@nogada/shared'
 
 type Row = Record<string, string>
 
@@ -100,6 +101,10 @@ function isNodeVariant(value: string): value is NodeVariant {
   return (NODE_VARIANTS as readonly string[]).includes(value)
 }
 
+function isNodeTimeRequirement(value: string): value is NodeTimeRequirement {
+  return (NODE_TIME_REQUIREMENTS as readonly string[]).includes(value)
+}
+
 /** CSV 의 skill/toolSkill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. 오타가 조용히 통과하는 것을 막는다. */
 export function toSkillId(value: string, context: string): SkillId {
   if (!isSkillId(value)) {
@@ -123,12 +128,18 @@ export function toTokenEffect(value: string, context: string): TokenEffect {
 }
 
 /**
- * `useEffect` 칸이 실제 날씨 이름인지 검사한다. 오타를 통과시키면 그 가루는
- * 만들 수도 살 수도 있는데 써도 아무 일도 안 일어나는 소모품이 된다.
+ * 그 칸이 실제 날씨 이름인지 검사한다. 오타를 통과시키면 그 가루는 만들 수도
+ * 살 수도 있는데 써도 아무 일도 안 일어나는 소모품이 되고, 노드 쪽에서는 조건이
+ * 통째로 사라져 "눈이 올 때만" 이 사실은 언제나가 된다.
+ *
+ * **칸 이름을 문구에 안 적는 이유:** 부르는 곳이 둘이 됐다(`items.useEffect` 와
+ * `nodes.requireWeather`). 칸 이름은 부르는 쪽이 `context` 에 실어 주므로
+ * (`toSkillId` 가 gateSkill 을 그렇게 지적한다) 여기서 또 적으면 한쪽에서
+ * 반드시 틀린 칸을 가리킨다.
  */
 export function toWeatherKind(value: string, context: string): WeatherKind {
   if (!(WEATHER_KINDS as readonly string[]).includes(value)) {
-    throw new Error(`${context}: useEffect "${value}" 는 알 수 없다 (허용값: ${WEATHER_KINDS.join(', ')})`)
+    throw new Error(`${context}: 날씨 "${value}" 는 알 수 없다 (허용값: ${WEATHER_KINDS.join(', ')})`)
   }
   return value as WeatherKind
 }
@@ -246,6 +257,43 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
 }
 
 /**
+ * 노드가 지는 조건 두 칸을 읽어 붙인다 — 언제 캘 수 있는가다(설계 §3).
+ *
+ * **빈 칸은 칸을 아예 안 만든다.** `undefined` 가 곧 "언제나 열림" 이고, 그것이
+ * 출하 여덟 행 전부의 상태다(이 아크는 기존 채집을 안 바꾼다). 빈 문자열을
+ * 그대로 실으면 술어가 게이트를 돌려주게 되고, 그때부터 화면은 보통 얼음 광맥
+ * 앞에서도 조건 문구를 조립할 수 있다.
+ *
+ * **`useEffect`/`gateSkill` 과 달리 둘의 짝을 강제하지 않는다.** 저쪽 짝들은
+ * "무엇을"과 "얼마나"라 한쪽만으로는 뜻이 없지만, 이 둘은 각자 완결된 조건이다 —
+ * 하나만 걸린 노드가 넷 중 넷이고(§3 의 표), 둘 다 걸린 노드도 술어가
+ * 총체적으로 답한다(`nodeAvailable` — 둘 다 만족돼야 열린다).
+ *
+ * **모르는 값을 조용히 무시하지 않는 이유:** 조건은 닫히는 쪽이 기본이 아니다.
+ * 오타를 흘려보내면 그 노드는 아무 조건 없이 늘 열린 채로 서고, 화면에도 로그에도
+ * 흔적이 없다 — "눈이 올 때만" 이 사실은 언제나였다는 것을 알아챌 방법이 없다.
+ */
+function applyNodeConditions(def: NodeDef, row: Row, ctx: string): void {
+  const requireWeather = optionalCell(row, 'requireWeather')
+  // 칸 이름을 context 에 실어 준다 — readGate·applyUseEffect 와 같은 이유다.
+  if (requireWeather !== undefined) {
+    def.requireWeather = toWeatherKind(requireWeather, `${ctx}.requireWeather`)
+  }
+
+  const requireTime = optionalCell(row, 'requireTime')
+  if (requireTime !== undefined) {
+    // 허용 목록을 손으로 안 적는 이유는 variant 와 같다(위 주석) — 조건이
+    // 늘어나는 날 타입에는 있는 조건이 CSV 에서만 영원히 거절당하면 안 된다.
+    if (!isNodeTimeRequirement(requireTime)) {
+      throw new Error(
+        `${ctx}: requireTime "${requireTime}" 는 알 수 없다 (허용값: ${NODE_TIME_REQUIREMENTS.join(', ')})`,
+      )
+    }
+    def.requireTime = requireTime
+  }
+}
+
+/**
  * 노드는 이제 표를 가리킬 뿐이다 — 무엇이 얼마나 나오는지는 전부 확률표
  * (gather_tables 3파일)가 정하고, 노드에 남는 것은 자리(어느 기술·어느 표)와
  * 외형(variant·sprite)뿐이다(설계 §3.2). tableId 가 실재하는 표인지는 표를 함께 보는
@@ -279,6 +327,7 @@ export function parseNodes(rows: Row[]): Record<string, NodeDef> {
       // 네모로 남는데, 화면만 봐서는 "아직 안 그린 것"과 구별되지 않아 오래 산다.
       sprite: requireCell(row, 'sprite', ctx),
     }
+    applyNodeConditions(def, row, ctx)
     addUnique(out, id, def, 'nodes.csv')
   }
   return out

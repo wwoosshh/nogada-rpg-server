@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { NODE_VARIANTS } from '@nogada/shared'
+import { NODE_TIME_REQUIREMENTS, NODE_VARIANTS } from '@nogada/shared'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 
 describe('parseCsv', () => {
@@ -162,7 +162,7 @@ describe('parseItems', () => {
 
   it('알 수 없는 useEffect 값을 거부한다 — 써도 아무 일도 안 일어나는 소모품이 된다', () => {
     expect(() => parseItems([itemRow({ useEffect: 'storm', useValue: '60' })])).toThrow(
-      'items.csv[copper_ore].useEffect: useEffect "storm" 는 알 수 없다 (허용값: rain, snow)',
+      'items.csv[copper_ore].useEffect: 날씨 "storm" 는 알 수 없다 (허용값: rain, snow)',
     )
   })
 
@@ -261,6 +261,47 @@ describe('parseNodes', () => {
       'nodes.csv: 중복된 id "copper_vein"',
     )
   })
+
+  // 왜 빈 칸이 `undefined` 여야 하는가: 조건 없는 노드에 "요구가 없는 요구"를
+  // 지어 주면 술어가 게이트를 돌려주게 되고, 그때부터 화면은 보통 얼음 광맥
+  // 앞에서도 조건 문구를 조립할 수 있다(nodeAvailable 의 null 과 한 짝이다).
+  it('조건 칸이 비면 두 칸 다 아예 없다 — 출하 8행이 그 모양이다', () => {
+    const node = parseNodes([validNodeRow({ requireWeather: '', requireTime: '' })]).copper_vein!
+    expect('requireWeather' in node).toBe(false)
+    expect('requireTime' in node).toBe(false)
+  })
+
+  it('requireWeather 를 읽는다', () => {
+    expect(parseNodes([validNodeRow({ requireWeather: 'snow' })]).copper_vein!.requireWeather).toBe('snow')
+  })
+
+  it('requireTime 을 읽는다', () => {
+    expect(parseNodes([validNodeRow({ requireTime: 'tide' })]).copper_vein!.requireTime).toBe('tide')
+  })
+
+  // 왜 오타를 세게 막는가: 조건은 **닫히는** 쪽이 기본이 아니다 — 모르는 값을
+  // 조용히 무시하면 그 노드는 아무 조건 없이 늘 열린 채로 서고, 화면에도 로그에도
+  // 흔적이 없다. "눈이 올 때만"이 사실은 언제나였다는 것을 알아채는 방법이 없다.
+  it('알 수 없는 requireWeather 값을 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ requireWeather: 'snowy' })])).toThrow(
+      'nodes.csv[copper_vein].requireWeather: 날씨 "snowy" 는 알 수 없다 (허용값: rain, snow)',
+    )
+  })
+
+  it('알 수 없는 requireTime 값을 거부한다', () => {
+    expect(() => parseNodes([validNodeRow({ requireTime: 'nite' })])).toThrow(
+      'nodes.csv[copper_vein]: requireTime "nite" 는 알 수 없다 (허용값: night, tide)',
+    )
+  })
+
+  // 왜: 시각 조건의 허용값도 variant 와 같은 이유로 타입에서 유도한다 — 조건이
+  // 하나 늘어나는 날 이 줄을 잊으면 타입에는 있는 조건이 CSV 에서만 영원히
+  // 거절당하고, 작가는 오타를 의심하며 자기 CSV 만 들여다본다.
+  it('시각 조건 전수가 파싱을 통과한다', () => {
+    for (const need of NODE_TIME_REQUIREMENTS) {
+      expect(parseNodes([validNodeRow({ requireTime: need })]).copper_vein!.requireTime).toBe(need)
+    }
+  })
 })
 
 /**
@@ -287,6 +328,20 @@ describe('parseNodes — 출하 데이터', () => {
       herb_patch: 'herb_patch',
       rare_herb_patch: 'rare_herb_patch',
     })
+  })
+
+  // 왜: 이 태스크는 조건이라는 **자리**만 낸다. 출하된 여덟 노드 중 하나라도
+  //     조건을 지면 그 순간 기존 채집이 달라지는데(그 노드가 하루의 일부만
+  //     열린다), 그 변화는 게임을 켜 그 시간대에 서 봐야만 보인다. 여기서
+  //     한 줄로 못박아 두면 조건을 실수로 얻은 행이 빌드에서 빨개진다.
+  it('출하 여덟 행은 조건을 하나도 지지 않는다 — 이 아크는 기존 채집을 안 바꾼다', () => {
+    const csvDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'csv')
+    const nodes = parseNodes(parseCsv(readFileSync(join(csvDir, 'nodes.csv'), 'utf8')))
+
+    const conditioned = Object.values(nodes)
+      .filter((n) => n.requireWeather !== undefined || n.requireTime !== undefined)
+      .map((n) => n.id)
+    expect(conditioned).toEqual([])
   })
 })
 
