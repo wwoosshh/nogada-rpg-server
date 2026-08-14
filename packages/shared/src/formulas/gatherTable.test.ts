@@ -30,6 +30,16 @@ const table: GatherTableDef = {
 const copperDef: ItemDef = testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' })
 const ironDef: ItemDef = { ...copperDef, id: 'iron_pickaxe', toolTier: 2 }
 const mithrilDef: ItemDef = { ...copperDef, id: 'mithril_pickaxe', toolTier: 3 }
+/**
+ * 4단(별똥). **아직 이 티어의 아이템은 카탈로그에 없다** — 사다리만 서 있다.
+ *
+ * 그래도 여기 픽스처에 두는 이유: 이 스위트가 재는 것은 티어별 **행동**이고,
+ * 4단이 지는 세 축 중 둘(roll ×0.7 · 잭팟 평감산 −4)은 판정이 굴려야만 드러난다.
+ * `toolProfile.test.ts` 는 세 숫자가 그 함수에서 나오는지만 보므로, 그 숫자가
+ * 판정에 실제로 닿는지는 아무도 안 물었다. 아이템이 서는 날(B7) 이 손은
+ * 그때부터 실물 도구를 대신 재게 된다.
+ */
+const starfallDef: ItemDef = { ...copperDef, id: 'starfall_pickaxe', toolTier: 4 }
 
 /**
  * 증표 없는 손 하나 — 그 도구만 든 손이다(null 이면 맨손).
@@ -48,6 +58,7 @@ const bare = hand(null)
 const copper = hand(copperDef)
 const iron = hand(ironDef)
 const mithril = hand(mithrilDef)
+const starfall = hand(starfallDef)
 
 /**
  * floor(rng × 100001) 이 정확히 `rawRoll` 이 되는 난수 — 밴드 소속과 도구 보정
@@ -112,6 +123,10 @@ describe('gatherOutcome — 도구 보정', () => {
     expect(gatherOutcome(table, 0, copper, u)).toEqual({ itemId: null, roll: 70000 })
     expect(gatherOutcome(table, 0, iron, u)).toEqual({ itemId: null, roll: 63000 })
     expect(gatherOutcome(table, 0, mithril, u)).toEqual({ itemId: 'shard', roll: 56000 })
+    // 별똥(×0.7)은 같은 운을 미스릴보다 7,000 더 낮춘다. 4단의 roll 축이 판정에
+    // 실제로 닿는지는 여기서만 드러난다 — 프로필이 0.7 을 들고 있어도 판정이
+    // 그것을 안 읽으면 이 줄만 빨개진다.
+    expect(gatherOutcome(table, 0, starfall, u)).toEqual({ itemId: 'shard', roll: 49000 })
   })
 
   it('잭팟 밴드(rawRoll ≤ 10) 안에서는 곱이 아니라 평감산만 적용된다 — 철 −2 가 티어를 바꾼다', () => {
@@ -139,13 +154,14 @@ describe('gatherOutcome — 도구 보정', () => {
     expect(gatherOutcome(table, 0, copper, rawRollOf(10))).toEqual({ itemId: 'crystal', roll: 10 })
   })
 
-  it('잭팟 확률의 정확한 값(§7-앞 18): roll≤3 은 구리 4/100001, 철 6/100001(+50%), 미스릴 7/100001(+75%)', () => {
+  it('잭팟 확률의 정확한 값(§7-앞 18): roll≤3 은 구리 4/100001, 철 6/100001(+50%), 미스릴 7/100001(+75%), 별똥 8/100001(+100%)', () => {
     // 최상 티어(gem)는 이 픽스처에서 cumulative[0]=3 — roll≤3 이 곧 잭팟이다.
     // 밴드(rawRoll 0~10) 안은 평감산만 받으므로 "roll≤3 이 되는 rawRoll" 은
     // 정확히 0..flat+3 이다: 구리(flat 0) 0~3 = 4개, 철(flat 2) 0~5 = 6개,
-    // 미스릴(flat 3) 0~6 = 7개. 경계(마지막으로 걸리는 rawRoll과 그 다음)를
-    // 직접 굴려 못박는다 — 밴드 밖(rawRoll≥11)은 곱만 받아 floor(11×0.8)=8 이
-    // 최솟값이라 roll≤3 에 닿지 못한다(이미 위 두 테스트가 증명했다).
+    // 미스릴(flat 3) 0~6 = 7개, 별똥(flat 4) 0~7 = 8개. 경계(마지막으로 걸리는
+    // rawRoll과 그 다음)를 직접 굴려 못박는다 — 밴드 밖(rawRoll≥11)은 곱만 받아
+    // 최솟값이 floor(11×0.8)=8 · floor(11×0.7)=7 이라 어느 티어도 roll≤3 에
+    // 닿지 못한다(이미 위 두 테스트가 증명했다).
     expect(gatherOutcome(table, 0, copper, rawRollOf(3)).roll).toBe(3) // 마지막으로 걸리는 값
     expect(gatherOutcome(table, 0, copper, rawRollOf(4)).roll).toBe(4) // 그 다음은 밖
 
@@ -154,6 +170,12 @@ describe('gatherOutcome — 도구 보정', () => {
 
     expect(gatherOutcome(table, 0, mithril, rawRollOf(6)).roll).toBe(3) // 6−3=3, 마지막으로 걸림
     expect(gatherOutcome(table, 0, mithril, rawRollOf(7)).roll).toBe(4) // 7−3=4, 그 다음은 밖
+
+    // 4단은 승급 한 칸이 잭팟 폭을 **구리의 두 배**로 벌린다. 평감산 −4 가
+    // 판정에 안 닿으면(밴드 판정이 곱으로 넘어가거나 flat 이 3 에서 멈추면)
+    // 아래 두 줄이 함께 빨개진다.
+    expect(gatherOutcome(table, 0, starfall, rawRollOf(7)).roll).toBe(3) // 7−4=3, 마지막으로 걸림
+    expect(gatherOutcome(table, 0, starfall, rawRollOf(8)).roll).toBe(4) // 8−4=4, 그 다음은 밖
   })
 })
 
@@ -169,13 +191,23 @@ describe('gatherRoll — 접힌 손도 표의 끝에 닿는다(§6-앞 14 의 �
   })
 
   it('어떤 손이든 원 roll 의 끝은 표의 끝에 정확히 닿는다 — 이것이 "모든 티어가 가능"의 근거다', () => {
-    for (const h of [bare, sight(bare), copper, sight(copper), iron, sight(iron), mithril, sight(mithril)]) {
+    for (const h of [
+      bare, sight(bare), copper, sight(copper), iron, sight(iron), mithril, sight(mithril),
+      // 4단이 서면서 **가장 심하게 접히는 손이 바뀌었다**: 별똥+선별은
+      // 0.7 × 0.95 = 0.665 라 도달 상한이 66,499 다. 위 버그의 조건(표의 꼬리가
+      // 도달 상한 위에 있다)을 오늘 카탈로그에서 가장 세게 만족하는 손이므로,
+      // 손을 열거하는 이 자리가 4단을 빠뜨리면 되펴기가 새 티어에서 깨져도
+      // 아무도 모른다.
+      starfall, sight(starfall),
+    ]) {
       expect(gatherRoll(GATHER_ROLL_MAX, h.profile)).toBeGreaterThanOrEqual(GATHER_ROLL_MAX)
     }
     // 접힌 손(배수 < 1)은 넘치지도 모자라지도 않게 **정확히** 표의 끝이다.
     expect(gatherRoll(GATHER_ROLL_MAX, mithril.profile)).toBe(GATHER_ROLL_MAX)
     expect(gatherRoll(GATHER_ROLL_MAX, sight(mithril).profile)).toBe(GATHER_ROLL_MAX)
     expect(gatherRoll(GATHER_ROLL_MAX, iron.profile)).toBe(GATHER_ROLL_MAX)
+    expect(gatherRoll(GATHER_ROLL_MAX, starfall.profile)).toBe(GATHER_ROLL_MAX)
+    expect(gatherRoll(GATHER_ROLL_MAX, sight(starfall).profile)).toBe(GATHER_ROLL_MAX)
   })
 
   it('배수 ≥ 1 인 손은 되펴기 항이 0 이다 — 맨손·구리의 확률이 한 톨도 안 바뀐다', () => {

@@ -235,7 +235,7 @@ describe('parseNodes', () => {
     )
   })
 
-  it('알 수 없는 variant 값을 거부한다 — 마커 색의 출처라 오타가 조용히 기본색이 되면 안 된다', () => {
+  it('알 수 없는 variant 값을 거부한다 — 표 접미사와 짝지어 판정에 쓰이므로 오타가 통과하면 안 된다', () => {
     expect(() => parseNodes([validNodeRow({ variant: 'depe' })])).toThrow(
       'nodes.csv[copper_vein]: variant "depe" 는 알 수 없다 (허용값: normal, deep, special)',
     )

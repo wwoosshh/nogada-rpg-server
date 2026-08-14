@@ -4,7 +4,7 @@ import {
   isNight,
   NIGHT_WINDOWS,
   TIDE_WINDOWS,
-  type TideWindow,
+  type TimeWindow,
 } from './time.js'
 import type { NodeDef, NodeTimeRequirement } from './types.js'
 import { activeWeather, type PlayerWeather, type WeatherKind } from './weather.js'
@@ -30,7 +30,7 @@ export interface NodeTimeCondition {
    * 조건마다 `TIDE_WINDOWS`·`NIGHT_WINDOWS` 중 하나다 — 창의 출처는 언제나
    * `time.ts` 다(노드가 자기 숫자를 갖지 않는다, `NodeDef.requireTime` 문서).
    */
-  windows: readonly TideWindow[]
+  windows: readonly TimeWindow[]
   /** 판정이 본 게임 시각(0~23). 화면이 "지금 11시" 를 적는 값이다. */
   hour: number
   open: boolean

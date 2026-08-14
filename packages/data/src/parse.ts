@@ -145,6 +145,26 @@ export function toWeatherKind(value: string, context: string): WeatherKind {
 }
 
 /**
+ * `requireTime` 칸이 실제 시각 조건인지 검사한다. 오타를 통과시키면 그 노드는
+ * 아무 조건 없이 늘 열린 채로 서고, 화면에도 로그에도 흔적이 없다 — 조건은
+ * 닫히는 쪽이 기본이 아니라는 것이 `applyNodeConditions` 의 요점이다.
+ *
+ * **인라인 throw 로 두지 않는 이유:** 짝인 `requireWeather` 는 이미 변환기를
+ * 거치는데(`toWeatherKind`) 이쪽만 호출부에서 직접 던지면, 같은 칸 두 개의 오류
+ * 문구가 서로 다른 파일 자리에서 각자 늙는다. 이 파일의 `toSkillId`·
+ * `toTokenEffect`·`toWeatherKind` 가 이미 "값 하나를 좁히는 일은 변환기가 진다"
+ * 라는 한 모양을 이루고 있으므로 그 줄에 세운다.
+ */
+export function toNodeTimeRequirement(value: string, context: string): NodeTimeRequirement {
+  if (!isNodeTimeRequirement(value)) {
+    throw new Error(
+      `${context}: requireTime "${value}" 는 알 수 없다 (허용값: ${NODE_TIME_REQUIREMENTS.join(', ')})`,
+    )
+  }
+  return value
+}
+
+/**
  * 사용 효과 두 칸(`useEffect`,`useValue`)을 읽어 아이템에 붙인다 — 날씨 가루가
  * 무엇을 하는가다(설계 §6-앞 1~4).
  *
@@ -280,16 +300,11 @@ function applyNodeConditions(def: NodeDef, row: Row, ctx: string): void {
     def.requireWeather = toWeatherKind(requireWeather, `${ctx}.requireWeather`)
   }
 
+  // 허용 목록을 손으로 안 적는 이유는 variant 와 같다(parseNodes 의 주석) — 조건이
+  // 늘어나는 날 타입에는 있는 조건이 CSV 에서만 영원히 거절당하면 안 된다.
   const requireTime = optionalCell(row, 'requireTime')
   if (requireTime !== undefined) {
-    // 허용 목록을 손으로 안 적는 이유는 variant 와 같다(위 주석) — 조건이
-    // 늘어나는 날 타입에는 있는 조건이 CSV 에서만 영원히 거절당하면 안 된다.
-    if (!isNodeTimeRequirement(requireTime)) {
-      throw new Error(
-        `${ctx}: requireTime "${requireTime}" 는 알 수 없다 (허용값: ${NODE_TIME_REQUIREMENTS.join(', ')})`,
-      )
-    }
-    def.requireTime = requireTime
+    def.requireTime = toNodeTimeRequirement(requireTime, ctx)
   }
 }
 

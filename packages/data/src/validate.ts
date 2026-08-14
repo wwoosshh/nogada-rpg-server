@@ -375,9 +375,9 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
     // 번호는 전수 시뮬의 표 목록 하드코딩 얘기다.
     //
     // 이 아크 전까지 variant 는 채집 티어 스펙이 스스로 적어 둔 대로 "표시 전용"
-    // 이었고, 그 대가로 심층 노드 넷이 이름과 마커 색만 심층인 채 바깥과 **같은
-    // 표**를 굴렸다. 표가 갈라진 지금 이 짝이 다시 갈라지면 마커는 심층 색으로
-    // 그려지는데 분포는 바깥이거나 그 반대인데, **어느 화면에서도 되짚을 수
+    // 이었고, 그 대가로 심층 노드 넷이 이름과 겉모습만 심층인 채 바깥과 **같은
+    // 표**를 굴렸다. 표가 갈라진 지금 이 짝이 다시 갈라지면 맵에는 심층 그림이
+    // 서는데 분포는 바깥이거나 그 반대인데, **어느 화면에서도 되짚을 수
     // 없다** — 확률표는 서버 전용이라 사람이 눈으로 대조할 곳조차 없다.
     // 그래서 두 칸이 아니라 한 규칙이 되게 묶는다.
     //
@@ -402,7 +402,7 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
         // (ice 는 "다", mineral 은 "이다") 괄호로 감싸고 조사는 한국어 낱말에 붙인다.
         // 고칠 자리를 일러 주는 끝 문장이 "쪽에 맞추거나"·"처럼"인 것도 같은 이유다 —
         // 등급 이름과 표 id 에 조사가 직접 닿지 않는다.
-        `nodes[${node.id}]: variant("${node.variant}") 와 tableId("${node.tableId}") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(${menu}) 이 tableId 는 "${tableVariant}" 등급의 표다. 갈라지면 마커 색과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "${tableVariant}" 쪽에 맞추거나 tableId 를 "${suggested}" 처럼 적는다`,
+        `nodes[${node.id}]: variant("${node.variant}") 와 tableId("${node.tableId}") 가 짝이 아니다 — 등급마다 표 접미사가 하나씩 정해져 있는데(${menu}) 이 tableId 는 "${tableVariant}" 등급의 표다. 갈라지면 노드 그림과 실제 분포가 어긋나는데, 그 어긋남은 어느 화면에서도 되짚을 수 없다. nodes.csv 에서 variant 를 "${tableVariant}" 쪽에 맞추거나 tableId 를 "${suggested}" 처럼 적는다`,
       )
     }
     if (!placedNodeIds.has(node.id)) {

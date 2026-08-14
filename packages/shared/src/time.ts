@@ -124,11 +124,27 @@ export function timeOfDay(hour: number): TimeOfDay {
   return 'night'
 }
 
-/** 물이 빠져 있는 시각 창 하나 — `[start, end)` 게임 시각(시). 끝 시각은 이미 물이 찬 시각이다. */
-export interface TideWindow {
+/**
+ * 무엇인가가 열려 있는 시각 창 하나 — `[start, end)` 게임 시각(시). 끝 시각은
+ * 이미 닫힌 시각이다.
+ *
+ * **이름이 물때에서 풀려난 이유:** 창을 쓰는 것이 물때 하나였을 때는
+ * `TideWindow` 가 정직했지만, 노드 조건이 밤(`NIGHT_WINDOWS`)을 같은 구조로
+ * 적으면서 "물이 빠져 있는 시각 창"이라는 문서가 밤 창에도 붙어 버렸다.
+ * 화면이 두 창을 같은 코드로 읽어 문구를 조립하는 이상(nodeAvailability 의
+ * `windows`) 구조의 이름은 그 위쪽에 있어야 한다.
+ */
+export interface TimeWindow {
   start: number
   end: number
 }
+
+/**
+ * 물때 창의 이름. 지금은 `TimeWindow` 와 같은 모양이고, 남겨 둔 이유는 **물때만
+ * 다루는 자리에서 무엇의 창인지 말하게 하려는 것**이다(transitionGate 의
+ * `tide.windows`). 밤도 담을 수 있는 자리에는 쓰지 않는다.
+ */
+export type TideWindow = TimeWindow
 
 /**
  * 물때 — 하루 두 번, 여섯 시간씩 물이 크게 빠진다(결계 설계 §6).
@@ -182,10 +198,10 @@ export function isLowTide(hour: number): boolean {
  * 전수로 문다.
  *
  * 자정을 넘는 한 덩어리를 `{ start: 21, end: 4 }` 로 적지 않는 이유: 창 하나의
- * 뜻이 `[start, end)` 라는 것이 `TideWindow` 의 전부이고, 그 뜻을 창마다 다르게
+ * 뜻이 `[start, end)` 라는 것이 `TimeWindow` 의 전부이고, 그 뜻을 창마다 다르게
  * 하면 같은 구조를 읽어 문구를 조립하는 화면이 이 하나에만 거꾸로 나온다.
  */
-export const NIGHT_WINDOWS: readonly TideWindow[] = [
+export const NIGHT_WINDOWS: readonly TimeWindow[] = [
   { start: 21, end: 24 },
   { start: 0, end: 4 },
 ] as const

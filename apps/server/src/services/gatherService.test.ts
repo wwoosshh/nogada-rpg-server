@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   ACTION_INTERVAL_MAX_MS,
   emptyDialogueHistory,
@@ -16,6 +19,8 @@ import {
 } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
+import { applyToCharacter } from '../state/applyToCharacter.js'
+import { JsonPersistence } from '../state/jsonPersistence.js'
 import { performGather } from './gatherService.js'
 
 const data: GameData = {
@@ -673,16 +678,53 @@ describe('performGather — 노드 조건', () => {
   })
 
   // 왜: 읽지 않는 것만으로는 부족하다 — 거절이 스탬프를 찍으면 닫힌 노드를 한 번
-  //     두드린 것만으로 그 사람의 다음 채집이 밀린다. 거절에는 player 가 실리지
-  //     않으므로 저장될 것 자체가 없다(applyToCharacter 는 ok:false 에 아무것도 쓰지 않는다).
-  it('거절은 nextActionAt 을 쓰지도 않는다 — 실을 player 자체가 없다', () => {
-    const p = player({ nextActionAt: 0 })
-    const r = performGather({
-      player: p, data: 조건세계, tables, barriers: noBarriers,
-      instanceId: 'red_ice_vein-1', rng: jackpotRoll, now: 낮,
-    })
-    expect('outcome' in r).toBe(false)
-    expect(p.nextActionAt).toBe(0)
+  //     두드린 것만으로 그 사람의 다음 채집이 밀린다.
+  //
+  //     **이 질문은 판정 함수 안에서는 물을 수 없다.** performGather 는 판정 전에
+  //     인자를 복제하므로(gatherService.ts 의 structuredClone), 거절 줄에서 그
+  //     복제본에 무엇을 쓰든 인자로 건넨 객체는 안 변한다 — 예전 이 자리의
+  //     `expect(p.nextActionAt).toBe(0)` 은 어떤 구현에도 초록이었다. 거절이
+  //     쿨다운을 찍었는지 아닌지가 실제로 갈리는 곳은 **저장소**다.
+  //
+  //     그래서 판정 하나가 아니라 라우트가 매번 밟는 길(applyToCharacter → 저장)을
+  //     그대로 밟고, 되읽은 캐릭터에게 묻는다. 묻는 것은 둘이다: 거절 뒤 저장된
+  //     상태가 한 글자도 안 바뀌었는가, 그리고 **같은 순간에** 열린 노드를 캘 수
+  //     있는가. 뒤엣것이 플레이어가 체감하는 형태다 — 닫힌 문을 한 번 두드렸다는
+  //     이유로 옆의 광맥 앞에서 기다리게 되면 안 된다.
+  it('닫힌 노드를 두드려도 저장된 상태가 그대로고, 같은 순간 옆의 열린 노드를 캔다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nogada-gather-'))
+    const store = await JsonPersistence.open(join(dir, 'players.json'))
+    try {
+      const p = player({ nextActionAt: 0 })
+      await store.createCharacter('u1', p)
+      const 저장된 = async (): Promise<PlayerState> => {
+        const stored = await store.readCharacter(p.id)
+        if (!stored) throw new Error('방금 만든 캐릭터가 없다')
+        return stored.player
+      }
+      const 캔다 = (instanceId: string) =>
+        applyToCharacter(store, p.id, (character) =>
+          performGather({
+            player: character, data: 조건세계, tables, barriers: noBarriers,
+            instanceId, rng: jackpotRoll, now: 낮,
+          }),
+        )
+
+      const before = await 저장된()
+      expect(await 캔다('red_ice_vein-1')).toEqual({ ok: false, code: 'node_closed' })
+      // 숙련도 재고도 함께 본다 — 거절이 무엇을 남기든 여기서 드러난다.
+      expect(await 저장된()).toEqual(before)
+
+      // 시각이 한 톨도 안 지났는데 옆의 조건 없는 노드는 그대로 캐진다.
+      const 열린노드 = await 캔다('copper_vein-1')
+      if (!열린노드.ok) throw new Error(`열린 노드는 캐져야 한다: ${열린노드.code}`)
+      // 쿨다운은 **지금부터** 시작한다. 앞선 거절이 스탬프를 찍어 뒀다면 이 요청은
+      // 애초에 too_fast 로 거절당했을 것이다.
+      expect(열린노드.outcome.player.nextActionAt).toBe(낮 + 500)
+    } finally {
+      await store.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   // 왜: 맵부터 다르면 wrong_map 이 먼저다 — 결계 검사와 같은 저울이다. 조건을
