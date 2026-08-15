@@ -26,7 +26,7 @@ export function registerInnRoutes(app: FastifyInstance, store: Persistence, data
     if (!inn) return reply.code(400).send({ code: 'unknown_inn' })
 
     const result = await applyToCharacter(store, requireAccount(request).characterId, (player) =>
-      performRest({ player, inn, now: Date.now() }),
+      performRest({ player, data, inn, now: Date.now() }),
     )
 
     if (!result.ok) {

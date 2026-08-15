@@ -70,7 +70,7 @@ export function swingDamageOf(def: ItemDef, enhanceLevel: number): number {
   ① gold < price → `not_enough_gold` ② `currentHp === COMBAT_MAX_HP` →
   `already_full`(회복할 것이 없는데 돈을 받으면 죽은 버튼의 서버판이다)
   ③ 수락: gold 차감, `combat.hp = COMBAT_MAX_HP`, `combat.lastHitAt = now`.
-  근접 게이트는 상점과 같은 신뢰 모델(없음).
+  **현장은 매 요청 speakerPresence 로 다시 잰다** — 전체 리뷰가 정정한 자리다: "상점도 근접 게이트가 없다"던 이 스펙의 첫 문장은 사실 오류였다(거래는 shopAccess 로 매 매도의 현장을 재고, 그 판정을 안 물려받은 여관은 손으로 지은 POST 하나에 사냥터 원격 만혈을 팔았다 — 재현됨).
 - **상수의 거처**(씨앗 ⑦ 종결): 값은 inns.csv 가 소유하고, `innPricing.test.ts`
   는 **구운 데이터에서 읽어** 부등식을 못박는다 — 테스트 안의 상수 사본 삭제.
 - **화면**: **대화 갈래 기계는 존재하지 않는다**(DialogueFlow 는 선형 —

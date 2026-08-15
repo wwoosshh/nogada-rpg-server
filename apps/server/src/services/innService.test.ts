@@ -2,6 +2,7 @@ import {
   COMBAT_MAX_HP,
   HP_REGEN_MS_PER_HP,
   defaultCombatState,
+  type GameData,
   type InnDef,
   type PlayerState,
 } from '@nogada/shared'
@@ -18,11 +19,25 @@ import { performRest } from './innService.js'
 
 const 여관: InnDef = { speakerId: '여관안주인', gold: 1500 }
 
+/**
+ * 현장 판정(speakerPresence)이 읽는 최소 등록부 — 일과 없는 정적 화자라
+ * 판정은 mapId 비교 하나다. 나머지 칸은 이 테스트가 닿지 않는 자리표시자다.
+ */
+const 등록부 = {
+  speakers: {
+    여관안주인: {
+      id: '여관안주인', name: '여관 안주인', kind: 'npc',
+      mapId: '눈의마을', x: 9, y: 14, sprite: 'npc_innkeeper', facing: 'down',
+    },
+  },
+  schedules: {}, places: {}, routes: [],
+} as unknown as GameData
+
 /** 시각 하나를 고정한다 — lastHitAt 과의 차가 곧 자연 회복이다. */
 const NOW = 10_000_000
 
 function player(over: Partial<PlayerState> = {}): PlayerState {
-  return { ...emptyPlayer(), ...over }
+  return { ...emptyPlayer(), location: { mapId: '눈의마을', x: 9, y: 15 }, ...over }
 }
 
 /** 방금(NOW 시점에) hp 로 실측된 다친 사람 — 자연 회복이 아직 0 이다. */
@@ -31,9 +46,25 @@ function hurt(hp: number, gold: number): PlayerState {
 }
 
 describe('performRest', () => {
+  // 왜: 현장은 매 요청 다시 잰다(거래의 shopAccess 규범). "talk 가 이미 쟀다"고
+  //     믿었던 첫 판은 전체 리뷰가 재현했다 — 손으로 지은 POST 하나가 사냥터
+  //     한복판에서 원격 만혈을 사, 죽음 동선(사냥터 → 마을 → 여관)의 저울을
+  //     통째로 우회했다. 부등호는 shared 의 speakerPresence 하나다.
+  it('다른 맵에서의 요청은 wrong_map — 원격 만혈은 없다', () => {
+    const p = player({
+      gold: 5_000,
+      location: { mapId: '사냥터', x: 20, y: 20 },
+      combat: { ...defaultCombatState(), hp: 40, lastHitAt: NOW },
+    })
+    const r = performRest({ player: p, data: 등록부, inn: 여관, now: NOW })
+    expect(r).toEqual({ ok: false, code: 'wrong_map' })
+    expect(p.gold).toBe(5_000)
+    expect(p.combat.hp).toBe(40)
+  })
+
   it('골드가 값에 못 미치면 not_enough_gold — 거절은 아무것도 저장하지 않는다', () => {
     const p = hurt(40, 1_499)
-    const r = performRest({ player: p, inn: 여관, now: NOW })
+    const r = performRest({ player: p, data: 등록부, inn: 여관, now: NOW })
     expect(r).toEqual({ ok: false, code: 'not_enough_gold' })
     // 입력 객체 무변경 — 거절 경로는 아무것도 저장하지 않는다(Global Constraints).
     expect(p.gold).toBe(1_499)
@@ -44,13 +75,13 @@ describe('performRest', () => {
   //     사람에게 already_full 이 나가는데, 그 사람이 다친 뒤 다시 오면 문구가
   //     골드로 바뀐다 — 같은 빈 주머니에 화면이 두 말을 하게 된다.
   it('골드도 없고 만혈이어도 골드 부족을 먼저 말한다', () => {
-    const r = performRest({ player: hurt(COMBAT_MAX_HP, 0), inn: 여관, now: NOW })
+    const r = performRest({ player: hurt(COMBAT_MAX_HP, 0), data: 등록부, inn: 여관, now: NOW })
     expect(r).toEqual({ ok: false, code: 'not_enough_gold' })
   })
 
   it('만혈이면 already_full — 회복할 것이 없는데 돈을 받으면 죽은 버튼의 서버판이다', () => {
     const p = hurt(COMBAT_MAX_HP, 5_000)
-    const r = performRest({ player: p, inn: 여관, now: NOW })
+    const r = performRest({ player: p, data: 등록부, inn: 여관, now: NOW })
     expect(r).toEqual({ ok: false, code: 'already_full' })
     expect(p.gold).toBe(5_000)
   })
@@ -61,13 +92,13 @@ describe('performRest', () => {
   it('저장칸이 만혈이 아니어도 자연 회복이 다 찼으면 already_full 이다', () => {
     const healedAll = (COMBAT_MAX_HP - 40) * HP_REGEN_MS_PER_HP
     const p = player({ gold: 5_000, combat: { ...defaultCombatState(), hp: 40, lastHitAt: NOW - healedAll } })
-    const r = performRest({ player: p, inn: 여관, now: NOW })
+    const r = performRest({ player: p, data: 등록부, inn: 여관, now: NOW })
     expect(r).toEqual({ ok: false, code: 'already_full' })
   })
 
   it('수락 — 골드가 값만큼 줄고 hp 는 만혈, lastHitAt 은 지금이 된다', () => {
     const p = hurt(40, 1_500) // 경계값: 딱 값만큼 가진 사람도 잘 수 있다
-    const r = performRest({ player: p, inn: 여관, now: NOW })
+    const r = performRest({ player: p, data: 등록부, inn: 여관, now: NOW })
     if (!r.ok) throw new Error(`수락돼야 한다 — ${r.code}`)
     expect(r.outcome.player.gold).toBe(0)
     expect(r.outcome.player.combat.hp).toBe(COMBAT_MAX_HP)
@@ -84,7 +115,7 @@ describe('performRest', () => {
       gold: 2_000,
       combat: { ...defaultCombatState(), hp: 40, lastHitAt: NOW - 10 * HP_REGEN_MS_PER_HP },
     })
-    const r = performRest({ player: p, inn: 여관, now: NOW })
+    const r = performRest({ player: p, data: 등록부, inn: 여관, now: NOW })
     if (!r.ok) throw new Error(`수락돼야 한다 — ${r.code}`)
     expect(r.outcome.player.gold).toBe(500)
     expect(r.outcome.player.combat.hp).toBe(COMBAT_MAX_HP)
