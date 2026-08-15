@@ -178,7 +178,9 @@ export function validateEnhanceCosts(data: GameData): string[] {
           derivable = false
           continue
         }
-        if (!GATHERING_SKILLS.includes(def.skill)) {
+        // 'combat' 도 여기서 걸린다(아크 E §4 가 계열 값 공간을 넓혔다) — 전투
+        // 드랍이 강화 재료로 적히면 회전의 눈이 그 계열을 셀 수 없으니 같은 위반이다.
+        if (def.skill === 'combat' || !GATHERING_SKILLS.includes(def.skill)) {
           violations.push(
             `${at}: "${material.item}" 은 ${def.skill} 계열이다 — 회전이 도는 것은 캐는 네 계열(${GATHERING_SKILLS.join('·')})뿐이다`,
           )

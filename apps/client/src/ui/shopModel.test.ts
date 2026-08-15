@@ -1,5 +1,5 @@
 import { emptyPlayer, loadGameData } from '@nogada/data'
-import { sellPrice, type PlayerState, type ShopDef } from '@nogada/shared'
+import { defaultCombatState, sellPrice, type PlayerState, type ShopDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import {
   buyRows,
@@ -146,6 +146,26 @@ describe('buyRows — 진열은 잠긴 것까지 보인다', () => {
   it('이미 가진 증표는 owned 다 — 요구치를 넘겨도 마찬가지다', () => {
     const rows = buyRows(data, playerWith({ ice_speed_token: 1 }, 0, 99999), iceShop)
     expect(rows[0]!.state).toBe('owned')
+  })
+
+  // 왜: 잠긴 칸의 눈금 이름과 "현재" 값은 그 상점 계열의 것이어야 한다(§6-앞 14).
+  //     combat 계열은 SKILL_LABELS 에 없고(기술이 아니라 슬롯이다) 그 숙련은
+  //     skills 가 아니라 combat.proficiency 에 산다 — 어느 한쪽이라도 옛길로
+  //     읽으면 화면은 "undefined 숙련도 undefined/500" 을 적는다.
+  it('combat 상점의 잠긴 칸은 "전투 숙련도" 눈금에 전투 숙련의 지금 값을 적는다', () => {
+    const 사냥진열: ShopDef = {
+      id: '사냥상점', name: '사냥꾼의 계산대', speakerId: '사냥꾼', skill: 'combat', unlockSkill: 1_000,
+      stock: [{ itemId: 'wolf_fang', unlockBy: 'skill', unlockAt: 500 }],
+    }
+    const p = { ...emptyPlayer(), combat: { ...defaultCombatState(), proficiency: 321 } }
+    const rows = buyRows(data, p, 사냥진열)
+    expect(rows[0]).toMatchObject({ unlockLabel: '전투 숙련도', unlockNow: 321, unlockAt: 500, state: 'locked' })
+  })
+
+  // 왜: 사냥상점은 진열이 없다 — 사 주기만 해도 판로다(아크 E §4). 모델이 빈
+  //     목록을 돌려주는 것이 화면의 빈 상태 문구("살 것이 없다")가 서는 자리다.
+  it('출하 사냥상점의 사기 목록은 비어 있다 — 빈 진열은 결격이 아니라 상태다', () => {
+    expect(buyRows(data, emptyPlayer(), data.shops['사냥상점']!)).toEqual([])
   })
 })
 

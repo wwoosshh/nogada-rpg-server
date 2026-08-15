@@ -38,7 +38,11 @@ export function stockProgress(
   player: PlayerState,
   collection: CollectionTable,
 ): number {
-  return entry.unlockBy === 'skill'
-    ? player.skills[shop.skill]
-    : collectionScore(player.donated, collection)
+  // combat 상점의 숙련 칸은 combat.proficiency 를 잰다 — shopAccess 의 그 분기와
+  // 같은 함정이다(아크 E §4 ⑵): `skills['combat']` 은 undefined 라 이쪽에서는
+  // 부등호 방향 때문에 칸이 **영원히 잠기고**, 화면은 "undefined/500" 을 적는다.
+  // 지금 출하 combat 상점은 빈 진열이라 무증상이지만, 판정과 표시가 한 함수라는
+  // 이 파일의 계약이 계열 확장에서도 서 있어야 한다.
+  if (entry.unlockBy !== 'skill') return collectionScore(player.donated, collection)
+  return shop.skill === 'combat' ? player.combat.proficiency : player.skills[shop.skill]
 }

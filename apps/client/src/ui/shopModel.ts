@@ -3,7 +3,7 @@ import {
   isSellTarget,
   isStockUnlocked,
   sellPrice,
-  SKILL_LABELS,
+  slotLabelOf,
   stockProgress,
   type GameData,
   type PlayerState,
@@ -124,9 +124,15 @@ export function buyRows(data: GameData, player: PlayerState, shop: ShopDef): Sho
   return rows
 }
 
-/** 잠긴 칸의 숫자가 무엇의 눈금인지 — 그 상점 계열의 숙련도이거나, 방 하나뿐인 수집 점수다. */
+/**
+ * 잠긴 칸의 숫자가 무엇의 눈금인지 — 그 상점 계열의 숙련도이거나, 방 하나뿐인
+ * 수집 점수다. 이름표는 `slotLabelOf` 가 소유한다(아크 E §1 의 그 헬퍼) —
+ * `SKILL_LABELS[shop.skill]` 인덱싱은 계열이 SkillId ∨ 'combat' 으로 넓어지면서
+ * 컴파일 브레이크가 됐고, 여기서 삼항을 쌓으면 다음 확장이 또 이 자리를 깬다.
+ * combat 상점의 잠긴 칸은 "전투 숙련도" 를 적는다(가방 슬롯과 같은 글자).
+ */
 function unlockLabelOf(entry: ShopStockEntry, shop: ShopDef): string {
-  return entry.unlockBy === 'skill' ? `${SKILL_LABELS[shop.skill]} 숙련도` : '수집 점수'
+  return entry.unlockBy === 'skill' ? `${slotLabelOf(shop.skill)} 숙련도` : '수집 점수'
 }
 
 /** 이 줄을 한 번에 팔 수 있는 최대 수량 — 가진 만큼, 그리고 요청 상한까지. */

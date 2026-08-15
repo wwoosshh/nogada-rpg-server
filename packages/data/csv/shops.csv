@@ -3,3 +3,4 @@ shopId,name,speakerId,skill,unlockSkill
 나무상점,나무 상점,숲마을벌목꾼,wood,5000
 광물상점,광물 상점,광산노인,mineral,5000
 허브상점,허브 상점,항구약초지기,herb,5000
+사냥상점,사냥꾼의 계산대,사냥꾼,combat,1000

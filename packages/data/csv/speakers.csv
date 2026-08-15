@@ -9,3 +9,4 @@ id,name,kind,mapId,x,y,sprite,facing
 숲마을벌목꾼,벌목꾼,npc,숲의마을,14,22,npc_logger,left
 항구약초지기,약초밭 지기,npc,항구마을,24,34,npc_herbalist,down
 광산노인,광산 노인,npc,북동쪽마을,33,13,npc_miner,up
+사냥꾼,사냥꾼,npc,눈의마을,29,14,npc_hunter,left

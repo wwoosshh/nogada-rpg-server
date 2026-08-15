@@ -86,7 +86,14 @@ export function shopAccess(data: GameData, shopId: string, player: PlayerState, 
   const shop = Object.hasOwn(data.shops, shopId) ? data.shops[shopId] : undefined
   if (!shop) return 'unknown_shop'
 
-  if (player.skills[shop.skill] < shop.unlockSkill) return 'shop_locked'
+  // combat 상점(아크 E §4)의 눈금은 skills 가 아니라 combat.proficiency 다 —
+  // 전투 숙련은 세이브 게이트(skillsShape 의 .strict()) 때문에 skills 밖에 산다
+  // (types.ts 의 EquipSlot 문서). 분기 없이 `skills[shop.skill]` 을 읽으면
+  // undefined 와의 < 비교가 언제나 false 라 **문이 항상 열린 것처럼** 된다 —
+  // 잠긴 문이 조용히 사라지는 방향이라 어느 화면도 짖지 않는다(규범 3:
+  // 새 문은 기존 문의 술어를 상속한다). stockProgress 도 같은 분기를 진다.
+  const current = shop.skill === 'combat' ? player.combat.proficiency : player.skills[shop.skill]
+  if (current < shop.unlockSkill) return 'shop_locked'
 
   const presence = speakerPresence(data, shop.speakerId, player, nowMs)
   // 없는 화자를 가리키는 상점은 빌드 검증이 막으므로 정상 데이터에서는 오지

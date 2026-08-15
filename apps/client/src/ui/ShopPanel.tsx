@@ -374,6 +374,12 @@ function ShopView({
             // 마을에서 팔아라"라는 안내다(설계 §4).
             <p className="bag__empty">이 상점에 팔 것이 없다.</p>
           )}
+          {tab === 'buy' && buys.length === 0 && (
+            // 진열 없는 상점(사냥상점)은 사 주기만 해도 판로다(아크 E §4) —
+            // 빈 화면은 없는 것을 파는 척이므로(죽은 버튼 금지의 연장), 팔기
+            // 탭의 빈 상태와 대칭인 문구가 그 자리를 말로 채운다.
+            <p className="bag__empty">이 상점에 살 것이 없다.</p>
+          )}
         </nav>
         {tab === 'sell'
           ? selectedSell !== undefined && (

@@ -225,6 +225,7 @@ npc_child:Female/Female 20-1
 npc_logger:Male/Male 14-1
 npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
+npc_hunter:Male/Male 17-1
 NPCS
 
 # 몬스터 스프라이트 — 팩의 Enemy 41장에 늑대가 없어 Animal 의 회색 개를 색으로
@@ -542,7 +543,7 @@ Get-ChildItem apps\client\public\sprites\*.png | Where-Object { $_.Name -ne 'sig
 **서로 구별되는 것이 이 여섯 장의 조건이다** — 고르는 화면에 나란히 놓이므로, 화자 시트와
 달리 "한 화면에 같이 안 나오니 비슷해도 된다" 가 통하지 않는다. 색이 여섯 방향(파랑·올리브·
 은회색·분홍·보라·청록)으로 흩어지고 셋은 머리, 둘은 모자, 하나는 투구다. 성별도 셋씩 섞었다.
-화자 여섯(`Male 07·12·14`, `Female 17·19·20`)과 플레이어 기본값(`Male 01-1`)은 피했다.
+화자 일곱(`Male 07·12·14·17`, `Female 17·19·20`)과 플레이어 기본값(`Male 01-1`)은 피했다.
 
 ### 몬스터 스프라이트 대장
 
@@ -568,10 +569,11 @@ Get-ChildItem apps\client\public\sprites\*.png | Where-Object { $_.Name -ne 'sig
 | `npc_logger` | `npc_logger.png` | `Male/Male 14-1` | 숲의 마을 벌목꾼 | 뻗친 머리 + 주황 상의. 숲의 초록 배경에서 사람이 배경에 묻히지 않는다 |
 | `npc_herbalist` | `npc_herbalist.png` | `Female/Female 17-1` | 항구 마을 약초밭지기 | 쪽진 머리 + 앞치마. 일하는 사람으로 읽히는 가장 수수한 시트 |
 | `npc_miner` | `npc_miner.png` | `Male/Male 12-1` | 북동쪽 마을 늙은 광부 | 벗어진 머리 + 회색 수염. 노인이되 두건 쓴 채집장 노인과 안 헷갈린다 |
+| `npc_hunter` | `npc_hunter.png` | `Male/Male 17-1` | 눈의 마을 사냥꾼 | 챙모자 + 수염 + 망토. 플레이어·기존 여섯과 겹치지 않는 유일한 모자 노인이다 — 노인 둘(두건·맨머리)과도 모자 하나(파란 챙 — 플레이어 외형)와도 갈린다 |
 | `sign_wood` | `sign_wood.png` | basechip 타일 229+237 | 안내판 | 사람이 아니다 — 위 잘라내기 참고 |
 
-**플레이어(`Male 01-1`)와 겹치지 않게 고른 것이 이 여섯 장의 공통 조건이다.** 플레이어는 은빛
-갑옷에 파란 장식이라, 위 여섯은 전부 그 조합을 피한다. 한 화면에 나오지 않는 조합(예: 항구의
+**플레이어(`Male 01-1`)와 겹치지 않게 고른 것이 이 일곱 장의 공통 조건이다.** 플레이어는 은빛
+갑옷에 파란 장식이라, 위 일곱은 전부 그 조합을 피한다. 한 화면에 나오지 않는 조합(예: 항구의
 약초밭지기와 눈의 마을 아이)은 서로 비슷해도 괜찮지만, 플레이어는 언제나 같은 화면에 있다.
 
 타일셋은 **단순 복사가 아니라 여섯 장으로 잘라 잇는다** (아래 참조). PowerShell 에서, 저장소 루트에서:

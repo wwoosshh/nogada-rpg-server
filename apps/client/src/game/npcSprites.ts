@@ -38,6 +38,7 @@ const NPC_SPRITES: Record<string, NpcSpriteDef> = {
   npc_logger: { file: 'npc_logger.png', kind: 'char' },
   npc_herbalist: { file: 'npc_herbalist.png', kind: 'char' },
   npc_miner: { file: 'npc_miner.png', kind: 'char' },
+  npc_hunter: { file: 'npc_hunter.png', kind: 'char' },
   sign_wood: { file: 'sign_wood.png', kind: 'static' },
 }
 

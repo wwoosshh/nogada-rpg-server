@@ -57,6 +57,11 @@ add(testItem('ice_speed_token', { name: '얼음 속도증표', price: 480_000, s
 add(testItem('ice_sight_token', { name: '얼음 선별증표', price: 240_000, skill: 'ice', tokenEffect: 'sight' }))
 /** 도구는 값이 0 이라 팔 수 없다(설계 §4 — 강화 재료를 실수로 파는 사고가 크다). */
 add(testTool('ice_pick', 'ice', 1, { name: '얼음 정' }))
+/**
+ * 전투 드랍(아크 E §4) — `skill='combat'` 이 사냥상점의 매도 대상이 되는 확장이다.
+ * 출하 items.csv 의 그 칸 기입은 E3 의 몫이라 여기서는 픽스처로 문다(계획 E2 주의).
+ */
+add(testItem('wolf_fang', { name: '늑대 송곳니', price: 30, skill: 'combat' }))
 
 function place(id: string, mapId: string, x: number, over: Partial<PlaceDef> = {}): PlaceDef {
   return { id, mapId, x, y: 0, indoor: false, facing: null, ...over }
@@ -120,6 +125,13 @@ const 여관상점 = shop({
   stock: [{ itemId: 'ice_shard', unlockBy: 'skill', unlockAt: 0 }],
 })
 
+/**
+ * combat 계열 상점(아크 E §4 — 사냥 판로). 진열이 없다: 사 주기만 해도 판로다.
+ * 문의 눈금은 skills 가 아니라 combat.proficiency 이고, 그 분기가 빠지면
+ * `skills['combat']`(undefined) < 1,000 이 false 라 **문이 항상 열린 것처럼** 된다.
+ */
+const 사냥상점 = shop({ id: '사냥상점', speakerId: '사냥꾼', skill: 'combat', unlockSkill: 1_000 })
+
 const data: GameData = {
   items,
   nodes: {},
@@ -134,8 +146,9 @@ const data: GameData = {
   speakers: {
     노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: 채집장, x: 1, y: 1, sprite: 'npc_elder', facing: 'down' },
     여관안주인: { id: '여관안주인', name: '여관 안주인', kind: 'npc', mapId: 마을, x: 1, y: 0, sprite: 'npc_inn', facing: 'down' },
+    사냥꾼: { id: '사냥꾼', name: '사냥꾼', kind: 'npc', mapId: 마을, x: 28, y: 15, sprite: 'npc_hunter', facing: 'left' },
   },
-  shops: { 얼음상점, 여관상점 },
+  shops: { 얼음상점, 여관상점, 사냥상점 },
   masters: [],
   enhanceCosts: [],
   // 칸 둘짜리 작은 방 — 만점은 2칸 × 4등급 = 8 이다. 되사기 문턱 4 는 그 절반이다.
@@ -287,6 +300,48 @@ describe('performSell', () => {
     const r = sell(p, 'ice_shard', 1, { now: 0 })
     if (!r.ok) throw new Error(`쿨다운 중에도 팔려야 하는데 ${r.code} 로 막혔다`)
     expect(r.outcome.player.nextActionAt).toBe(9_000_000)
+  })
+})
+
+/**
+ * 사냥 판로(아크 E §4) — skill='combat' 확장이 매도 판정을 **관통**하는가.
+ *
+ * isSellTarget 은 무수정이다(`def.skill === shop.skill` 동치 비교) — 여기서 묻는
+ * 것은 그 동치가 확장된 값 공간에서도 양방향으로 서는가(사냥상점이 사고, 남의
+ * 상점은 거절하고, 사냥상점은 남의 계열을 거절한다)와, 문의 눈금이 전투 숙련인가다.
+ */
+describe('performSell — 사냥 판로(combat 계열)', () => {
+  const 사냥꾼앞 = (over: Partial<PlayerState> = {}) =>
+    player({
+      location: { mapId: 마을, x: 0, y: 0 },
+      combat: { ...defaultCombatState(), proficiency: 1_000 },
+      stacks: { wolf_fang: 6, ice_shard: 3 },
+      ...over,
+    })
+
+  it('skill=combat 재료를 사냥상점이 사 준다 — 골드가 sellPrice × 수량만큼 는다', () => {
+    const r = sell(사냥꾼앞(), 'wolf_fang', 4, { shopId: '사냥상점' })
+    if (!r.ok) throw new Error(`성공해야 하는데 ${r.code} 로 막혔다`)
+    // 송곳니 정가 30 → 매도가 15. 넷이면 60.
+    expect(r.outcome.player.gold).toBe(1_060)
+    expect(r.outcome.player.stacks['wolf_fang']).toBe(2)
+  })
+
+  it('같은 송곳니를 얼음상점은 거절한다 — 남의 계열은 그 마을에 가야 판다(§4)', () => {
+    const p = player({ stacks: { wolf_fang: 6 } })
+    expect(sell(p, 'wolf_fang', 1)).toEqual({ ok: false, code: 'not_sellable' })
+  })
+
+  it('사냥상점도 남의 계열은 거절한다 — 얼음 조각은 not_sellable 이다', () => {
+    expect(sell(사냥꾼앞(), 'ice_shard', 1, { shopId: '사냥상점' })).toEqual({ ok: false, code: 'not_sellable' })
+  })
+
+  // 왜: 이 문의 눈금은 combat.proficiency 다(아크 E 규범 3). 분기가 빠지면
+  //     skills['combat'] 이 undefined 라 999 도 1,000 도 똑같이 열려 — 이 단정이
+  //     red 가 된다(undefined 비교 함정을 무는 돌연변이의 목표 지점).
+  it('전투 숙련 999 는 shop_locked 다 — 문이 항상 열린 것처럼 되면 안 된다', () => {
+    const 미달 = 사냥꾼앞({ combat: { ...defaultCombatState(), proficiency: 999 } })
+    expect(sell(미달, 'wolf_fang', 1, { shopId: '사냥상점' })).toEqual({ ok: false, code: 'shop_locked' })
   })
 })
 
@@ -530,10 +585,22 @@ describe('거래 불변식 ③ — 출하 데이터', () => {
     }
   })
 
-  it('출하 데이터의 상점 넷은 각자 자기 계열 재료를 사 준다 — 죽은 재료 13종이 값을 갖는 이유다', () => {
+  it('출하 데이터의 상점 다섯은 각자 자기 계열 재료를 사 준다 — 죽은 재료 13종이 값을 갖는 이유이고, 사냥상점도 예외가 아니다', () => {
+    // 사냥상점이 이 전수 검사에 드는 대가로 wolf_fang 의 skill=combat 기입이
+    // E3 에서 이리로 당겨졌다 — 사 주는 물건이 하나도 없는 판로를 출하하면
+    // 이 불변식이 두 커밋 사이에서 거짓이 된다.
     for (const s of Object.values(shipped.shops)) {
       const buys = Object.values(shipped.items).filter((def) => isSellTarget(def, s))
       expect({ shop: s.id, buysSomething: buys.length > 0 }).toEqual({ shop: s.id, buysSomething: true })
     }
+  })
+
+  // 왜: openPendingShop 은 상점 우선이라 한 화자가 상점·여관을 겸하면 해금 순간부터
+  //     여관이 영구 봉쇄된다(스펙 §4 — 안주인 재사용 금지의 근거). 달인 겸직도
+  //     같은 금지다. 사냥꾼은 상점 하나만 가진다는 사실을 출하 데이터에 못박는다.
+  it('사냥꾼은 상점만 가진다 — 여관도 달인도 아니다(봉쇄 회귀)', () => {
+    const hunter = shipped.shops['사냥상점']!.speakerId
+    expect(Object.hasOwn(shipped.inns, hunter)).toBe(false)
+    expect(shipped.masters.some((m) => m.speakerId === hunter)).toBe(false)
   })
 })

@@ -11,7 +11,7 @@ import { emptyPlayer } from './emptyPlayer.js'
 import { loadGameData } from './load.js'
 
 /**
- * 출하되는 상점 넷의 **영업 시간**을 실물 데이터로 못박는다.
+ * 출하되는 상점 다섯의 **영업 시간**을 실물 데이터로 못박는다.
  *
  * 상점은 사람이다 — 상인이 자기 일과대로 자러 들어가면 그 상점은 닫힌다(경제 설계
  * §6-앞 4). 이것은 버그가 아니라 세계가 살아 있다는 증거이고, 그래서 **의도라는
@@ -42,7 +42,10 @@ function customerAt(shopId: string): PlayerState {
   const shop = data.shops[shopId]!
   const speaker = data.speakers[shop.speakerId]!
   const player = emptyPlayer()
-  player.skills[shop.skill] = shop.unlockSkill
+  // combat 상점의 눈금은 skills 가 아니라 combat.proficiency 다(아크 E 규범 3) —
+  // skills['combat'] 에 적으면 아무 문도 안 열리는 유령 숙련이 된다.
+  if (shop.skill === 'combat') player.combat.proficiency = shop.unlockSkill
+  else player.skills[shop.skill] = shop.unlockSkill
   player.location = { mapId: speaker.mapId, x: speaker.x, y: speaker.y }
   return player
 }
@@ -79,7 +82,7 @@ function closedWindows(shopId: string): string[] {
 }
 
 describe('상점의 영업 시간 — 상인이 자리를 뜨면 상점도 닫힌다(§6-앞 4)', () => {
-  it('한낮에는 상점 넷이 전부 열려 있다', () => {
+  it('한낮에는 상점 다섯이 전부 열려 있다', () => {
     const noon = atGameMinute(12 * 60)
     for (const shop of Object.values(data.shops)) {
       expect(shopAccess(data, shop.id, customerAt(shop.id), noon), shop.id).toBe('ok')
@@ -126,6 +129,14 @@ describe('상점의 영업 시간 — 상인이 자리를 뜨면 상점도 닫�
     ])
   })
 
+  // 사냥꾼은 일과가 없다 — speakers.csv 좌표(눈의마을 동쪽 문 곁)에 하루 종일
+  // 서 있다(아크 E §4). 채집장노인의 "밤에도 열림"보다도 넓다: 걷는 10분조차
+  // 없다. 누가 사냥꾼에게 일과를 달아 이 상점이 닫히기 시작하면 여기가 먼저 말한다.
+  it('사냥 상점은 24시간 열려 있다 — 사냥꾼에게는 일과가 없다', () => {
+    expect(data.schedules['사냥꾼']).toBeUndefined()
+    expect(closedWindows('사냥상점')).toEqual([])
+  })
+
   // 구간을 분으로 합친 것 — 하루의 몇 할이 영업 시간인가를 한 줄로 본다.
   // 얼음이 나머지 셋과 두 자릿수 배로 갈리는 것이 §6-앞 4 의 결정 그 자체다.
   it('하루 중 닫힌 시간이 얼음 10분 · 나무 488분 · 광물 553분 · 허브 562분이다', () => {
@@ -148,7 +159,10 @@ describe('상점의 영업 시간 — 상인이 자리를 뜨면 상점도 닫�
     const night = atGameMinute(2 * 60)
     const shop = data.shops['광물상점']!
     const rich = customerAt('광물상점')
-    rich.skills[shop.skill] = shop.unlockSkill * 100
+    // customerAt 의 그 분기다 — 광물상점이라 아래 가지는 죽어 있지만, 눈금이
+    // 둘(캐는 skills·전투 proficiency)이 된 세계에서 총체적으로 적는다.
+    if (shop.skill === 'combat') rich.combat.proficiency = shop.unlockSkill * 100
+    else rich.skills[shop.skill] = shop.unlockSkill * 100
 
     expect(shopAccess(data, shop.id, rich, night)).toBe('not_here')
 

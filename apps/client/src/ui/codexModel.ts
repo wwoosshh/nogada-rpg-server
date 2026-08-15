@@ -207,7 +207,10 @@ export function buildCodex(data: GameData, player: PlayerState): CodexView {
     // 정의도 계열도 없는 칸은 빌드가 막는다(칸 목록은 gather_tiers.csv 와 정확히
     // 일치해야 한다) — 화면은 조용히 넘어간다. 데이터를 갈아엎는 중에 방이
     // 통째로 죽는 것보다 낫다(ShopPanel 이 없는 상점을 넘기는 것과 같은 자세).
-    if (def?.skill === undefined) continue
+    // 'combat' 계열(아크 E §4 — 전투 드랍)도 같은 가드다: 방의 칸은 채집물
+    // 25종뿐이라(§6-앞 4: 만든 것도 잡은 것도 캔 것이 아니다) 전투 계열이 방에
+    // 설 자리가 없고, 이 가드가 없으면 bySkill 인덱싱이 컴파일에서 깨진다.
+    if (def?.skill === undefined || def.skill === 'combat') continue
     const line = bySkill.get(def.skill)
     if (line === undefined) continue
 

@@ -53,6 +53,12 @@ const 얼음상점 = shop({ id: '얼음상점', speakerId: '노인' })
 const 여관상점 = shop({ id: '여관상점', speakerId: '여관안주인', skill: 'herb', unlockSkill: 0 })
 /** 화자가 실재하지 않는 상점. 빌드 검증이 막지만 술어는 총체적이어야 한다. */
 const 유령상점 = shop({ id: '유령상점', speakerId: '유령', unlockSkill: 0 })
+/**
+ * combat 계열 상점(아크 E §4) — 재는 눈금이 skills 가 아니라 combat.proficiency 다.
+ * `player.skills['combat']` 은 **undefined 라 어떤 요구치와의 < 비교도 false** 이고,
+ * 그러면 문이 항상 열린 것처럼 된다 — 이 픽스처가 그 함정을 문다.
+ */
+const 사냥상점 = shop({ id: '사냥상점', speakerId: '사냥꾼', skill: 'combat', unlockSkill: 1_000 })
 
 const data: GameData = {
   inns: {}, monsters: {}, monsterPlacements: {},
@@ -69,8 +75,9 @@ const data: GameData = {
   speakers: {
     노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: 채집장, x: 1, y: 1, sprite: 'npc_elder', facing: 'down' },
     여관안주인: { id: '여관안주인', name: '여관 안주인', kind: 'npc', mapId: 마을, x: 1, y: 0, sprite: 'npc_inn', facing: 'down' },
+    사냥꾼: { id: '사냥꾼', name: '사냥꾼', kind: 'npc', mapId: 마을, x: 28, y: 15, sprite: 'npc_hunter', facing: 'left' },
   },
-  shops: { 얼음상점, 여관상점, 유령상점 },
+  shops: { 얼음상점, 여관상점, 유령상점, 사냥상점 },
   masters: [],
   enhanceCosts: [],
   collection: {},
@@ -197,6 +204,24 @@ describe('shopAccess — 다섯 결과(§6-앞 3)', () => {
     // 모자라다"는 숫자를 올려야 하는 안내다. 순서가 뒤집히면 요구치를 채우기
     // 전까지 플레이어는 영원히 "조금 있다 다시 오라"는 말만 듣는다.
     expect(shopAccess(data, '얼음상점', 마을에(), at(7))).toBe('shop_locked')
+  })
+
+  // 왜: 새 문은 기존 문의 술어를 상속한다(아크 E 규범 3). combat 상점의 눈금은
+  //     skills 가 아니라 combat.proficiency 인데, 분기 없이 `skills[shop.skill]` 을
+  //     읽으면 undefined < 1000 이 false 라 **문이 항상 열린 것처럼** 된다 — 그래서
+  //     "미달이 잠긴다" 쪽이 이 함정을 무는 단정이다(분기 제거 돌연변이 → 이 줄 red).
+  it('combat 상점은 전투 숙련(combat.proficiency)을 잰다 — 999 는 잠기고 1,000 은 열린다', () => {
+    const 미달 = 마을에({ combat: { ...defaultCombatState(), proficiency: 999 } })
+    const 딱 = 마을에({ combat: { ...defaultCombatState(), proficiency: 1_000 } })
+    expect(shopAccess(data, '사냥상점', 미달, at(7))).toBe('shop_locked')
+    expect(shopAccess(data, '사냥상점', 딱, at(7))).toBe('ok')
+  })
+
+  it('combat 상점을 여는 것은 생활기술이 아니다 — 다섯 기술이 만렙이어도 전투 숙련 0 이면 잠긴다', () => {
+    const 채집만렙 = 마을에({
+      skills: { ice: 999_999, wood: 999_999, mineral: 999_999, herb: 999_999, crafting: 999_999 },
+    })
+    expect(shopAccess(data, '사냥상점', 채집만렙, at(7))).toBe('shop_locked')
   })
 
   it('난수도 이력도 부작용도 없다 — 같은 인자면 몇 번을 불러도 같은 답이고 아무것도 안 바뀐다', () => {

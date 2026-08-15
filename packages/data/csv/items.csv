@@ -67,5 +67,5 @@ starfall_chisel,별똥 정,tool,ice,4,chisel_starfall,0,,,,,
 starfall_axe,별똥 도끼,tool,wood,4,axe_starfall,0,,,,,
 starfall_pickaxe,별똥 곡괭이,tool,mineral,4,pickaxe_starfall,0,,,,,
 starfall_sickle,별똥 낫,tool,herb,4,sickle_starfall,0,,,,,
-wolf_fang,늑대 송곳니,material,,,wolf_fang,30,,,,,
+wolf_fang,늑대 송곳니,material,,,wolf_fang,30,combat,,,,
 copper_sword,구리 검,tool,combat,1,sword_copper,0,,,,,5

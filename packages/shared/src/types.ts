@@ -324,8 +324,14 @@ export interface ItemDef {
    *
    * 도구는 비운다(팔 수 없으니 상점 계열을 물을 일이 없다). 주괴는 사다리 밖이지만
    * `mineral` 을 적는다 — 제련은 광물의 일이고, 그래야 광물상점이 사 준다.
+   *
+   * `'combat'` 은 전투 드랍의 계열이다(아크 E §4 — EquipSlot 확장의 그 춤).
+   * SkillId 를 넓히지 않는 이유는 EquipSlot 과 같다: combat 은 기술이 아니라서
+   * SKILL_IDS 에 넣는 순간 세이브 게이트(skillsShape)가 구세이브를 거절한다.
+   * armor 는 여기 없다 — 방어구는 도구라 팔 수 없고, "armor 계열 상점" 같은
+   * 존재하지 않는 개념이 데이터에 적히면 안 된다(파서 toSkillOrCombat 이 막는다).
    */
-  skill?: SkillId
+  skill?: SkillId | 'combat'
   /**
    * 증표 효과. 가지고만 있으면(개수 무관) 그 계열 채집에 곱해진다(설계 §5).
    *
@@ -406,9 +412,14 @@ export interface ShopDef {
   name: string
   /** 이 상점을 여는 화자. 한 화자가 두 상점을 열 수 없다(빌드가 강제한다). */
   speakerId: string
-  /** 이 상점이 사고파는 계열. 매도 대상은 이 계열의 재료뿐이다 — 남의 계열은 그 마을에 가야 판다. */
-  skill: SkillId
-  /** 상점 자체가 열리는 숙련도(원작 그대로 5,000). 미달이면 대사만 나온다. */
+  /**
+   * 이 상점이 사고파는 계열. 매도 대상은 이 계열의 재료뿐이다 — 남의 계열은 그
+   * 마을에 가야 판다. `'combat'` 은 사냥 판로다(아크 E §4 — ItemDef.skill 과
+   * 같은 확장, 같은 이유). **combat 상점의 눈금은 skills 가 아니라
+   * combat.proficiency 다** — 그 분기는 shopAccess·stockProgress 가 진다.
+   */
+  skill: SkillId | 'combat'
+  /** 상점 자체가 열리는 숙련도(생활 계열은 원작 그대로 5,000 — combat 은 곡선 바닥이 달라 1,000, 아크 E §4). 미달이면 대사만 나온다. */
   unlockSkill: number
   /** 매수 진열. 매도는 진열이 필요 없다 — 그 계열 재료면 무엇이든 사 준다(설계 §4). */
   stock: ShopStockEntry[]

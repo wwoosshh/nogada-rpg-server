@@ -97,7 +97,20 @@ describe('parseItems', () => {
 
   it('알 수 없는 skill 값을 거부한다 — 오타는 어느 상점도 사 주지 않는 물건을 만든다', () => {
     expect(() => parseItems([itemRow({ skill: 'minning' })])).toThrow(
-      'items.csv[copper_ore]: skill "minning" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)',
+      'items.csv[copper_ore]: skill "minning" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting, combat)',
+    )
+  })
+
+  it('skill=combat 을 받아들인다 — 전투 드랍의 계열이고, 사냥상점이 이 값으로 사 준다(아크 E §4)', () => {
+    const items = parseItems([itemRow({ id: 'wolf_fang', name: '늑대 송곳니', icon: 'wolf_fang', price: '30', skill: 'combat' })])
+    expect(items.wolf_fang?.skill).toBe('combat')
+  })
+
+  it('skill=armor 는 거부한다 — 계열의 값 공간은 SkillId ∨ combat 이지 EquipSlot 이 아니다', () => {
+    // toEquipSlot 을 재사용했으면 통과했을 값이다 — "armor 계열 상점" 같은
+    // 존재하지 않는 개념이 데이터에 적히는 길이라 변환기를 따로 세웠다.
+    expect(() => parseItems([itemRow({ skill: 'armor' })])).toThrow(
+      'items.csv[copper_ore]: skill "armor" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting, combat)',
     )
   })
 

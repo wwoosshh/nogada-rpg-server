@@ -1,5 +1,5 @@
 import type { MasterDef, ShopDef, ShopStockEntry } from '@nogada/shared'
-import { addUnique, assertNotIntegerId, requireCell, toInt, toSkillId } from './parse.js'
+import { addUnique, assertNotIntegerId, requireCell, toInt, toSkillId, toSkillOrCombat } from './parse.js'
 
 type Row = Record<string, string>
 
@@ -61,7 +61,10 @@ export function parseShops(shopRows: Row[], stockRows: Row[]): Record<string, Sh
       name: requireCell(row, 'name', ctx),
       // 화자가 실재하는지는 화자 등록부를 함께 보는 validateGameData 의 몫이다.
       speakerId: requireCell(row, 'speakerId', ctx),
-      skill: toSkillId(requireCell(row, 'skill', ctx), ctx),
+      // 계열은 SkillId ∨ 'combat' 이다(아크 E §4 — 사냥 판로). 아이템의 skill
+      // 칸과 같은 변환기를 쓴다: 매도 판정이 두 칸의 동치라, 허용값이 한쪽만
+      // 넓어지면 팔리지 않는 계열이 조용히 생긴다.
+      skill: toSkillOrCombat(requireCell(row, 'skill', ctx), ctx),
       // min 0 을 명시한다 — toInt 의 기본 최솟값 1 을 그대로 쓰면 "처음부터 열려
       // 있다"를 적을 방법이 없어 작가가 1 이라는 거짓 문턱을 적게 된다.
       unlockSkill: toInt(requireCell(row, 'unlockSkill', ctx), ctx, 'unlockSkill', 0),

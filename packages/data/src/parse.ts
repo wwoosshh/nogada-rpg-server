@@ -137,6 +137,27 @@ export function toEquipSlot(value: string, context: string): EquipSlot {
 }
 
 /**
+ * `skill` 칸(계열)이 SkillId ∨ 'combat' 인지 검사한다 — 아이템의 계열과 상점의
+ * 계열이 같은 값 공간을 쓴다(아크 E §4: 매도 판정 `def.skill === shop.skill` 의
+ * 동치가 서려면 두 칸이 한 변환기를 지나야 한다).
+ *
+ * **toSkillId 도 toEquipSlot 도 이 모양이 아니다.** toSkillId 는 combat 을
+ * 거절하고(기술이 아니다 — SKILL_IDS 에 넣으면 세이브 게이트가 구세이브를
+ * 깨뜨린다), toEquipSlot 은 armor 까지 받는다 — 계열 칸이 armor 를 받으면
+ * "armor 계열 상점" 같은 존재하지 않는 개념이 데이터에 적힐 수 있게 된다
+ * (방어구는 도구라 팔 수 없고, 사 주는 상점이라는 물음 자체가 없다).
+ */
+export function toSkillOrCombat(value: string, context: string): SkillId | 'combat' {
+  if (value === 'combat') return value
+  if (!isSkillId(value)) {
+    throw new Error(
+      `${context}: skill "${value}" 는 알 수 없다 (허용값: ${[...SKILL_IDS, 'combat'].join(', ')})`,
+    )
+  }
+  return value
+}
+
+/**
  * `tokenEffect` 칸이 실제 효과 이름인지 검사한다.
  *
  * 오타를 통과시키면 그 증표는 수십만 골드짜리인데 아무 효과도 없는 물건이 된다 —
@@ -273,11 +294,12 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
       price: toInt(requireCell(row, 'price', ctx), ctx, 'price', 0),
     }
     // 계열은 선택 칸이다 — 도구는 팔 수 없으니 상점 계열을 물을 일이 없어 비운다.
-    // 적혀 있으면 실재하는 기술이어야 한다(오타는 그 아이템을 어느 상점도 사 주지
-    // 않는 물건으로 만든다). 그 계열이 채집 사다리와 어긋나는지는 표를 함께 보는
-    // validateGameData 의 몫이다.
+    // 적혀 있으면 실재하는 계열이어야 한다(오타는 그 아이템을 어느 상점도 사 주지
+    // 않는 물건으로 만든다) — 기술 다섯에 'combat'(전투 드랍, 아크 E §4)을 더한
+    // 값 공간이고, 그 변환기(toSkillOrCombat)를 상점의 skill 칸과 나눠 쓴다.
+    // 그 계열이 채집 사다리와 어긋나는지는 표를 함께 보는 validateGameData 의 몫이다.
     const skill = optionalCell(row, 'skill')
-    if (skill !== undefined) def.skill = toSkillId(skill, ctx)
+    if (skill !== undefined) def.skill = toSkillOrCombat(skill, ctx)
     // 증표는 새 kind 가 아니라 이 선택 칸으로만 드러난다(설계 §6-앞 11) —
     // kind='token' 을 만들면 가방 패널의 `kind !== 'material'` 가드가 수십만
     // 골드짜리 물건을 조용히 숨긴다. 값은 두 가지뿐이고, 오타는 "샀는데 아무
