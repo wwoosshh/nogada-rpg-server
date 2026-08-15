@@ -17,9 +17,12 @@ import { useGameStore } from '../../store/gameStore.js'
 import { worldNow } from '../../time/clock.js'
 import { arrivalFacing } from '../arrivalFacing.js'
 import { idleFrame, walkFrames } from '../charSheet.js'
+import { actionTarget, combatTargetAt } from '../combatTarget.js'
 import { DEPTH } from '../depth.js'
 import { DayNightOverlay } from '../DayNightOverlay.js'
 import { FloatingTextGroup } from '../FloatingText.js'
+import { MonsterSprite } from '../MonsterSprite.js'
+import { monsterSpriteFile, monsterSpriteKey } from '../monsterSprites.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { NodeMarker } from '../NodeMarker.js'
 import { nodeSpriteFile, nodeSpriteKey } from '../nodeSprites.js'
@@ -143,9 +146,21 @@ export class WorldScene extends Phaser.Scene {
    * 있는 사람이 하나도 없으면 null 이다 — 대부분의 맵이 그렇다.
    */
   private scheduler: NpcScheduler | null = null
+  /**
+   * 이 맵의 몬스터 그림. 화자(npcSprites)와 달리 배열이다 — 몬스터는 id 로
+   * 자세를 밀어 넣을 채널이 없어(§12-앞 16: 상태는 전부 시각의 함수) 찾을
+   * 일이 없고, 매 프레임 전부 다시 그리기만 한다.
+   */
+  private readonly monsterSprites: MonsterSprite[] = []
   private readonly floaters = new FloatingTextGroup()
   /** 요청이 날아가 있는 동안 또 보내지 않는다. 응답을 기다리는 사이에 쌓이면 순서가 뒤엉킨다. */
   private gatherPending = false
+  /**
+   * 전투 요청이 날아가 있는 동안 또 보내지 않는다 — gatherPending 과 같은
+   * 이유다. 홀드(결정 4 — 처음부터 열려 있다)는 매 프레임 이 문을 두드리므로,
+   * 이 잠금이 없으면 한 간격 안에 요청이 여럿 나가 뒤엉킨다.
+   */
+  private fightPending = false
   /**
    * 대화 요청이 날아가 있는 동안 또 보내지 않는다 — gatherPending 과 같은
    * 이유이고, 여기서는 하나 더 있다: 응답이 도착해야 대사창이 열리고 그때
@@ -300,6 +315,21 @@ export class WorldScene extends Phaser.Scene {
       // 그 노드만 남의 그림으로 서는 것보다 낫다.
       this.load.image(nodeSpriteKey(def.sprite), `nodes/${nodeSpriteFile(def.sprite)}`)
     }
+
+    // 몬스터 시트도 **이 맵에 배치된 것만** 올린다 — 화자 시트와 같은 이유다.
+    // 모르는 monsterId 면 여기서 던진다(monsterSprites.ts) — 사냥터가 안 뜨는
+    // 편이 그 늑대만 조용히 사라지는 것보다 낫다. C6 전에는 배치가 비어 있어
+    // 이 루프는 한 바퀴도 돌지 않는다.
+    const loadedMonsters = new Set<string>()
+    for (const placement of Object.values(useGameStore.getState().data.monsterPlacements)) {
+      if (placement.mapId !== mapId || loadedMonsters.has(placement.monsterId)) continue
+      loadedMonsters.add(placement.monsterId)
+      this.load.spritesheet(
+        monsterSpriteKey(placement.monsterId),
+        `sprites/${monsterSpriteFile(placement.monsterId)}`,
+        { frameWidth: TILE, frameHeight: TILE },
+      )
+    }
   }
 
   create(): void {
@@ -334,6 +364,10 @@ export class WorldScene extends Phaser.Scene {
     this.gatherPending = false
     this.talkPending = false
     this.movePending = false
+    this.fightPending = false
+    // 몬스터 그림도 씬과 함께 사라졌다 — 목록을 비우지 않으면 죽은 컨테이너를
+    // 매 프레임 건드린다(화자 목록을 비우는 그 이유).
+    this.monsterSprites.length = 0
 
     const location = this.requirePlayer().location
     this.mapId = location.mapId
@@ -472,6 +506,7 @@ export class WorldScene extends Phaser.Scene {
 
     this.spawnNodes()
     this.spawnSpeakers()
+    this.spawnMonsters()
     this.startScheduler()
 
     // 스토어가 여전히 게임 상태의 단일 소유자다. 씬은 결과를 따로 보관하지
@@ -623,6 +658,54 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
+   * 지금 A 가 겨냥할 몬스터 배치 — 부등호는 서버와 같은 shared 술어를 부르는
+   * combatTargetAt 하나다(전투 §7). 여기는 재료를 모아 넘길 뿐이다.
+   */
+  private combatTargetHere(): string | null {
+    const { player, data } = useGameStore.getState()
+    if (!player) return null
+    return combatTargetAt({
+      defs: data.monsters,
+      placements: data.monsterPlacements,
+      mapId: this.mapId,
+      slain: player.combat.slain,
+      tile: this.mover.tile,
+      now: worldNow(),
+    })
+  }
+
+  /**
+   * 스윙 요청을 보낸다 — sendGather 와 같은 문(간격 전에는 보내지 않는다)이고
+   * 같은 이유다: too_fast 는 스토어가 조용히 삼키므로 보내 봐야 헛왕복이다.
+   *
+   * 주장 칸은 **지금 서 있는 칸**(mover.tile)이다 — 서버는 참을 알 수 없고
+   * (§2-3) 속도 개연성만 무는데, 화면이 진짜 자리를 보내는 것이 그 검사와
+   * 어긋날 일이 없는 유일한 길이다.
+   */
+  private sendFight(instanceId: string): void {
+    if (this.fightPending) return
+    const { player } = useGameStore.getState()
+    if (!player || worldNow() < player.nextActionAt) return
+
+    this.fightPending = true
+    const claim = this.mover.tile
+    void useGameStore
+      .getState()
+      .fight(instanceId, claim.x, claim.y)
+      .finally(() => {
+        this.fightPending = false
+        // 죽음 귀환(§6): 응답의 위치가 다른 맵이면 전환과 같은 길로 씬을 다시
+        // 시작한다 — 여기서 안 하면 몸은 마을에 있는데 화면은 사냥터다.
+        // 맵 id 비교로 충분하다: location 은 전환·죽음에만 움직이는 값이라
+        // (걸음은 서버로 안 간다) 같은 맵 안에서 어긋날 일이 없다.
+        const after = useGameStore.getState().player
+        if (after && after.location.mapId !== this.mapId) {
+          this.scene.restart({ enteredFacing: this.mover.facing } satisfies WorldSceneData)
+        }
+      })
+  }
+
+  /**
    * 말을 건다. 대화 한 번이 요청 한 번이고 발화 전체가 한 번에 온다(설계 문서 4.5).
    *
    * sendGather 와 달리 `nextActionAt` 을 보지 않는다 — 서버의 대화 경로에는
@@ -759,12 +842,23 @@ export class WorldScene extends Phaser.Scene {
     this.player.setPosition(px.x * TILE + TILE / 2, px.y * TILE + TILE / 2)
     this.updateAnimation(this.mover.moving, this.mover.facing)
 
-    const target = this.interactableAt(frontTile(this.mover.tile, this.mover.facing))
-    if (target) {
+    // A 술어(설계 §7·§12-앞 21): 앞칸(노드·화자)이 우선이고, 앞칸이 비었을 때만
+    // 사거리(맨해튼 1)의 몬스터가 대상이 된다 — 우선순위는 actionTarget(순수
+    // 함수)이 못박아 채집 조작이 한 톨도 안 달라진다. 몬스터 검색은 앞칸이
+    // 비었을 때만 돈다(&& 단락) — C6 전에는 배치가 비어 언제나 null 이다.
+    const front = this.interactableAt(frontTile(this.mover.tile, this.mover.facing))
+    const target = actionTarget(front, front === null ? this.combatTargetHere() : null)
+    if (target?.kind === 'front') {
       if (this.hub.state.actionPressed) {
-        this.interact(target)
-      } else if (this.hub.state.action && this.repeatsOn(target)) {
-        this.interact(target)
+        this.interact(target.target)
+      } else if (this.hub.state.action && this.repeatsOn(target.target)) {
+        this.interact(target.target)
+      }
+    } else if (target?.kind === 'fight') {
+      // 전투 홀드는 처음부터다(결정 4) — repeatsOn(이정표 해금)을 묻지 않는다.
+      // 채집의 홀드 잠금이 하던 일(초반에 손을 붙잡아 두기)은 회피 축이 대신한다.
+      if (this.hub.state.actionPressed || this.hub.state.action) {
+        this.sendFight(target.instanceId)
       }
     }
 
@@ -775,6 +869,14 @@ export class WorldScene extends Phaser.Scene {
     // 스케줄러가 말해 준 칸까지 걸어가는 것은 그림 자신이 한다(NpcSprite.update).
     // 일과가 없는 화자는 목표가 늘 제자리라 아무 일도 일어나지 않는다.
     for (const sprite of this.npcSprites.values()) sprite.update(delta)
+
+    // 몬스터도 잠긴 동안 돈다 — 패턴은 세계 시각의 함수라(§2-1) 멈출 수 있는
+    // 것이 애초에 없다. delta 가 아니라 시각을 넘기는 것이 §12-앞 16 의 전부다:
+    // 프레임을 건너뛰어도 화면의 늑대는 수학 위치에 서 있다.
+    const combat = useGameStore.getState().player?.combat
+    if (combat) {
+      for (const sprite of this.monsterSprites) sprite.update(worldNow(), combat)
+    }
 
     this.updateIdleFacing(delta)
 
@@ -913,6 +1015,28 @@ export class WorldScene extends Phaser.Scene {
         label: def.name,
         sprite: def.sprite,
       })
+    }
+  }
+
+  /**
+   * 이 맵의 몬스터 그림을 세운다. 노드 배치와 같은 순회이고 같은 경고 자세다.
+   *
+   * **몬스터 칸은 `blocked` 에 넣지 않는다** — 자리가 시각의 함수라 매 프레임
+   * 움직이는데, 칸 점유를 따라 고치면 걷는 몬스터가 보이지 않는 벽을 끌고
+   * 다닌다. 겹쳐 서는 것은 판정에 무해하다: 사거리는 거리 0 도 포함이고
+   * (withinAttackRange 문서), 위험은 구역이라 겹친 칸도 장판이 그대로 말한다.
+   */
+  private spawnMonsters(): void {
+    const { data } = useGameStore.getState()
+
+    for (const placement of Object.values(data.monsterPlacements)) {
+      if (placement.mapId !== this.mapId) continue
+      const def = data.monsters[placement.monsterId]
+      if (!def) {
+        console.warn(`배치가 정의되지 않은 몬스터를 가리킨다: ${placement.instanceId} -> ${placement.monsterId}`)
+        continue
+      }
+      this.monsterSprites.push(new MonsterSprite({ scene: this, def, placement }))
     }
   }
 

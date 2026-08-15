@@ -32,6 +32,7 @@ function ladder(toolTier: number, multiplier: number): Row[] {
 /** 표가 가리키는 원재료 넷과, 그 표를 쓰는 1티어 도구 하나. */
 function dataWith(costs: GameData['enhanceCosts']): GameData {
   return {
+    monsters: {}, monsterPlacements: {},
     items: {
       hard_log: testItem('hard_log', { name: '단단한 통나무', price: 400, skill: 'wood' }),
       lavender: testItem('lavender', { name: '라벤더', price: 130, skill: 'herb' }),

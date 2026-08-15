@@ -92,6 +92,7 @@ const data: GameData = {
   shops: {}, masters: [], enhanceCosts: [], collection: {},
   places: {}, schedules: {}, routes: [],
   dialogue: [],
+  monsters: {}, monsterPlacements: {},
 }
 
 function player(overrides: Partial<PlayerState> = {}): PlayerState {

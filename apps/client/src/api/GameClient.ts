@@ -94,6 +94,29 @@ export interface MoveOutcomeDto {
   player: PlayerState
 }
 
+/**
+ * 스윙 한 번의 결과 — 서버 fightService 의 FightOutcome 과 같은 모양이다.
+ *
+ * `hit:false` 는 헛스윙이다(전투 §2-2 갱신본): 거절이 아니라 수락된 스윙이라
+ * 간격은 소모됐고 몬스터만 무피해다. 피격(tookHit)은 사거리와 무관하다 —
+ * 위험은 구역이고 사거리는 명중에만 관여한다.
+ */
+export interface FightOutcomeDto {
+  hit: boolean
+  /** 이 스윙 뒤 그 배치의 HP. 부재(리스폰 대기)면 null — 0(방금 처치)과 다른 말이다. */
+  monsterHp: number | null
+  slainNow: boolean
+  /** 처치 드랍. 처치가 아니거나 굴림이 빈손이면 null. */
+  gained: { itemId: string; count: 1 } | null
+  tookHit: boolean
+  /** 판정 직후의 내 HP(자연 회복 반영). */
+  playerHp: number
+  died: boolean
+  skillGained: number
+  achieved: MilestoneDef[]
+  player: PlayerState
+}
+
 export class ApiError extends Error {
   /**
    * @param serverNowMs 이 거절을 **서버가 판정한 순간**(응답 헤더 `x-server-now`).
@@ -310,6 +333,17 @@ export const GameClient = {
     request<MoveOutcomeDto>('/api/move', {
       method: 'POST',
       body: JSON.stringify({ x, y }),
+    }),
+
+  /**
+   * 스윙 — 배치 하나를 향해 A 를 휘두른다(전투 §2-2). (x, y) 는 주장 칸이다:
+   * 서버는 걸음마다 위치를 받지 않으므로 참을 알 수 없고, 명중·피격·처치는
+   * 전부 서버가 monsterStateAt 으로 정한다(FightRequestSchema 문서).
+   */
+  fight: (instanceId: string, x: number, y: number) =>
+    request<FightOutcomeDto>('/api/fight', {
+      method: 'POST',
+      body: JSON.stringify({ instanceId, x, y }),
     }),
 
   /**

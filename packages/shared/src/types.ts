@@ -1001,4 +1001,22 @@ export interface GameData {
    * 정확히 Task 1 리뷰가 지적하고 없앤 종류의 함정이다.
    */
   dialogue: DialogueRule[]
+  /**
+   * 몬스터 종 등록부. 키는 monsterId 다.
+   *
+   * **확률표와 달리 이것은 GameData 에 싣는다** — 몬스터는 시각의 순수 함수라
+   * (전투 §2-1) 클라이언트가 `monsterStateAt` 으로 직접 그려야 하고, 패턴을
+   * 감추면 그릴 늑대가 없다. 숨은 문턱은 드랍 확률뿐이고 그것만 서버 전용
+   * (MonsterDropTables — fightService 의 MonsterWorld)이다. C6 의 CSV 파서가
+   * 채우기 전까지 빌드는 빈 레코드를 굽는다 — 획득 그물·패턴 검사가 데이터보다
+   * 먼저 서 있는 것과 같은 자세다.
+   */
+  monsters: Record<string, MonsterDef>
+  /**
+   * 몬스터 배치 등록부. 키는 instanceId 다 — placements(노드)와 같은 모양.
+   *
+   * maxHp·sweepDamage 까지 클라이언트에 싣는 이유: HP 바와 피격 숫자는 화면이
+   * 숫자로 말해야 하는 값이지 숨은 문턱이 아니다(강화 비용표를 싣는 그 저울).
+   */
+  monsterPlacements: MonsterPlacements
 }

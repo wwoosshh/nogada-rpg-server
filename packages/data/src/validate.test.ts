@@ -85,6 +85,7 @@ function baseTables(): GatherTables {
  */
 function baseData(): GameData {
   return {
+    monsters: {}, monsterPlacements: {},
     items: {
       // 값은 출하 items.csv 의 그것이다 — 돈복사 금지 검사(산출 매도 ≤ 입력 매도합)가
       // 이 픽스처의 구리 레시피를 그대로 보므로, 임의의 숫자를 넣으면 정상 픽스처가
@@ -251,6 +252,7 @@ function loadRealGameData(): GameData {
   const { maps, placements, places } = loadRealMaps()
 
   return {
+    monsters: {}, monsterPlacements: {},
     items: parseItems(readRealCsv('items.csv')),
     nodes,
     recipes,

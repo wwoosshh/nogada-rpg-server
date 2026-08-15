@@ -934,3 +934,139 @@ describe('노드 조건 — 닫힌 노드 앞에서 무엇이 필요한지 말�
     expect(useGameStore.getState().notice?.text).toBe('지금은 캘 수 없다')
   })
 })
+
+describe('전투 — fight 액션은 gather 와 같은 모양이다(전투 §7·계획 C5)', () => {
+  /** 서버 fight 응답(FightOutcomeDto)의 최소 실물 — 갈래마다 한 칸씩만 다르게 찍는다. */
+  function fightOutcome(over: Record<string, unknown> = {}): unknown {
+    return {
+      hit: true,
+      monsterHp: 25,
+      slainNow: false,
+      gained: null,
+      tookHit: false,
+      playerHp: 100,
+      died: false,
+      skillGained: 1,
+      achieved: [],
+      player: emptyPlayer(),
+      ...over,
+    }
+  }
+
+  /** 이 배치 하나가 손에 있어야 화면이 피격 숫자와 처치 이름을 지을 수 있다. */
+  function withWolfData(): void {
+    const data = loadGameData()
+    useGameStore.setState({
+      data: {
+        ...data,
+        monsters: {
+          wolf: { id: 'wolf', name: '들늑대', periodMs: 400, patrol: [{ x: 3, y: 3 }], attacks: [] },
+        },
+        monsterPlacements: {
+          'wolf-1': { instanceId: 'wolf-1', monsterId: 'wolf', mapId: '사냥터', phaseOffsetMs: 0, maxHp: 30, sweepDamage: 5 },
+        },
+      },
+    })
+  }
+
+  // 왜: 드랍은 채집의 gained 와 같은 채널·같은 문법이다 — 화면이 "무엇이 +1"
+  //     인지 이름으로 말해야 처치가 벌이로 읽힌다.
+  it('드랍은 머리 위에 이름 +1 로 뜬다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        jsonResponse(fightOutcome({ slainNow: true, monsterHp: 0, gained: { itemId: 'copper_ore', count: 1 } })),
+      ),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction?.text).toBe('구리 원석 +1')
+    expect(useGameStore.getState().lastAction?.tone).toBe('good')
+  })
+
+  // 왜: 처치는 드랍이 빈손이어도 사건이다 — 아무 표시가 없으면 늑대가 왜
+  //     사라졌는지 화면이 말하지 않은 것이 된다. 이름은 데이터(monsters)에서 온다.
+  it('처치는 몬스터 이름으로 말한다', async () => {
+    withWolfData()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ slainNow: true, monsterHp: 0 }))),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction?.text).toBe('들늑대 처치')
+    expect(useGameStore.getState().lastAction?.tone).toBe('good')
+  })
+
+  // 왜: 피격 숫자는 배치의 sweepDamage 다(GameData 에 싣는 이유 — 숨은 문턱이
+  //     아니라 화면이 숫자로 말해야 하는 값). 응답에는 깎인 폭이 안 실리므로
+  //     (playerHp 는 회복이 섞인 절대값) 화면 몫의 데이터가 그 숫자를 진다.
+  it('피격은 -피해량 으로 뜬다', async () => {
+    withWolfData()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ tookHit: true, playerHp: 95 }))),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction?.text).toBe('-5')
+    expect(useGameStore.getState().lastAction?.tone).toBe('bad')
+  })
+
+  // 왜: 죽음은 결계와 같은 자리(notice)에서 말한다 — 몸이 마을로 옮겨졌는데
+  //     화면이 침묵하면 고장과 구별되지 않는다. 문법도 결계의 것이다:
+  //     일어난 일 — 그 결과.
+  it('죽음은 대사창 자리에 결계 문법으로 남는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ tookHit: true, playerHp: 0, died: true }))),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().notice?.text).toBe('쓰러졌다 — 마을에서 눈을 뜬다')
+  })
+
+  // 왜: 간격 전의 연타는 실수가 아니라 정상 조작이다 — gather 가 too_fast 를
+  //     조용히 넘기는 그 이유 그대로, 홀드 중의 화면이 경고로 덮이면 안 된다.
+  it('too_fast 는 조용히 넘어간다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse({ code: 'too_fast' }, 400)),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction).toBeNull()
+    expect(useGameStore.getState().notice).toBeNull()
+  })
+
+  // 왜: 개연성 거절은 시계가 크게 어긋났을 때만 오는 드문 거절이지만, 조용하면
+  //     "가끔 A 가 안 먹힌다"로 읽힌다 — 말은 있어야 한다.
+  it('implausible_move 는 머리 위에 문구로 남는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse({ code: 'implausible_move' }, 400)),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction?.text).toBe('그렇게 빨리 움직일 수 없다')
+    expect(useGameStore.getState().lastAction?.tone).toBe('bad')
+  })
+
+  // 왜: 헛스윙(hit:false)은 세계가 제대로 돌아간 결과다 — 간격은 소모됐지만
+  //     화면이 매번 "빗나감"을 띄우면 홀드 화면이 글자로 덮인다. 몬스터 HP 바가
+  //     안 깎인 것으로 충분하다.
+  it('헛스윙은 아무 글자도 띄우지 않는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ hit: false }))),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction).toBeNull()
+  })
+
+  // 왜: 응답의 player 에 nextActionAt·combat(hunt·hp)이 실려 온다 — 갈아 끼우지
+  //     않으면 홀드의 다음 스윙 게이트와 HP 바가 옛 상태를 읽는다.
+  it('응답의 player 를 그대로 갈아 끼운다', async () => {
+    const next = { ...emptyPlayer(), nextActionAt: 12_345 }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ player: next }))),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().player?.nextActionAt).toBe(12_345)
+  })
+})

@@ -152,6 +152,7 @@ const data: GameData = {
     walkLeg(여관안, 여관앞, 2),
   ],
   dialogue: [],
+  monsters: {}, monsterPlacements: {},
 }
 
 function skills(over: Partial<Record<SkillId, number>> = {}): Record<SkillId, number> {

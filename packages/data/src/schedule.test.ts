@@ -23,6 +23,7 @@ function dataOf(
   speakers: Record<string, SpeakerDef>,
 ): GameData {
   return {
+    monsters: {}, monsterPlacements: {},
     items: {}, nodes: {}, recipes: {}, maps: {}, transitions: [], placements: {},
     shops: {}, masters: [], enhanceCosts: [], collection: {},
     milestones: [], dialogue: [], routes: [],

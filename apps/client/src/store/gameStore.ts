@@ -19,6 +19,7 @@ import {
   NETWORK_ERROR,
   setUnauthorizedObserver,
   type CraftOutcomeDto,
+  type FightOutcomeDto,
   type GatherOutcomeDto,
   type MoveOutcomeDto,
   type TalkOutcomeDto,
@@ -140,6 +141,16 @@ export interface Notice {
  * 걷는 사람은 앞칸 판정에 아예 오르지 않는다(npcScheduler 의 isTalkable).
  */
 const NOT_HERE_NOTICE = '지금 여기 없는 것 같다.'
+
+/**
+ * 죽었다 — 몸은 이미 마을 스폰에 있다(서버 fightService §6: 무손실 귀환).
+ *
+ * **결계와 같은 문법이고 같은 자리(notice)다**: 일어난 일 — 그 결과. 몸이
+ * 옮겨졌는데 화면이 침묵하면 고장과 구별되지 않고, 머리 위 글자는 걸음과 함께
+ * 흘러가 "왜 마을인가"를 읽을 시간이 없다. 결계(describeBarrier)와 달리 숫자를
+ * 지을 것이 없어 상수다 — HP 0 은 상단 바가 이미 말한다.
+ */
+const DEATH_NOTICE = '쓰러졌다 — 마을에서 눈을 뜬다'
 
 /**
  * 상단 바 톱니(React)가 상세 메뉴(Phaser 씬)를 열어 달라는 요청.
@@ -297,6 +308,7 @@ interface GameStore {
   cancelDeleteCharacter: () => void
   deleteCharacter: (confirmName: string) => Promise<void>
   gather: (instanceId: string) => Promise<void>
+  fight: (instanceId: string, x: number, y: number) => Promise<void>
   craft: (recipeId: string) => Promise<void>
   talk: (speakerId: string) => Promise<void>
   move: (x: number, y: number) => Promise<void>
@@ -560,6 +572,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (err instanceof ApiError && err.code === 'node_closed') {
         const text = describeClosedNode(get(), instanceId, err.serverNowMs ?? worldNow())
         set({ notice: { seq: ++noticeSeq, text } })
+        return
+      }
+      pushAction(set, describeError(err), 'bad')
+      console.error(err)
+    }
+  },
+
+  /**
+   * 스윙 하나. gather 와 같은 모양이다(계획 C5) — 요청 한 번, 응답의 player 를
+   * 그대로 갈아 끼우고, 채널별로 결과를 나른다.
+   *
+   * 갈래마다 나르는 자리가 다르다:
+   * - 드랍: 머리 위(lastAction) — 채집의 gained 와 같은 문법("이름 +1").
+   * - 처치: 머리 위, 몬스터 이름으로 — 드랍이 빈손이어도 늑대가 사라진 이유는
+   *   화면이 말해야 한다. 누적(groupKey)은 없다: 처치는 사건이다.
+   * - 피격: 머리 위 "-피해량". 숫자는 배치의 sweepDamage 다 — 응답의 playerHp
+   *   는 회복이 섞인 절대값이라 깎인 폭을 말하지 못하고, 그 폭은 GameData 의
+   *   배치가 안다(숨은 문턱이 아니라 화면이 숫자로 말해야 하는 값).
+   * - 죽음: 대사창 자리(notice), 결계 문법 — DEATH_NOTICE 문서 참고.
+   * - 헛스윙(hit:false): 침묵. 간격은 소모됐지만 홀드 화면이 "빗나감"으로
+   *   덮이면 안 된다 — 안 깎인 몬스터 HP 바가 그 사실을 이미 말한다.
+   */
+  fight: async (instanceId, x, y) => {
+    try {
+      const outcome: FightOutcomeDto = await GameClient.fight(instanceId, x, y)
+      applyPlayer(set, outcome.player)
+      pushMilestones(set, outcome.achieved)
+
+      const { data } = useGameStore.getState()
+      if (outcome.slainNow) {
+        const placement = Object.hasOwn(data.monsterPlacements, instanceId)
+          ? data.monsterPlacements[instanceId]
+          : undefined
+        const name = placement ? data.monsters[placement.monsterId]?.name : undefined
+        pushAction(set, name ? `${name} 처치` : '처치', 'good')
+      }
+      if (outcome.gained) {
+        const name = labelOf(data, outcome.gained.itemId)
+        pushAction(set, `${name} +${outcome.gained.count}`, 'good', outcome.gained.itemId, outcome.gained.count)
+      }
+      if (outcome.tookHit) {
+        const damage = data.monsterPlacements[instanceId]?.sweepDamage
+        // 홀드 중 연속 피격은 같은 숫자끼리만 누적한다 — 채집 실패의 groupKey 와
+        // 같은 이유다: 값이 다른 피해를 한 글자에 묶으면 "-5 ×3" 이 거짓말이 된다.
+        if (damage !== undefined) pushAction(set, `-${damage}`, 'bad', `sweep-${damage}`, 1)
+        else pushAction(set, '피격', 'bad', 'sweep', 1)
+      }
+      if (outcome.died) set({ notice: { seq: ++noticeSeq, text: DEATH_NOTICE } })
+    } catch (err) {
+      // 간격 전의 연타·홀드는 정상 조작이다 — gather 가 too_fast 를 조용히
+      // 넘기는 그 이유 그대로.
+      if (err instanceof ApiError && err.code === 'too_fast') return
+      if (isNetworkFailure(err)) {
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
         return
       }
       pushAction(set, describeError(err), 'bad')
@@ -1243,6 +1309,14 @@ function describeError(err: unknown): string {
     // 일어나므로 캔버스 플로터로 보내면 패널 뒤에서 뜨고 사라져 아무도 못 본다.
     // `not_here` 는 여기 없다 — 그건 문구가 아니라 패널을 닫는 사건이라
     // trade() 가 대화와 같은 안내로 따로 다룬다.
+    // 아래 둘은 전투(fight) 전용 코드다(서버 fightService 의 FightErrorCode).
+    // unknown_monster 는 데이터가 갈라졌을 때만, implausible_move 는 시계가
+    // 크게 어긋났을 때만 온다 — 드물지만 조용하면 "가끔 A 가 안 먹힌다"로
+    // 읽히므로 말은 있어야 한다. wrong_map 은 거래와 같은 글자를 쓴다.
+    case 'unknown_monster':
+      return '없는 몬스터'
+    case 'implausible_move':
+      return '그렇게 빨리 움직일 수 없다'
     case 'unknown_shop':
       return '없는 상점'
     case 'shop_locked':

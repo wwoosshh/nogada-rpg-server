@@ -65,6 +65,7 @@ const data: GameData = {
   shops: {}, masters: [], enhanceCosts: [], collection: {},
   places: {}, schedules: {}, routes: [],
   dialogue: [],
+  monsters: {}, monsterPlacements: {},
 }
 
 /** 번갈아 악용 검사용 최소 채집표 — 항상 성공(copper_ore)하는 무한 브라켓 하나. */

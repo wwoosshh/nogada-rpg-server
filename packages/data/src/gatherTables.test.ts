@@ -96,6 +96,7 @@ function node(id: string, skill: NodeDef['skill'], tableId: string): NodeDef {
 /** validateGatherTables 가 보는 것은 items·nodes 뿐이다 — 나머지는 빈 채로 채운다. */
 function gameDataWith(items: ItemDef[], nodes: NodeDef[]): GameData {
   return {
+    monsters: {}, monsterPlacements: {},
     items: Object.fromEntries(items.map((i) => [i.id, i])),
     nodes: Object.fromEntries(nodes.map((n) => [n.id, n])),
     recipes: {}, maps: {}, transitions: [], placements: {}, milestones: [],

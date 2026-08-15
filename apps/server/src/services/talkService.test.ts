@@ -102,6 +102,7 @@ function gameData(dialogue: DialogueRule[]): GameData {
     shops: {}, masters: [], enhanceCosts: [], collection: {},
     places: {}, schedules: {}, routes: [],
     dialogue,
+    monsters: {}, monsterPlacements: {},
   }
 }
 

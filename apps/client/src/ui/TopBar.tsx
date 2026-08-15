@@ -1,4 +1,4 @@
-import { gameTimeAt, SEASON_LABELS, WEATHER_LABELS, weatherView } from '@nogada/shared'
+import { COMBAT_MAX_HP, currentHp, gameTimeAt, SEASON_LABELS, WEATHER_LABELS, weatherView } from '@nogada/shared'
 import { useEffect, useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
@@ -50,6 +50,15 @@ export function TopBar(): JSX.Element {
   // 이 줄만 사라진 순간이 생긴다(shared 의 weatherView 문서).
   const sky = weatherView(weather, now)
 
+  // HP 도 저장된 두 숫자만 고른다 — combat 객체째 고르면 매 행동마다 새 객체라
+  // (structuredClone) 스토어의 다른 필드가 바뀔 때도 상단 바가 다시 그려진다.
+  // 지금 값의 계산은 서버 판정과 **같은 shared 술어**(currentHp)가 한다: 자연
+  // 회복은 저장되지 않고 시각에서 게으르게 나오므로(전투 §6), now 를 이미 게임
+  // 1분마다 갱신하는 이 컴포넌트가 회복이 차오르는 것도 공짜로 그린다.
+  const storedHp = useGameStore((s) => (s.player ? s.player.combat.hp : null))
+  const lastHitAt = useGameStore((s) => (s.player ? s.player.combat.lastHitAt : null))
+  const hp = storedHp !== null && lastHitAt !== null ? currentHp({ hp: storedHp, lastHitAt }, now) : null
+
   return (
     <>
       {/*
@@ -79,6 +88,15 @@ export function TopBar(): JSX.Element {
         {sky !== null && (
           <span className="topbar__weather">
             {WEATHER_LABELS[sky.kind]} {sky.remainingMinutes}분
+          </span>
+        )}
+        {/*
+          플레이어 HP(전투 설계 §7). 만혈에도 지우지 않는다 — 하늘(topbar__weather)
+          과 반대 결정인 이유는 ui.css 의 .topbar__hp 문서에 있다.
+        */}
+        {hp !== null && (
+          <span className="topbar__hp" aria-label="체력">
+            HP {hp}/{COMBAT_MAX_HP}
           </span>
         )}
         {gold !== null && (

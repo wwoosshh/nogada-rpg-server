@@ -160,6 +160,11 @@ const data: GameData = {
   // 길은 아래에서 굽는다 — 참조가 성립하는지부터 보고 나서다.
   routes: [],
   dialogue,
+  // 몬스터 종·배치는 C6 의 CSV 가 채운다 — validateMonsterPatterns 의 빈 목록과
+  // 같은 자세로, 화면의 렌더 경로(C5)가 데이터보다 먼저 모양을 안다. 종·배치는
+  // 클라이언트가 그려야 해서 GameData 에 싣고(전투 §2-1), 드랍표만 서버 전용이다.
+  monsters: {},
+  monsterPlacements: {},
 }
 
 // 화자 배치·시작 칸·전환·지점 검사는 맵을 봐야 해서 GameData 만으로는 할 수

@@ -6,6 +6,7 @@ import { testItem, testTool } from './testing/items.js'
 import type { GameData, ItemDef, PlayerState } from './types.js'
 
 const data: GameData = {
+  monsters: {}, monsterPlacements: {},
   items: {
     copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
     iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
