@@ -115,9 +115,20 @@ if ($empty.Count -gt 0) {
 # 약속하는 것("번들에 0건")보다 재는 자리가 좁았다 — CSS·index.html·assets 밖으로
 # 나오는 산출물이 통째로 빠져, vite 설정이 바뀌어 청크가 다른 폴더로 나가는 날
 # 관문이 조용히 눈을 감는다. apps/client/src/api/apiBase.test.ts 도 같은 범위다.
-$textExt = @('.js', '.mjs', '.css', '.html', '.json')
+#
+# **거르는 것이 허용 목록이 아니라 금지 목록이다.** 전에는 `.js .mjs .css .html
+# .json` 만 훑었는데, 그러면 주소가 `.txt`·`.csv`·확장자 없는 파일로 나가는 날
+# 이 관문과 자 둘이 **동시에** 눈을 감는다. 확장자가 없는 파일도 훑는다.
+# 이 목록이 셋에서 같은지는 hiddenThresholds.test.ts 의 '세 자가 같은 범위를
+# 훑는다' 가 이 파일을 읽어서 잰다 — 여기서 한 줄을 지우면 그 자가 빨개진다.
+$binExt = @(
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.ogg', '.wav', '.m4a', '.mp4', '.webm',
+  '.zip', '.gz', '.pdf'
+)
 $scanned = @(Get-ChildItem -LiteralPath $dist -Recurse -File |
-  Where-Object { $textExt -contains $_.Extension.ToLower() })
+  Where-Object { $binExt -notcontains $_.Extension.ToLower() })
 # 한 건도 안 잡히면 이 관문은 아무것도 안 재고 통과한다 — 빈 dist 를 미러하는
 # 것이 바로 아래 명령이라 그 통과가 가장 비싸다.
 if ($scanned.Count -eq 0) {

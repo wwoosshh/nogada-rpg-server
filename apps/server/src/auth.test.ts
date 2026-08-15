@@ -84,18 +84,35 @@ describe('POST /api/auth/register', () => {
   //     순차 60회를 시도해도 429 가 하나도 안 나왔다 — 아이디만 바꾸면 한 IP 가
   //     계정을 무한히 열 수 있었다는 뜻이다. 공개된 주소에서 그것은 몇 분 만에
   //     찾아온다.
+  //     그리고 **경계를 정확히 못 박는다.** 오래 이 검사가 "앞의 다섯은 201 이고
+  //     어딘가에 429 가 있다"까지만 재서, 여섯 번째가 열리는 줄을 아무도 안 쟀다.
+  //     그 빈자리에 산문 둘이 "5개까지, 6번째부터"라고 적혀 있었고(런북 2장과
+  //     rateLimit.ts) 실측은 **6개까지, 7번째부터**였다 — 자유 횟수보다 하나 많은
+  //     이유는 부르는 쪽이 `retryAfterMs` 를 먼저 보고 그 뒤에 `fail` 하기
+  //     때문이다(routes/auth.ts). 그 산문이 "공개해도 되는가"의 근거라 한 칸이
+  //     값비싸고, 그래서 여기서 숫자를 정확히 세운다.
   it('가입은 성공해도 세어진다 — 한 IP 가 계정을 무한히 열지 못한다', async () => {
     const app = await buildTestApp()
-    const attempts = SIGNUP_BACKOFF.freeAttempts + 2
+    const attempts = SIGNUP_BACKOFF.freeAttempts + 4
 
     const codes: number[] = []
-    for (let i = 0; i < attempts; i += 1) codes.push((await signup(app, i, '10.9.9.9')).statusCode)
+    const responses = []
+    for (let i = 0; i < attempts; i += 1) {
+      const res = await signup(app, i, '10.9.9.9')
+      codes.push(res.statusCode)
+      responses.push(res)
+    }
 
-    // 자유 횟수만큼은 열린다 — 사람이 가입 화면에서 두어 번 틀리는 것까지 막으면 안 된다.
-    expect(codes.slice(0, SIGNUP_BACKOFF.freeAttempts)).toEqual(
-      Array(SIGNUP_BACKOFF.freeAttempts).fill(201),
+    // 자유 횟수 **+ 1** 개가 열린다. 사람이 가입 화면에서 두어 번 틀리는 것까지
+    // 막으면 안 되고, 그 하나가 더 열리는 것은 문을 지나고 나서 세기 때문이다.
+    const 열린수 = SIGNUP_BACKOFF.freeAttempts + 1
+    expect(codes.slice(0, 열린수)).toEqual(Array(열린수).fill(201))
+    // 그리고 그 다음부터는 전부 막힌다 — "어딘가에 429 가 있다"가 아니다.
+    expect(codes.slice(열린수)).toEqual(Array(attempts - 열린수).fill(429))
+    // 런북이 "5초 대기가 배증한다"고 적는 그 첫 5초.
+    expect(responses[열린수]!.headers['retry-after']).toBe(
+      String(SIGNUP_BACKOFF.baseDelayMs / 1000),
     )
-    expect(codes).toContain(429)
 
     await app.close()
   })

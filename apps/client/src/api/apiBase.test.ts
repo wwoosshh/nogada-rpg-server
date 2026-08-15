@@ -75,15 +75,30 @@ describe('.env.production', () => {
  */
 const distDir = join(clientRoot, 'dist')
 
-/** 사람이 읽을 수 있는 것만 훑는다. 나머지(png 등)에는 주소가 실릴 자리가 없다. */
-const 훑을확장자 = ['.js', '.mjs', '.css', '.html', '.json']
+/**
+ * **훑지 않을 것**의 목록 — 그림·글꼴·소리·압축. 나머지는 확장자가 없어도 훑는다.
+ *
+ * 오래 반대로(`.js .mjs .css .html .json` 만 훑는 허용 목록으로) 적혀 있었다.
+ * 그러면 주소가 `.txt`·`.csv`·확장자 없는 파일로 나가는 날 이 자와
+ * `hiddenThresholds.test.ts` 와 `scripts/ship-client.ps1` **셋이 동시에 눈을
+ * 감는다.** 셋이 같은 말을 하는지는 hiddenThresholds.test.ts 의 '세 자가 같은
+ * 범위를 훑는다' 가 이 파일을 읽어서 잰다(PowerShell 은 TS 를 import 할 수
+ * 없어서 목록 자체는 셋에 나뉘어 있다).
+ */
+const 안훑을확장자 = [
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.ogg', '.wav', '.m4a', '.mp4', '.webm',
+  '.zip', '.gz', '.pdf',
+]
 
 /** dist 아래 텍스트 산출물 전부. 경로는 dist 기준 상대경로로 돌려준다. */
 function 텍스트산출물(dir: string, prefix = ''): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const 이름 = `${prefix}${entry.name}`
     if (entry.isDirectory()) return 텍스트산출물(join(dir, entry.name), `${이름}/`)
-    return 훑을확장자.some((ext) => entry.name.toLowerCase().endsWith(ext)) ? [이름] : []
+    const 소문자 = entry.name.toLowerCase()
+    return 안훑을확장자.some((ext) => 소문자.endsWith(ext)) ? [] : [이름]
   })
 }
 

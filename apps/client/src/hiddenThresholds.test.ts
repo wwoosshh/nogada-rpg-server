@@ -332,8 +332,82 @@ const 결계서명 = await Promise.all(
   결계.값.map((구역) => 서명만들기(`${구역.mapId} 결계`, 구역.cells)),
 )
 
-/** 사람이 읽을 수 있는 것만 훑는다. 나머지(png 등)에는 이 값들이 실릴 자리가 없다. */
-const 훑을확장자 = ['.js', '.mjs', '.css', '.html', '.json']
+/**
+ * **훑지 않을 것**의 목록이다 — 그림·글꼴·소리·압축. 나머지는 **확장자가 없어도**
+ * 전부 훑는다.
+ *
+ * 오래 반대로(`.js .mjs .css .html .json` 만 훑는 허용 목록으로) 적혀 있었다.
+ * 그 꼴에서는 `public/` 에 표를 `표.txt`·`표.csv`·확장자 없는 `TABLE` 로 두는
+ * 것만으로 이 자와 apiBase.test.ts 와 ship-client.ps1 **셋이 동시에 눈을 감는다.**
+ * 지금 `public/` 에 텍스트 파일이 0개라 실해는 없었지만, 눈감는 조건이 "아직
+ * 아무도 그런 이름을 안 썼다"인 관문은 관문이 아니다.
+ *
+ * 왜 통째로 훑지 않는가: `public/` 에 png 110개가 있고 서명 수십 개 × 여러 꼴을
+ * 그 위에서 다 찾으면 초 단위가 분 단위가 된다. 그림·글꼴에 이 값들이 **읽을 수
+ * 있는 꼴로** 실릴 자리가 없다는 것이 그것을 건너뛰는 근거다.
+ */
+const 안훑을확장자 = [
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.ogg', '.wav', '.m4a', '.mp4', '.webm',
+  '.zip', '.gz', '.pdf',
+]
+
+/** 이 파일을 열어 볼 것인가. **모르는 확장자와 확장자 없음은 연다.** */
+function 훑을파일인가(name: string): boolean {
+  const 소문자 = name.toLowerCase()
+  return !안훑을확장자.some((ext) => 소문자.endsWith(ext))
+}
+
+/**
+ * **같은 범위를 훑는 자가 셋이다** — 이 파일, `api/apiBase.test.ts`,
+ * `scripts/ship-client.ps1` 의 관문 2. PowerShell 이 TS 를 import 할 수 없어서
+ * 목록 자체는 나뉘어 있고, 나뉜 목록은 반드시 갈라진다.
+ *
+ * 그래서 **다른 둘을 글자로 읽어서** 같은 말을 하는지 잰다(clientDist.test.ts 가
+ * 런북의 인용을 잡는 것과 같은 자세). 한 자리에만 `.txt` 를 더하는 날 여기가
+ * 빨개진다.
+ */
+function 목록을읽는다(file: string, 시작표시: string): string[] {
+  const 본문 = readFileSync(file, 'utf8')
+  const 시작 = 본문.indexOf(시작표시)
+  if (시작 < 0) throw new Error(`${file} 에서 ${시작표시} 를 못 찾았다`)
+  const 끝 = 본문.indexOf(')', 시작) >= 0 && 시작표시.includes('@(')
+    ? 본문.indexOf(')', 시작)
+    : 본문.indexOf(']', 시작)
+  if (끝 < 0) throw new Error(`${file} 의 ${시작표시} 목록이 안 닫혔다`)
+  return [...본문.slice(시작, 끝).matchAll(/'(\.[a-z0-9]+)'/g)].map((m) => m[1]!)
+}
+
+describe('숨은 문턱 — 훑는 범위', () => {
+  it('모르는 확장자와 확장자 없는 파일도 훑는다 — 표를 표.txt 로 두는 길을 막는다', () => {
+    // 허용 목록이던 시절 셋 다 눈감던 이름들이다.
+    for (const 이름 of ['표.txt', '값.csv', 'TABLE', 'notes.md', '지도.xml', 'a.JSON']) {
+      expect(훑을파일인가(이름), `${이름} 을 안 훑는다`).toBe(true)
+    }
+    // 그림·글꼴은 그대로 건너뛴다 — png 110개를 서명 수십 개로 훑으면 관문이 분이 된다.
+    for (const 이름 of ['아이콘.png', '글꼴.WOFF2', '소리.mp3']) {
+      expect(훑을파일인가(이름), `${이름} 을 훑는다`).toBe(false)
+    }
+  })
+
+  it('세 자가 같은 범위를 훑는다', () => {
+    const 다른자들 = {
+      'api/apiBase.test.ts': 목록을읽는다(
+        join(clientRoot, 'src/api/apiBase.test.ts'),
+        'const 안훑을확장자 = [',
+      ),
+      'scripts/ship-client.ps1': 목록을읽는다(
+        join(repoRoot, 'scripts/ship-client.ps1'),
+        '$binExt = @(',
+      ),
+    }
+
+    for (const [이름, 목록] of Object.entries(다른자들)) {
+      expect([...목록].sort(), `${이름} 이 다른 범위를 훑는다`).toEqual([...안훑을확장자].sort())
+    }
+  })
+})
 
 /**
  * 서명 하나도 본문에 없어야 한다. 공백을 지우고 찾는 이유는 소스에서든 번들에서든
@@ -390,7 +464,7 @@ function 소스본문들(): readonly (readonly [string, string])[] {
     join(clientRoot, 'vite.config.ts'),
     ...(existsSync(자산폴더)
       ? 아래파일들(자산폴더)
-          .filter((name) => 훑을확장자.some((ext) => name.toLowerCase().endsWith(ext)))
+          .filter(훑을파일인가)
           .map((name) => join(자산폴더, name))
       : []),
   ]
@@ -462,7 +536,7 @@ describe('숨은 문턱 — 빌드된 번들 (dist 가 있을 때만)', () => {
     } {
       const 파일들 = 아래파일들(distDir)
       const 본문들 = 파일들
-        .filter((name) => 훑을확장자.some((ext) => name.toLowerCase().endsWith(ext)))
+        .filter(훑을파일인가)
         // 공백을 지우고 찾는다: 최소화된 번들에는 공백이 없지만 `JSON.parse("…")`
         // 로 구운 것·맵 JSON 은 들여쓰기가 남아 있을 수 있다.
         .map(
