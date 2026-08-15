@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { Writable } from 'node:stream'
 import type { LightMyRequestResponse } from 'fastify'
 import { describe, expect, it } from 'vitest'
+import { buildApp } from './app.js'
 import {
   LOG_CENSOR,
   isDevConsole,
@@ -297,6 +298,52 @@ describe('요청 로그 배선', () => {
 })
 
 /**
+ * 파서가 맞아도 **앱이 그것을 안 부르면** 로그는 여전히 안 남는다.
+ *
+ * 위 '요청 로그 배선' 은 이 자리를 못 지킨다 — `buildTestApp({ logger })` 로
+ * 로거를 손수 앉히므로 app.ts 의 판정을 아예 지나지 않는다. parseLogger 단위
+ * 검사도 인자를 손으로 넘기니 무사하다. 그래서 셋째 인자를 `true` 로 굳혀
+ * (= 늘 개발인 척) 놓아도 여태 전부 초록이었다 — 그러면 WinSW 서비스는
+ * `LOG_LEVEL` 을 적지 않는 한 다시 한 줄도 안 남긴다.
+ */
+describe('로거 배선', () => {
+  it('아무 설정 없는 서비스 자리에서는 info 로 말한다', async () => {
+    expect(await levelOf({ NODE_ENV: undefined, LOG_LEVEL: undefined }, undefined)).toBe('info')
+  })
+
+  it('콘솔이 붙은 개발에서는 그대로 조용하다 — 이 변경이 개발을 시끄럽게 하면 안 된다', async () => {
+    // `logger: false` 이면 Fastify 가 no-op 로거를 앉히고, 그것에는 level 이
+    // 없다(실측: undefined). "조용하다"를 이 값으로 읽는다.
+    expect(await levelOf({ NODE_ENV: undefined, LOG_LEVEL: undefined }, true)).toBeUndefined()
+  })
+
+  it('LOG_LEVEL 을 적으면 그 말이 앱까지 간다', async () => {
+    expect(await levelOf({ NODE_ENV: undefined, LOG_LEVEL: 'warn' }, undefined)).toBe('warn')
+  })
+})
+
+/**
+ * 앱을 **실제로 세워서** 그 로거의 심각도를 본다.
+ *
+ * `buildTestApp` 을 안 쓰는 이유: 그쪽은 조용함을 못 박으므로(testSupport.ts 의
+ * `logger: appOptions.logger ?? false`) 배선을 지나지 않는다. 여기서 재려는 것이
+ * 바로 그 배선이다.
+ */
+async function levelOf(
+  vars: Record<string, string | undefined>,
+  isTty: boolean | undefined,
+): Promise<string | undefined> {
+  return withConsole(vars, isTty, async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nogada-로거-'))
+    const app = await buildApp({ dataFile: join(dir, 'players.json') })
+    const level = (app.log as { level?: string }).level
+    await app.close()
+    rmSync(dir, { recursive: true, force: true })
+    return level
+  })
+}
+
+/**
  * 500 이 무엇을 말하는가 — 밖으로는 코드만, 로그에는 그대로.
  *
  * 둘을 함께 재는 이유: 응답만 재면 "오류를 통째로 삼켰다"도 초록이고, 로그만
@@ -312,6 +359,26 @@ describe('오류 응답 배선', () => {
     // 글자로도 확인한다 — 어느 필드로 새든 걸리게.
     expect(res.body).not.toContain('ECONNREFUSED')
     expect(res.body).not.toContain('5432')
+  })
+
+  it('NODE_ENV 도 콘솔도 없는 그 자리 — 실제 배포 모양에서도 감춘다', async () => {
+    // **이 검사만 app.ts 의 배선을 지킨다.** 위아래 두 검사는 못 지킨다:
+    // 하나는 `NODE_ENV=production` 을 박아서 재고, 다른 하나는 vitest 가 깔아 둔
+    // `NODE_ENV=test` 에 기댄다 — 둘 다 `NODE_ENV !== 'production'` 으로
+    // 되돌린 구현에서도 초록이다. 그런데 WinSW XML 은 NODE_ENV 를 놓지 않으므로
+    // (docs/deploy-windows.md — 놓는 것은 GIT_SHA 하나다) 되돌린 구현의 배포는
+    // 개발로 잡혀 500 에 errno·주소를 그대로 싣는다. 그 한 줄이 지금 공개된
+    // 터널 뒤에 서 있다.
+    //
+    // 값을 지우는 것(빈 문자열이 아니라)이 요점이다 — 흉내가 아니라 그 모양이어야 한다.
+    const { res, text } = await failingLogin({ NODE_ENV: undefined }, undefined)
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({ code: 'internal_error' })
+    expect(res.body).not.toContain('ECONNREFUSED')
+    expect(res.body).not.toContain('5432')
+    // 감추는 것과 잃는 것은 다르다 — 같은 자리에서 둘을 함께 잰다.
+    expect(text).toContain(STORE_FAILURE)
   })
 
   it('감춘 그 문장이 로그에는 그대로 남는다 — 디버깅을 잃으면 안 된다', async () => {
@@ -364,7 +431,7 @@ const STORE_FAILURE = 'connect ECONNREFUSED 127.0.0.1:5432'
  * 인증을 통과시키느라 다른 것을 섞지 않고 500 을 만들 수 있다.
  */
 async function failingLogin(
-  vars: Record<string, string>,
+  vars: Record<string, string | undefined>,
   isTty: boolean | undefined,
 ): Promise<{ res: LightMyRequestResponse; text: string }> {
   const lines = captureLines()
@@ -421,7 +488,7 @@ function captureLines(): { stream: Writable; text: () => string } {
  * buildTestApp 을 이 안에서 불러야 한다.
  */
 async function withConsole<T>(
-  vars: Record<string, string>,
+  vars: Record<string, string | undefined>,
   isTty: boolean | undefined,
   body: () => Promise<T>,
 ): Promise<T> {
@@ -439,10 +506,23 @@ function setTty(value: boolean | undefined): void {
   ;(process.stdout as unknown as { isTTY: boolean | undefined }).isTTY = value
 }
 
-/** 환경변수를 잠깐 갈아 끼운다. 끝나면 원래대로 — 다음 테스트가 이 값을 물려받으면 안 된다. */
-async function withEnv<T>(vars: Record<string, string>, body: () => Promise<T>): Promise<T> {
+/**
+ * 환경변수를 잠깐 갈아 끼운다. 끝나면 원래대로 — 다음 테스트가 이 값을 물려받으면 안 된다.
+ *
+ * **`undefined` 는 "그 변수를 지운다"다.** 실제 배포(WinSW)가 `NODE_ENV` 를 놓지
+ * 않는 자리이므로, 그 모양을 재려면 값을 넣는 것만으로는 부족하다.
+ * `Object.assign` 으로 뭉뚱그리면 문자열 `'undefined'` 가 들어가서 — 없는 것을
+ * 흉내 내려던 자리가 **값이 있는 자리**가 된다.
+ */
+async function withEnv<T>(
+  vars: Record<string, string | undefined>,
+  body: () => Promise<T>,
+): Promise<T> {
   const before = new Map(Object.keys(vars).map((key) => [key, process.env[key]]))
-  Object.assign(process.env, vars)
+  for (const [key, value] of Object.entries(vars)) {
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+  }
   try {
     return await body()
   } finally {
