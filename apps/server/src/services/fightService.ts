@@ -76,6 +76,12 @@ export interface FightOutcome {
   gained: { itemId: string; count: 1 } | null
   /** 휩쓸기 활성 구역에 걸렸는가 — 사거리와 무관하다(§2-2: 위험은 구역이다). */
   tookHit: boolean
+  /**
+   * 이 스윙이 실제로 받은 피해 합 — 화면의 "-N" 이 이 값을 그대로 적는다.
+   * 걸린 구역의 주인이 표적과 다를 수 있으므로(아래 ④) 클라이언트가 배치표에서
+   * 표적의 sweepDamage 를 찾아 적으면 틀린 숫자가 뜬다.
+   */
+  tookDamage: number
   /** 판정 직후의 내 HP(자연 회복 반영). 화면 HP 바가 이 값에서 시작한다. */
   playerHp: number
   died: boolean
@@ -171,14 +177,32 @@ export function performFight(args: PerformFightArgs): FightResult {
     }
   }
 
-  // ④ 피격 — 스윙 순간에 살아 있던 몬스터의 활성 구역이면 사거리와 무관하게
-  // 걸린다(§2-2: 위험은 구역이다). 방금 처치한 스윙도 그 순간의 휩쓸기에는
-  // 걸린다 — 처치와 죽음이 한 요청에 공존하는 길이 이것이다.
+  // ④ 피격 — 주장 칸이 **이 맵의 살아 있는 어느 배치의** 활성 구역이든 걸리면
+  // 사거리·표적과 무관하게 걸린다(§2-2: 위험은 구역이다). 표적의 구역만 재던
+  // 첫 구현은 위험의 정의를 표적 선택에 묶었다 — C7 이 재현했다: 늑대 B 의
+  // 구역에 서서 먼 늑대 A 를 향해 헛스윙하면 B 의 휩쓸기가 영영 못 문다.
+  // 위험이 구역 하나로 정의되려면 판정도 구역 전부를 봐야 한다(헛스윙 의미론이
+  // 검사 2·3 에서 끊은 그 순환 위임의 서버판이다). 방금 처치한 스윙도 그 순간의
+  // 휩쓸기에는 걸린다 — 처치와 죽음이 한 요청에 공존하는 길이 이것이다.
   let tookHit = false
-  if (alive && sweepCatches(def, placement.phaseOffsetMs, claim, now)) {
-    tookHit = true
+  let tookDamage = 0
+  for (const p of Object.values(placements)) {
+    if (p.mapId !== player.location.mapId) continue
+    const pDef = defs[p.monsterId]
+    if (!pDef) continue
+    // 방금 이 스윙이 처치한 표적은 slain 에 이미 적혀 부재다 — 단 그 죽음의
+    // 순간까지는 살아 있었으므로, 표적만은 스윙 전 생사(alive)로 판정한다.
+    const pAlive =
+      p.instanceId === instanceId ? alive : monsterAlive(combat.slain, p.instanceId, now)
+    if (!pAlive) continue
+    if (sweepCatches(pDef, p.phaseOffsetMs, claim, now)) {
+      tookHit = true
+      tookDamage += p.sweepDamage
+    }
+  }
+  if (tookHit) {
     // 저장칸은 실측이 된 순간에만 쓴다 — 자연 회복을 여기서 실체화하고 기준점을 옮긴다.
-    combat.hp = Math.max(0, currentHp(combat, now) - placement.sweepDamage)
+    combat.hp = Math.max(0, currentHp(combat, now) - tookDamage)
     combat.lastHitAt = now
   }
 
@@ -202,6 +226,18 @@ export function performFight(args: PerformFightArgs): FightResult {
 
   return {
     ok: true,
-    outcome: { hit, monsterHp, slainNow, gained, tookHit, playerHp, died, skillGained, achieved, player },
+    outcome: {
+      hit,
+      monsterHp,
+      slainNow,
+      gained,
+      tookHit,
+      tookDamage,
+      playerHp,
+      died,
+      skillGained,
+      achieved,
+      player,
+    },
   }
 }

@@ -243,7 +243,14 @@ describe('performFight — 위험 창(§3)과 피격', () => {
       ...들늑대,
       attacks: [{ telegraphStartMs: 1200, telegraphMs: 1500, activeMs: 400, direction: 'right' as const, reach: 3 }],
     }
-    const r = fight({ defs: { wolf: 긴예고 }, claim: { x: 4, y: 0 }, now: 1600 })
+    // 배치 하나로 고립한다 — 피격은 표적 무관하게 맵의 전 배치 구역을 재므로,
+    // 겹쳐 선 wolf-2(위상 2,000)를 두면 그쪽 휩쓸기가 이 단언을 덮는다.
+    const r = fight({
+      defs: { wolf: 긴예고 },
+      placements: { 'wolf-1': world.placements['wolf-1']! },
+      claim: { x: 4, y: 0 },
+      now: 1600,
+    })
     if (!r.ok) throw new Error('명중이어야 한다')
     expect(r.outcome.hit).toBe(true)
     expect(r.outcome.tookHit).toBe(false)
@@ -254,6 +261,23 @@ describe('performFight — 위험 창(§3)과 피격', () => {
     const r = fight({ claim: { x: 3, y: 1 }, now: 2200 })
     if (!r.ok) throw new Error('명중이어야 한다')
     expect(r.outcome.tookHit).toBe(false)
+  })
+
+  // 왜: 위험은 구역이다(§2-2) — **표적과 무관하게**. 표적의 구역만 재면 위험의
+  //     정의가 표적 선택에 묶여, 늑대 B 의 구역에 서서 먼 늑대 A 를 향해
+  //     헛스윙하는 사람을 B 의 휩쓸기가 영영 못 문다(C7 브라우저 재현 — 검사
+  //     2·3 이 끊은 순환 위임의 서버판). 피해량도 걸린 구역의 주인 것이어야
+  //     화면의 "-N" 이 참말이 된다.
+  it('표적이 아닌 몬스터의 활성 구역에 서 있어도 걸린다 — 위험은 표적과 무관한 구역이다', () => {
+    // t=2,200: wolf-1(위상 0)은 활성 [2,000, 2,400) — (6,0) 은 그 부채꼴 안.
+    // wolf-2(위상 2,000)의 def 시각은 4,200 이라 ±ε 어디에도 활성이 없다.
+    // 표적은 wolf-2: (6,0) 에서 wolf-2 의 칸까지 멀어 헛스윙이다.
+    const r = fight({ instanceId: 'wolf-2', claim: { x: 6, y: 0 }, now: 2200 })
+    if (!r.ok) throw new Error('헛스윙은 거절이 아니다')
+    expect(r.outcome.hit).toBe(false)
+    expect(r.outcome.tookHit).toBe(true)
+    expect(r.outcome.tookDamage).toBe(30)
+    expect(r.outcome.playerHp).toBe(70)
   })
 })
 

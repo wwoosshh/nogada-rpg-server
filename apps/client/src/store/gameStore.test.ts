@@ -944,6 +944,7 @@ describe('전투 — fight 액션은 gather 와 같은 모양이다(전투 §7·
       slainNow: false,
       gained: null,
       tookHit: false,
+      tookDamage: 0,
       playerHp: 100,
       died: false,
       skillGained: 1,
@@ -996,14 +997,15 @@ describe('전투 — fight 액션은 gather 와 같은 모양이다(전투 §7·
     expect(useGameStore.getState().lastAction?.tone).toBe('good')
   })
 
-  // 왜: 피격 숫자는 배치의 sweepDamage 다(GameData 에 싣는 이유 — 숨은 문턱이
-  //     아니라 화면이 숫자로 말해야 하는 값). 응답에는 깎인 폭이 안 실리므로
-  //     (playerHp 는 회복이 섞인 절대값) 화면 몫의 데이터가 그 숫자를 진다.
-  it('피격은 -피해량 으로 뜬다', async () => {
+  // 왜: 피격 숫자는 응답의 tookDamage 다 — 걸린 구역의 주인이 표적과 다를 수
+  //     있어(§2-2: 위험은 표적 무관한 구역) 배치표에서 표적의 sweepDamage 를
+  //     찾으면 틀린 숫자가 뜬다. playerHp 는 회복이 섞인 절대값이라 깎인 폭이
+  //     아니다.
+  it('피격은 응답의 tookDamage 를 -피해량 으로 띄운다', async () => {
     withWolfData()
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ tookHit: true, playerHp: 95 }))),
+      vi.fn().mockResolvedValueOnce(jsonResponse(fightOutcome({ tookHit: true, tookDamage: 5, playerHp: 95 }))),
     )
     await useGameStore.getState().fight('wolf-1', 3, 4)
     expect(useGameStore.getState().lastAction?.text).toBe('-5')

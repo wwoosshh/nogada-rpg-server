@@ -109,6 +109,8 @@ export interface FightOutcomeDto {
   /** 처치 드랍. 처치가 아니거나 굴림이 빈손이면 null. */
   gained: { itemId: string; count: 1 } | null
   tookHit: boolean
+  /** 이 스윙이 실제로 받은 피해 합 — 화면의 "-N" 은 이 값이다(걸린 구역의 주인이 표적과 다를 수 있다). */
+  tookDamage: number
   /** 판정 직후의 내 HP(자연 회복 반영). */
   playerHp: number
   died: boolean

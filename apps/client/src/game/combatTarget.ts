@@ -2,7 +2,6 @@ import {
   manhattanDistance,
   monsterAlive,
   monsterStateAt,
-  withinAttackRange,
   type MonsterDef,
   type MonsterPlacements,
   type TilePos,
@@ -29,9 +28,16 @@ export interface CombatTargetArgs {
 }
 
 /**
- * 지금 A 가 겨냥할 몬스터 배치. 사거리 안의 살아 있는 배치 중 가장 가까운
- * 것이고, 없으면 null — C6 전의 빈 세계에서는 언제나 null 이라 A 가 채집·대화와
- * 한 톨도 다르지 않게 돈다.
+ * 지금 A 가 겨냥할 몬스터 배치 — **이 맵의 살아 있는 배치 중 가장 가까운 것.
+ * 사거리 밖이어도 겨냥한다**(헛스윙). 배치가 없으면 null — 몬스터 없는 맵에서는
+ * A 가 채집·대화와 한 톨도 다르지 않게 돈다.
+ *
+ * 사거리 안만 겨냥하던 첫 구현은 방치자 모형(검사 3: 홀드하면 헛스윙이 계속
+ * 흐른다)을 클라이언트에서 끊었다 — C7 이 재현했다: 어떤 공격 칸은 위험 창이
+ * "몬스터가 그 칸에서 멀 때" 오는데(늑대 순찰 옆칸의 C-왼쪽 부채꼴), 사거리
+ * 게이트는 정확히 그 순간의 스윙을 삼켜 그 칸을 무위험 DPS 자리로 만들었다.
+ * 홀드가 사거리 무관하게 스윙을 흘려야 "허공에 휘두른 대가로 간격을 내고
+ * 피격은 판정된다"(§2-2 갱신본)가 화면에서도 참이 된다.
  *
  * 몬스터의 "지금 칸"은 `monsterStateAt(def, now + 위상)` 의 tile 이다 — 서버가
  * 판정 순간에 읽는 그 칸(fightService 의 attackConnects)이고, 여기서 ε 를 흉내
@@ -45,11 +51,9 @@ export function combatTargetAt(args: CombatTargetArgs): string | null {
     if (!def) continue
     if (!monsterAlive(args.slain, placement.instanceId, args.now)) continue
 
+    // 가까운 쪽 — 겹쳐 선 늑대(거리 0)를 두고 옆 칸을 때리면 화면의 겨냥과
+    // 몸의 감각이 어긋난다. 동점이면 등록 순서의 첫 것이다.
     const monsterTile = monsterStateAt(def, args.now + placement.phaseOffsetMs).tile
-    if (!withinAttackRange(args.tile, monsterTile)) continue
-
-    // 여럿이 사거리 안이면 가까운 쪽 — 겹쳐 선 늑대(거리 0)를 두고 옆 칸을
-    // 때리면 화면의 겨냥과 몸의 감각이 어긋난다. 동점이면 등록 순서의 첫 것이다.
     const distance = manhattanDistance(args.tile, monsterTile)
     if (!best || distance < best.distance) best = { instanceId: placement.instanceId, distance }
   }

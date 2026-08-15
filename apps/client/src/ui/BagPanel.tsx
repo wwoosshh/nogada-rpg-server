@@ -1,14 +1,13 @@
 import {
   effectiveIntervalFactor,
   ENHANCE_INTERVAL_FACTOR,
+  EQUIP_SLOTS,
   hammerChanceBonus,
-  SKILL_IDS,
   SKILL_LABELS,
   type CollectionThresholds,
   type EquipSlot,
   type ItemDef,
   type ItemInstance,
-  type SkillId,
 } from '@nogada/shared'
 import { useState } from 'react'
 import { useGameStore } from '../store/gameStore.js'
@@ -114,11 +113,13 @@ export function BagPanel(): JSX.Element | null {
 
   if (!open || player === null) return null
 
-  // 슬롯은 SKILL_IDS 선언 순서로 5칸 고정 — 빈 칸도 자리를 지킨다. "조합
-  // 도구가 아직 없다"는 사실은 점선 빈 슬롯이 말하는 정보지 숨길 결격이
-  // 아니다(원작의 "잠긴 것까지 보이는 목록방"과 같은 태도).
-  const slotOf = (skill: SkillId): ItemInstance | undefined => {
-    const instanceId = player.equipped[skill]
+  // 슬롯은 EQUIP_SLOTS 선언 순서로 6칸 고정(기술 5 + 전투) — 빈 칸도 자리를
+  // 지킨다. "조합 도구가 아직 없다"는 사실은 점선 빈 슬롯이 말하는 정보지 숨길
+  // 결격이 아니다(원작의 "잠긴 것까지 보이는 목록방"과 같은 태도). 전투 칸이
+  // 여기 없던 첫 판은 C7 이 잡았다 — 검을 만들면 착용은 되는데 가방 어디에도
+  // 안 보였다.
+  const slotOf = (slot: EquipSlot): ItemInstance | undefined => {
+    const instanceId = player.equipped[slot]
     if (instanceId === undefined) return undefined
     return player.instances.find((inst) => inst.instanceId === instanceId)
   }
@@ -181,12 +182,12 @@ export function BagPanel(): JSX.Element | null {
           </p>
           <h3 className="bag__section">장비</h3>
           <ul className="bag__slots">
-            {SKILL_IDS.map((skill) => {
-              const inst = slotOf(skill)
+            {EQUIP_SLOTS.map((slot) => {
+              const inst = slotOf(slot)
               const def = inst !== undefined ? data.items[inst.itemId] : undefined
               return (
                 <li
-                  key={skill}
+                  key={slot}
                   className={inst === undefined ? 'bag__slot bag__slot--empty' : 'bag__slot'}
                 >
                   <div className="bag__slot-box">
@@ -195,10 +196,12 @@ export function BagPanel(): JSX.Element | null {
                       <span className="bag__slot-enhance">+{inst.enhanceLevel}</span>
                     )}
                   </div>
-                  <span className="bag__slot-label">{SKILL_LABELS[skill]}</span>
+                  <span className="bag__slot-label">
+                    {slot === 'combat' ? '전투' : SKILL_LABELS[slot]}
+                  </span>
                   {inst !== undefined && def !== undefined && (
                     <span className="bag__slot-speed">
-                      {toolSpeedLabel(skill, def, inst.enhanceLevel)}
+                      {toolSpeedLabel(slot, def, inst.enhanceLevel)}
                     </span>
                   )}
                 </li>
