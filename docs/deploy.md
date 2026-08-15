@@ -273,13 +273,18 @@ APK 는 `pnpm --filter @nogada/client android:open` 으로 Android Studio 를 �
    ```
    PUBLIC_DOMAIN=nogada.내도메인.com
    CORS_ORIGIN=https://localhost,https://nogada.내도메인.com
-   TRUST_PROXY=127.0.0.1,::1
+   # TRUST_PROXY 는 여기서 정하지 않는다 — 4단계까지 세운 뒤 아래 명령으로
+   # 재서 그 대역을 적는다. 붙여 넣을 수 있는 값을 여기 두지 않는 이유가 바로
+   # 다음 문단이다.
    ```
    `https://localhost` 는 안드로이드 앱의 오리진이다(APK 를 안 뿌릴 것이면 뺀다).
    `TRUST_PROXY` 를 **`1` 로 적지 않는 이유는 10장**에 있다 — 그 값은 위조된다.
-   목록에 적을 것은 **Caddy 가 서버 소켓에 붙는 주소**다. 같은 compose
-   네트워크로 붙으면 그것은 127.0.0.1 이 아니라 **Caddy 컨테이너의 주소**이므로
-   그 대역을 확인해서 적는다:
+   목록에 적을 것은 **Caddy 가 서버 소켓에 붙는 주소**이고, **이 장에서는 그것이
+   결코 `127.0.0.1` 이 아니다.** 4단계가 서버의 published 포트를
+   `127.0.0.1:3000:3000` 으로 돌리므로 Caddy 는 호스트 루프백이 아니라 **같은
+   compose 네트워크**로 붙고, 그때 서버가 보는 소켓 주소는 **Caddy 컨테이너의
+   주소**다. 그러니 다른 장(터널·`docs/deploy-public.md`)의 `127.0.0.1,::1` 을
+   여기로 옮겨 적으면 안 된다 — 그 대역을 확인해서 적는다:
    ```bash
    docker network inspect $(docker compose -f docker-compose.prod.yml ps -q server \
      | xargs docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
@@ -357,9 +362,12 @@ VITE_API_BASE_URL=http://100.x.y.z:3000
 > Fastify 5 실측: `1` 이든 `true` 든 **누가 보냈는지를 안 본다** — LAN 의 아무
 > 기계나 `X-Forwarded-For: 9.9.9.9` 를 붙여 보내면 `request.ip` 가 9.9.9.9 로
 > 잡힌다. IP/CIDR 목록으로 주면 소켓 주소가 목록에 없는 요청은 그 헤더를
-> **아예 안 읽는다**(같은 실측). 터널 뒤라면 `TRUST_PROXY=127.0.0.1,::1` 이고,
-> `::1` 을 함께 적는 이유는 윈도에서 `localhost` 가 ::1 로 먼저 풀리기
-> 때문이다. 이 실측은 `apps/server/src/config.test.ts` 의 `TRUST_PROXY 배선` 이
+> **아예 안 읽는다**(같은 실측). 터널 뒤라면 `TRUST_PROXY=127.0.0.1,::1` 이다.
+> `::1` 은 **지금은 안 쓰이는 항목**이다 — 이 문서가 시키는 바인딩이 전부 IPv4
+> 전용이라(`HOST` 기본 `0.0.0.0`, 터널 런북은 `127.0.0.1`) 소켓 주소가 ::1 이 될
+> 길이 없다. 실측: `0.0.0.0` 소켓에 ::1 로 붙으면 ECONNREFUSED 다. `HOST` 를
+> `::` 나 `localhost` 로 바꾸는 날을 위한 보험이다.
+> 이 실측은 `apps/server/src/config.test.ts` 의 `TRUST_PROXY 배선` 이
 > 음성 대조군까지 붙여 고정해 둔다 — 그중 한 검사는 "숫자로 켜면 위조된다"를
 > 일부러 재고 있어서, 그것이 빨개지는 날 이 문장을 다시 써야 한다.
 

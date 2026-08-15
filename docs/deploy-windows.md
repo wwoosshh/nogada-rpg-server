@@ -379,9 +379,12 @@ NODE_ENV=production
   **`1` 이나 `true` 로 뭉개면 안 된다** — Fastify 5 실측: 그 값이면 소켓 주소를
   안 보므로 LAN 의 아무 기계나 `X-Forwarded-For: 9.9.9.9` 를 붙여 보내는 것만으로
   `request.ip` 가 9.9.9.9 가 된다. 주소 목록으로 주면 목록 밖에서 온 요청은 그
-  헤더를 아예 안 읽는다. `::1` 을 함께 적는 이유는 **윈도에서 `localhost` 가
-  ::1 로 먼저 풀리기** 때문이다(cloudflared 의 config.yml 에는 `localhost` 말고
-  `http://127.0.0.1:3000` 을 명시한다).
+  헤더를 아예 안 읽는다. `::1` 은 **지금은 안 쓰이는 항목**이다 — 같은 블록의
+  `HOST=127.0.0.1` 이 바인딩을 IPv4 전용으로 만들어서 소켓 주소가 ::1 이 될 길이
+  없다(실측: IPv4 소켓에 ::1 로 붙으면 ECONNREFUSED). 그래서 cloudflared 의
+  config.yml 에도 `localhost` 말고 `http://127.0.0.1:3000` 을 명시한다 —
+  `localhost` 로 적으면 윈도가 ::1 로 먼저 풀어 터널이 못 붙는다. `::1` 을 그럼에도
+  적어 두는 것은 `HOST` 를 `::` 로 넓히는 날을 위한 보험이다.
   켠 뒤에는 `logs\nogada-server.out.log` 의 `remoteAddress` 가 127.0.0.1 이 아닌
   **실제 IP** 인지 눈으로 한 번 확인한다. 이건 문서로 대신할 수 없다.
 - **`NODE_ENV`** — 4장의 XML 은 이 변수를 놓지 않는다(놓는 것은 `GIT_SHA` 하나).

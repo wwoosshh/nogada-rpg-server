@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { Writable } from 'node:stream'
@@ -240,7 +240,13 @@ describe('TRUST_PROXY 배선', () => {
 
   it('목록으로 켜면 그 주소에서 온 XFF 를 읽는다 — 터널 뒤에서 사람의 IP 가 돌아온다', async () => {
     expect(await 로그에남은IP('127.0.0.1,::1', '127.0.0.1')).toBe(위조한주소)
-    // `::1` 도 함께 적는 이유가 이것이다 — 윈도에서 localhost 는 ::1 로 먼저 풀린다.
+    // 아래 `::1` 은 **지금 만들어질 수 없는 소켓**이다 — 오래 "윈도에서 localhost 가
+    // ::1 로 먼저 풀리니까"라고 적혀 있었지만, 그 이유라면 반쪽이 되는 게 아니라
+    // 연결 자체가 거절된다(실측: `0.0.0.0` 에 바인딩한 소켓에 ::1 로 붙으면
+    // ECONNREFUSED). 문서화된 바인딩이 전부 IPv4 전용이라 그렇다 — parseListen 의
+    // 기본값 `0.0.0.0`, 런북 둘이 시키는 `HOST=127.0.0.1`. `::1` 이 실제로 소켓
+    // 주소로 나오려면 **`HOST` 가 `::` 나 `localhost` 로 바뀌어야 한다.** 그날을
+    // 위해 목록에 미리 적어 두는 것이고, 이 줄은 그 항목이 실제로 먹는지를 잰다.
     expect(await 로그에남은IP('127.0.0.1,::1', '::1')).toBe(위조한주소)
   })
 
@@ -655,6 +661,72 @@ async function withConsole<T>(
 }
 
 /** `process.stdout.isTTY` 는 붙어 있지 않으면 undefined 다 — 타입은 boolean 이라 우회한다. */
+/**
+ * **런북의 복사용 블록에 붙여 넣을 수 있는 `TRUST_PROXY` 값만 잰다.**
+ *
+ * 왜 산문이 아니라 코드 블록인가: 이 값이 틀리는 경로는 사람이 문장을 오해하는
+ * 것이 아니라 **블록을 통째로 복사하는 것**이다. 산문에는 `TRUST_PROXY=1` 이
+ * "그것이 위조되는 값"이라는 설명으로 여러 번 나오고 그것은 남아 있어야 한다.
+ * 그러니 자를 대는 자리는 ``` 안뿐이다.
+ *
+ * 이 검사가 존재하는 이유는 실제로 두 번 틀렸기 때문이다. 처음에는 문서 셋이
+ * 위조되는 `1` 을 시켰고, 그것을 고치면서 8장(도커+Caddy)에는 **또 다른 틀린
+ * 값**을 넣었다 — 4단계가 서버 포트를 `127.0.0.1:3000:3000` 으로 돌려서 Caddy 가
+ * compose 네트워크로 붙는 장인데, 터널 런북의 `127.0.0.1,::1` 을 그대로 옮겨
+ * 적은 것이다. 그러면 소켓 주소가 목록에 없어 XFF 를 아예 안 읽고, 서버는
+ * 멀쩡히 200 을 돌려주므로 **틀렸다는 사실이 겉으로 안 드러난다.**
+ *
+ * 그래서 이 저장소의 규칙은 토폴로지마다 다르다: 주소를 미리 아는 런북은 값을
+ * 적고, 모르는 장은 **값을 아예 두지 않는다.** 둘 다 재지 않으면 "전부 지웠다"와
+ * "제대로 갈랐다"를 구별할 수 없다.
+ */
+describe('런북의 TRUST_PROXY 블록', () => {
+  const 문서 = (이름: string): string =>
+    readFileSync(fileURLToPath(new URL(`../../../docs/${이름}`, import.meta.url)), 'utf8')
+
+  /** ``` 로 둘러싸인 부분만 남긴다 — 사람이 복사하는 것이 그것이다. */
+  const 코드블록 = (md: string): string[] => md.match(/```[^\n]*\n[\s\S]*?```/g) ?? []
+
+  /** 블록 안에서 실제로 `.env` 에 들어갈 줄. 주석(#)으로 시작하는 줄은 값이 아니다. */
+  const 대입한값 = (md: string): string[] =>
+    코드블록(md)
+      .flatMap((block) => block.split(/\r?\n/))
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith('#'))
+      .flatMap((line) => /^TRUST_PROXY=(.*)$/.exec(line)?.[1] ?? [])
+
+  it('주소를 미리 아는 런북은 목록을 적는다 — 이 줄이 없으면 아래 검사가 "전부 지움"으로도 초록이다', () => {
+    // 양성 대조군. cloudflared 가 같은 PC 의 루프백으로 넣어 주는 것이 실측이라
+    // 이 둘은 값을 알고 시작한다.
+    expect(대입한값(문서('deploy-public.md'))).toContain('127.0.0.1,::1')
+    expect(대입한값(문서('deploy-windows.md'))).toContain('127.0.0.1,::1')
+  })
+
+  it('위조되는 꼴은 어느 블록에도 없다 — 숫자와 true 는 소켓 주소를 안 본다', () => {
+    for (const 이름 of ['deploy.md', 'deploy-public.md', 'deploy-windows.md']) {
+      for (const 값 of 대입한값(문서(이름))) {
+        expect(값, `${이름} 의 복사용 블록이 위조되는 값을 시킨다`).not.toMatch(
+          /^(1|true|on|yes)$/i,
+        )
+      }
+    }
+  })
+
+  it('deploy.md 8장(도커+Caddy)은 값을 아예 두지 않는다 — 그 장에서는 주소를 미리 알 수 없다', () => {
+    // 여기가 두 번째로 틀렸던 자리다. Caddy 가 compose 네트워크로 붙으므로
+    // 소켓 주소는 컨테이너 대역이고, 그것은 `docker network inspect` 로 재기
+    // 전에는 아무도 모른다. 그러니 여기 있어도 되는 것은 값이 아니라 절차다.
+    const 팔장 = 문서('deploy.md')
+      .split(/^## /m)
+      .find((chapter) => chapter.startsWith('8.'))
+    expect(팔장, 'deploy.md 에 8장이 없다 — 장 번호가 바뀌었으면 이 검사를 함께 고친다').toBeDefined()
+    expect(대입한값(팔장 ?? '')).toEqual([])
+    // 값을 지운 자리에 절차가 남아 있어야 한다. 안 그러면 "8장에서 TRUST_PROXY
+    // 이야기가 통째로 사라졌다"도 초록이 된다.
+    expect(팔장).toContain('docker network inspect')
+  })
+})
+
 function setTty(value: boolean | undefined): void {
   ;(process.stdout as unknown as { isTTY: boolean | undefined }).isTTY = value
 }

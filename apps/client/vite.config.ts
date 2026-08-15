@@ -54,7 +54,11 @@ function serveGeneratedMaps(): Plugin {
 
 export default defineConfig({
   plugins: [react(), serveGeneratedMaps()],
-  // Capacitor 는 file:// 로 로드하므로 상대 경로가 필요하다 (Task 6)
+  // 절대 base 를 박지 않는 이유: 이 dist 가 두 자리에서 로드된다. 앱은
+  // `https://localhost/` 루트에서(Capacitor 안드로이드 — `file://` 이 아니다.
+  // `androidScheme` 기본값이 https 이고 CapConfig.java 가 `hostname = "localhost"`
+  // 로 시작한다), 웹은 서버가 dist 를 API 와 같은 오리진으로 내주는 그 루트에서.
+  // 상대 경로면 둘 다 자기 자리에서 맞는다.
   base: './',
   build: { outDir: 'dist' },
   server: { host: true, port: 5173 },

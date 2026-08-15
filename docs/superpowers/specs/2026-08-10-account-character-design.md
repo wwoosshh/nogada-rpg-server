@@ -123,7 +123,15 @@ characters (id BIGSERIAL PK, user_id FK UNIQUE, name TEXT, state JSONB, updated_
 9. compose: Postgres healthcheck + `depends_on: service_healthy`, 기동 시
    `migrate up` 실행 주체 명시(엔트리포인트), 네임드 볼륨 + `pg_dump` 백업 한 줄,
    SIGTERM 에 풀 드레인(onClose). CORS 허용 목록은 기존 `exposedHeaders:
-   ['x-server-now']`(시계 동기화!) 유지 + `capacitor://localhost`·`http://localhost`.
+   ['x-server-now']`(시계 동기화!) 유지 + `https://localhost`.
+   > **되쓰기(커밋 5399ff8).** 이 줄은 오래 `capacitor://localhost`·
+   > `http://localhost` 를 시켰는데 **틀렸다.** 안드로이드 WebView 의 오리진은
+   > `https://localhost` 다(Capacitor 의 `androidScheme` 기본값이 `https`,
+   > CapConfig.java 의 `hostname = "localhost"`). `capacitor://` 는 **iOS 스킴**
+   > 이고 이 저장소에 iOS 는 없다. 실서버 preflight 실측이 정확히 뒤집혀 있어서
+   > (`capacitor://localhost` 허용, `https://localhost` 차단) 그대로 APK 를
+   > 만들었으면 앱만 CORS 에서 막혔다. `http://localhost` 도 마찬가지로
+   > `androidScheme: 'http'` 를 적는 날에만 필요하다.
 
 **정직한 검증**
 10. §8.4 는 계약 스위트 하나를 두 구현에 매개변수화하되, Postgres 케이스는

@@ -126,8 +126,11 @@ Fastify 5 실측: `TRUST_PROXY=1` 이면 LAN 에서 `X-Forwarded-For: 9.9.9.9` �
 시켰는데 그것이 바로 그 위조되는 값이었다 — **고쳤다**, 6장 "이미 고친 것".
 이 실측은 `config.test.ts` 의 `TRUST_PROXY 배선` 이 음성 대조군과 함께 고정한다.)
 
-`::1` 을 같이 넣는 이유: 윈도에서 `localhost` 는 ::1 로 먼저 풀린다. cloudflared
-config 에는 `http://127.0.0.1:3000` 을 명시하고 TRUST_PROXY 에는 둘 다 적는다.
+`::1` 은 **지금은 안 쓰이는 항목**이다 — 3단계가 `HOST=127.0.0.1` 을 시키므로
+바인딩이 IPv4 전용이고, 소켓 주소가 ::1 이 될 길이 없다. 실측: IPv4 로만 바인딩한
+소켓에 ::1 로 붙으면 "반쪽"이 아니라 그냥 ECONNREFUSED 다. 그래서 cloudflared
+config 에도 `localhost` 가 아니라 `http://127.0.0.1:3000` 을 명시한다. 그럼에도
+적어 두는 것은 `HOST` 를 `::` 나 `localhost` 로 바꾸는 날을 위한 보험이다.
 
 안 켜면 모든 요청이 127.0.0.1 한 덩어리로 보여 IP 백오프가 붕괴한다 — 한 사람의
 로그인 실패가 전원을 잠근다. 켠 뒤 **로그의 remoteAddress 가 실제 IP 인지 눈으로
@@ -188,8 +191,10 @@ nslookup nogada.내도메인 8.8.8.8
 cloudflared.exe tunnel create nogada
 ```
 
-config.yml 의 ingress 는 `service: http://127.0.0.1:3000` 으로 적는다(`localhost`
-아님 — ::1 로 풀린다). 그 다음 Windows 서비스로 등록한다:
+config.yml 의 ingress 는 `service: http://127.0.0.1:3000` 으로 적는다 —
+**`localhost` 로 적지 않는다.** 윈도에서 그것이 ::1 로 먼저 풀리는데 서버는 IPv4
+로만 듣고 있어서(3단계의 `HOST=127.0.0.1`), 터널이 ECONNREFUSED 로 아예 못 붙는다.
+그 다음 Windows 서비스로 등록한다:
 
 ```bash
 cloudflared.exe service install
@@ -468,8 +473,13 @@ CORS 오귀속과 `TRUST_PROXY` 는 **닫혔다.** 지운 자리에 남기는 �
   적던 `deploy.md` 9장을 고쳤다. 같은 오리진 서빙이 선 지금은 **웹용으로는 아예
   필요 없다**는 것도 함께 적었다.
 - **`TRUST_PROXY` 는 주소 목록으로만 켠다.** `deploy.md` 10장이 시키던 `1` 은
-  위조되는 값이었다 — 숫자와 `true` 는 소켓 주소를 안 본다. 그 장과 8장의 예시
-  블록, `.env.example`, `config.ts` 를 전부 `127.0.0.1,::1` 로 맞췄다.
+  위조되는 값이었다 — 숫자와 `true` 는 소켓 주소를 안 본다. 10장과
+  `.env.example`, `config.ts` 를 `127.0.0.1,::1` 로 맞췄다. **8장(도커+Caddy)은
+  값이 아니라 절차로 바꿨다** — 거기서는 Caddy 가 compose 네트워크로 붙어
+  소켓 주소가 결코 127.0.0.1 이 아니므로, 복사용 블록에서 값을 빼고
+  "4단계 뒤 `docker network inspect` 로 재서 적는다"만 남겼다. 한 번은
+  그 자리에 `127.0.0.1,::1` 을 그대로 옮겨 적었다가 검토에 잡혔다 —
+  **위조되는 값을 지운 자리에 또 다른 틀린 값을 넣은 것**이었다.
   `config.test.ts` 의 `TRUST_PROXY 배선` 이 **음성 대조군까지** 재고, 그중 한
   검사는 "숫자로 켜면 위조된다"를 일부러 고정한다 — 그것이 빨개지는 날
   문서 문장들을 다시 써야 한다는 신호다.
