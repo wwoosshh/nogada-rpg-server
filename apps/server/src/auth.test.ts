@@ -629,4 +629,25 @@ describe('캐릭터의 일생', () => {
 
     await app.close()
   })
+
+  // 왜: 가입이 성공해도 IP 별로 세어진 뒤, asPlayer 가 전부 기본 IP 로 가입하면
+  //     한 앱에서 **일곱 번째**가 429 로 터졌다(실측: 6개까지 되고 7번째에서
+  //     "가입하지 못했다: 429"). 리미터를 앱마다 두는 이유가 "테스트 하나의
+  //     실패가 다음 테스트를 막고, 그런 실패는 원인을 찾는 데 반나절이 든다"
+  //     인데(routes/auth.ts), 그 함정이 한 앱 **안에서** 다시 생긴 것이다.
+  //     거래·프레즌스처럼 여러 사람이 필요한 검사가 오기 전에 자를 대 둔다.
+  it('한 앱에 자유 횟수보다 많은 사람을 앉혀도 리미터에 걸리지 않는다', async () => {
+    const app = await buildTestApp()
+    const crowd = SIGNUP_BACKOFF.freeAttempts + 3
+
+    const players: TestPlayer[] = []
+    for (let i = 0; i < crowd; i += 1) players.push(await asPlayer(app, { name: `사람${i}` }))
+
+    // 사람마다 다른 기계에서 들어온다는 것이 이것이 되는 이유다 — 같은 IP 라면
+    // 여섯 번째까지만 서고 나머지는 429 다.
+    expect(new Set(players.map((one) => one.id)).size).toBe(crowd)
+    expect((await players[crowd - 1]!.inject({ method: 'GET', url: '/api/state' })).statusCode).toBe(200)
+
+    await app.close()
+  })
 })

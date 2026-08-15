@@ -70,6 +70,11 @@ export function hashToken(token: string): string {
  * 이 저장소가 만료 타이머를 피해 온 이유 그대로다. 이미 쓰기가 일어나는 이 자리에
  * 얹으면 새 주체 없이 같은 일이 된다: 아무도 안 돌아오면 아무것도 안 쌓이고,
  * 돌아오는 사람의 행은 그 사람이 돌아올 때 정리된다.
+ *
+ * 가입도 이 자리를 지나고, 그때는 방금 만든 계정이라 치울 것이 **항상 0행**이다.
+ * 그 한 왕복이 아깝지만 부르는 자리를 둘로 나누지 않으려고 감수한다 — "치울까
+ * 말까"를 인자로 받는 순간 판단이 부르는 쪽으로 새고, 새 문이 하나 늘 때마다
+ * 그 판단을 다시 하게 된다. 세션이 언제 치워지는지는 여기 한 곳만 알면 된다.
  */
 export async function openSession(store: Persistence, userId: string): Promise<string> {
   const now = Date.now()

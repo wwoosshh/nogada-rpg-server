@@ -472,12 +472,18 @@ function contractSuite(harness: Harness): void {
     const other = await store.createUser('남', '해시')
     const now = Date.now()
     await store.createSession('내지난표', mine!.id, now - 1)
+    // 만료가 `now` 와 **딱 같은** 표. 계약이 "이르거나 같으면 지난 것"이라 못박은
+    // 등호가 여기서만 재어진다 — 없으면 JSON 판(`> now` 로 거른다)과 Postgres 판
+    // (`<= now` 로 지운다)이 이 한 점에서 갈라져도 스위트가 못 잡는다. 인증도
+    // 같은 등호를 쓴다(sessions.ts 의 requireSession: `expiresAt <= now` 면 401).
+    await store.createSession('내딱맞은표', mine!.id, now)
     await store.createSession('내살아있는표', mine!.id, now + 60_000)
     await store.createSession('남의지난표', other!.id, now - 1)
 
     await store.deleteExpiredSessions(mine!.id, now)
 
     expect(await store.findSession('내지난표')).toBeNull()
+    expect(await store.findSession('내딱맞은표')).toBeNull()
     // 다른 기기로 들어와 있는 나 자신 — 새로 로그인했다고 끊기면 안 된다.
     expect(await store.findSession('내살아있는표')).not.toBeNull()
     // 남의 행은 남의 로그인이 치운다. 여기서 표 전체를 훑으면 로그인 한 번의
@@ -489,6 +495,24 @@ function contractSuite(harness: Harness): void {
     const user = await store.createUser('노가다', '해시')
 
     await expect(store.deleteExpiredSessions(user!.id, Date.now())).resolves.toBeUndefined()
+  })
+
+  // 왜: 이 메서드의 존재 이유가 "아무도 안 지우는 행이 영원히 남는 것"을 막는
+  //     것이라, 지운 것이 **디스크에 남지 않으면** 이유가 통째로 사라진다 —
+  //     재시작마다 지운 세션이 되살아나면 청소한 적이 없는 것과 같다. 위 검사는
+  //     열려 있는 store 에만 물으므로 그것을 못 본다(JSON 판은 지운 것이 없을 때
+  //     파일을 다시 쓰지 않는 가지가 있고, 그 조건이 뒤집혀도 초록이었다).
+  it('지운 것이 다시 열어도 그대로 없다 — 청소가 디스크까지 닿는다', async () => {
+    const user = await store.createUser('노가다', '해시')
+    const now = Date.now()
+    await store.createSession('지난표', user!.id, now - 1)
+    await store.createSession('살아있는표', user!.id, now + 60_000)
+
+    await store.deleteExpiredSessions(user!.id, now)
+    const reopened = await reopen()
+
+    expect(await reopened.findSession('지난표')).toBeNull()
+    expect(await reopened.findSession('살아있는표')).not.toBeNull()
   })
 
   // 왜: 이중 제출(버튼 두 번, 느린 네트워크에서의 재시도)이 캐릭터 둘을 만들지

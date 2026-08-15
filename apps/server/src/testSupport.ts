@@ -220,6 +220,22 @@ export interface AsPlayerOptions {
 let accountSeq = 0
 
 /**
+ * 이 플레이어가 앉은 기계의 주소 — **사람마다 다르다.**
+ *
+ * 가입은 성공해도 IP 별로 세어지므로(auth/rateLimit.ts), 전부 기본 IP 로
+ * 가입하면 한 앱에서 일곱 번째 asPlayer 가 429 로 터진다(실측: 6개까지 되고
+ * 7번째에서 예외). 그러면 실패한 것은 리미터인데 화면에는 "가입하지 못했다"만
+ * 남아, 원인을 찾는 데 반나절이 든다 — 리미터를 앱마다 두는 이유(routes/auth.ts)
+ * 와 같은 함정이 한 앱 안에서 다시 생기는 것이다. 거래·프레즌스처럼 여러 사람이
+ * 필요한 검사가 곧 온다.
+ *
+ * 리미터를 직접 시험하는 auth.test.ts 는 자기 IP 를 명시하므로 영향이 없다.
+ * 10.77 대역을 쓰는 이유도 그것이다 — 그쪽이 쓰는 10.0/10.1/10.2/10.3/10.9 와
+ * 겹치지 않아야 한 앱 안에서 서로의 셈을 흩지 않는다.
+ */
+const machineOf = (seq: number): string => `10.77.${Math.floor(seq / 254) % 254}.${(seq % 254) + 1}`
+
+/**
  * 요청을 보낼 플레이어를 얻는다 — **가입하고, 로그인하고, 캐릭터를 만든다.**
  *
  * 테스트 본문이 이 셋을 각자 적지 않는 것이 이 함수의 존재 이유다. 신원을 싣는
@@ -238,11 +254,13 @@ export async function asPlayer(
   const username = options.username ?? `테스터${accountSeq}`
   const password = options.password ?? 'nogada-password'
   const name = options.name ?? '아무개'
+  const remoteAddress = machineOf(accountSeq)
 
   const registered = await app.inject({
     method: 'POST',
     url: '/api/auth/register',
     payload: { username, password },
+    remoteAddress,
   })
   if (registered.statusCode !== 201) {
     throw new Error(`가입하지 못했다: ${registered.statusCode} ${registered.body}`)
@@ -255,6 +273,7 @@ export async function asPlayer(
     method: 'POST',
     url: '/api/auth/login',
     payload: { username, password },
+    remoteAddress,
   })
   if (loggedIn.statusCode !== 200) {
     throw new Error(`로그인하지 못했다: ${loggedIn.statusCode} ${loggedIn.body}`)
