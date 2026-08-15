@@ -1,6 +1,6 @@
 import { COMBAT_MAX_HP, currentHp, type InnDef, type PlayerState } from '@nogada/shared'
 import { useEffect, useState } from 'react'
-import { innIdOf, useGameStore } from '../store/gameStore.js'
+import { ALREADY_FULL_TEXT, innIdOf, useGameStore } from '../store/gameStore.js'
 import { worldNow } from '../time/clock.js'
 import { formatGold } from './shopModel.js'
 
@@ -74,7 +74,7 @@ function InnView({ inn, player }: { inn: InnDef; player: PlayerState }): JSX.Ele
         <p className="shop__stat">
           하룻밤 <span className="shop__unit">{formatGold(inn.gold)}</span>
         </p>
-        {full && <p className="shop__stat">이미 성한 몸이다 — 쉴 것이 없다.</p>}
+        {full && <p className="shop__stat">{ALREADY_FULL_TEXT} — 쉴 것이 없다.</p>}
         <InnError />
       </div>
       {/* 만혈이면 실행 발판을 아예 두지 않는다 — 비활성 버튼도 그리지 않는다

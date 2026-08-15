@@ -272,6 +272,9 @@ function loadRealGameData(): GameData {
   const recipes = parseRecipes(readRealCsv('recipes.csv'))
   const { maps, placements, places } = loadRealMaps()
   const monsters = loadRealMonsters()
+  // 한 번만 파싱한다 — parseInns 도 같은 화자 실재 검사를 지므로 speakers.csv 를
+  // 아래서 또 읽으면 같은 파일이 이 함수 한 번 호출에 두 번 파싱된다.
+  const speakers = parseSpeakers(readRealCsv('speakers.csv'))
 
   return {
     monsters: monsters.defs, monsterPlacements: monsters.placements,
@@ -282,12 +285,12 @@ function loadRealGameData(): GameData {
     transitions: parseTransitions(readRealCsv('transitions.csv')),
     placements,
     milestones: parseMilestones(readRealCsv('milestones.csv'), recipes),
-    speakers: parseSpeakers(readRealCsv('speakers.csv')),
+    speakers,
     shops: parseShops(readRealCsv('shops.csv'), readRealCsv('shop_stock.csv')),
     masters: parseMasters(readRealCsv('masters.csv')),
     // 출하 여관표도 그대로 싣는다 — 파서가 화자 실재 검사까지 지므로(parseInns)
     // 여기서 실제 speakers 를 함께 넘겨야 "지금 CSV 가 통과하는가"가 여관에도 닿는다.
-    inns: parseInns(readRealCsv('inns.csv'), parseSpeakers(readRealCsv('speakers.csv'))),
+    inns: parseInns(readRealCsv('inns.csv'), speakers),
     // 출하 강화표를 그대로 싣는다 — 이 픽스처의 값어치는 "지금 CSV 가 실제로
     // 검증을 통과하는가"이므로, 여기만 빈 배열이면 그 물음이 강화에는 닿지 않는다.
     enhanceCosts: parseEnhanceCosts(readRealCsv('enhance_costs.csv')),

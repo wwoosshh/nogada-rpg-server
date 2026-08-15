@@ -418,11 +418,11 @@ function checkWindows(
   const who = `monsters[${instanceId}]`
 
   for (const e of events) {
-    if (e.telegraphMs < TELEGRAPH_MIN_MS) {
-      violations.push(
-        `${who}: t=${e.telegraphStartMs}ms 공격의 예고가 ${e.telegraphMs}ms — 하한 ${TELEGRAPH_MIN_MS}ms. 이 밑으로는 보고 피하는 게임이 아니라 반응속도 시험이 된다`,
-      )
-    }
+    // TELEGRAPH_SMEAR_MIN_MS(= ε+TELEGRAPH_MIN_MS)는 TELEGRAPH_MIN_MS보다 항상
+    // 크므로(ε>0), 옛 700 하한을 어기는 예고는 이 스미어 하한도 반드시 함께
+    // 어긴다 — 두 if 를 나란히 두면 예고 하나의 위반이 문장 둘로 겹쳐 찍힌다.
+    // 스미어 하한 하나로 합쳐도 걸러내는 범위는 그대로다(옛 하한은 이 하한의
+    // 부분집합이라 잃는 사례가 없다).
     if (e.telegraphMs < TELEGRAPH_SMEAR_MIN_MS) {
       violations.push(
         `${who}: t=${e.telegraphStartMs}ms 공격의 예고가 ${e.telegraphMs}ms — 판정 스미어 ε(${JUDGE_EPSILON_MS}ms)가 예고의 끝을 이미 확정 피격 구간으로 먹으므로, 스미어를 빼면 안전한 예고가 ${e.telegraphMs - JUDGE_EPSILON_MS}ms 뿐이다. 하한 ${TELEGRAPH_SMEAR_MIN_MS}ms(ε+${TELEGRAPH_MIN_MS}ms)`,

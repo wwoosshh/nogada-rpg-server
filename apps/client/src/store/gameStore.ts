@@ -1338,6 +1338,14 @@ function describeClosedNode(
   return closed
 }
 
+/**
+ * 만혈 거절 문구 — describeError(already_full)와 InnPanel 의 만혈 안내 줄이
+ * 같은 사실("이미 성한 몸이다")을 말한다. 이 상수 하나가 원본이고 InnPanel 은
+ * 이어붙여 쓴다: 두 파일에 같은 한국어를 따로 타이핑해 두면 나중에 한쪽만
+ * 고쳐 문구가 조용히 갈라진다.
+ */
+export const ALREADY_FULL_TEXT = '이미 성한 몸이다'
+
 function describeError(err: unknown): string {
   if (!(err instanceof ApiError)) return '서버에 연결할 수 없습니다'
   // cannot_gather 문구('도구나 숙련도 부족')는 은퇴했다 — 맨손 채집이 허용되면서
@@ -1437,7 +1445,7 @@ function describeError(err: unknown): string {
     // not_enough_gold 의 그 글자를 그대로 쓴다 — 상점에서든 여관에서든 같은
     // 사실이고, 문구가 갈라지면 그게 더 이상하다.
     case 'already_full':
-      return '이미 성한 몸이다'
+      return ALREADY_FULL_TEXT
     default:
       return `오류: ${err.code}`
   }
