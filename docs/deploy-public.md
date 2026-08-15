@@ -238,8 +238,19 @@ stdout 이 파일로 흘러가 그 자체로 운영으로 잡히지만(`config.t
 그대로 번들에 박힌다.
 
 이 파일은 커밋 대상이다. 루트 `.gitignore` 가 `.env*` 를 통째로 막으므로 그 파일에
-`!apps/client/.env.production` 한 줄이 예외로 뚫려 있다 — **그 줄을 지우면** 다음
-사람의 체크아웃에는 이 파일이 없고, 빌드는 아무 경고 없이 localhost 를 박는다.
+`!apps/client/.env.production` 한 줄이 예외로 뚫려 있다. **그 줄이 사는 자리는
+처음 `git add` 를 통과시키는 것**이지 체크아웃이 아니다 — 실측: 예외를 지워도
+이미 추적 중인 파일은 그대로 남는다(`git ls-files`·`git ls-tree HEAD` 그대로).
+위험한 것은 **누가 이 파일을 지웠다가 다시 add 할 때**다: 그때 예외가 없으면
+add 가 조용히 무시되고, 그다음 사람의 빌드는 아무 경고 없이 localhost 를 박는다.
+
+규칙이 실제로 이기는지 보려면 `--no-index` 를 붙여야 한다. 그냥 부르면 인덱스를
+보므로 추적된 파일에는 늘 "무시 안 됨"(exit 1)이 나온다:
+
+```bash
+git check-ignore -v --no-index apps/client/.env.production
+```
+
 `apps/client/src/api/apiBase.test.ts` 가 그 셋(파일의 존재·값·번들)을 잰다.
 
 ```bash
@@ -263,10 +274,11 @@ pnpm --filter @nogada/client build
 Get-ChildItem -Recurse apps/client/dist/tilesets, apps/client/dist/icons, apps/client/dist/sprites, apps/client/dist/nodes -File | Measure-Object
 ```
 
-번들에 주소가 안 박혔는지. **0 이어야 한다.**
+번들에 주소가 안 박혔는지. **0 이어야 한다.** `assets\*.js` 한 층이 아니라 dist
+전체를 훑는다 — CSS·`index.html`·assets 밖으로 나오는 산출물까지 봐야 이름값을 한다.
 
 ```bash
-Select-String -Path apps/client/dist/assets/*.js -Pattern "localhost:3000|100\.125\.30\.85" -AllMatches | Measure-Object
+Get-ChildItem -Recurse -File apps/client/dist | Where-Object { $_.Extension -in '.js', '.mjs', '.css', '.html', '.json' } | Select-String -Pattern "localhost:3000|100\.125\.30\.85" -AllMatches | Measure-Object
 ```
 
 이쪽은 **테스트가 됐다**(`apps/client/src/api/apiBase.test.ts`). dist 가 없으면
@@ -277,8 +289,16 @@ Select-String -Path apps/client/dist/assets/*.js -Pattern "localhost:3000|100\.1
 
 `@fastify/static` 이 `apps/server/src/app.ts` 의 `serveClient` 에서 등록된다.
 `CLIENT_DIST` 가 자리를 정하고, **비워 두면 이 저장소의 `apps/client/dist`** 다.
-그 폴더가 없으면 정적 서빙을 그냥 안 붙이고 기동 로그에 한 줄 남긴다 — 개발도
-테스트도 dist 없이 서버를 띄우므로 여기서 죽으면 안 된다.
+개발도 테스트도 dist 없이 서버를 띄우므로 여기서 죽으면 안 되고, 실제로 안 죽는다:
+없는 폴더로 등록해도 `@fastify/static` 은 던지지 않고 전부 404 를 줄 뿐이다(실측).
+
+**그래서 없어도 등록은 한다.** 기동 로그에 "아직 없다" 한 줄만 남기고 붙여 둔다 —
+없으면 건너뛰던 코드는 **서버 PC 의 첫 ship** 을 그대로 밟았다(거기엔 라이선스
+에셋이 없어 빌드할 수 없으니, 정의상 첫 ship 전까지 dist 가 없다). 밀어 넣어도
+서비스를 껐다 켜기 전까지 사이트가 404 인데 스크립트와 이 문서는 그 순간
+"재시작할 필요 없다"고 적으므로, 운영자는 초록 스크립트를 손에 들고 404 앞에
+서게 된다. 지금은 **기동 뒤에 생긴 dist 도 그 자리에서 나간다**
+(`apps/server/src/clientDist.test.ts` 가 두 경우를 다 잰다).
 
 - **`wildcard` 는 기본값(true)** 이다. `wildcard: false` 는 기동 시 파일마다
   라우트를 등록하는 모드인데, 그것으로 바꿔서 실제로 재 봤다: ① dist 를 갈아
@@ -311,7 +331,7 @@ Tailscale 로 두 기계가 이미 붙어 있으므로(개발 PC 100.96.41.41, �
 100.125.30.85) 관리 공유 위로 밀어 넣는 것이 손이 가장 덜 간다. 개발 PC 에서:
 
 ```powershell
-pwsh -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
+powershell -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
 ```
 
 스크립트가 빌드하고, 5단계의 관문 둘을 돌리고, `robocopy /MIR` 로 옮긴다. 관문을
@@ -330,9 +350,14 @@ scp -r apps/client/dist/* user@100.125.30.85:/c/nogada-server/nogada-rpg-server/
 밀어 넣은 화면은 `git reset --hard` 를 지나도 남고, 서버의 `CLIENT_DIST` 기본값도
 그 자리라 `.env` 에 한 줄도 안 적어도 된다.
 
-**서버를 재시작할 필요는 없다.** `wildcard` 기본값이 요청 때마다 파일시스템을
-보므로 다음 요청부터 새 화면이 나간다. 브라우저에서 강력 새로고침(Ctrl+Shift+R)
-한 번은 해야 한다 — `index.html` 은 해시가 안 붙는 유일한 파일이다.
+**서버를 재시작할 필요는 없다** — 첫 ship 에서도 그렇다. `wildcard` 기본값이 요청
+때마다 파일시스템을 보므로 다음 요청부터 새 화면이 나가고, 기동 때 dist 가 없었어도
+정적 서빙은 붙어 있다(위 6단계).
+
+강력 새로고침도 필요 없다. `index.html` 은 해시가 안 붙는 유일한 파일이지만,
+실측한 응답 헤더가 `cache-control: public, max-age=0` 에 `etag`·`last-modified` 다 —
+`max-age=0` 이면 브라우저는 평범한 방문에서도 조건부 요청을 보내고 바뀐
+`index.html` 을 그 자리에서 받는다(`clientDist.test.ts` 가 그 헤더를 잰다).
 
 감당하기 싫으면 대안은 Cloudflare Pages 에 `wrangler pages deploy` 로 dist 만
 올리는 것인데, 그러면 오리진이 갈려 CORS_ORIGIN 관리가 돌아온다. **리포 연결 자동

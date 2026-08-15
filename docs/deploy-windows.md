@@ -299,7 +299,7 @@ docker compose -f docker-compose.prod.yml up -d
 그래서 화면은 **그림을 가진 개발 PC 에서 사람이 밀어 넣는다.** 개발 PC 에서:
 
 ```powershell
-pwsh -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
+powershell -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
 ```
 
 받는 자리가 `apps\client\dist` 인 것은 우연이 아니다: 그 폴더는 gitignore 대상이라
@@ -307,10 +307,22 @@ pwsh -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-serve
 돌린다(`.env` 와 node_modules 가 거기 있다). 서버는 그 자리를 기본값으로 읽으므로
 (`CLIENT_DIST`) `.env` 에 한 줄도 안 적어도 된다.
 
-**서비스를 재시작할 필요는 없다** — 다음 요청부터 새 화면이 나간다. 사이트가
-404 이거나 화면이 안 바뀌면 먼저 볼 곳은 `logs\nogada-server.out.log` 의 기동 줄:
-dist 를 못 찾았으면 "클라이언트 dist 가 없어 정적 서빙을 붙이지 않는다" 와 함께
-서버가 찾아본 경로가 적혀 있다. 자세한 것은 `docs/deploy-public.md` 6단계.
+**서비스를 재시작할 필요는 없다** — 다음 요청부터 새 화면이 나간다. **첫 ship
+에서도 그렇다**: 기동 때 dist 가 없었어도 서버는 정적 서빙을 붙여 두고, 나중에
+생긴 파일을 그 자리에서 내준다(`apps/server/src/app.ts` 의 `serveClient` —
+그렇게 안 하던 코드가 첫 릴리스를 404 로 만들 뻔했다).
+
+사이트가 404 이거나 화면이 안 바뀌면 먼저 볼 곳은 `logs\nogada-server.out.log`
+의 기동 줄이다. 기동 때 dist 가 없었으면 이 줄이 서버가 찾아본 경로와 함께 적혀
+있다(그 경로가 민 자리와 다르면 `CLIENT_DIST` 를 본다):
+
+```
+클라이언트 dist 가 아직 없다 — 밀어 넣으면 재시작 없이 나간다: C:\...\apps\client\dist
+```
+
+이 문구는 `apps/server/src/clientDist.test.ts` 가 코드와 이 문서 양쪽에서 잰다 —
+한 글자만 어긋나도 여기 적힌 지시가 grep 0건이 되기 때문이다(실제로 어긋나 있었다).
+자세한 것은 `docs/deploy-public.md` 6단계.
 
 ### 러너 권한
 

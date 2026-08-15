@@ -223,6 +223,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 }
 
 /**
+ * 기동 로그의 두 문구. **문서가 글자 그대로 인용하는 값이라** 상수로 둔다.
+ *
+ * docs/deploy-windows.md 의 런북은 "사이트가 404 면 기동 로그에서 이 줄을 찾아라"
+ * 라고 가리킨다. 코드와 문서가 한 글자만 어긋나도 그 지시는 grep 0건이 되고,
+ * 그 자리에 선 사람은 자기가 잘못 본 줄 안다 — 실제로 어긋나 있었다(검토가
+ * 잡았다). clientDist.test.ts 가 로그와 **문서 양쪽**을 이 상수로 잰다.
+ */
+export const CLIENT_DIST_ABSENT_LOG =
+  '클라이언트 dist 가 아직 없다 — 밀어 넣으면 재시작 없이 나간다'
+export const CLIENT_DIST_NOT_DIR_LOG = '클라이언트 dist 가 폴더가 아니라 정적 서빙을 붙이지 않는다'
+
+/**
  * 게임 화면을 **API 와 같은 오리진으로** 내준다.
  *
  * 이 한 등록이 공개 배포의 절반이다(docs/deploy-public.md 1장): 오리진이 하나면
@@ -230,20 +242,39 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
  * 차단도, 주소가 바뀔 때의 재빌드도 **애초에 생기지 않는다.** 각각을 따로 고치는
  * 것보다 싸다.
  *
- * **없으면 조용히 안 붙이고 로그로 한 줄 남긴다.** dist 는 빌드 생성물이라
- * 저장소에 없고, 개발도 테스트도 그것 없이 서버를 띄운다.
+ * **dist 가 없어도 등록은 한다.** dist 는 빌드 생성물이라 저장소에 없고, 개발도
+ * 테스트도 그것 없이 서버를 띄운다. 그런데 **서버 PC 는 정의상 첫 ship 전까지
+ * dist 가 없다**(라이선스 에셋이 없어 거기서 빌드할 수 없다 — config.ts 의
+ * `CLIENT_DIST`). 없으면 등록을 건너뛰던 앞의 코드는 바로 그 **가장 처음 옮기는
+ * 한 번**을 밟았다: 사람이 dist 를 밀어 넣어도 서비스를 껐다 켜기 전까지 사이트가
+ * 404 인데, 스크립트와 문서 셋은 그 순간 "재시작할 필요 없다"고 적는다. 운영자는
+ * 초록 스크립트를 손에 들고 404 앞에 서게 된다(검토가 실측으로 잡아냈다).
  *
- * 이 앞 검사가 무엇을 사는지 실측했다. **처음 생각한 것과 달랐다:**
- * - **없는 폴더는 @fastify/static 이 안 던진다.** 전부 404 를 줄 뿐이고, 게다가
- *   그쪽도 경로를 담은 warn 을 스스로 남긴다(`"root" path "..." must exist`).
- *   즉 여기 `existsSync` 가 사는 것은 서버의 목숨도, 유일한 단서도 아니다 —
+ * 이 자리를 실측했다. **처음 생각한 것과 달랐다:**
+ * - **없는 폴더는 @fastify/static 이 안 던진다.** 등록도 `ready` 도 통과하고
+ *   전부 404 를 줄 뿐이며, **나중에 생긴 파일을 재시작 없이 그대로 내준다**
+ *   (없는 root 로 띄운 앱에 폴더를 만들어 index.html 을 넣자 그 자리에서 200).
+ *   게다가 그쪽도 경로를 담은 warn 을 스스로 남긴다(`"root" path "..." must
+ *   exist`). 그래서 `existsSync` 는 **등록 여부가 아니라 로그 문구만** 고른다 —
  *   운영자에게 우리 말로, 우리가 문서에서 가리킨 자리에(docs/deploy-windows.md)
- *   한 줄 남기는 것뿐이다. 그것을 위해 남긴다고 적어 두는 편이 정직하다.
- * - **파일을 가리키면 던진다**(`"root" option must be a directory`). 이쪽이
- *   진짜다: `.env` 에 `CLIENT_DIST` 를 `.../dist/index.html` 로 적는 오타 하나면
- *   화면이 아니라 **게임 전체가 안 뜬다.** `isDirectory()` 가 사는 것이 그것이고,
- *   `existsSync` 가 앞에 있는 것은 없는 경로에 `statSync` 를 부르면 ENOENT 로
- *   던지기 때문이다 — 둘은 한 벌이다.
+ *   한 줄 남기기 위한 것이다.
+ * - **파일을 가리키면 던진다**(`"root" option must be a directory`). 등록을
+ *   건너뛰는 유일한 경우가 이쪽이다: `.env` 에 `CLIENT_DIST` 를
+ *   `.../dist/index.html` 로 적는 오타 하나면 화면이 아니라 **게임 전체가 안
+ *   뜬다.** `existsSync` 가 앞에 있는 것은 없는 경로에 `statSync` 를 부르면
+ *   ENOENT 로 던지기 때문이다.
+ *
+ * **`dotfiles` 를 막는다.** 라이브러리 기본값은 `'allow'` 이고(index.js:56),
+ * 그대로 두면 root 아래 숨김 파일이 그대로 나간다(실측: `.env.local` 을 두고
+ * 물으면 200 에 본문까지). 지금 dist 에는 dotfile 이 하나도 없지만 `CLIENT_DIST`
+ * 는 사람이 `.env` 에 손으로 적는 값이고, **한 칸 위인 `apps/client` 를 적는
+ * 오타는 위의 방어를 전부 통과한다**(폴더가 맞으니까) — 그 폴더 안에
+ * `.env.local` 과 `src/` 가 통째로 있다.
+ *
+ * `'deny'`(403) 가 아니라 `'ignore'`(404) 인 이유는 **답을 하나로 두기 위해서**다.
+ * 403 은 "거기 뭔가 있다"를 알려 주고, 게다가 `..` 을 담은 경로까지 403 으로
+ * 갈라져 나가 경로 이탈 시도와 없는 파일의 답이 달라진다. 없는 것도 못 주는
+ * 것도 전부 404 면 밖에서 읽을 것이 없다.
  *
  * **`wildcard` 는 기본값(true)이다.** `false` 는 기동 시 파일마다 라우트를
  * 등록하는 모드다. 그것으로 바꿔 보고 실제로 깨지는 것을 쟀다:
@@ -263,18 +294,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
  */
 function serveClient(app: FastifyInstance, root: string | false): void {
   if (root === false) return
-  if (!existsSync(root) || !statSync(root).isDirectory()) {
-    // "없어서"라고만 적지 않는다 — 파일을 가리킨 경우도 여기로 오고, 그때
-    // 로그가 "없다"고 하면 운영자는 있는 파일을 앞에 두고 없다는 말을 읽는다.
-    app.log.info(`클라이언트 dist 가 폴더로 있지 않아 정적 서빙을 붙이지 않는다: ${root}`)
+
+  const 있다 = existsSync(root)
+  if (있다 && !statSync(root).isDirectory()) {
+    // 두 경우를 한 문장으로 뭉뚱그리지 않는다 — 파일을 가리킨 경우에 로그가
+    // "없다"고 하면 운영자는 있는 파일을 앞에 두고 없다는 말을 읽는다.
+    app.log.info(`${CLIENT_DIST_NOT_DIR_LOG}: ${root}`)
     return
   }
+  // 없어도 등록은 한다. 남기는 것은 "왜 지금 404 인가"의 답이지 포기가 아니다.
+  if (!있다) app.log.info(`${CLIENT_DIST_ABSENT_LOG}: ${root}`)
 
   // 등록 순서는 신경 쓰지 않는다 — Fastify 라우터는 등록 순서가 아니라 경로
   // 구체성으로 고르므로 `/*` 를 먼저 등록해도 `/api/health` 가 이긴다(실측이자
   // clientDist.test.ts 가 못 박는 것). 순서에 기대는 코드를 쓰면 라우트를 옮기는
   // 날 게임 API 가 조용히 정적 파일 핸들러로 흘러간다.
-  app.register(fastifyStatic, { root })
+  app.register(fastifyStatic, { root, dotfiles: 'ignore' })
 }
 
 /**

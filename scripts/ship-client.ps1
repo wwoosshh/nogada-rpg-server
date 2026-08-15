@@ -41,13 +41,19 @@ sshd 를 켜 둔 서버라면 대신 이렇게 해도 된다(이 스크립트를
 빌드를 다시 하지 않고 지금 폴더에 있는 것을 그대로 잰다.
 
 .EXAMPLE
-pwsh -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
+powershell -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
 #>
 # **이 파일의 BOM 을 지우지 마라.** Windows PowerShell 5.1 은 BOM 이 없는 .ps1 을
 # 시스템 ANSI 코드페이지로 읽어서, 한글이 깨지는 데서 그치지 않고 **파서가 선다**
-# (실측: `Unexpected token`). 서버 PC 에 pwsh 7 이 있다는 보장이 없어 5.1 에서
-# 도는 것을 전제로 한다 — 식별자를 전부 영문으로 둔 것도 같은 이유다. BOM 이
-# 날아가도 메시지만 깨지고 스크립트는 계속 돈다.
+# (실측: `Unexpected token`).
+#
+# 5.1 을 전제로 하는 이유는 **이 스크립트가 도는 자리**다. 서버 PC 가 아니라
+# 그림을 가진 **개발 PC** 에서 돌고(서버 PC 는 robocopy 의 목적지일 뿐이다), 그
+# 개발 PC 에 pwsh 7 이 없다 — 실측: `where pwsh` 0건, 있는 것은
+# `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe` 하나다. 그래서
+# 문서와 위 .EXAMPLE 도 `powershell -File` 로 부른다(전에는 `pwsh -File` 이라
+# 적혀 있었다 — 이 PC 에서 그대로 치면 명령이 없다고 선다). 식별자를 전부 영문으로
+# 둔 것도 같은 이유이고, BOM 이 날아가도 메시지만 깨지고 스크립트는 계속 돈다.
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$Destination,
@@ -97,8 +103,20 @@ if ($empty.Count -gt 0) {
 # --- 관문 2: 번들에 서버 주소가 박혔는가 --------------------------------------
 # 0 이어야 한다. 박혀 있으면 주소가 바뀔 때마다 재빌드가 필요하고, HTTPS 페이지가
 # 평문 API 를 부르는 혼합 콘텐츠가 되어 브라우저가 요청 자체를 막는다.
-$baked = Get-ChildItem -LiteralPath (Join-Path $dist 'assets') -Filter *.js -File |
-  Select-String -Pattern 'localhost:3000', '100\.125\.30\.85' -AllMatches
+#
+# **dist 전체를 재귀로 훑는다.** 전에는 `assets\*.js` 한 층만 봤는데, 그 이름이
+# 약속하는 것("번들에 0건")보다 재는 자리가 좁았다 — CSS·index.html·assets 밖으로
+# 나오는 산출물이 통째로 빠져, vite 설정이 바뀌어 청크가 다른 폴더로 나가는 날
+# 관문이 조용히 눈을 감는다. apps/client/src/api/apiBase.test.ts 도 같은 범위다.
+$textExt = @('.js', '.mjs', '.css', '.html', '.json')
+$scanned = @(Get-ChildItem -LiteralPath $dist -Recurse -File |
+  Where-Object { $textExt -contains $_.Extension.ToLower() })
+# 한 건도 안 잡히면 이 관문은 아무것도 안 재고 통과한다 — 빈 dist 를 미러하는
+# 것이 바로 아래 명령이라 그 통과가 가장 비싸다.
+if ($scanned.Count -eq 0) {
+  throw "dist 에서 읽을 파일이 하나도 없다: $dist — 빌드가 실제로 끝났는지 본다."
+}
+$baked = $scanned | Select-String -Pattern 'localhost:3000', '100\.125\.30\.85' -AllMatches
 if ($baked) {
   $baked | ForEach-Object { Write-Host "  $($_.Filename):$($_.LineNumber)" }
   throw 'dist 번들에 서버 주소가 박혀 있다 — apps/client/.env.production 이 비어 있는지 본다.'
@@ -119,9 +137,13 @@ if ($LASTEXITCODE -ge 8) { throw "robocopy 가 실패했다(코드 $LASTEXITCODE
 
 # 서버를 재시작할 필요가 없다는 것을 적어 둔다 — 안 적으면 다음 사람이 매번
 # 서비스를 껐다 켠다. @fastify/static 은 wildcard 기본값이라 요청 때마다
-# 파일시스템을 보므로, 새 파일이 그 자리에서 나간다(clientDist.test.ts).
+# 파일시스템을 보므로 새 파일이 그 자리에서 나가고, **기동 때 dist 가 없었어도**
+# 그렇다(첫 ship 이 정확히 그 경우다 — clientDist.test.ts 의 두 검사).
 Write-Host '끝났다. 서버는 재시작하지 않아도 된다 — 다음 요청부터 새 화면이 나간다.'
-Write-Host '눈으로 한 번: 브라우저에서 강력 새로고침(Ctrl+Shift+R) 하고 그림이 뜨는지 본다.'
+# 강력 새로고침을 시키지 않는다: 실측한 응답이 `cache-control: public, max-age=0`
+# 에 ETag 라, 브라우저는 평범한 방문에서도 조건부 요청을 보내고 바뀐 index.html 을
+# 그 자리에서 받는다. 안 통하는 지시를 안내로 남기면 다음 사람이 계속 반복한다.
+Write-Host '눈으로 한 번: 브라우저에서 새로고침하고 그림이 뜨는지 본다.'
 
 # **성공을 성공으로 말한다.** robocopy 는 "파일을 복사했다"에 1 을 주는데, 그대로
 # 두면 스크립트의 종료 코드가 1 이 되어 부르는 쪽에는 실패로 보인다 — 관문을 다

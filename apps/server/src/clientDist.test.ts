@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import type { FastifyInstance, FastifyServerOptions } from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildApp } from './app.js'
+import { CLIENT_DIST_ABSENT_LOG, CLIENT_DIST_NOT_DIR_LOG, buildApp } from './app.js'
 import { buildTestApp } from './testSupport.js'
 
 /**
@@ -91,10 +92,34 @@ describe('클라이언트 dist 서빙', () => {
     const app = await 앱(없는곳, { level: 'info', stream: 줄.stream })
 
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200)
-    const 안내 = 줄.메시지들().find((m) => m.includes('정적 서빙을 붙이지 않는다'))
+    const 안내 = 줄.메시지들().find((m) => m.includes(CLIENT_DIST_ABSENT_LOG))
     expect(안내, '기동 로그에 안내가 없다 — "사이트가 404 다" 앞에서 볼 자리다').toBeDefined()
     // 경로가 함께 있어야 쓸모가 있다. "없다"만으로는 어디를 봐야 하는지 모른다.
     expect(안내).toContain(없는곳)
+  })
+
+  // 왜: **이 자리가 첫 릴리스다.** 서버 PC 는 정의상 첫 ship 전까지 dist 가 없고
+  //     (거기엔 라이선스 에셋이 없어 빌드할 수 없다), 그래서 가장 처음 화면을
+  //     옮기는 그 한 번이 정확히 "기동 때는 없었는데 나중에 생긴" 경우다.
+  //     없으면 등록을 건너뛰던 구현은 여기서 사이트를 계속 404 로 두는데,
+  //     ship-client.ps1 과 문서 셋은 그 순간 "재시작할 필요 없다"고 적는다 —
+  //     운영자는 초록 스크립트를 손에 들고 404 앞에 선다.
+  //
+  //     위의 '갈아 끼우면' 검사는 이 자리를 못 지킨다: 그쪽은 dist 가 **기동
+  //     시점에 이미 있던** 경우만 잰다.
+  it('기동 뒤에 생긴 dist 도 재시작 없이 나간다 — 첫 ship 이 이 길이다', async () => {
+    const 나중에 = join(tmpdir(), `nogada-나중-dist-${Date.now()}`)
+    정리.push(() => rmSync(나중에, { recursive: true, force: true }))
+
+    const app = await 앱(나중에)
+    expect((await app.inject({ method: 'GET', url: '/' })).statusCode).toBe(404)
+
+    // 사람이 robocopy 로 밀어 넣는 그 순간.
+    쓰기(나중에, { 'index.html': '첫 화면' })
+
+    const res = await app.inject({ method: 'GET', url: '/' })
+    expect(res.statusCode, '첫 ship 뒤에도 404 다 — 서비스를 껐다 켜야만 나온다').toBe(200)
+    expect(res.body).toBe('첫 화면')
   })
 
   // 왜: **이쪽이 진짜로 서버를 죽이는 길이다**(실측: `"root" option must be a
@@ -102,8 +127,16 @@ describe('클라이언트 dist 서빙', () => {
   //     로 적는 오타 하나면 그렇게 되고, 그때는 화면이 아니라 게임 전체가 안 뜬다.
   it('CLIENT_DIST 가 파일을 가리켜도 서버는 뜬다 — .env 오타 하나로 게임을 잃지 않는다', async () => {
     const root = 임시dist({ 'index.html': '<!doctype html>' })
-    const app = await 앱(join(root, 'index.html'))
+    const 파일 = join(root, 'index.html')
+    const 줄 = 모은다()
+    const app = await 앱(파일, { level: 'info', stream: 줄.stream })
+
     expect((await app.inject({ method: 'GET', url: '/api/health' })).statusCode).toBe(200)
+    // "없다"가 아니라 "폴더가 아니다"라고 말해야 한다 — 여기서 운영자는 있는
+    // 파일을 앞에 두고 로그를 읽는다.
+    const 안내 = 줄.메시지들().find((m) => m.includes(CLIENT_DIST_NOT_DIR_LOG))
+    expect(안내, '"없다"고 말하고 있다 — 있는 파일을 앞에 둔 사람이 읽을 줄이다').toBeDefined()
+    expect(안내).toContain(파일)
   })
 
   it('/ 로 index.html 을 준다', async () => {
@@ -210,6 +243,50 @@ describe('클라이언트 dist 서빙', () => {
     // 기동 뒤에 **새로 생긴** 파일도 열려야 한다 — 릴리스마다 번들 이름이 바뀐다.
     const 새번들 = await app.inject({ method: 'GET', url: `/assets/${encodeURIComponent('새-번들')}.js` })
     expect(새번들.statusCode).toBe(200)
+  })
+
+  // 왜: @fastify/static 의 `dotfiles` 기본값은 `'allow'` 라(index.js:56) 옵션을
+  //     안 적으면 root 아래 숨김 파일이 **본문까지 그대로 나간다**(실측: 200).
+  //     지금 dist 에는 dotfile 이 하나도 없지만 `CLIENT_DIST` 는 사람이 `.env` 에
+  //     손으로 적는 값이고, **한 칸 위인 `apps/client` 를 적는 오타는 위의 방어를
+  //     전부 통과한다**(폴더가 맞으니까) — 그 폴더 안에 `.env.local` 이 있다.
+  it('숨김 파일은 안 나간다 — CLIENT_DIST 를 한 칸 위로 적는 오타가 있다', async () => {
+    const app = await 앱(임시dist({ 'index.html': '<!doctype html>', '.env.local': 'SECRET=1' }))
+
+    const res = await app.inject({ method: 'GET', url: '/.env.local' })
+    // 404 다. `'deny'`(403)가 아닌 이유는 app.ts 에 적었다 — 없는 것과 못 주는
+    // 것의 답이 같아야 밖에서 읽을 것이 없다.
+    expect({ status: res.statusCode }, 'dotfiles 기본값(allow)이 그대로다').toEqual({ status: 404 })
+    expect(res.body).not.toContain('SECRET=1')
+  })
+
+  // 왜: 스크립트와 문서가 "밀어 넣으면 다음 요청부터 새 화면" 이라고 약속하는데
+  //     `index.html` 은 이름에 해시가 안 붙는 유일한 파일이라, 캐시가 그 약속을
+  //     깰 수 있는 자리다. 지금 나가는 헤더가 그것을 막는다: `max-age=0` 이면
+  //     브라우저는 평범한 방문에서도 조건부 요청을 보내고 ETag 로 바뀐 것을 그
+  //     자리에서 받는다(그래서 문서의 '강력 새로고침' 안내를 지웠다 — 실측 전에
+  //     적힌 말이었다). 누가 `maxAge` 를 켜는 날 여기가 빨개져야 한다.
+  it('index.html 응답은 매 요청 재검증된다 — 강력 새로고침이 필요 없는 근거다', async () => {
+    const app = await 앱(임시dist({ 'index.html': '<!doctype html>' }))
+    const res = await app.inject({ method: 'GET', url: '/' })
+
+    expect(String(res.headers['cache-control'])).toContain('max-age=0')
+    expect(res.headers.etag, 'ETag 가 없으면 재검증이 매번 전부 다시 받는 것이 된다').toBeDefined()
+  })
+})
+
+/**
+ * **런북이 인용한 문구가 실제 로그와 같은가.**
+ *
+ * docs/deploy-windows.md 는 "사이트가 404 면 기동 로그에서 이 줄을 찾아라"라고
+ * 글자 그대로 인용한다. 코드가 남기는 줄과 한 글자만 어긋나면 그 지시는 grep
+ * 0건이 되고, 그 자리에 선 사람은 자기가 잘못 본 줄 안다 — 실제로 어긋나 있었다.
+ * 문서에는 자를 댈 곳이 없으므로 **여기 한 줄로 묶어 둔다.**
+ */
+describe('런북의 인용', () => {
+  it('deploy-windows.md 가 기동 로그를 글자 그대로 인용한다', () => {
+    const 런북 = fileURLToPath(new URL('../../../docs/deploy-windows.md', import.meta.url))
+    expect(readFileSync(런북, 'utf8')).toContain(CLIENT_DIST_ABSENT_LOG)
   })
 })
 
