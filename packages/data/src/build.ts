@@ -9,6 +9,7 @@ import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import { validateMonsterPatterns } from './monsterChecks.js'
+import { parseMonsters } from './monsters.js'
 import { parseMasters, parseShops } from './shops.js'
 import { parseSpeakers } from './speakers.js'
 import { bakeBarrierRegions, parseTransitions, validateTransitions } from './transitions.js'
@@ -96,6 +97,17 @@ const gatherTables = parseGatherTables(
   readCsv('gather_brackets.csv'),
 )
 
+// 몬스터 다섯 CSV — 종의 상대 패턴과 배치 원점에서 **배치마다 def 를 굽는다**
+// (monsters.ts 의 이유: patrol 이 절대 좌표라서다). defs·placements 는 GameData 에
+// 실리고(화면이 그린다), drops 만 서버 전용 산출물로 아래에서 따로 굽는다.
+const monsterWorld = parseMonsters(
+  readCsv('monster_species.csv'),
+  readCsv('monster_patrol.csv'),
+  readCsv('monster_attacks.csv'),
+  readCsv('monster_placements.csv'),
+  readCsv('monster_drops.csv'),
+)
+
 /**
  * 맵 파일을 읽는다. **없는 파일에 던지지 않고 빈 문자열을 돌려준다.**
  *
@@ -160,11 +172,10 @@ const data: GameData = {
   // 길은 아래에서 굽는다 — 참조가 성립하는지부터 보고 나서다.
   routes: [],
   dialogue,
-  // 몬스터 종·배치는 C6 의 CSV 가 채운다 — validateMonsterPatterns 의 빈 목록과
-  // 같은 자세로, 화면의 렌더 경로(C5)가 데이터보다 먼저 모양을 안다. 종·배치는
-  // 클라이언트가 그려야 해서 GameData 에 싣고(전투 §2-1), 드랍표만 서버 전용이다.
-  monsters: {},
-  monsterPlacements: {},
+  // 종·배치는 클라이언트가 그려야 해서 GameData 에 싣는다(전투 §2-1) — 패턴은
+  // 화면에 보이는 정보라 숨은 문턱이 아니다. 드랍표만 서버 전용이다(전투 §4).
+  monsters: monsterWorld.defs,
+  monsterPlacements: monsterWorld.placements,
 }
 
 // 화자 배치·시작 칸·전환·지점 검사는 맵을 봐야 해서 GameData 만으로는 할 수
@@ -172,19 +183,25 @@ const data: GameData = {
 // 확률표 검사는 표와 GameData 양쪽을 봐야 해서(아이템·노드 참조) 또 나뉘어 있다.
 const gatherCheck = validateGatherTables(gatherTables, data)
 const violations = [
-  // 드랍표 자리는 아직 빈 표다 — validateMonsterPatterns 의 빈 목록과 같은
-  // 자세로, 획득 그물이 데이터(C6 의 드랍 CSV)보다 먼저 "전투 드랍" 출처를
-  // 안다(전투 §12-앞 2). C6 이 드랍 파서를 붙이면 그 결과가 이 자리에 실린다.
-  ...validateGameData(data, gatherTables, {}),
+  // 드랍표가 실린다 — 획득 그물이 "전투 드랍" 출처를 먼저 알아 둔 그 자리다
+  // (전투 §12-앞 2). 송곳니는 캐지지도 만들어지지도 않으므로 이 인자가 빠지면
+  // 출하 items.csv 가 그대로 빌드를 세운다.
+  ...validateGameData(data, gatherTables, monsterWorld.drops),
   ...gatherCheck.violations,
   ...validateEnhanceCosts(data),
   // 형평 검증은 표와 GameData 양쪽을 본다 — 문턱이 몇 분인지는 확률표만이 안다.
   ...validateCollection(data, gatherTables),
   ...validateSpeakerPlacements(data, terrains),
-  // 몬스터 패턴 검사(설계 §8 검사 1~4)는 데이터보다 먼저 파이프에 서 있다 —
-  // 몬스터 CSV 는 C6 이 싣고, 그때 이 빈 목록이 파싱 결과로 바뀐다. 풀 수
-  // 없는 패턴은 작가가 첫 행을 적는 순간부터 여기서 걸린다.
-  ...validateMonsterPatterns([], terrains),
+  // 몬스터 패턴 검사(설계 §8 검사 1~4)가 실데이터를 문다 — 구운 def 그대로를
+  // 넘기므로, 시뮬이 검사하는 늑대와 화면·판정이 보는 늑대가 같은 늑대다.
+  ...validateMonsterPatterns(
+    Object.values(monsterWorld.placements).map((p) => ({
+      instanceId: p.instanceId,
+      mapId: p.mapId,
+      def: monsterWorld.defs[p.monsterId]!,
+    })),
+    terrains,
+  ),
   ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
   ...validatePlaces(data, terrains),
@@ -210,6 +227,11 @@ writeFileSync(join(outDir, 'gamedata.json'), JSON.stringify(data, null, 2), 'utf
 // apps/server 만 import 한다. 클라이언트 번들에 브라켓 경계가 실리는 순간 숨은
 // 문턱 전부가 F12 로 스포일된다.
 writeFileSync(join(outDir, 'gather-tables.json'), JSON.stringify(gatherTables, null, 2), 'utf8')
+
+// 몬스터 드랍표도 **서버 전용 산출물**이다(전투 §4) — 확률표와 같은 한 줄이
+// 근거다: 드랍 확률이 곧 숨은 문턱이라 gamedata.json 에 실리는 순간 F12 로
+// 스포일된다. 읽는 문은 loadMonsterDrops() 하나이고 apps/server 만 import 한다.
+writeFileSync(join(outDir, 'monster-drops.json'), JSON.stringify(monsterWorld.drops, null, 2), 'utf8')
 
 // 결계 뒤 칸들도 **서버 전용 산출물**이다 — 확률표와 같은 취급이고 근거도 같은
 // 한 줄이다(채집 티어 스펙 §7-앞 9, 바로 위와 같은 출처). 결계 스펙 §9-앞 에는
@@ -261,7 +283,8 @@ console.log(
     `수집칸 ${Object.keys(data.collection).length}, ` +
     `전환 ${data.transitions.length}, ` +
     `결계구역 ${barrierRegions.length}(칸 ${barrierRegions.reduce((n, r) => n + r.cells.length, 0)}), ` +
-    `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}`,
+    `지점 ${Object.keys(data.places).length}, 일과 ${Object.keys(data.schedules).length}, ` +
+    `몬스터 배치 ${Object.keys(data.monsterPlacements).length}`,
 )
 
 // 표의 경고는 빌드를 막지 않는다 — 최종 브라켓에 실패가 남거나 첫 브라켓의

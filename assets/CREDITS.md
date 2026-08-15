@@ -173,6 +173,8 @@ assets/licensed/
 | `cloud_snow` | icon122 | 눈 내리는 구름 |
 | `cloud_storm` | icon124 | 잿빛 구름의 굵은 비 |
 | `snowflake` | icon152 | 파란 눈송이 |
+| `wolf_fang` | icon887 | 늑대 송곳니 — 흰 이빨 |
+| `sword_copper` | icon434 를 구리빛으로 | 구리 검 — 실루엣이 계열, 색이 등급 |
 
 증표 8종은 나머지와 고르는 방식이 다르다 — **종류를 형태로, 계열을 색으로** 읽는다(깃털 = 속도증표,
 반지 = 선별증표). 8종이 한 벌이라 가방에서 묻는 것이 "이게 무엇인가"보다 "내가 무슨 증표를 가졌는가"
@@ -231,8 +233,8 @@ NPCS
 # 전 채널 ×0.72 로 어둡게 — 애완견의 밝은 회색이 들짐승의 어두운 잿빛이 된다.
 magick "$CHR/Animal/Dog 01-3.png"   -color-matrix "0.6145 0.3229 0.0627 0.1645 0.7729 0.0627 0.1645 0.3229 0.5127"   -channel RGB -evaluate multiply 0.72 +channel   -define png:color-type=6 apps/client/public/sprites/monster_wolf.png
 
-# 아이템 아이콘 72종(여기 복사 67 + 아래 색 파생 5) — 위 매핑 표와 같은 내용이다.
-# items.csv 는 이 중 68종을 쓴다
+# 아이템 아이콘 74종(여기 복사 68 + 아래 색 파생 6) — 위 매핑 표와 같은 내용이다.
+# items.csv 는 이 중 70종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
 # 없는 예비 배정 4종. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
 # mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
@@ -310,6 +312,7 @@ cloud_rain:121
 cloud_snow:122
 cloud_storm:124
 snowflake:152
+wolf_fang:887
 ICONS
 
 # 아이콘 다섯은 **팩에 없어서 색으로 만든다.** 4단 도구 넷은 미스릴 도구의 실루엣에
@@ -328,6 +331,10 @@ magick "$SRC/icon545.png" -color-matrix "$S4" -define png:color-type=6 "$I/picka
 magick "$SRC/icon460.png" -color-matrix "$S4" -define png:color-type=6 "$I/sickle_starfall.png"
 
 magick "$SRC/icon959.png"   -color-matrix "0.55 0.45 0.3 0.5 0.55 0.35 0.6 0.5 0.55"   -channel RGB -evaluate multiply 1.35 +channel   -define png:color-type=6 "$I/heartwood_lightning.png"
+
+# 구리 검 — 회색 검(icon434)의 실루엣에 구리빛을 입힌다. 4단 도구 넷과 같은
+# 규칙이다: 실루엣이 계열(무기)을, 색이 등급(구리)을 말한다.
+magick "$SRC/icon434.png" -color-matrix "0.35 0.6 0.15 0.22 0.37 0.09 0.13 0.22 0.05" -define png:color-type=6 "$I/sword_copper.png"
 ```
 
 안내판(`kind=sign`)만 캐릭터 시트가 아니라 **타일셋에서 잘라 온다.** 마을들이 이미 세워 둔

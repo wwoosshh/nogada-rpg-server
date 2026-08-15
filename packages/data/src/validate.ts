@@ -677,6 +677,30 @@ export function validateGameData(
     }
   }
 
+  // 몬스터 배치의 mapId 도 화자와 같은 자리다 — 오타 하나가 그 늑대를 아무도 못
+  // 가는 맵에 세워, /api/fight 는 전부 wrong_map 으로 떨어지는데 화면에는 늑대가
+  // 아예 안 그려져 되짚을 곳이 없다.
+  for (const placement of Object.values(data.monsterPlacements)) {
+    if (!data.maps[placement.mapId]) {
+      violations.push(
+        `monsterPlacements[${placement.instanceId}]: 없는 맵 "${placement.mapId}" 에 놓였다 — maps.csv 의 id 중 하나여야 한다`,
+      )
+    }
+  }
+
+  // 드랍표의 itemId — 드랍은 서버 전용이라 화면 어디에도 안 그려지므로, 오타는
+  // "처치했는데 가끔 아무것도 안 준다"로만 드러난다(rollMonsterDrop 이 모르는
+  // id 를 그대로 스택에 넣으면 더 나쁘다: 이름 없는 물건이 가방에 선다).
+  for (const table of Object.values(monsterDrops)) {
+    for (const drop of table.drops) {
+      if (!hasItem(drop.itemId)) {
+        violations.push(
+          `monsterDrops[${table.monsterId}]: 존재하지 않는 아이템 "${drop.itemId}" 를 떨군다 — items.csv 의 id 중 하나여야 한다`,
+        )
+      }
+    }
+  }
+
   // 참조 무결성 검사는 여기까지다. 아래 도달 가능성 검사를 돌릴지 말지는
   // **이 시점의** 위반 수가 정한다 — 그 사이에 끼어 있는 대사 검사가 몇 건을
   // 더하든 도달 가능성 계산에는 영향이 없기 때문이다.

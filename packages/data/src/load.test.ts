@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { loadGameData } from './load.js'
 import { loadGatherTables } from './loadGatherTables.js'
+import { loadMonsterDrops } from './loadMonsterDrops.js'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { validateGameData } from './validate.js'
 
@@ -15,9 +16,10 @@ import { validateGameData } from './validate.js'
  */
 describe('loadGameData', () => {
   it('빌드된 아티팩트는 검증을 통과한다', () => {
-    // 표도 같은 빌드가 구운 산출물(gather-tables.json)이다 — 스테일 감지의 대상이
-    // gamedata.json 하나에서 두 산출물의 짝으로 넓어진다.
-    expect(validateGameData(loadGameData(), loadGatherTables())).toEqual([])
+    // 표·드랍표도 같은 빌드가 구운 산출물이다 — 스테일 감지의 대상이
+    // gamedata.json 하나에서 세 산출물의 짝으로 넓어진다. 드랍표를 빼면 획득
+    // 그물이 송곳니를 "어디서도 못 얻는다"로 잡아 이 검사 자체가 빨개진다.
+    expect(validateGameData(loadGameData(), loadGatherTables(), loadMonsterDrops())).toEqual([])
   })
 
   it('빌드된 아티팩트의 id 집합이 CSV 를 직접 파싱한 결과와 일치한다', () => {

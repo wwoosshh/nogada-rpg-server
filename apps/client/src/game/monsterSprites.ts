@@ -4,14 +4,19 @@
  * nodeSprites·npcSprites 와 같은 자리이고 같은 이유다: 서버는 몬스터가 어디서
  * 무엇을 하는지 판정하지만 어떻게 생겼는지는 판정하지 않는다 — 그림은 화면의
  * 일이라 이 목록이 클라이언트에만 있다. 파일 자체는 저장소에 없다
- * (assets/CREDITS.md 의 재배포 금지 — public/ 은 .gitignore 대상).
- *
- * **지금은 비어 있다.** C6 이 Pipoya Enemy 몽타주를 만들어 눈으로 고르고
- * (설계 §10 — 맵 저작 규범과 같은 절차) 그때 첫 줄과 CREDITS 대장·복원 명령을
- * 함께 채운다. 그동안의 계약은 하나다: 모르는 이름이면 조용히 넘어가지 않고
- * 그 자리에서 던진다.
+ * (assets/CREDITS.md 의 재배포 금지 — public/ 은 .gitignore 대상, 원본과 복원
+ * 명령은 그 문서의 "몬스터 스프라이트 대장"에 있다). 계약은 하나다: 모르는
+ * 이름이면 조용히 넘어가지 않고 그 자리에서 던진다.
  */
-const MONSTER_SPRITES: Record<string, string> = {}
+const MONSTER_SPRITES: Record<string, string> = {
+  // 세 줄인 이유: def 가 배치별로 구워지므로(packages/data 의 monsters.ts —
+  // patrol 이 절대 좌표라서다) monsterId = instanceId 다. 몬스터가 늘면 이
+  // 목록이 배치 수만큼 자라니, 종 칸을 매니페스트 키로 옮기는 것이 다음 아크의
+  // 씨앗이다 — 그때까지는 셋이 같은 그림 한 장을 가리키는 것이 정직한 상태다.
+  'wolf-1': 'monster_wolf.png',
+  'wolf-2': 'monster_wolf.png',
+  'wolf-3': 'monster_wolf.png',
+}
 
 export const MONSTER_SPRITE_IDS: readonly string[] = Object.keys(MONSTER_SPRITES)
 

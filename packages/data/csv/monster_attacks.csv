@@ -1,0 +1,5 @@
+species,telegraphStartMs,telegraphMs,activeMs,direction,reach
+wolf,0,1800,400,right,3
+wolf,2400,1800,400,up,2
+wolf,4800,1800,400,left,3
+wolf,7200,1800,400,down,2

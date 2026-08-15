@@ -11,6 +11,9 @@ import { loadGatherTables } from '@nogada/data/gather-tables'
 // 벽은 클라이언트가 맵 JSON 으로 이미 보고 있으므로 감출 비밀이 있어서가
 // 아니라, 판정의 재료를 판정받는 쪽에 쥐여 줄 이유가 없어서다.
 import { loadBarrierRegions } from '@nogada/data/barriers'
+// 셋째 별도 진입 — 드랍 확률이 곧 숨은 문턱이라(전투 §4) 확률표와 같은 취급이다.
+// 몬스터의 패턴·배치는 반대로 GameData 에 실려 온다: 화면이 그릴 정보다.
+import { loadMonsterDrops } from '@nogada/data/monster-drops'
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
 import { requireSession } from './auth/sessions.js'
 import { parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
@@ -148,12 +151,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     registerUseRoutes(guarded, store, data)
     registerMoveRoutes(guarded, store, data)
     registerDonateRoutes(guarded, store, data)
-    // 몬스터 세계는 아직 비어 있다 — CSV 는 C6 의 몫이고, 빈 목록이면 모든
-    // 전투 요청이 unknown_monster 로 떨어질 뿐 서버는 완전하다. 지금 배선해
-    // 두는 이유는 gatherTables 와 같다: 잊으면 컴파일러가 먼저 말하게.
+    // 몬스터 세계 — 종·배치는 gamedata 에서, 드랍표만 서버 전용 산출물에서 온다
+    // (전투 §4: 드랍 확률이 곧 숨은 문턱이다). def 는 배치별로 구워져 있어
+    // monsterId = instanceId 다(packages/data 의 monsters.ts).
     // 죽음 귀환 자리는 시작 맵의 spawn 하나다(startLocation — newCharacter 가
     // 마을 spawn 을 유일한 출처로 삼는 그 규범).
-    registerFightRoutes(guarded, store, data, { defs: {}, placements: {}, drops: {} }, startLocation(data))
+    registerFightRoutes(
+      guarded,
+      store,
+      data,
+      { defs: data.monsters, placements: data.monsterPlacements, drops: loadMonsterDrops() },
+      startLocation(data),
+    )
   })
 
   return app

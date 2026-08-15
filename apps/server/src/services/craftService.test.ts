@@ -496,6 +496,22 @@ describe('performCraft — 무기는 combat 슬롯과 피해 축을 쓴다(전�
     expect(r.outcome.player.equipped.mineral).toBe('pick1')
   })
 
+  it('검 착용 중 곡괭이를 만들어도 combat 슬롯은 그대로다 — 위 검사의 거울 방향이다', () => {
+    const p = player({
+      stacks: { copper_ingot: 3 },
+      instances: [{ instanceId: 'sword1', itemId: 'copper_sword', enhanceLevel: 0 }],
+      equipped: { combat: 'sword1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'legend_pickaxe', rng: alwaysSucceed, newId: () => 'newpick', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    // 곡괭이의 슬롯은 정의(toolSkill=mineral)가 정한다 — 빈 mineral 슬롯에 착용되고,
+    // 검과는 어느 축으로도 견줘지지 않는다. 곡괭이가 검을 벗기면 회당 피해가
+    // 조용히 맨손으로 떨어지는데, 그 이유는 화면 어디에도 안 적힌다.
+    expect(r.outcome.player.equipped.mineral).toBe('newpick')
+    expect(r.outcome.player.equipped.combat).toBe('sword1')
+  })
+
   it('더 센 검을 만들면 갈아 낀다 — 무기의 "낫다"는 간격이 아니라 회당 피해다', () => {
     const p = player({
       stacks: { copper_ingot: 1 },

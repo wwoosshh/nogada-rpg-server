@@ -4,6 +4,7 @@ copper_chisel,구리 정,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_chisel
 copper_axe,구리 도끼,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_axe,1,12,20,도구,,
 copper_pickaxe,구리 곡괭이,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_pickaxe,1,12,20,도구,,
 copper_sickle,구리 낫,crafting,0,0.55,copper_ingot:2|soft_log:6,copper_sickle,1,12,20,도구,,
+copper_sword,구리 검,crafting,0,0.55,copper_ingot:2|wolf_fang:10,copper_sword,1,12,20,도구,,
 copper_hammer,구리 망치,crafting,200,0.55,copper_ingot:2,copper_hammer,1,15,25,도구,,
 iron_chisel,철 정,crafting,500,0.5,copper_ingot:3|ice_shard:5,iron_chisel,1,20,35,도구,,
 iron_axe,철 도끼,crafting,500,0.5,copper_ingot:3|soft_log:5,iron_axe,1,20,35,도구,,

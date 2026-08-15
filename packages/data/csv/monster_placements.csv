@@ -1,0 +1,4 @@
+instanceId,species,mapId,originX,originY,phaseOffsetMs,maxHp,sweepDamage
+wolf-1,wolf,사냥터,5,4,0,8,20
+wolf-2,wolf,사냥터,14,8,3300,8,20
+wolf-3,wolf,사냥터,7,13,6700,8,20

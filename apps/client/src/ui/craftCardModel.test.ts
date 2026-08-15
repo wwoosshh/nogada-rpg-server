@@ -76,6 +76,9 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
       'copper_axe',
       'copper_pickaxe',
       'copper_sickle',
+      // 구리 검도 요구치 0 이라 구리 4종 곁이다(전투 §4) — 파일 끝에 붙이면
+      // 잠긴 별똥 아래로 들어가, 요구치 낮은 문이 위에 오는 배치가 깨진다.
+      'copper_sword',
       'copper_hammer',
       'iron_chisel',
       'iron_axe',

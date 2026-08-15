@@ -13,6 +13,7 @@ import { parseGatherTables, suffixOfVariant } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
 import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
+import { parseMonsters } from './monsters.js'
 import type { MapTerrain } from './placements.js'
 import { parseSpeakers } from './speakers.js'
 import { parseTransitions } from './transitions.js'
@@ -242,6 +243,25 @@ function loadRealTables(): GatherTables {
   )
 }
 
+/** 실제로 출하되는 몬스터 다섯 CSV 를 그대로 파싱한다. build.ts 와 같은 경로다. */
+function loadRealMonsters(): ReturnType<typeof parseMonsters> {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const csvDir = join(here, '..', 'csv')
+  const readRealCsv = (name: string) => parseCsv(readFileSync(join(csvDir, name), 'utf8'))
+  return parseMonsters(
+    readRealCsv('monster_species.csv'),
+    readRealCsv('monster_patrol.csv'),
+    readRealCsv('monster_attacks.csv'),
+    readRealCsv('monster_placements.csv'),
+    readRealCsv('monster_drops.csv'),
+  )
+}
+
+/** 실제로 출하되는 드랍표 — 획득 그물이 송곳니의 출처를 알려면 이것이 함께 가야 한다. */
+function loadRealDrops(): MonsterDropTables {
+  return loadRealMonsters().drops
+}
+
 /** 실제로 출하되는 CSV·맵·대사를 그대로 파싱한 GameData. 여러 describe 가 공유한다. */
 function loadRealGameData(): GameData {
   const here = dirname(fileURLToPath(import.meta.url))
@@ -250,9 +270,10 @@ function loadRealGameData(): GameData {
   const nodes = parseNodes(readRealCsv('nodes.csv'))
   const recipes = parseRecipes(readRealCsv('recipes.csv'))
   const { maps, placements, places } = loadRealMaps()
+  const monsters = loadRealMonsters()
 
   return {
-    monsters: {}, monsterPlacements: {},
+    monsters: monsters.defs, monsterPlacements: monsters.placements,
     items: parseItems(readRealCsv('items.csv')),
     nodes,
     recipes,
@@ -525,7 +546,7 @@ describe('validateGameData 의 도달 가능성 검사', () => {
   // baseData 는 놓인 노드 하나에서 전부 도달 가능하므로 그 테스트가 이미 이 사실을 검증한다.
 
   it('실제로 출하되는 CSV 데이터는 도달 가능성 검사를 통과한다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -540,7 +561,7 @@ describe('validateGameData 의 배치 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 노드마다 맵에 최소 한 번 놓여 있다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('맵 어디에도 놓이지 않았다'))
     expect(violations).toEqual([])
   })
 })
@@ -579,7 +600,7 @@ describe('validateGameData 의 조합 부트스트랩 검사', () => {
   it('실제로 출하되는 CSV 데이터는 스킬마다 requiredSkill 0 인 레시피를 갖고 있다', () => {
     // skills[...] 접두사는 이 검사와 "채집 기술마다 repeat 이정표가 정확히 하나"
     // 검사가 공유한다 — 부트스트랩만 걸러 보려면 메시지 내용까지 좁혀야 한다.
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter(
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter(
       (v) => v.startsWith('skills[') && v.includes('부트스트랩'),
     )
     expect(violations).toEqual([])
@@ -640,7 +661,7 @@ describe('validateGameData 의 돈복사 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터에는 돈복사 레시피가 없다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -793,7 +814,7 @@ describe('validateGameData 의 사다리 소속 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 사다리 소속이 전부 일치한다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -1046,7 +1067,7 @@ describe('validateGameData 의 이정표 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 이정표 검사를 통과한다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -1085,7 +1106,7 @@ describe('validateGameData 의 대화 검사 — 선언되지 않은 사실', ()
   })
 
   it('실제로 출하되는 대사 데이터는 전부 선언된 사실만 쓴다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('선언되지 않은 사실'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('선언되지 않은 사실'))
     expect(violations).toEqual([])
   })
 })
@@ -1153,7 +1174,7 @@ describe('validateGameData 의 대화 검사 — 값의 모양', () => {
   })
 
   it('실제로 출하되는 대사 데이터는 값의 모양이 전부 맞는다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('모양'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('모양'))
     expect(violations).toEqual([])
   })
 })
@@ -1180,7 +1201,7 @@ describe('validateGameData 의 대화 검사 — 무조건 인사', () => {
   })
 
   it('실제로 출하되는 화자는 전부 무조건 인사가 있다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('무조건 규칙이 없다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('무조건 규칙이 없다'))
     expect(violations).toEqual([])
   })
 })
@@ -1327,7 +1348,7 @@ describe('validateGameData 의 대화 검사 — 스스로 모순되는 조건',
   })
 
   it('실제로 출하되는 대사 데이터는 이 검사를 통과한다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('동시에 참일 수 없다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('동시에 참일 수 없다'))
     expect(violations).toEqual([])
   })
 })
@@ -1431,7 +1452,7 @@ describe('validateGameData 의 대화 검사 — 사건 이름', () => {
   })
 
   it('실제로 출하되는 대사 데이터의 사건 이름은 전부 알려진 것이다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('알 수 없는 사건'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('알 수 없는 사건'))
     expect(violations).toEqual([])
   })
 })
@@ -1490,7 +1511,7 @@ describe('validateGameData 의 대화 검사 — 화자·대사 파일 대응', 
   })
 
   it('실제로 출하되는 데이터는 화자·대사 파일이 서로 대응한다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter(
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter(
       (v) => v.includes('대사 파일이 없다') || v.includes('화자 정의'),
     )
     expect(violations).toEqual([])
@@ -1555,7 +1576,7 @@ describe('validateGameData 의 대화 검사 — 없는 이정표·기술 참조
   })
 
   it('실제로 출하되는 대사 데이터는 전부 존재하는 이정표·기술만 가리킨다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter(
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter(
       (v) => v.includes('존재하지 않는 이정표') || v.includes('존재하지 않는 기술'),
     )
     expect(violations).toEqual([])
@@ -1764,7 +1785,7 @@ describe('validateGameData 의 상점 등록부 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 상점 검사를 통과한다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -2010,7 +2031,7 @@ describe('validateGameData 의 달인 등록부 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터는 달인 검사를 통과한다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -2084,7 +2105,7 @@ describe('validateGameData 의 증표 제약 검사', () => {
   })
 
   it('실제로 출하되는 증표 8종은 이 제약을 전부 지킨다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -2106,7 +2127,7 @@ describe('validateGameData 의 사용 효과 검사', () => {
   })
 
   it('실제로 출하되는 가루 4종은 이 제약을 지킨다', () => {
-    expect(validateGameData(loadRealGameData(), loadRealTables())).toEqual([])
+    expect(validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops())).toEqual([])
   })
 })
 
@@ -2200,7 +2221,7 @@ describe('validateGameData 의 죽은 아이템 검사', () => {
   })
 
   it('실제로 출하되는 CSV 데이터에는 죽은 아이템이 없다 — 주괴도 레시피 재료이면서 광물상점의 매도 대상이다', () => {
-    const violations = validateGameData(loadRealGameData(), loadRealTables()).filter((v) => v.includes('쓸 곳도 팔 곳도 없다'))
+    const violations = validateGameData(loadRealGameData(), loadRealTables(), loadRealDrops()).filter((v) => v.includes('쓸 곳도 팔 곳도 없다'))
     expect(violations).toEqual([])
   })
 })
