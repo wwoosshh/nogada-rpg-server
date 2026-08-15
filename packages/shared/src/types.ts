@@ -17,7 +17,8 @@ export const SKILL_LABELS: Record<SkillId, string> = {
 }
 
 /**
- * 착용 슬롯 — 생활기술 다섯에 무기 슬롯('combat')을 더한 것(전투 설계 §4·§12-앞 8).
+ * 착용 슬롯 — 생활기술 다섯에 무기('combat')와 방어구('armor')를 더한 것
+ * (전투 설계 §4·§12-앞 8, 아크 E §1).
  *
  * **SKILL_IDS 에 combat 을 넣지 않는다.** 세이브 게이트의 skillsShape 가
  * SKILL_IDS 에서 생성되고 `.strict()`+필수라, 거기 넣는 순간 combat 키 없는
@@ -25,11 +26,26 @@ export const SKILL_LABELS: Record<SkillId, string> = {
  * 도구도 같이 버려진다. combat 은 기술이 아니라 슬롯이다: 전투 숙련은 skills 가
  * 아니라 전투 상태(전투 설계 §6)에 실리고, 세이브의 equipped 는 열린 레코드라
  * (protocol.ts) 이 타입은 빌드타임에만 존재한다 — 구세이브에 무해한 이유다.
+ * armor 도 같은 성질을 그대로 탄다(아크 E §1 — 마이그레이션 0): 기술이 아니라
+ * 슬롯이고, 재는 숙련조차 없다(경감은 정의 defense 와 강화 수치가 전부다).
  */
-export type EquipSlot = SkillId | 'combat'
+export type EquipSlot = SkillId | 'combat' | 'armor'
 
 /** 파서가 toolSkill 칸의 허용값을 말할 때 쓴다 — SKILL_IDS 처럼 목록이 먼저다. */
-export const EQUIP_SLOTS: readonly EquipSlot[] = [...SKILL_IDS, 'combat'] as const
+export const EQUIP_SLOTS: readonly EquipSlot[] = [...SKILL_IDS, 'combat', 'armor'] as const
+
+/**
+ * 슬롯 이름표 — SKILL_LABELS 다섯에 전투·방어를 더한 것의 유일한 소유자다
+ * (아크 E §1). 화면이 슬롯마다 삼항(`slot === 'combat' ? '전투' : SKILL_LABELS
+ * [slot]`)을 쌓으면 EquipSlot 확장의 컴파일 브레이크가 화면 곳곳에 흩어진다 —
+ * armor 를 더할 때 BagPanel 삼항이 그 함정이었다. 다음 확장이 깨뜨릴 자리는
+ * 마지막 줄의 `SKILL_LABELS[slot]` 인덱싱 하나, 여기뿐이어야 한다.
+ */
+export function slotLabelOf(slot: EquipSlot): string {
+  if (slot === 'combat') return '전투'
+  if (slot === 'armor') return '방어'
+  return SKILL_LABELS[slot]
+}
 
 // STARTING_TOOL_IDS 는 은퇴했다(설계 §6-앞 8) — 시작 지급은 도구 4종이 아니라
 // 마을 하나의 도구 1개이고, 그 도구는 상수가 아니라 유도(equipment.ts 의
@@ -111,7 +127,7 @@ export interface PlayerState {
   /** 장비·도구 — 개별 행 */
   instances: ItemInstance[]
   /**
-   * 슬롯별 착용 도구의 instanceId — 생활기술 다섯과 무기('combat') 하나다.
+   * 슬롯별 착용 도구의 instanceId — 생활기술 다섯에 무기('combat')·방어구('armor')다.
    *
    * 타입만 EquipSlot 로 넓다. 세이브 스키마(protocol.ts)는 처음부터 열린
    * 레코드라 한 글자도 안 바뀌었고, 그래서 combat 키 없는 구세이브가 그대로
@@ -279,6 +295,15 @@ export interface ItemDef {
    * 강제한다.
    */
   damage?: number
+  /**
+   * 피격 경감 — **armor 도구만 갖는다**(아크 E §1, damage 짝의 대칭). 걸린
+   * 휩쓸기마다 피해가 이 값 + 강화 수치만큼 준다(식은 armorDefenseOf 한 벌 —
+   * 서버 판정 fightService ④·자동 착용 비교·가방 표시가 나눠 부른다). 하한 1
+   * ("위험은 언제나 아프다", 규범 2)은 이 칸이 아니라 판정의 몫이다. armor 아닌
+   * 것의 defense 는 어느 판정도 읽지 않는 숫자로 조용히 실리므로 파서가
+   * 짝(armor ⟺ defense)을 강제한다.
+   */
+  defense?: number
   icon: string
   /**
    * 정가(매수가). 매도가는 이 값의 절반이고, 그 계산은 formulas/price.ts 하나가 소유한다.

@@ -1,8 +1,10 @@
 import {
+  armorDefenseOf,
   attackConnects,
   claimPlausible,
   combatIntervalMs,
   currentHp,
+  equippedToolInfo,
   monsterAlive,
   newlyAchieved,
   rollInt,
@@ -109,6 +111,7 @@ export type FightResult = { ok: true; outcome: FightOutcome } | { ok: false; cod
  *   ③ 여기서부터 ok:true — 간격 소모·숙련 증가는 스윙의 값이지 명중의 값이 아니다.
  *      사거리 안(t±ε)이면 몬스터 HP 감소·처치·드랍·slain 기록, 밖이면 **헛스윙**.
  *   ④ 피격 — 주장 칸이 휩쓸기 활성 구역 안이면(t±ε) 사거리와 무관하게 HP 감소.
+ *      착용 방어구가 있으면 걸린 배치마다 max(1, sweepDamage − 경감) 이다(아크 E §2).
  *   ⑤ 죽음 — 처치가 먼저다: 드랍과 처치 기록이 실리고 나서 귀환한다(잡고 죽은
  *      사람이 빈손이면 안 된다). 귀환은 마을 스폰, hunt 리셋, 무손실.
  */
@@ -205,6 +208,12 @@ export function performFight(args: PerformFightArgs): FightResult {
   // 휩쓸기에는 걸린다 — 처치와 죽음이 한 요청에 공존하는 길이 이것이다.
   let tookHit = false
   let tookDamage = 0
+  // 경감(아크 E §2) — 착용 방어구 조회는 루프 밖 한 번이다: equippedToolInfo 는
+  // instances 선형 탐색이라 싸지 않고, 경감치는 스윙 하나 안에서 불변이라
+  // 배치마다 다시 물을 이유가 없다. 맨몸(null)은 0 — max(1, sweep−0) = sweep
+  // 이라 식을 통과해도 무영향이다. 식은 shared 한 벌(부등호 한 벌 규범).
+  const armor = equippedToolInfo(player, 'armor', data.items)
+  const defense = armor ? armorDefenseOf(armor.def, armor.instance.enhanceLevel) : 0
   for (const p of Object.values(placements)) {
     if (p.mapId !== player.location.mapId) continue
     const pDef = defs[p.monsterId]
@@ -216,7 +225,10 @@ export function performFight(args: PerformFightArgs): FightResult {
     if (!pAlive) continue
     if (sweepCatches(pDef, p.phaseOffsetMs, claim, now)) {
       tookHit = true
-      tookDamage += p.sweepDamage
+      // 하한 1 은 **걸린 배치마다** 건다("위험은 언제나 아프다", 규범 2) — 합에
+      // 걸면 다중 피격에서 클램프가 한 번만 물려 15+1 이 14 가 된다. 경감이
+      // 피해를 0 으로 만들면 "회피 안 하면 맞는다"(§3)가 장비로 무력화된다.
+      tookDamage += Math.max(1, p.sweepDamage - defense)
     }
   }
   if (tookHit) {

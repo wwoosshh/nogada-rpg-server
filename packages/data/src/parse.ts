@@ -115,20 +115,25 @@ export function toSkillId(value: string, context: string): SkillId {
 }
 
 /**
- * `toolSkill` 칸이 실제 슬롯인지 검사한다 — 기술 다섯에 무기 슬롯('combat')을
- * 더한 것(전투 §12-앞 8).
+ * `toolSkill` 칸이 실제 슬롯인지 검사한다 — 기술 다섯에 무기('combat')·
+ * 방어구('armor')를 더한 것(전투 §12-앞 8, 아크 E §1).
  *
- * toSkillId 를 그대로 못 쓰는 이유가 이 파일의 요점이다: combat 은 기술이
- * 아니라서 SKILL_IDS 에 넣을 수 없고(세이브 게이트의 skillsShape 가 거기서
- * 생성돼 구세이브가 깨진다 — 재현됨), 그렇다고 skill 칸(계열)까지 combat 을
- * 받으면 "combat 계열 상점" 같은 존재하지 않는 개념이 데이터에 적힐 수 있게
+ * toSkillId 를 그대로 못 쓰는 이유가 이 파일의 요점이다: combat·armor 는
+ * 기술이 아니라서 SKILL_IDS 에 넣을 수 없고(세이브 게이트의 skillsShape 가
+ * 거기서 생성돼 구세이브가 깨진다 — 재현됨), 그렇다고 skill 칸(계열)까지
+ * 넓히면 "armor 계열 상점" 같은 존재하지 않는 개념이 데이터에 적힐 수 있게
  * 된다. 그래서 슬롯 칸만 따로 넓힌다.
+ *
+ * **허용 목록은 EQUIP_SLOTS 다** — 'combat' 만 하드코딩 예외로 두었던 첫 판은
+ * 오류 문구가 EQUIP_SLOTS 를 읽으면서 판정은 안 읽어, armor 를 더한 날 문구가
+ * "armor 허용"이라 말하며 armor 행을 거절했다(아크 E 평가 ⑴ — 목록과 판정이
+ * 갈라지면 어느 검사도 안 짖는다).
  */
 export function toEquipSlot(value: string, context: string): EquipSlot {
-  if (value !== 'combat' && !isSkillId(value)) {
+  if (!(EQUIP_SLOTS as readonly string[]).includes(value)) {
     throw new Error(`${context}: toolSkill "${value}" 는 알 수 없다 (허용값: ${EQUIP_SLOTS.join(', ')})`)
   }
-  return value
+  return value as EquipSlot
 }
 
 /**
@@ -298,6 +303,16 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
       def.damage = toInt(requireCell(row, 'damage', ctx), ctx, 'damage')
     } else if (optionalCell(row, 'damage') !== undefined) {
       throw new Error(`${ctx}: damage 는 combat 도구만 가진다 — 회당 피해는 무기의 축이다(전투 §4)`)
+    }
+    // defense 와 armor 슬롯도 같은 짝이다(아크 E §1 — combat ⟺ damage 의 대칭,
+    // 양방향을 다 본다). 방어구인데 defense 가 없으면 아무것도 경감하지 않는
+    // 옷이 되고, 방어구 아닌 것의 defense 는 어느 판정도 읽지 않는 숫자로
+    // 조용히 실린다 — 둘 다 화면 어디에도 흔적이 없다. toInt 의 기본 최솟값 1 이
+    // "0 경감 방어구"까지 함께 막는다(하한 1 은 데이터가 아니라 판정의 몫이다).
+    if (def.toolSkill === 'armor') {
+      def.defense = toInt(requireCell(row, 'defense', ctx), ctx, 'defense')
+    } else if (optionalCell(row, 'defense') !== undefined) {
+      throw new Error(`${ctx}: defense 는 armor 도구만 가진다 — 경감은 방어구의 축이다(아크 E §1)`)
     }
     addUnique(out, id, def, 'items.csv')
   }

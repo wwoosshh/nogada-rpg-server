@@ -1,4 +1,5 @@
 import {
+  armorDefenseOf,
   calcCraftSuccess,
   canCraft,
   craftIntervalMs,
@@ -60,7 +61,8 @@ function spend(player: PlayerState, item: string, count: number): void {
  * 덮어쓰고 그 투자가 조용히 사라진다. 그래서 등급이 아니라 그 도구가 내는
  * 효과로 견준다 — 축은 슬롯마다 다르다. 망치는 성공률(등급·강화가 더하기로
  * 쌓인다), 채집 도구는 간격(곱하기로 쌓이고 작을수록 빠르다), 무기는 회당
- * 피해(전투 §4 — 간격은 전투 숙련의 것이라 무기가 사는 축이 아니다).
+ * 피해(전투 §4 — 간격은 전투 숙련의 것이라 무기가 사는 축이 아니다), 방어구는
+ * 피격 경감(아크 E §2 — 무기 축의 쌍둥이).
  *
  * 동률이면 바꾸지 않는다. 나아지는 것이 없는데 강화 수치만 0 으로 잃는다.
  *
@@ -76,6 +78,13 @@ function isBetterTool(slot: EquipSlot, next: ItemDef, current: EquippedToolInfo 
     // +3 검(실효 8)을 기본 6짜리 상위 검이 6>5 로 덮어써 만강 투자가 증발한다
     // (D1 리뷰가 재현한 잠복 — 둘째 무기가 데이터에 오르는 날 실화한다).
     return swingDamageOf(next, 0) > swingDamageOf(current.def, current.instance.enhanceLevel)
+  }
+  if (slot === 'armor') {
+    // 방어구는 **실효 경감**(armorDefenseOf — 강화 포함)으로 견준다(아크 E §2) —
+    // 무기의 그 식과 쌍둥이다. 아래 채집 낙하(간격배수)로 떨어뜨리면 동티어
+    // 방어구끼리는 언제나 동률이라 defense 6 신품이 5 를 영영 못 갈아 끼고,
+    // 정의 defense 끼리 견주면 +2 가죽옷(실효 7)을 신품 6 이 덮어쓴다.
+    return armorDefenseOf(next, 0) > armorDefenseOf(current.def, current.instance.enhanceLevel)
   }
   if (slot === 'crafting') {
     return (

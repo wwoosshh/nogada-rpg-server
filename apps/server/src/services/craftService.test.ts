@@ -28,6 +28,12 @@ const data: GameData = {
     copper_sword: testTool('copper_sword', 'combat', 1, { name: '구리 검', icon: 'sword_copper', damage: 5 }),
     sharp_sword: testTool('sharp_sword', 'combat', 1, { name: '날 선 검', icon: 'sword_sharp', damage: 9 }),
     heavy_sword: testTool('heavy_sword', 'combat', 2, { name: '무딘 대검', icon: 'sword_heavy', damage: 3 }),
+    // 방어구 둘 — armor 슬롯의 비교 축(경감, 아크 E §2)을 못박는 픽스처다.
+    // 일부러 **같은 1티어**다: 두꺼운 가죽옷을 2티어로 두면 간격배수(채집 축)
+    // 비교로도 교체가 일어나 armor 분기 제거가 안 잡힌다 — 동티어는 간격배수가
+    // 동률(교체 없음)이라 defense 6 > 5 의 교체는 경감 축만이 만들 수 있다.
+    wolf_hide_armor: testTool('wolf_hide_armor', 'armor', 1, { name: '늑대 가죽옷', icon: 'wolf_hide_armor', defense: 5 }),
+    thick_hide_armor: testTool('thick_hide_armor', 'armor', 1, { name: '두꺼운 가죽옷', icon: 'thick_hide_armor', defense: 6 }),
   },
   nodes: {},
   recipes: {
@@ -73,6 +79,18 @@ const data: GameData = {
     heavy_sword: {
       id: 'heavy_sword', name: '무딘 대검', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
       inputs: [{ item: 'copper_ingot', count: 1 }], output: { item: 'heavy_sword', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
+    },
+    // 방어구 레시피 둘 — 요구 숙련도 0: 슬롯·비교 축 시나리오에 다른 조건이
+    // 끼어들지 않게 한다(무기 레시피 셋과 같은 이유).
+    wolf_hide_armor: {
+      id: 'wolf_hide_armor', name: '늑대 가죽옷', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 1 }], output: { item: 'wolf_hide_armor', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
+    },
+    thick_hide_armor: {
+      id: 'thick_hide_armor', name: '두꺼운 가죽옷', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 1 }], output: { item: 'thick_hide_armor', count: 1 },
       skillGainMin: 20, skillGainMax: 35,
     },
     // 계열 문턱이 걸린 레시피 — 조합은 누구나 열려 있고(0) 얼음 채집 1,000 이
@@ -571,6 +589,49 @@ describe('performCraft — 무기는 combat 슬롯과 피해 축을 쓴다(전�
 
     expect(r.outcome.autoEquipped).toBe(false)
     expect(r.outcome.player.equipped.combat).toBe('oldsword')
+  })
+})
+
+describe('performCraft — 방어구는 armor 슬롯과 경감 축을 쓴다(아크 E §1·§2)', () => {
+  it('빈 armor 슬롯이면 만든 가죽옷을 바로 착용한다 — 채집·전투 슬롯은 건드리지 않는다', () => {
+    const p = player({ stacks: { copper_ingot: 1 } })
+    const r = performCraft({ player: p, data, recipeId: 'wolf_hide_armor', rng: alwaysSucceed, newId: () => 'armor1', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.armor).toBe('armor1')
+    expect(r.outcome.player.equipped.mineral).toBe('pick1')
+  })
+
+  it('defense 6 신품은 +0 가죽옷(5)을 갈아 낀다 — 간격 축으로 견주면 일어나지 않는 교체다', () => {
+    const p = player({
+      stacks: { copper_ingot: 1 },
+      instances: [{ instanceId: 'a1', itemId: 'wolf_hide_armor', enhanceLevel: 0 }],
+      equipped: { armor: 'a1' },
+    })
+    // 같은 1티어라 간격배수는 동률(교체 없음)이다 — 경감 6 > 5 만이 이 교체의
+    // 근거다. armor 분기가 사라져 채집 낙하로 떨어지면 여기가 red 다.
+    const r = performCraft({ player: p, data, recipeId: 'thick_hide_armor', rng: alwaysSucceed, newId: () => 'newarmor', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.armor).toBe('newarmor')
+  })
+
+  // 왜: "낫다"의 경감은 정의의 defense 가 아니라 **실효 경감**(armorDefenseOf —
+  //     강화 포함)이다. 정의끼리 견주면 +2 가죽옷(실효 7)을 신품 6 이 6>5 로
+  //     덮어써 강화 투자가 자동 착용 한 번에 증발한다 — 무기의 D1 잠복 그대로다.
+  it('+2 가죽옷(실효 7)은 신품 defense 6 에 자리를 내주지 않는다 — 낫다는 실효 경감이다', () => {
+    const p = player({
+      stacks: { copper_ingot: 1 },
+      instances: [{ instanceId: 'a1', itemId: 'wolf_hide_armor', enhanceLevel: 2 }],
+      equipped: { armor: 'a1' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'thick_hide_armor', rng: alwaysSucceed, newId: () => 'newarmor', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.armor).toBe('a1')
   })
 })
 

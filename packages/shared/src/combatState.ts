@@ -203,6 +203,24 @@ export function swingDamageOf(def: ItemDef, enhanceLevel: number): number {
 }
 
 /**
+ * 강화 +n 방어구의 경감 — 기본 defense + n (선형 +1, swingDamageOf 의 쌍둥이,
+ * 아크 E §2). 늑대(sweepDamage 20)에 가죽옷 defense 5: +0 이 -15, +5 가 -10 —
+ * 방치 사망 ~22s → ~33s ≈ 설계 35s 를 강화 사다리가 되사 온다. 검(+4·+5 죽은
+ * 단)과 달리 20−5−n 이 매 단 1씩 줄므로 **전 단이 산다**: 죽은 단 없는 사다리.
+ *
+ * **서버 판정(fightService ④)·자동 착용 비교(isBetterTool armor 분기)·가방
+ * 표시(BagPanel toolSpeedLabel)가 이 식 하나를 나눠 부른다** — 부등호 한 벌
+ * 규범(swingDamageOf 의 그 문장): 두 벌이 되는 순간 화면이 "피해 −7"이라 적어
+ * 놓고 서버는 5 만 깎는 날이 온다. 하한 1("위험은 언제나 아프다", 규범 2)은
+ * 여기 없다 — 경감은 옷의 값이고, 클램프는 걸린 배치마다 판정이 건다(합에
+ * 걸면 다중 피격에서 하한이 한 번만 물린다). defense 짝은 파서가 강제하지만
+ * 혹시 비어 있어도 0 에서 출발한다.
+ */
+export function armorDefenseOf(def: ItemDef, enhanceLevel: number): number {
+  return (def.defense ?? 0) + enhanceLevel
+}
+
+/**
  * 회당 피해 — 무기가 진다(§2-2: 간격은 숙련이, 피해는 무기가. 한 칸이 두 축을
  * 사면 안 된다). 강화 수치는 정의가 아니라 인스턴스에 있으므로(equipment.ts)
  * 조회는 equippedToolInfo 하나다: 없거나 엉뚱한 슬롯의 도구면 null = 맨손

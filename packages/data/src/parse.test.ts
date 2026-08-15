@@ -175,7 +175,7 @@ describe('parseItems', () => {
   it('알 수 없는 toolSkill 값을 거부한다', () => {
     expect(() =>
       parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'minig', toolTier: '2', skill: '' })]),
-    ).toThrow('items.csv[iron_pickaxe]: toolSkill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting, combat)')
+    ).toThrow('items.csv[iron_pickaxe]: toolSkill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting, combat, armor)')
   })
 
   it('toolSkill=combat 행을 받아들인다 — 무기는 여섯째 슬롯이지 여섯째 기술이 아니다(전투 §12-앞 8)', () => {
@@ -213,6 +213,61 @@ describe('parseItems', () => {
     expect(() => parseItems([itemRow({ damage: '3' })])).toThrow(
       'items.csv[copper_ore]: damage 는 combat 도구만 가진다',
     )
+  })
+
+  it('toolSkill=armor 행을 받아들인다 — 방어구는 일곱째 슬롯이다(아크 E §1, toEquipSlot 이 EQUIP_SLOTS 를 읽는다)', () => {
+    const items = parseItems([
+      itemRow({
+        id: 'wolf_hide_armor', name: '늑대 가죽옷', kind: 'tool', toolSkill: 'armor', toolTier: '1',
+        defense: '5', icon: 'wolf_hide_armor', price: '0', skill: '',
+      }),
+    ])
+    expect(items.wolf_hide_armor).toEqual({
+      id: 'wolf_hide_armor', name: '늑대 가죽옷', kind: 'tool', toolSkill: 'armor', toolTier: 1,
+      defense: 5, icon: 'wolf_hide_armor', price: 0,
+    })
+  })
+
+  it('armor 도구인데 defense 가 없으면 거부한다 — 경감은 방어구가 지는 축이라(아크 E §1) 빠지면 아무것도 막지 않는 옷이 된다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'wolf_hide_armor', kind: 'tool', toolSkill: 'armor', toolTier: '1', skill: '' })]),
+    ).toThrow('items.csv[wolf_hide_armor]: 필수 항목 "defense" 가 비어 있다')
+  })
+
+  it('defense 가 0 이하이면 거부한다 — 0 경감 방어구는 슬롯만 차지하는 함정 데이터다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'wolf_hide_armor', kind: 'tool', toolSkill: 'armor', toolTier: '1', defense: '0', skill: '' })]),
+    ).toThrow('items.csv[wolf_hide_armor]: defense "0" 는 1 이상이어야 한다')
+  })
+
+  it('채집 도구에 defense 가 적히면 거부한다 — 경감 축은 방어구만 산다, damage⟺combat 의 그 대칭이다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'mineral', toolTier: '2', defense: '3', skill: '' })]),
+    ).toThrow('items.csv[iron_pickaxe]: defense 는 armor 도구만 가진다')
+  })
+
+  it('무기에 defense 가 적히면 거부한다 — 검이 경감까지 사면 한 칸이 두 축을 산다(§2-2의 그 금지)', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'copper_sword', kind: 'tool', toolSkill: 'combat', toolTier: '1', damage: '5', defense: '3', skill: '' })]),
+    ).toThrow('items.csv[copper_sword]: defense 는 armor 도구만 가진다')
+  })
+
+  it('재료에 defense 가 적히면 거부한다 — 채집 도구를 막는 것과 같은 이유다', () => {
+    expect(() => parseItems([itemRow({ defense: '3' })])).toThrow(
+      'items.csv[copper_ore]: defense 는 armor 도구만 가진다',
+    )
+  })
+
+  it('방어구에 damage 가 적히면 거부한다 — 대칭의 반대 방향: 옷은 때리는 축을 살 수 없다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'wolf_hide_armor', kind: 'tool', toolSkill: 'armor', toolTier: '1', defense: '5', damage: '3', skill: '' })]),
+    ).toThrow('items.csv[wolf_hide_armor]: damage 는 combat 도구만 가진다')
+  })
+
+  it('defense 칸이 아예 없는 CSV 도 읽는다 — 이 칸이 생기기 전의 행이 그대로 살아 있어야 한다', () => {
+    const row = itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'mineral', toolTier: '2', skill: '' })
+    expect('defense' in row).toBe(false)
+    expect(parseItems([row]).iron_pickaxe).not.toHaveProperty('defense')
   })
 
   it('damage 칸이 아예 없는 CSV 도 읽는다 — 이 칸이 생기기 전의 행이 그대로 살아 있어야 한다', () => {

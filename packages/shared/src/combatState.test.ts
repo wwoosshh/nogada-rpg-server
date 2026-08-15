@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  armorDefenseOf,
   attackConnects,
   CLAIM_SLACK_TILES,
   claimPlausible,
@@ -230,6 +231,25 @@ describe('swingDamageOf — 강화가 피해를 산다(아크 D §1): 기본 피
 
   it('damage 칸이 빈 정의는 맨손 상수에서 출발한다 — 파서가 막지만 식도 죽지 않는다', () => {
     expect(swingDamageOf(testTool('blunt', 'combat', 1), 3)).toBe(UNARMED_COMBAT_DAMAGE + 3)
+  })
+})
+
+describe('armorDefenseOf — 강화가 경감을 산다(아크 E §2): 기본 defense + n, swingDamageOf 의 쌍둥이', () => {
+  const armor = testTool('wolf_hide_armor', 'armor', 1, { defense: 5 })
+
+  it('+0 은 정의의 defense 그대로다', () => {
+    expect(armorDefenseOf(armor, 0)).toBe(5)
+  })
+
+  // 왜: 늑대 sweepDamage 20 에서 +5 는 피격을 10 으로 만든다 — 방치 사망
+  //     ~22s → ~33s ≈ 설계 35s(§2 산술). 그리고 20−5−n 이 매 단 1씩 줄므로
+  //     검(+4·+5 죽은 단)과 달리 방어구는 전 단이 산다: 죽은 단 없는 사다리.
+  it('+5(만강)는 10 이다', () => {
+    expect(armorDefenseOf(armor, 5)).toBe(10)
+  })
+
+  it('defense 칸이 빈 정의는 강화만 남는다 — 파서가 막지만 식도 죽지 않는다', () => {
+    expect(armorDefenseOf(testTool('rag', 'armor', 1), 3)).toBe(3)
   })
 })
 

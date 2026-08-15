@@ -44,6 +44,7 @@ const data: GameData = {
     fang: testItem('fang', { name: '늑대 송곳니', icon: 'fang', price: 30, skill: 'mineral' }),
     copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
     copper_sword: testTool('copper_sword', 'combat', 1, { name: '구리 검', icon: 'sword_copper', damage: 5 }),
+    wolf_hide_armor: testTool('wolf_hide_armor', 'armor', 1, { name: '늑대 가죽옷', icon: 'wolf_hide_armor', defense: 5 }),
   },
   nodes: {
     copper_vein: {
@@ -427,6 +428,74 @@ describe('performFight — 강화가 피해를 산다(아크 D §1): 식은 shar
     if (!r.ok) throw new Error('명중이어야 한다')
     expect(r.outcome.slainNow).toBe(false)
     expect(r.outcome.monsterHp).toBe(3)
+  })
+})
+
+describe('performFight — 경감(아크 E §2): 식은 shared 의 armorDefenseOf 한 벌, 하한 1', () => {
+  /** 설계 §2 산술의 그 값(늑대 sweepDamage 20) — -15/-10 이 픽스처 우연이 아니라 식에서 나온다. */
+  const sweep20 = { 'wolf-1': { ...world.placements['wolf-1']!, sweepDamage: 20 } }
+  /** 가죽옷(defense 5)을 +n 으로 입은 사람 — 검은 그대로다(경감은 armor 슬롯만 산다). */
+  const armored = (enhanceLevel: number) =>
+    player({
+      instances: [
+        { instanceId: 's1', itemId: 'copper_sword', enhanceLevel: 0 },
+        { instanceId: 'a1', itemId: 'wolf_hide_armor', enhanceLevel },
+      ],
+      equipped: { combat: 's1', armor: 'a1' },
+    })
+
+  it('+0 가죽옷(defense 5)은 휩쓸기 20 을 15 로 경감한다', () => {
+    const r = fight({ player: armored(0), placements: sweep20, claim: { x: 4, y: 0 }, now: 2200 })
+    if (!r.ok) throw new Error('피격은 ok 경로다')
+    expect(r.outcome.tookHit).toBe(true)
+    expect(r.outcome.tookDamage).toBe(15)
+    expect(r.outcome.playerHp).toBe(85)
+    expect(r.outcome.player.combat.hp).toBe(85)
+  })
+
+  // 왜: 강화 수치는 정의가 아니라 인스턴스에 있다(equipment.ts) — 판정이 def 만
+  //     보면 +5 가죽옷이 +0 과 똑같이 맞아 강화 수요의 보상이 죽는다(무기의
+  //     아크 D §0-1 그대로). 20−5−5=10 이 §2 산술의 ~33s ≈ 설계 35s 를 되산다.
+  it('+5 가죽옷은 10 으로 경감한다 — 강화 사다리가 설계 숫자를 되사 온다(§2 산술)', () => {
+    const r = fight({ player: armored(5), placements: sweep20, claim: { x: 4, y: 0 }, now: 2200 })
+    if (!r.ok) throw new Error('피격은 ok 경로다')
+    expect(r.outcome.tookDamage).toBe(10)
+    expect(r.outcome.playerHp).toBe(90)
+  })
+
+  // 왜: 경감이 피해를 0 으로 만들면 "회피 안 하면 맞는다"(§3·검사 3)가 장비로
+  //     무력화된다 — 위험은 언제나 아프다, 덜 아플 뿐이다(규범 2).
+  it('경감이 휩쓸기를 덮어도 피해는 하한 1 이다 — 위험은 언제나 아프다', () => {
+    const weak = { 'wolf-1': { ...world.placements['wolf-1']!, sweepDamage: 4 } }
+    const r = fight({ player: armored(0), placements: weak, claim: { x: 4, y: 0 }, now: 2200 })
+    if (!r.ok) throw new Error('피격은 ok 경로다')
+    expect(r.outcome.tookHit).toBe(true)
+    expect(r.outcome.tookDamage).toBe(1)
+    expect(r.outcome.playerHp).toBe(99)
+  })
+
+  it('맨몸은 무영향 — 경감 0 이라 휩쓸기 값 그대로 맞는다', () => {
+    const r = fight({ placements: sweep20, claim: { x: 4, y: 0 }, now: 2200 })
+    if (!r.ok) throw new Error('피격은 ok 경로다')
+    expect(r.outcome.tookDamage).toBe(20)
+    expect(r.outcome.playerHp).toBe(80)
+  })
+
+  // 왜: 피격은 표적 무관하게 맵의 전 배치 구역을 합산한다(④) — 하한 1 을 합에
+  //     걸면 max(1, 24−10)=14 같은 엉뚱한 수가 되고, 걸린 배치마다 걸어야
+  //     15+1=16 이 나온다. t=3200 은 wolf-1(위상 0)과 wolf-2(위상 2,000)의
+  //     활성이 ±ε 안에서 함께 무는 유일한 자리다(구간 겹침 [3000, 3400)).
+  it('다중 구역 피격은 각 배치가 개별로 클램프된다 — 합산 뒤 클램프가 아니다', () => {
+    const both = {
+      'wolf-1': { ...world.placements['wolf-1']!, sweepDamage: 20 },
+      'wolf-2': { ...world.placements['wolf-2']!, sweepDamage: 4 },
+    }
+    const r = fight({ player: armored(0), placements: both, claim: { x: 6, y: 0 }, now: 3200 })
+    if (!r.ok) throw new Error('피격은 ok 경로다')
+    expect(r.outcome.tookHit).toBe(true)
+    // max(1, 20−5) + max(1, 4−5) = 15 + 1.
+    expect(r.outcome.tookDamage).toBe(16)
+    expect(r.outcome.playerHp).toBe(84)
   })
 })
 

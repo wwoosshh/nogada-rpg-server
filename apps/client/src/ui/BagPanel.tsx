@@ -1,9 +1,10 @@
 import {
+  armorDefenseOf,
   effectiveIntervalFactor,
   ENHANCE_INTERVAL_FACTOR,
   EQUIP_SLOTS,
   hammerChanceBonus,
-  SKILL_LABELS,
+  slotLabelOf,
   swingDamageOf,
   type CollectionThresholds,
   type EquipSlot,
@@ -48,6 +49,11 @@ function toolSpeedLabel(skill: EquipSlot, def: ItemDef, enhanceLevel: number): s
   // def.damage 를 직접 읽으면 +3 검이 서버에서 8 로 때리는데 가방은 5 라
   // 적는다: 1스윙 문턱(들늑대 HP 8 = +3)을 말해야 할 숫자가 거짓말이 된다.
   if (skill === 'combat') return `피해 ${swingDamageOf(def, enhanceLevel)}`
+  // 방어구의 축은 피격 경감이다(아크 E §2) — 식은 서버 판정(fightService ④)과
+  // 자동 착용 비교가 부르는 shared 의 armorDefenseOf 그대로다. − 는 "맞는 피해가
+  // 이만큼 준다"이고, 하한 1(위험은 언제나 아프다)은 옷이 아니라 판정의 값이라
+  // 여기 안 적는다.
+  if (skill === 'armor') return `피해 −${armorDefenseOf(def, enhanceLevel)}`
   if (skill === 'crafting') {
     const bonusPct = hammerChanceBonus(def.toolTier ?? 0, enhanceLevel) * 100
     // 강화 배수만 곱한다 — craftIntervalMs 와 같은 셈이라야 이 줄이 참이다.
@@ -116,11 +122,11 @@ export function BagPanel(): JSX.Element | null {
 
   if (!open || player === null) return null
 
-  // 슬롯은 EQUIP_SLOTS 선언 순서로 6칸 고정(기술 5 + 전투) — 빈 칸도 자리를
-  // 지킨다. "조합 도구가 아직 없다"는 사실은 점선 빈 슬롯이 말하는 정보지 숨길
-  // 결격이 아니다(원작의 "잠긴 것까지 보이는 목록방"과 같은 태도). 전투 칸이
+  // 슬롯은 EQUIP_SLOTS 선언 순서로 7칸 고정(기술 5 + 전투 + 방어) — 빈 칸도
+  // 자리를 지킨다. "조합 도구가 아직 없다"는 사실은 점선 빈 슬롯이 말하는 정보지
+  // 숨길 결격이 아니다(원작의 "잠긴 것까지 보이는 목록방"과 같은 태도). 전투 칸이
   // 여기 없던 첫 판은 C7 이 잡았다 — 검을 만들면 착용은 되는데 가방 어디에도
-  // 안 보였다.
+  // 안 보였다. 방어 칸은 그 교훈 위에 EQUIP_SLOTS 확장만으로 함께 선다.
   const slotOf = (slot: EquipSlot): ItemInstance | undefined => {
     const instanceId = player.equipped[slot]
     if (instanceId === undefined) return undefined
@@ -199,9 +205,10 @@ export function BagPanel(): JSX.Element | null {
                       <span className="bag__slot-enhance">+{inst.enhanceLevel}</span>
                     )}
                   </div>
-                  <span className="bag__slot-label">
-                    {slot === 'combat' ? '전투' : SKILL_LABELS[slot]}
-                  </span>
+                  {/* 이름표는 shared 의 slotLabelOf 하나가 소유한다(아크 E §1) —
+                      여기 삼항을 쌓으면 EquipSlot 확장의 컴파일 브레이크가 화면에
+                      흩어진다(armor 가 밟았던 그 함정). */}
+                  <span className="bag__slot-label">{slotLabelOf(slot)}</span>
                   {inst !== undefined && def !== undefined && (
                     <span className="bag__slot-speed">
                       {toolSpeedLabel(slot, def, inst.enhanceLevel)}
