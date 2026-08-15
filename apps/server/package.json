@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter @nogada/data build && tsx watch src/index.ts",
     "start": "pnpm --filter @nogada/data build && tsx src/index.ts",
+    "start:windows": "node --env-file=.env --import tsx src/index.ts",
     "migrate": "node-pg-migrate -m migrations"
   },
   "dependencies": {
