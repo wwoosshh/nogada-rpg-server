@@ -4,6 +4,12 @@
 아래로 그대로 따라 하면 되도록 썼고, 각 단계마다 "왜 이걸 하는가"와 "빼먹으면
 무슨 증상이 나오는가"를 함께 적었다 — 증상만 보고는 원인을 찾기 어려운 것들이라서다.
 
+> **이 문서는 도커(컨테이너) 전제다.** 지금 실제로 도는 서버는 그 길로 안 간다 —
+> 윈도 네이티브(WinSW)로 돌고(`docs/deploy-windows.md`), 공개는 8장의
+> 포트포워딩+Caddy 가 아니라 Cloudflare Tunnel 로 연다(`docs/deploy-public.md`).
+> **그 기계의 값을 고치러 왔다면 저 둘로 간다.** 여기 남은 도커 절차는 다른
+> 기계(리눅스 서버 등)에 세울 때를 위한 것이다.
+
 **이 문서가 전제하는 것**
 
 - 서버는 **한 대**다. 로그인 실패 백오프가 메모리에 살기 때문에(설계 §3) 서버를
@@ -120,9 +126,12 @@ nano apps/server/.env
 1. **`POSTGRES_PASSWORD`** 와 **`DATABASE_URL` 안의 비밀번호** — 반드시 **같은 값**.
    두 곳에 적히는 이유는 하나는 DB 가 계정을 만드는 값이고 하나는 서버가 붙는
    주소이기 때문이다. 어긋나면 서버가 뜨자마자 인증 실패로 죽는다.
-2. **`CORS_ORIGIN`** — 이 서버에 붙는 것들의 출처 목록. 안드로이드 앱으로 논다면
-   `capacitor://localhost,http://localhost` 는 반드시 들어가야 한다. 브라우저로도
-   연다면 그 주소(`http://192.168.0.10:5173` 같은)를 쉼표로 덧붙인다.
+2. **`CORS_ORIGIN`** — **이 서버에 요청을 보내는 쪽**의 출처 목록이다(서버 자기
+   주소가 아니다). 안드로이드 앱으로 논다면 `https://localhost` 가 반드시 들어가야
+   한다 — 그것이 Capacitor 안드로이드 WebView 의 오리진이다(`androidScheme`
+   기본값이 `https`). **`capacitor://localhost` 가 아니다**: 그건 iOS 스킴이고
+   이 저장소에 iOS 는 없다. 브라우저로도 연다면 그 주소
+   (`http://192.168.0.10:5173` 같은)를 쉼표로 덧붙인다.
    **빠뜨리면 "서버는 200 인데 화면은 아무것도 안 나온다"** — 거절하는 것은
    브라우저이고 서버 로그에는 아무 흔적이 없다.
 3. **`TRUST_PROXY`** — 지금은 **비워 둔다**. 켜는 때는 10장에 있다.
@@ -243,6 +252,13 @@ APK 는 `pnpm --filter @nogada/client android:open` 으로 Android Studio 를 �
 
 ## 8. 공개 경로 ① — 도메인 + Caddy (자동 HTTPS)
 
+> **이 장은 지금 쓰는 토폴로지가 아니다.** 실제 서버(미니PC)는 도커·Caddy 가
+> 아니라 **WinSW 네이티브**로 돌고(`docs/deploy-windows.md`), 공개는 포트포워딩이
+> 아니라 **Cloudflare Tunnel** 로 연다(`docs/deploy-public.md`). 아래의
+> `docker compose --profile caddy`, `PUBLIC_DOMAIN`, 포트포워딩 절차는 그 기계에
+> 그대로 적용되지 않는다. 다른 기계에 도커로 세우는 경우를 위해 남겨 둔 것이고,
+> **지금 서버를 공개하려는 것이면 `docs/deploy-public.md` 로 간다.**
+
 친구가 아무 데서나 접속하게 하려면 이 길이다. 준비물: 도메인, 공유기의 포트
 포워딩 권한, 공인 IP.
 
@@ -256,9 +272,22 @@ APK 는 `pnpm --filter @nogada/client android:open` 으로 Android Studio 를 �
 3. `apps/server/.env` 를 고친다:
    ```
    PUBLIC_DOMAIN=nogada.내도메인.com
-   CORS_ORIGIN=capacitor://localhost,http://localhost,https://nogada.내도메인.com
-   TRUST_PROXY=1
+   CORS_ORIGIN=https://localhost,https://nogada.내도메인.com
+   TRUST_PROXY=127.0.0.1,::1
    ```
+   `https://localhost` 는 안드로이드 앱의 오리진이다(APK 를 안 뿌릴 것이면 뺀다).
+   `TRUST_PROXY` 를 **`1` 로 적지 않는 이유는 10장**에 있다 — 그 값은 위조된다.
+   목록에 적을 것은 **Caddy 가 서버 소켓에 붙는 주소**다. 같은 compose
+   네트워크로 붙으면 그것은 127.0.0.1 이 아니라 **Caddy 컨테이너의 주소**이므로
+   그 대역을 확인해서 적는다:
+   ```bash
+   docker network inspect $(docker compose -f docker-compose.prod.yml ps -q server \
+     | xargs docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
+   ```
+   (이 토폴로지는 지금 안 돌고 있어서 **대역을 실측하지 못했다** — 위 명령으로
+   직접 보고 적는다. 흔히 `172.18.0.0/16` 이지만 compose 프로젝트 이름에 따라
+   달라진다.) 틀리면 조용히 반대쪽으로 망가진다: 좁게 적으면 XFF 를 안 읽어 모든
+   요청이 프록시 하나로 보이고, 넓게 적으면 위조가 열린다.
 4. `docker-compose.prod.yml` 의 서버 포트를 안쪽으로 돌린다 — 이 한 줄을
    `- '3000:3000'` 에서 `- '127.0.0.1:3000:3000'` 으로. 이제 밖에서 보이는 문은
    443 하나다.
@@ -300,8 +329,18 @@ tailscale ip -4                 # 100.x.y.z — 이것이 서버 주소가 된�
 VITE_API_BASE_URL=http://100.x.y.z:3000
 ```
 
-`.env` 의 `CORS_ORIGIN` 에도 같은 주소를 넣고, **`TRUST_PROXY` 는 비워 둔다**
-(프록시가 없다). 공유기 포트 포워딩은 하지 않는다 — 그것이 이 방식의 요점이다.
+**`TRUST_PROXY` 는 비워 둔다**(프록시가 없다). 공유기 포트 포워딩은 하지 않는다 —
+그것이 이 방식의 요점이다.
+
+`.env` 의 `CORS_ORIGIN` 에 대해: **여기에 서버 자기 주소를 넣는 것이 아니다.**
+(오래 그렇게 적혀 있었다.) 이 값은 **요청을 보내는 쪽**의 오리진 목록이고,
+브라우저는 자기가 띄운 페이지의 오리진을 `Origin` 헤더에 실어 보낸다. 그래서
+넣을 것은 **화면이 어디서 로드됐는가**다:
+
+- 서버가 화면까지 내주면(지금 모습 — `CLIENT_DIST`) 오리진이 하나뿐이라
+  **교차 출처 요청 자체가 안 생긴다.** 이 줄을 안 적어도 된다.
+- Vite 개발 서버로 붙는다면 그 주소(`http://100.x.y.z:5173`).
+- APK 로 붙는다면 `https://localhost`.
 
 평문 http 인데 괜찮은 이유: Tailscale 자체가 기기 사이를 암호화한 터널이라,
 "평문이 공용 인터넷을 지나간다"는 상황이 아니다. 반대로 말하면 **Tailscale 을
@@ -311,7 +350,18 @@ VITE_API_BASE_URL=http://100.x.y.z:3000
 
 ## 10. `TRUST_PROXY` 는 언제 켜는가
 
-**Caddy 같은 리버스 프록시 뒤에 있을 때만 켠다(`1`). 그 밖에는 비워 둔다.**
+**리버스 프록시(Caddy)나 터널(cloudflared) 뒤에 있을 때만 켜고, 켤 때는 반드시
+프록시의 주소 목록으로 켠다. 그 밖에는 비워 둔다.**
+
+> **이 장은 오래 `TRUST_PROXY=1` 을 시켰다. 그것이 위조되는 값이다.**
+> Fastify 5 실측: `1` 이든 `true` 든 **누가 보냈는지를 안 본다** — LAN 의 아무
+> 기계나 `X-Forwarded-For: 9.9.9.9` 를 붙여 보내면 `request.ip` 가 9.9.9.9 로
+> 잡힌다. IP/CIDR 목록으로 주면 소켓 주소가 목록에 없는 요청은 그 헤더를
+> **아예 안 읽는다**(같은 실측). 터널 뒤라면 `TRUST_PROXY=127.0.0.1,::1` 이고,
+> `::1` 을 함께 적는 이유는 윈도에서 `localhost` 가 ::1 로 먼저 풀리기
+> 때문이다. 이 실측은 `apps/server/src/config.test.ts` 의 `TRUST_PROXY 배선` 이
+> 음성 대조군까지 붙여 고정해 둔다 — 그중 한 검사는 "숫자로 켜면 위조된다"를
+> 일부러 재고 있어서, 그것이 빨개지는 날 이 문장을 다시 써야 한다.
 
 서버는 로그인·가입 실패를 IP 별로 세어 백오프를 건다(`auth/rateLimit.ts`). 그
 "IP" 를 무엇으로 볼지 정하는 것이 이 값이다. 프록시 뒤인데 **끄면**, 모든 요청이
@@ -323,8 +373,29 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 돌려주므로 **틀렸다는 사실이 겉으로 드러나지 않는다** — 그래서 토폴로지를 바꾸는
 날 이 값을 함께 바꾸는 것을 잊으면 안 된다.
 
-프록시가 둘 이상이거나(예: Cloudflare + Caddy) 정확히 하고 싶으면 홉 수 대신
-프록시의 주소를 적는다: `TRUST_PROXY=127.0.0.1,172.18.0.0/16`.
+**그리고 "켠다"에도 두 가지가 있다.** 숫자(`1`)와 `true` 는 헤더를 그냥 믿는 것
+이라, 프록시 뒤에 제대로 세워 두어도 **프록시를 거치지 않고 서버 포트에 직접
+닿을 수 있는 누구든** 그대로 위조할 수 있다. 지금 서버는 `HOST` 를 좁히기 전까지
+LAN·Tailscale 에서 3000 이 열려 있으므로 그 "누구든"이 실재한다. 주소 목록으로
+적으면 그 경로가 통째로 닫힌다 — 소켓 주소가 목록에 없으면 헤더를 읽지 않는다.
+
+적을 주소는 **프록시가 서버 소켓에 붙는 주소**다:
+
+| 앞에 선 것 | 적는 값 |
+|---|---|
+| cloudflared (같은 PC, 8장 아님 → `docs/deploy-public.md`) | `127.0.0.1,::1` |
+| Caddy 컨테이너 (같은 compose 네트워크) | 그 컨테이너의 대역 — `docker network inspect` 로 확인 |
+| 없음 (LAN·Tailscale 직결) | 비워 둔다 |
+
+목록에 IP 가 아닌 것이 섞이면 **서버가 기동에서 죽는다**(`invalid IP address: …`,
+실측). 조용히 넘어가지 않는 것이 여기서는 이득이다 — 물러설 자리가 양쪽 다
+나쁘기 때문이다(끄면 전원이 한 덩어리, 전부 믿으면 위조).
+
+켠 뒤에는 **로그의 `remoteAddress` 가 접속자의 실제 IP 인지 눈으로 한 번
+확인한다.** 그 자리에 프록시 주소(`127.0.0.1` 같은 것) 하나만 찍히면 안 켜진
+것이다. 반대쪽(위조되는 꼴로 켜진 것)은 로그로는 안 보인다 — 위조가 들어오기
+전까지 화면이 똑같기 때문이다. 그래서 그쪽은 눈이 아니라 **적은 값**으로만
+확인한다: 목록인가, 숫자인가.
 
 ---
 
@@ -334,7 +405,7 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 |---|---|
 | `server` 가 `unhealthy` | `logs server`. 대개 DB 비밀번호 불일치이거나 `DATABASE_URL` 의 호스트가 `db` 가 아니다. |
 | 서버는 200 인데 화면이 비어 있다 | `CORS_ORIGIN`. 브라우저 콘솔에 CORS 오류가 있는지 본다 — 서버 로그에는 안 남는다. |
-| 앱(안드로이드)에서만 안 붙는다 | `CORS_ORIGIN` 에 `capacitor://localhost` 가 빠졌거나, 8장 뒤 APK 를 다시 안 깔았다. |
+| 앱(안드로이드)에서만 안 붙는다 | `CORS_ORIGIN` 에 **`https://localhost`** 가 빠졌거나, 8장 뒤 APK 를 다시 안 깔았다. **`capacitor://localhost` 가 아니다** — 이 표가 오래 그렇게 가리켜서 이 증상을 쫓으면 한 바퀴 헛돌았다. 안드로이드 WebView 의 오리진은 `https://localhost` 이고 `capacitor://` 는 iOS 스킴이다(`androidScheme` 기본값 `https`, `iosScheme` 기본값 `capacitor`). 확인은 `adb logcat -s chromium:*` 의 CORS 줄에 찍히는 Origin 으로 한다. |
 | 시간이 이상하게 흐른다 | `x-server-now` 헤더가 막힌 것이다. 프록시를 직접 설정했다면 이 헤더가 지워지지 않는지 확인한다. |
 | **재부팅 뒤 서버가 안 살아난다 (윈도)** | 컨테이너 정책(`unless-stopped`)은 문제가 아니다 — **Docker Desktop 이 서비스가 아니라 사용자 세션 앱**이라서, 재부팅 후 그 사용자가 로그인하기 전에는 엔진 자체가 없다(러너 서비스는 부팅과 함께 떠도 같은 벽에 막힌다). 무인 복구 두 가지: ① Docker Desktop → Settings → General → **Start Docker Desktop when you sign in** 체크. ② 그 사용자 **자동 로그인** — `netplwiz` 에서 "암호를 입력해야" 체크 해제(체크박스가 안 보이면 관리자 PowerShell 로 `Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" DevicePasswordLessBuildVersion 0` 후 다시). 보안이 걸리면 로그온 트리거 예약 작업으로 `rundll32.exe user32.dll,LockWorkStation` — 화면은 잠기고 세션(과 Docker)은 산다. 확인: 재부팅 몇 분 뒤 `/api/health` 200. Ubuntu 로 옮기면 이 문제 자체가 없다(도커가 시스템 서비스). `stop` 으로 손수 내려 둔 컨테이너는 어느 쪽이든 안 살아난다 — 그건 정책이 아니라 의도다. |
 | **로컬은 200 인데 다른 기기에서 연결 자체가 안 된다 (윈도)** | 실제 배포에서 겪은 순서대로: ① `netstat -ano \| findstr ":3000"` 에 `0.0.0.0:3000 LISTENING` 이 있는지 — 없으면 Docker Desktop 재시작. ② 있다면 십중팔구 **Windows 가 만든 Docker 차단 규칙**이다. 처음 포트를 열 때 뜨는 허용 창이 닫히면 `com.docker.backend.exe` 에 대한 **차단** 규칙이 생기고, 차단은 포트 허용 규칙보다 항상 이긴다. 관리자 PowerShell 에서 확인 후 제거: `Get-NetFirewallRule -Enabled True -Action Block \| Where-Object DisplayName -match "docker" \| Remove-NetFirewallRule`. ③ 포트 허용 규칙도 함께: `netsh advfirewall firewall add rule name="nogada-server-3000" dir=in action=allow protocol=TCP localport=3000`. |
@@ -349,6 +420,9 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 
 ## 12. 참고
 
+- **현행 서버(윈도 네이티브)의 런북: `docs/deploy-windows.md`** — 그 기계의
+  `CORS_ORIGIN`·`TRUST_PROXY`·APK 축은 그쪽 8장이다
+- **공개(터널·HTTPS) 절차: `docs/deploy-public.md`**
 - 서버 환경변수 전부: `apps/server/.env.example`
 - 배포 구성: `docker-compose.prod.yml` · 이미지: `apps/server/Dockerfile`
 - 자동 배포 정의: `.github/workflows/deploy.yml` (13장)

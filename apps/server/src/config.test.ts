@@ -92,11 +92,13 @@ describe('parseCorsOrigin', () => {
     ])
   })
 
-  it('안드로이드 빌드의 출처를 그대로 통과시킨다', () => {
-    // capacitor://localhost 는 웹 주소가 아니라 잘라 내거나 고치면 앱에서만 막힌다.
-    expect(parseCorsOrigin('capacitor://localhost,http://localhost')).toEqual([
+  it('안드로이드 빌드의 출처를 그대로 통과시킨다 — 웹 주소가 아니라 고치면 앱에서만 막힌다', () => {
+    // `https://localhost` 가 안드로이드 WebView 의 오리진이다(config.ts 의
+    // parseCorsOrigin 에 실측 근거). 파서가 이것을 웹 주소로 오해해 손대면
+    // 앱에서만 안 붙고, 거절하는 것은 WebView 라 서버 로그에 흔적이 없다.
+    expect(parseCorsOrigin('https://localhost,capacitor://localhost')).toEqual([
+      'https://localhost',
       'capacitor://localhost',
-      'http://localhost',
     ])
   })
 
@@ -140,16 +142,7 @@ describe('parseTrustProxy', () => {
  */
 describe('CORS 배선', () => {
   it('허용 목록 안의 오리진에는 허용과 노출 헤더를 함께 준다', async () => {
-    const res = await withEnv({ CORS_ORIGIN: 'https://nogada.example' }, async () => {
-      const app = await buildTestApp()
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/health',
-        headers: { origin: 'https://nogada.example' },
-      })
-      await app.close()
-      return response
-    })
+    const res = await corsProbe('https://nogada.example', 'https://nogada.example')
 
     expect(res.headers['access-control-allow-origin']).toBe('https://nogada.example')
     // 시계 동기화가 이 헤더 하나에 달려 있다(설계 규범 9).
@@ -157,21 +150,146 @@ describe('CORS 배선', () => {
   })
 
   it('목록 밖의 오리진에는 허용 헤더를 주지 않는다', async () => {
-    const res = await withEnv({ CORS_ORIGIN: 'https://nogada.example' }, async () => {
-      const app = await buildTestApp()
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/health',
-        headers: { origin: 'https://stranger.example' },
-      })
-      await app.close()
-      return response
-    })
+    const res = await corsProbe('https://nogada.example', 'https://stranger.example')
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined()
     // 서버가 거절하는 것이 아니라 브라우저가 막는 것이다 — 응답 자체는 200 이다.
     expect(res.statusCode).toBe(200)
   })
+
+  /**
+   * **APK 가 실제로 막히던 자리.** 앱이 보내는 것은 GET 하나가 아니라 프리플라이트
+   * 부터다 — 로그인은 `content-type: application/json` 을 실은 POST 라 브라우저가
+   * 먼저 OPTIONS 를 던진다. 여기서 막히면 본요청은 아예 나가지도 않고, 거절하는
+   * 것이 WebView 라 **서버 로그에는 한 줄도 안 남는다.**
+   *
+   * 실측한 실서버는 정확히 뒤집혀 있었다: `capacitor://localhost` 허용,
+   * `https://localhost` 차단. 그래서 둘을 한 쌍으로 잰다 — 하나만 재면 "전부
+   * 허용"과 "제대로 좁혀짐"이 구별되지 않는다.
+   */
+  it('안드로이드가 실제로 보내는 오리진의 프리플라이트가 통과한다', async () => {
+    const res = await corsProbe(ANDROID_ORIGIN, ANDROID_ORIGIN, 'preflight')
+
+    expect(res.headers['access-control-allow-origin']).toBe(ANDROID_ORIGIN)
+    expect(String(res.headers['access-control-allow-methods'])).toContain('POST')
+  })
+
+  it('iOS 스킴은 막힌다 — 그 라벨이 틀려서 목록이 뒤집혀 있었다', async () => {
+    // `capacitor://localhost` 는 iOS 것이고 이 저장소에 iOS 는 없다. 음성
+    // 대조군으로 여기 두는 이유: 위 검사가 `origin: true`(전부 허용)에서도
+    // 초록이기 때문이다. 목록이 실제로 좁혀졌는지는 이 줄만 안다.
+    const res = await corsProbe(ANDROID_ORIGIN, 'capacitor://localhost', 'preflight')
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+  })
+})
+
+/** 안드로이드 WebView 가 보내는 Origin. 근거는 config.ts 의 parseCorsOrigin. */
+const ANDROID_ORIGIN = 'https://localhost'
+
+/**
+ * `CORS_ORIGIN` 을 그 값으로 놓은 서버에 그 오리진으로 한 번 두드린다.
+ *
+ * 프리플라이트를 흉내 낼 때 세 헤더를 다 싣는 이유: `access-control-request-method`
+ * 가 없으면 @fastify/cors 는 그것을 프리플라이트로 치지 않아 평범한 OPTIONS 로
+ * 흘러가고, 그러면 이 검사는 재려던 것을 안 재고 초록이 된다.
+ */
+async function corsProbe(
+  list: string,
+  origin: string,
+  kind: 'simple' | 'preflight' = 'simple',
+): Promise<LightMyRequestResponse> {
+  return withEnv({ CORS_ORIGIN: list }, async () => {
+    const app = await buildTestApp()
+    const response = await app.inject(
+      kind === 'preflight'
+        ? {
+            method: 'OPTIONS',
+            url: '/api/auth/login',
+            headers: {
+              origin,
+              'access-control-request-method': 'POST',
+              'access-control-request-headers': 'content-type',
+            },
+          }
+        : { method: 'GET', url: '/api/health', headers: { origin } },
+    )
+    await app.close()
+    return response
+  })
+}
+
+/**
+ * `TRUST_PROXY` 가 **request.ip 를 실제로 무엇으로 만드는가.**
+ *
+ * 파서 단위 검사(위 parseTrustProxy)는 문자열이 값으로 바뀌는 것까지만 잰다.
+ * 그런데 이 설정이 하는 일의 전부는 IP 백오프의 열쇠를 정하는 것이고
+ * (routes/auth.ts 의 ipOf), 틀리면 서버는 **멀쩡히 200 을 돌려주면서** 백오프만
+ * 조용히 무력해진다. 그러니 값이 아니라 결과를 재야 한다.
+ *
+ * 자로 요청 로그의 `remoteAddress` 를 쓴다. 이유 둘 — Fastify 의 기본 직렬화기가
+ * 거기에 넣는 것이 정확히 `request.ip` 이고(실측), 그 줄이 바로 런북이 운영자에게
+ * "켠 뒤 눈으로 확인하라"고 가리키는 자리다(docs/deploy-public.md 7단계).
+ * 문서가 보라고 한 것과 테스트가 보는 것이 같은 글자여야 한다.
+ */
+describe('TRUST_PROXY 배선', () => {
+  /** 아무나 헤더에 적어 보낼 수 있는 값. 이것이 request.ip 가 되면 백오프가 뚫린다. */
+  const 위조한주소 = '9.9.9.9'
+  /** 목록 밖에서 온 요청. LAN 의 아무 기계나 여기 해당한다. */
+  const 목록밖 = '192.168.75.137'
+
+  it('목록으로 켜면 그 주소에서 온 XFF 를 읽는다 — 터널 뒤에서 사람의 IP 가 돌아온다', async () => {
+    expect(await 로그에남은IP('127.0.0.1,::1', '127.0.0.1')).toBe(위조한주소)
+    // `::1` 도 함께 적는 이유가 이것이다 — 윈도에서 localhost 는 ::1 로 먼저 풀린다.
+    expect(await 로그에남은IP('127.0.0.1,::1', '::1')).toBe(위조한주소)
+  })
+
+  it('목록 밖에서 온 XFF 는 아예 안 읽는다 — 이 줄이 없으면 "전부 믿음"과 구별이 안 된다', async () => {
+    // 음성 대조군. 위 검사만 두면 파서를 `true` 로 되돌려도 초록이다.
+    expect(await 로그에남은IP('127.0.0.1,::1', 목록밖)).toBe(목록밖)
+  })
+
+  it('안 켜면 헤더가 있어도 소켓 주소 그대로다 — 직접 노출된 지금이 이 자리다', async () => {
+    expect(await 로그에남은IP(undefined, 목록밖)).toBe(목록밖)
+  })
+
+  it('숫자로 켜면 아무나 위조한다 — 문서가 `1` 을 시키면 안 되는 이유', async () => {
+    // 이 검사는 우리 코드가 아니라 **Fastify 의 성질**을 못 박는다. 문서 셋이
+    // "목록으로 적어라"라고 말하는 근거가 이 한 줄이고, 이것이 어느 날 초록이
+    // 아니게 되면(= 숫자도 소켓을 보게 되면) 그 문장들을 다시 써야 한다.
+    expect(await 로그에남은IP('1', 목록밖)).toBe(위조한주소)
+  })
+
+  /**
+   * 그 설정으로 진짜 앱을 세우고, 그 소켓 주소에서 위조된 XFF 를 하나 보내고,
+   * 요청 로그에 남은 `remoteAddress` 를 읽는다.
+   */
+  async function 로그에남은IP(
+    trustProxy: string | undefined,
+    remoteAddress: string,
+  ): Promise<string> {
+    const lines = captureLines()
+    await withEnv({ TRUST_PROXY: trustProxy }, async () => {
+      const app = await buildTestApp({ logger: { ...deployLogger(), stream: lines.stream } })
+      await app.inject({
+        method: 'GET',
+        url: '/api/health',
+        remoteAddress,
+        headers: { 'x-forwarded-for': 위조한주소 },
+      })
+      await app.close()
+    })
+
+    const 남은것 = lines
+      .text()
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line) as { req?: { remoteAddress?: string } })
+      .find((entry) => entry.req?.remoteAddress !== undefined)
+    // 로그가 통째로 안 남았는데 "주소가 다르다"고 읽으면 원인을 엉뚱한 데서 찾는다.
+    if (남은것?.req?.remoteAddress === undefined) throw new Error('요청 로그가 한 줄도 안 남았다')
+    return 남은것.req.remoteAddress
+  }
 })
 
 describe('isDevConsole', () => {

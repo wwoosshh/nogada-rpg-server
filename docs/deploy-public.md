@@ -54,10 +54,13 @@ Let's Encrypt HTTP-01 이 실패할 수 있다(443 만 열려 있으면 Caddy �
   HTTP 는 플랫폼 기본 차단이라 `ERR_CLEARTEXT_NOT_PERMITTED` 로 죽고 **서버 로그엔
   아무 흔적도 안 남는다.** `capacitor.config.ts` 의 `allowMixedContent: true` 는
   이걸 안 풀어 준다 — 그건 WebView 의 혼합콘텐츠 스위치일 뿐이다.
-- **CORS 목록이 틀린 값으로 채워져 있다.** 실서버 preflight 실측: `capacitor://
-  localhost` 허용, `https://localhost` **차단**. 그런데 Capacitor 8 안드로이드
-  WebView 의 실제 오리진은 `https://localhost` 다(`androidScheme` 기본값).
-  `capacitor://` 는 iOS 스킴이고 이 저장소에 iOS 는 없다. 6장을 볼 것.
+- **실서버의 CORS 목록이 뒤집혀 있다.** preflight 실측: `capacitor://localhost`
+  허용, `https://localhost` **차단**. 그런데 Capacitor 8 안드로이드 WebView 의
+  실제 오리진은 `https://localhost` 다(`androidScheme` 기본값). `capacitor://`
+  는 iOS 스킴이고 이 저장소에 iOS 는 없다.
+  **저장소 쪽 라벨 여섯은 고쳤다**(6장 "이미 고친 것"). 남은 것은 **서버 PC 의
+  `.env` 한 줄** 이다 — 그 파일은 커밋되지 않아 여기서 못 고친다. APK 를 붙이는
+  날 그 줄을 손으로 갈아야 한다.
 - **주소가 빌드 타임에 박힌다** → 주소가 바뀌면 친구 전원 재설치. 웹은 새로고침.
 - **릴리스 서명 설정이 없다** → `app-release-unsigned.apk` 가 나오고 안드로이드가
   설치를 거부한다. 디버그 APK 는 깔리지만 `debuggable=true`·`allowBackup=true` 다.
@@ -119,8 +122,9 @@ APK 뿐이고, 붙일 때 `https://localhost` 를 추가한다 — `capacitor://
 `TRUST_PROXY` 를 **`127.0.0.1,::1`** 로 준다. `1` 이나 `true` 로 뭉개면 안 된다 —
 Fastify 5 실측: `TRUST_PROXY=1` 이면 LAN 에서 `X-Forwarded-For: 9.9.9.9` 를 지어내면
 `request.ip` 가 그것으로 잡힌다. IP/CIDR 목록으로 주면 소켓 주소가 목록에 없는
-요청은 XFF 를 아예 안 읽는다. **`docs/deploy.md:263` 이 시키는 `TRUST_PROXY=1` 이
-바로 그 위조되는 값이다.**
+요청은 XFF 를 아예 안 읽는다. (`docs/deploy.md` 10장이 오래 `TRUST_PROXY=1` 을
+시켰는데 그것이 바로 그 위조되는 값이었다 — **고쳤다**, 6장 "이미 고친 것".
+이 실측은 `config.test.ts` 의 `TRUST_PROXY 배선` 이 음성 대조군과 함께 고정한다.)
 
 `::1` 을 같이 넣는 이유: 윈도에서 `localhost` 는 ::1 로 먼저 풀린다. cloudflared
 config 에는 `http://127.0.0.1:3000` 을 명시하고 TRUST_PROXY 에는 둘 다 적는다.
@@ -443,17 +447,42 @@ distribution account**(등록비 없음, 신분증 불필요, 최대 20대)가 $
 
 ## 6. 저장소 안의 틀린 기록 — 함께 고칠 것
 
-- **문서 6곳이 안드로이드 CORS 오리진을 틀리게 적는다.** `apps/server/.env.example:62`,
-  `src/config.ts:115-116`, `src/app.ts:78-79`, `docs/deploy.md:124·259·337` 이
-  `capacitor://localhost` 를 "안드로이드 WebView" 라 라벨링한다. 실제는
-  `https://localhost` 다. **`deploy.md:337` 의 트러블슈팅 표가 바로 그 틀린 답을
-  가리켜서**, 문제가 터지면 디버깅을 한 바퀴 더 돌게 되어 있다.
-- `docs/deploy.md:303` 의 "CORS_ORIGIN 에 서버 자기 주소를 넣어라"도 틀렸다 —
-  CORS_ORIGIN 은 **요청을 보내는 쪽**의 오리진 목록이다.
-- **`docs/deploy-windows.md` 에 tailscale·https·capacitor·CORS·TRUST_PROXY·APK·
-  안드로이드가 한 번도 안 나온다**(299줄, grep 0건). 실제 운영자가 보는 런북이
-  이쪽인데 이 축이 통째로 비어 있다. `deploy.md` 만 고치면 헛일이다.
-- `deploy.md` 8장(도커+Caddy)은 현재 WinSW 네이티브 토폴로지와 어긋난다.
+### 이미 고친 것 (다시 하지 마라)
+
+CORS 오귀속과 `TRUST_PROXY` 는 **닫혔다.** 지운 자리에 남기는 이유는 2장의 그것과
+같다 — 같은 실측을 다시 하지 않게, 그리고 아무도 되돌리지 않게.
+
+- **안드로이드 WebView 의 오리진은 `https://localhost` 다.** `capacitor://` 는
+  iOS 스킴이고 이 저장소에 iOS 는 없다. 근거 셋: `@capacitor/cli` 8.5 의
+  declarations.d.ts (`androidScheme` 기본값 `https`, `iosScheme` 기본값
+  `capacitor`), 안드로이드 네이티브 CapConfig.java 의 `androidScheme =
+  CAPACITOR_HTTPS_SCHEME` · `hostname = "localhost"`, 그리고
+  `apps/client/capacitor.config.ts` 가 그 둘을 안 건드린다는 것.
+  틀리게 적혀 있던 여섯 곳(`.env.example`, `config.ts`, `app.ts`,
+  `deploy.md` 셋)을 전부 고쳤고, **트러블슈팅 표가 틀린 답을 가리키던 것**도
+  같은 자리에서 정정했다. 다시 틀려지는 길은 문서가 아니라 `capacitor.config.ts`
+  에 `androidScheme` 한 줄이 붙는 것이라, 자를 거기 댔다
+  (`apps/client/src/api/androidOrigin.test.ts` — 그 파일이 `.env.example` 의
+  `CORS_ORIGIN` 값까지 함께 잰다).
+- **`CORS_ORIGIN` 은 요청을 보내는 쪽의 목록이다.** "서버 자기 주소를 넣어라"고
+  적던 `deploy.md` 9장을 고쳤다. 같은 오리진 서빙이 선 지금은 **웹용으로는 아예
+  필요 없다**는 것도 함께 적었다.
+- **`TRUST_PROXY` 는 주소 목록으로만 켠다.** `deploy.md` 10장이 시키던 `1` 은
+  위조되는 값이었다 — 숫자와 `true` 는 소켓 주소를 안 본다. 그 장과 8장의 예시
+  블록, `.env.example`, `config.ts` 를 전부 `127.0.0.1,::1` 로 맞췄다.
+  `config.test.ts` 의 `TRUST_PROXY 배선` 이 **음성 대조군까지** 재고, 그중 한
+  검사는 "숫자로 켜면 위조된다"를 일부러 고정한다 — 그것이 빨개지는 날
+  문서 문장들을 다시 써야 한다는 신호다.
+- **`docs/deploy-windows.md` 에 그 축이 통째로 없던 것.** 실제 운영자가 보는
+  런북이 이쪽인데 tailscale·https·CORS·TRUST_PROXY·APK 가 grep 0건이었다.
+  8장을 새로 붙이고 머리말에서 그리로 가리켰다 — `deploy.md` 만 고치면
+  헛일이었을 자리다.
+- **`deploy.md` 8장(도커+Caddy)이 현행 토폴로지와 어긋나는 것.** 장을 다시 쓰지는
+  않고 **단서를 달았다**: 실제 서버는 WinSW 네이티브 + Cloudflare Tunnel 이고,
+  지금 공개하려는 것이면 이 문서로 오라고.
+
+### 아직 안 고친 것
+
 - **게임 안 크레딧이 실제 배포물과 다르다.** `detailMenuTabs.ts:221-235` 는 아이템
   아이콘을 game-icons.net 것이라 적는데, APK 안에 SVG 는 0개이고 실제 아이콘 76개는
   finalbossblues 것이며 그쪽은 크레딧에 없다. 라이선스 의무 위반은 아니지만

@@ -13,6 +13,10 @@
 하고, 그 동안 게임은 컨테이너(3000)에서 계속 돈다. 2단계에서만 자리를 바꾼다 —
 실패하면 컨테이너를 그대로 두고 물러설 수 있다.
 
+**밖에서 접속시키는 축(터널·HTTPS·`CORS_ORIGIN`·`TRUST_PROXY`·APK)은 8장에
+모아 두었다.** 그 축의 값을 고치러 `docs/deploy.md` 로 가면 안 된다 — 그쪽은
+도커+Caddy+포트포워딩 전제라 이 기계에 **틀린 답**이 섞여 있다.
+
 ---
 
 ## 0. 준비 확인
@@ -337,3 +341,75 @@ powershell -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada
 - 또는 `sc.exe sdset` 으로 러너 계정에 이 서비스만 제어 권한을 준다(범위가
   좁은 대신 명령이 길고, 잘못 쓰면 서비스를 아무도 못 만지게 되므로 먼저
   `sc.exe sdshow nogada-server` 로 현재 값을 적어 둔다).
+
+---
+
+## 8. 밖에서 접속시키기 — 이 문서에 없던 축
+
+**여기까지가 "서버 한 대를 세우는" 절차이고, 이 장은 그 서버에 누가 어떻게
+닿는가다.** 오래 이 문서에는 tailscale·https·CORS·TRUST_PROXY·APK 가 **한 번도
+안 나왔다.** 그런데 실제 운영자가 보는 런북이 이쪽이라, 그 축의 값을 고치려는
+사람은 `docs/deploy.md`(컨테이너·Caddy 전제)로 흘러갔고 거기 적힌 것 몇은
+**이 기계에 틀린 답**이었다. 절차는 `docs/deploy-public.md` 에 있다 — 여기에는
+그 문서로 건너가기 전에 알아야 할 사실만 적는다.
+
+### 지금 이 서버에 닿는 길
+
+Tailscale 사설망(`100.125.30.85:3000`)뿐이다. 공유기 포트포워딩은 안 했고 공인
+IP 도 안 열려 있다. 평문 HTTP 인데 괜찮은 이유는 WireGuard 가 기기 사이를
+암호화하기 때문이고, 뒤집으면 **Tailscale 을 안 쓰는 사람은 못 들어온다.**
+
+공개는 **Cloudflare Tunnel** 로 연다(포트포워딩이 아니다 — 집 공인 IP 를 접속자
+전원에게 노출하지 않으려는 것이다). `docs/deploy.md` 8장의 도커+Caddy+포트포워딩
+절차는 **이 기계의 계획이 아니다.**
+
+### 터널을 세우는 날 `.env` 에 함께 들어가는 세 줄
+
+```
+HOST=127.0.0.1
+TRUST_PROXY=127.0.0.1,::1
+NODE_ENV=production
+```
+
+- **`HOST`** — 안 좁히면 터널을 세운 뒤에도 3000 이 LAN·Tailscale 에 평문으로
+  계속 열려 있다. 앞문만 잠그고 옆문을 열어 둔 셈이다.
+- **`TRUST_PROXY`** — cloudflared 가 같은 PC 의 `127.0.0.1:3000` 으로 넣어 주므로,
+  켜지 않으면 **모든 요청이 127.0.0.1 한 덩어리로 보여** 한 사람의 로그인 실패가
+  접속자 전원을 잠근다(IP 백오프가 `request.ip` 를 열쇠로 쓴다).
+  **`1` 이나 `true` 로 뭉개면 안 된다** — Fastify 5 실측: 그 값이면 소켓 주소를
+  안 보므로 LAN 의 아무 기계나 `X-Forwarded-For: 9.9.9.9` 를 붙여 보내는 것만으로
+  `request.ip` 가 9.9.9.9 가 된다. 주소 목록으로 주면 목록 밖에서 온 요청은 그
+  헤더를 아예 안 읽는다. `::1` 을 함께 적는 이유는 **윈도에서 `localhost` 가
+  ::1 로 먼저 풀리기** 때문이다(cloudflared 의 config.yml 에는 `localhost` 말고
+  `http://127.0.0.1:3000` 을 명시한다).
+  켠 뒤에는 `logs\nogada-server.out.log` 의 `remoteAddress` 가 127.0.0.1 이 아닌
+  **실제 IP** 인지 눈으로 한 번 확인한다. 이건 문서로 대신할 수 없다.
+- **`NODE_ENV`** — 4장의 XML 은 이 변수를 놓지 않는다(놓는 것은 `GIT_SHA` 하나).
+  서비스로 도는 동안은 없어도 운영으로 잡히지만(stdout 이 로그 파일로 간다),
+  문제를 쫓느라 3장처럼 **콘솔에서 손으로 띄우는 순간** 그 서버는 개발로 잡혀
+  500 응답에 `connect ECONNREFUSED 127.0.0.1:5432` 같은 내부 문장을 그대로
+  싣는다. 터널이 선 뒤에 그러면 공개된 주소로 우리 포트 배치가 나간다.
+
+### `CORS_ORIGIN` — 웹만 열 거면 안 적어도 된다
+
+서버가 게임 화면을 **API 와 같은 오리진으로** 내주므로(7장의 dist) 브라우저는
+교차 출처 요청을 아예 안 만든다(실측: 프리플라이트 0건).
+
+**적어야 하는 것은 APK 를 붙일 때뿐이고, 그때 적는 값은 `https://localhost` 다.**
+`capacitor://localhost` 가 **아니다** — 그건 iOS 스킴이고 이 저장소에 iOS 는
+없다(Capacitor 의 `androidScheme` 기본값이 `https`, `iosScheme` 기본값이
+`capacitor`). 저장소 여섯 곳이 오래 반대로 적고 있었고, 하필 `docs/deploy.md`
+의 트러블슈팅 표가 그 틀린 답을 가리켜서 "앱에서만 안 붙는다"를 쫓으면 한 바퀴
+헛돌았다. **증상이 서버 로그에 안 남는다**는 것이 이 실수가 비싼 이유다 —
+거절하는 것은 WebView 이고 서버는 아무것도 못 본다.
+
+### APK 는 HTTPS 가 선 다음이다
+
+지금 APK 는 이 서버에 **한 바이트도 못 보낸다.** `targetSdk=36` 인데 매니페스트에
+`usesCleartextTraffic` 도 `networkSecurityConfig` 도 없어서 평문 HTTP 가 플랫폼
+기본 차단이고, `ERR_CLEARTEXT_NOT_PERMITTED` 로 죽으면서 **서버 로그엔 아무
+흔적도 안 남는다.** `capacitor.config.ts` 의 `allowMixedContent: true` 는 이걸
+안 풀어 준다(그건 WebView 의 혼합콘텐츠 스위치다). 터널로 HTTPS 가 서면 이
+차단은 저절로 사라진다 — 그래서 순서가 **터널 먼저, APK 나중**이다.
+
+자세한 절차·순서·검증은 `docs/deploy-public.md`.

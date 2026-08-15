@@ -100,9 +100,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const store = options.persistence ?? (await openStore(options.dataFile))
 
   // 개발 중 클라이언트(Vite dev server)와 오리진이 다르므로 허용한다.
-  // 배포에서는 `CORS_ORIGIN` 이 목록을 좁힌다 — 안드로이드 빌드의
-  // `capacitor://localhost` 까지 포함해야 앱에서 붙는다(.env.example).
-  // x-server-now 는 커스텀 헤더라 명시하지 않으면 브라우저가 읽지 못한다.
+  // 배포에서는 `CORS_ORIGIN` 이 목록을 좁힌다. 웹은 이제 서버가 같은 오리진으로
+  // 내주므로(아래 serveClient) 목록이 필요한 것은 **APK 뿐**이고, 그때 적을
+  // 오리진은 `https://localhost` 다 — `capacitor://` 가 아니다(config.ts 의
+  // parseCorsOrigin 에 실측 근거). x-server-now 는 커스텀 헤더라 명시하지
+  // 않으면 브라우저가 읽지 못한다.
   app.register(cors, {
     origin: parseCorsOrigin(process.env.CORS_ORIGIN),
     exposedHeaders: ['x-server-now'],

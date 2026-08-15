@@ -224,9 +224,23 @@ export function parseClientDist(raw: string | undefined): string {
  * 이 변경으로 막히면, 막힌 사람은 원인을 CORS 에서 찾지 않는다. 배포에서는
  * `.env` 가 목록을 준다.
  *
- * 안드로이드 빌드(Capacitor)의 출처는 `capacitor://localhost` 와
- * `http://localhost` 다 — 웹 주소가 아니라서 잊기 쉽고, 잊으면 앱에서만
- * 안 붙는다(`.env.example` 참고).
+ * **안드로이드 빌드(Capacitor)의 출처는 `https://localhost` 다.** 웹 주소가
+ * 아니라서 잊기 쉽고, 잊으면 앱에서만 안 붙는다 — 그리고 거절하는 것은
+ * WebView 라 **서버 로그에는 아무 흔적도 안 남는다.**
+ *
+ * 이 자리에 오래 `capacitor://localhost` 가 "안드로이드 WebView" 라는 라벨을
+ * 달고 있었는데 **그건 iOS 스킴이고 이 저장소에 iOS 는 없다**(`apps/client/ios`
+ * 없음). 셋을 실측해서 고친 것이다: `@capacitor/cli` 8.5 의 declarations.d.ts 가
+ * `iosScheme` 기본값을 `capacitor`, `androidScheme` 기본값을 `https` 로 적고,
+ * 안드로이드 네이티브의 CapConfig.java 도 `androidScheme =
+ * CAPACITOR_HTTPS_SCHEME` · `hostname = "localhost"` 로 시작하며,
+ * `apps/client/capacitor.config.ts` 는 그 둘을 **안 건드린다**
+ * (androidOrigin.test.ts 가 그 마지막 하나를 못 박는다).
+ *
+ * 라벨 하나가 틀린 것이 왜 값비싼가: 실서버 preflight 실측이 정확히 반대였다 —
+ * `capacitor://localhost` 는 허용되고 `https://localhost` 는 차단됐다. 즉 목록은
+ * 아무도 안 쓰는 오리진을 열어 두고 정작 붙을 오리진을 막고 있었고, 그 증상을
+ * 쫓으면 트러블슈팅 표가 다시 `capacitor://localhost` 를 가리켰다.
  *
  * 끝의 `/` 는 떼어 낸다. `Origin` 헤더에는 경로가 없어서 `https://a.example/`
  * 라고 적으면 **영원히 일치하지 않는데**, 주소창에서 복사하면 그 슬래시가 붙어
@@ -246,10 +260,30 @@ export function parseCorsOrigin(raw: string | undefined): CorsOrigin {
  * 무력해진다. 반대로 리버스 프록시 뒤에서 켜지 않으면 모든 요청이 프록시 IP
  * 하나로 보여, 한 사람의 실패가 나머지 전부를 막는다(설계 규범 8).
  *
- * 받는 꼴 셋:
- * - `true`/`on`/`yes` — 전부 믿는다. 프록시가 몇 대인지 모를 때뿐이고, 권하지 않는다.
- * - 숫자 — 앞에서부터 그만큼의 홉을 프록시로 본다. Caddy 한 대 뒤라면 `1` 이다.
- * - IP/CIDR 목록 — 그 주소에서 온 것만 프록시로 본다. 가장 좁고 가장 안전하다.
+ * 받는 꼴 셋. **셋이 같은 급이 아니다** — 누가 보냈는지를 보는 것은 목록뿐이고,
+ * 나머지 둘은 헤더를 그냥 믿는다:
+ *
+ * - **IP/CIDR 목록 — 이것을 쓴다.** 소켓 주소가 목록에 있는 요청만 XFF 를 읽고,
+ *   목록 밖에서 온 것은 헤더가 있어도 **아예 안 읽는다**(Fastify 5 실측).
+ *   터널 뒤라면 `127.0.0.1,::1` 이다 — 윈도에서 `localhost` 는 ::1 로 먼저
+ *   풀려서 하나만 적으면 반쪽이 된다.
+ * - 숫자 — 체인 **끝에서부터** 그만큼을 프록시로 친다. 소켓 주소는 안 본다.
+ *   실측: `1` 이면 LAN 의 아무 기계나 `X-Forwarded-For: 9.9.9.9` 를 붙이는 것만
+ *   으로 `request.ip` 가 9.9.9.9 가 된다. "Caddy 한 대 뒤니까 1" 은 프록시가
+ *   실제로 한 대라는 뜻일 뿐, **다른 누가 못 보낸다는 뜻이 아니다.**
+ * - `true`/`on`/`yes` — 위와 같은 구멍에 상한만 없다.
+ *
+ * 왜 이 구별이 값비싼가: IP 백오프의 열쇠가 이 값이다(routes/auth.ts 의 ipOf).
+ * 위조되는 꼴로 켜 두면 요청마다 다른 IP 를 적어 보내는 쪽에 백오프가 아예 존재
+ * 하지 않게 되고, 서버는 그동안 멀쩡히 200 을 돌려주므로 **틀렸다는 사실이 겉으로
+ * 드러나지 않는다.** 그래서 문서는 목록만 시킨다(docs/deploy.md 10장).
+ *
+ * **목록에 오타가 있으면 서버가 아예 안 뜬다.** 실측: `Fastify({ trustProxy })`
+ * 를 만드는 그 자리에서 `invalid IP address: 오타` 로 던진다(ready 도 요청도
+ * 아니다). `LOG_LEVEL` 처럼 흡수해서 기본으로 밀지 **않는다** — 여기서 물러설
+ * 곳이 양쪽 다 나쁘기 때문이다. `false` 로 밀면 프록시 뒤에서 모든 요청이 한
+ * 덩어리가 되어 한 사람의 실패가 전원을 잠그고, `true` 로 밀면 위조가 열린다.
+ * 기동에서 시끄럽게 죽는 것이 그 둘보다 싸다.
  */
 export function parseTrustProxy(raw: string | undefined): TrustProxy {
   const value = raw?.trim() ?? ''
