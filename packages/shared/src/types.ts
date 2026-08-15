@@ -407,6 +407,52 @@ export interface NodeDef {
   requireTime?: NodeTimeRequirement
 }
 
+/**
+ * 몬스터 공격 하나 — 주기 안의 창 둘(예고 → 휩쓸기)과 부채꼴 하나.
+ *
+ * 세 시각 필드는 전부 **주기 안의 오프셋(ms)** 이다. 절대 시각을 적게 하면
+ * 같은 종의 배치마다 공격표를 다시 적어야 하고, 위상은 배치의 몫이지
+ * 종의 몫이 아니다(설계 §12-앞 23 — 배치 셋은 위상만 서로 다르다).
+ *
+ * 하한(예고 ≥700ms · 활성 ≥400ms)은 타입이 아니라 빌드 검사가 진다(C2,
+ * 설계 §8-3) — 숫자 하한은 타입으로 표현할 수 없고, 여기서 절반만 지키는
+ * 흉내를 내면 "타입이 지킨다"는 착각이 생긴다.
+ */
+export interface MonsterAttackDef {
+  /** 예고가 시작되는 주기 안의 오프셋. 예고+활성이 주기를 감아 넘지 않는다(파서가 막는다). */
+  telegraphStartMs: number
+  /** 예고(바닥 표시) 길이. 이 동안의 공격은 자유다 — 위험 구역이 아니다(결정 3). */
+  telegraphMs: number
+  /** 휩쓸기(활성) 길이. 이 동안 부채꼴 안의 공격은 확정 피격이다. */
+  activeMs: number
+  /** 부채꼴이 벌어지는 방향. 예고 시작 시점의 순찰 칸이 앵커다(monsterStateAt). */
+  direction: Direction
+  /** 부채꼴 깊이(칸). 기하는 monsterStateAt 하나가 소유한다 — 데이터는 깊이만 적는다. */
+  reach: number
+}
+
+/**
+ * 몬스터 한 종의 패턴. **`periodMs` 필드가 하나뿐인 것이 단일 주기 계약이다**
+ * (설계 §12-앞 19) — 주기가 여럿이면 lcm 이 검증 시뮬(C2)의 길이를 못박지
+ * 못한다. 순찰도 공격도 전부 이 한 주기 안의 오프셋으로 적고, 함수는
+ * `t mod P` 로 돈다. CSV 파서의 다주기 거절은 C6 이 진다.
+ *
+ * `patrol` 은 경유지 목록이 아니라 **시간표**다: 주기를 칸 수로 등분한 슬롯
+ * (periodMs / patrol.length, 파서가 나눠떨어짐을 강제)마다 한 칸이고, 같은
+ * 칸을 되풀이 적으면 그동안 서 있는 것이다 — 공격 중 정지를 별도 필드 없이
+ * 데이터가 표현한다. 이웃(감기 포함)은 같은 칸이거나 인접 한 칸이어야 하고
+ * (아니면 화면에서 순간이동한다), 그 검사는 배치 유효성과 함께 C2 가 진다.
+ */
+export interface MonsterDef {
+  id: string
+  name: string
+  /** 단일 주기 P (ms). 이 필드 하나가 순찰·공격의 시간축 전부다. */
+  periodMs: number
+  /** 순찰 시간표. 최소 한 칸 — 한 칸이면 제자리 몬스터다. 타일 좌표(NodePlacement 의 x·y 와 같다). */
+  patrol: TilePos[]
+  attacks: MonsterAttackDef[]
+}
+
 /** 채집 사다리의 한 단. 표의 tiers 순서가 곧 의미다 — 희귀 → 흔함. */
 export interface GatherTierDef {
   itemId: string
