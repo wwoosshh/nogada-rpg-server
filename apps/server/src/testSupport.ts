@@ -59,6 +59,11 @@ export async function buildTestApp(options: TestAppOptions = {}): Promise<Fastif
     // 조건이 실행 환경에 달려 있으면 안 되므로 여기서 한 번 더 못 박는다.
     // 로그를 시험하는 테스트만 `logger` 를 직접 준다.
     logger: appOptions.logger ?? false,
+    // 정적 서빙도 같은 이유로 못 박는다. 기본대로 두면 `apps/client/dist` 를
+    // 빌드해 둔 기계에서만 `/*` 핸들러가 붙어, 라우팅을 재는 검사들이 사람마다
+    // 다른 앱을 재게 된다. 정적 서빙 자체는 clientDist.test.ts 가 진짜 폴더를
+    // 만들어서 잰다.
+    clientDist: appOptions.clientDist ?? false,
     persistence:
       appOptions.persistence ??
       (waitingStore ? new WaitingStore(await JsonPersistence.open(dataFile)) : undefined),

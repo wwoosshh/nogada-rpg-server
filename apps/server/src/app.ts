@@ -1,5 +1,7 @@
+import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import cors from '@fastify/cors'
+import fastifyStatic from '@fastify/static'
 import { loadGameData, startLocation } from '@nogada/data'
 // 별도 진입이다 — 배럴(index.ts)에 실리면 클라이언트 번들도 이 표를 받는다.
 // 브라켓 경계·잭팟 확률이 곧 숨은 문턱이라 그러면 F12 로 스포일된다(설계 §7-앞 9).
@@ -20,7 +22,13 @@ import Fastify, {
   type FastifyServerOptions,
 } from 'fastify'
 import { requireSession } from './auth/sessions.js'
-import { isDevConsole, parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
+import {
+  isDevConsole,
+  parseClientDist,
+  parseCorsOrigin,
+  parseLogger,
+  parseTrustProxy,
+} from './config.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerDonateRoutes } from './routes/donate.js'
@@ -54,6 +62,16 @@ export interface BuildAppOptions {
    * 환경변수로는 스트림을 건넬 수 없다.
    */
   logger?: FastifyServerOptions['logger']
+  /**
+   * 클라이언트 dist 를 어디서 내줄 것인가. 기본은 `CLIENT_DIST` 가 정한다
+   * (config.ts). **`false` 는 "아예 붙이지 않는다"** 다.
+   *
+   * 테스트가 이 값을 못 박는 이유: 기본대로 두면 `apps/client/dist` 가 **있는
+   * 기계에서만** 정적 핸들러가 붙어, 같은 커밋이 개발 PC 와 CI 에서 다른 라우터를
+   * 갖는다. 조건이 실행 환경에 달린 관문은 관문이 아니다(testSupport.ts 가
+   * `logger` 를 못 박는 것과 같은 이유).
+   */
+  clientDist?: string | false
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -89,6 +107,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     origin: parseCorsOrigin(process.env.CORS_ORIGIN),
     exposedHeaders: ['x-server-now'],
   })
+
+  serveClient(app, options.clientDist ?? parseClientDist(process.env.CLIENT_DIST))
 
   // 모든 응답에 서버 시각을 싣는다. 클라이언트가 채집·제작할 때마다 공짜로
   // 드리프트를 확인할 수 있어, 따로 동기화 요청을 보낼 필요가 줄어든다.
@@ -200,6 +220,61 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   })
 
   return app
+}
+
+/**
+ * 게임 화면을 **API 와 같은 오리진으로** 내준다.
+ *
+ * 이 한 등록이 공개 배포의 절반이다(docs/deploy-public.md 1장): 오리진이 하나면
+ * CORS 도, HTTPS 페이지가 평문 API 를 부르는 혼합 콘텐츠도, 안드로이드의 평문
+ * 차단도, 주소가 바뀔 때의 재빌드도 **애초에 생기지 않는다.** 각각을 따로 고치는
+ * 것보다 싸다.
+ *
+ * **없으면 조용히 안 붙이고 로그로 한 줄 남긴다.** dist 는 빌드 생성물이라
+ * 저장소에 없고, 개발도 테스트도 그것 없이 서버를 띄운다.
+ *
+ * 이 앞 검사가 무엇을 사는지 실측했다. **처음 생각한 것과 달랐다:**
+ * - **없는 폴더는 @fastify/static 이 안 던진다.** 전부 404 를 줄 뿐이고, 게다가
+ *   그쪽도 경로를 담은 warn 을 스스로 남긴다(`"root" path "..." must exist`).
+ *   즉 여기 `existsSync` 가 사는 것은 서버의 목숨도, 유일한 단서도 아니다 —
+ *   운영자에게 우리 말로, 우리가 문서에서 가리킨 자리에(docs/deploy-windows.md)
+ *   한 줄 남기는 것뿐이다. 그것을 위해 남긴다고 적어 두는 편이 정직하다.
+ * - **파일을 가리키면 던진다**(`"root" option must be a directory`). 이쪽이
+ *   진짜다: `.env` 에 `CLIENT_DIST` 를 `.../dist/index.html` 로 적는 오타 하나면
+ *   화면이 아니라 **게임 전체가 안 뜬다.** `isDirectory()` 가 사는 것이 그것이고,
+ *   `existsSync` 가 앞에 있는 것은 없는 경로에 `statSync` 를 부르면 ENOENT 로
+ *   던지기 때문이다 — 둘은 한 벌이다.
+ *
+ * **`wildcard` 는 기본값(true)이다.** `false` 는 기동 시 파일마다 라우트를
+ * 등록하는 모드다. 그것으로 바꿔 보고 실제로 깨지는 것을 쟀다:
+ * - dist 를 갈아 끼워도 재시작 전까지 옛 목록이 남는다 — 사람이 손으로 밀어
+ *   넣는 것이 이 프로젝트의 배포 절차라(docs/deploy-public.md 6단계) 밀어 넣은
+ *   새 화면이 안 나오고, 그 증상은 "브라우저 캐시겠지"로 읽혀서 한참 헤맨다.
+ * - dist 에 `api/` 아래 파일이 하나라도 있으면 게임 라우트와 이름이 겹쳐
+ *   `FST_ERR_DUPLICATED_ROUTE` 로 **앱이 아예 안 뜬다.**
+ *
+ * (처음에는 한글 맵 파일 이름이 이 모드에서 깨질 것이라 적었는데, 재 보니
+ * 안 깨졌다 — 라우터가 %-인코딩을 풀어 등록된 경로와 맞춘다. 위 둘이 실제 이유다.)
+ *
+ * **SPA 폴백은 두지 않는다.** 이 클라이언트에는 History API 라우터가 없다 —
+ * 화면 전환이 전부 Zustand 상태이고 주소는 늘 `/` 하나다(grep: pushState·
+ * popstate 0건). 없는 경로를 index.html 로 받아 주면 오타 난 API 호출이 404
+ * 대신 HTML 을 받아, 클라이언트가 "JSON 이 아니다"로 엉뚱하게 죽는다.
+ */
+function serveClient(app: FastifyInstance, root: string | false): void {
+  if (root === false) return
+  if (!existsSync(root) || !statSync(root).isDirectory()) {
+    // "없어서"라고만 적지 않는다 — 파일을 가리킨 경우도 여기로 오고, 그때
+    // 로그가 "없다"고 하면 운영자는 있는 파일을 앞에 두고 없다는 말을 읽는다.
+    app.log.info(`클라이언트 dist 가 폴더로 있지 않아 정적 서빙을 붙이지 않는다: ${root}`)
+    return
+  }
+
+  // 등록 순서는 신경 쓰지 않는다 — Fastify 라우터는 등록 순서가 아니라 경로
+  // 구체성으로 고르므로 `/*` 를 먼저 등록해도 `/api/health` 가 이긴다(실측이자
+  // clientDist.test.ts 가 못 박는 것). 순서에 기대는 코드를 쓰면 라우트를 옮기는
+  // 날 게임 API 가 조용히 정적 파일 핸들러로 흘러간다.
+  app.register(fastifyStatic, { root })
 }
 
 /**

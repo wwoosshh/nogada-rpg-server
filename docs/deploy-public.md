@@ -79,8 +79,10 @@ APK 를 버리라는 뜻은 아니다. `android/` 는 그대로 두고 **HTTPS �
 | 2 | 인증 없는 `POST /api/auth/logout` 이 무제한 DB 왕복 | `routes/auth.ts` 의 logout |
 | 3 | `CORS_ORIGIN` 에 공개 오리진 없음 | 서버 `.env` |
 
-**3번**은 같은 오리진 서빙을 택하면 웹에서는 CORS 자체가 발생하지 않는다. APK 를
-붙일 때 `https://localhost` 를 추가한다 — `capacitor://localhost` 가 아니다.
+**3번**은 같은 오리진 서빙이 6단계에서 실제로 섰으므로 **웹에서는 CORS 자체가
+발생하지 않는다**(실측: 브라우저가 프리플라이트를 한 건도 안 보냈다). 남는 것은
+APK 뿐이고, 붙일 때 `https://localhost` 를 추가한다 — `capacitor://localhost` 가
+아니다.
 
 ### 이미 닫힌 것 (다시 하지 마라)
 
@@ -199,7 +201,9 @@ HOST=127.0.0.1
 NODE_ENV=production
 ```
 
-`CORS_ORIGIN` 은 같은 오리진 서빙이면 웹용으로 필요 없다.
+`CORS_ORIGIN` 은 같은 오리진 서빙이면 웹용으로 필요 없다. `CLIENT_DIST` 도 안
+적는다 — 기본값이 이 저장소의 `apps/client/dist` 이고, 6단계가 dist 를 밀어 넣는
+자리가 바로 거기다.
 
 **`HOST` 를 빠뜨리면 터널을 세워도 3000 이 LAN·Tailscale 에 평문으로 계속 열려
 있다** — 앞문만 잠그고 옆문을 열어 둔 셈이다. 기본값은 여전히 `0.0.0.0` 이므로
@@ -220,23 +224,23 @@ stdout 이 파일로 흘러가 그 자체로 운영으로 잡히지만(`config.t
 이 세 줄을 넣었으면 서비스를 다시 띄우고(`nogada-server.exe restart`) 로그 파일에
 요청 줄이 실제로 쌓이는지 눈으로 본다 — `.env` 는 기동 때 한 번만 읽힌다.
 
-### 4단계 — 클라이언트를 오리진 상대경로로 빌드
+### 4단계 — 클라이언트를 오리진 상대경로로 빌드 (끝났다)
 
-`apps/client/.env.production` 을 새로 만들고 값을 **비운다**:
-
-```
-VITE_API_BASE_URL=
-```
-
-`??` 는 빈 문자열을 폴백시키지 않으므로 `BASE` 가 `''` 이 되고 모든 호출이
-`/api/...` 가 된다(검증: 번들에서 `localhost:3000` 0건). 주소가 바뀌어도 재빌드가
-필요 없고 CORS·혼합 콘텐츠가 원천적으로 안 생긴다. `.env.production` 인 이유는
-`.env.local`(개발용)을 안 건드리기 위해서다 — Vite 는 `.env.local` 보다
-`.env.[mode]` 를 나중에 읽어 덮는다.
+`apps/client/.env.production` 이 저장소에 있고 값이 비어 있다. `??` 는 빈 문자열을
+폴백시키지 않으므로 `BASE` 가 `''` 이 되고 모든 호출이 `/api/...` 가 된다. 주소가
+바뀌어도 재빌드가 필요 없고 CORS·혼합 콘텐츠가 원천적으로 안 생긴다.
+`.env.production` 인 이유는 `.env.local`(개발용)을 안 건드리기 위해서다 — Vite 는
+`.env.local` 보다 `.env.[mode]` 를 나중에 읽어 덮는다(실측: 이 파일을 넣은 뒤
+번들의 `localhost:3000` 이 0건이 됐고 `.env.local` 은 그대로다).
 
 **셸 환경변수로 넘기지 마라.** PowerShell 에서 `$env:VITE_API_BASE_URL = ''` 는
 값을 비우는 게 아니라 **변수를 삭제한다**(실측). 그러면 `.env.local` 의 localhost 가
 그대로 번들에 박힌다.
+
+이 파일은 커밋 대상이다. 루트 `.gitignore` 가 `.env*` 를 통째로 막으므로 그 파일에
+`!apps/client/.env.production` 한 줄이 예외로 뚫려 있다 — **그 줄을 지우면** 다음
+사람의 체크아웃에는 이 파일이 없고, 빌드는 아무 경고 없이 localhost 를 박는다.
+`apps/client/src/api/apiBase.test.ts` 가 그 셋(파일의 존재·값·번들)을 잰다.
 
 ```bash
 pnpm data:build
@@ -248,8 +252,12 @@ pnpm --filter @nogada/client build
 
 ### 5단계 — 두 개의 관문 (건너뛰면 폰에서야 발견된다)
 
+**둘 다 `scripts/ship-client.ps1` 안에 들어갔다** — 6단계에서 옮길 때 자동으로
+돈다. 손으로 확인하고 싶으면 아래 그대로다.
+
 그림이 실제로 들어갔는지. **라이선스 에셋은 gitignore 대상이고, 비어 있어도 빌드는
-에러 없이 끝난다.**
+에러 없이 끝난다.** 이것만은 테스트로 못 고정한다 — CI 에도 개발 PC 밖의 어디에도
+그 그림이 없어서, 검사를 세우면 저장소가 늘 빨갛다.
 
 ```bash
 Get-ChildItem -Recurse apps/client/dist/tilesets, apps/client/dist/icons, apps/client/dist/sprites, apps/client/dist/nodes -File | Measure-Object
@@ -261,19 +269,70 @@ Get-ChildItem -Recurse apps/client/dist/tilesets, apps/client/dist/icons, apps/c
 Select-String -Path apps/client/dist/assets/*.js -Pattern "localhost:3000|100\.125\.30\.85" -AllMatches | Measure-Object
 ```
 
-### 6단계 — 서버가 dist 를 같은 오리진으로 서빙
+이쪽은 **테스트가 됐다**(`apps/client/src/api/apiBase.test.ts`). dist 가 없으면
+건너뛰므로, CI 는 테스트 앞에서 클라이언트를 빌드해 이 자리가 실제로 돌게 한다
+(`.github/workflows/deploy.yml` — 계약 스위트에 DB 를 대 주는 것과 같은 판단이다).
 
-`@fastify/static` 을 추가하고 `root` 를 dist 절대경로로 준다. **`wildcard` 는
-기본값(true)을 쓴다** — `wildcard: false` 는 기동 시 파일마다 라우트를 등록하는
-모드라, dist 를 갈아 끼우면 재시작 전까지 옛 목록이 남고 한글 맵 파일명
-(`dist/maps/항구마을.json` 등 11개)이 %-인코딩으로 요청되는 이 프로젝트에서 가장
-깨지기 쉽다. 등록 순서는 신경 쓸 필요 없다 — Fastify 라우터는 등록 순서가 아니라
-경로 구체성으로 고른다(`/*` 를 먼저 등록해도 `/api/me` 가 이긴다, 실측).
+### 6단계 — 서버가 dist 를 같은 오리진으로 서빙 (끝났다)
+
+`@fastify/static` 이 `apps/server/src/app.ts` 의 `serveClient` 에서 등록된다.
+`CLIENT_DIST` 가 자리를 정하고, **비워 두면 이 저장소의 `apps/client/dist`** 다.
+그 폴더가 없으면 정적 서빙을 그냥 안 붙이고 기동 로그에 한 줄 남긴다 — 개발도
+테스트도 dist 없이 서버를 띄우므로 여기서 죽으면 안 된다.
+
+- **`wildcard` 는 기본값(true)** 이다. `wildcard: false` 는 기동 시 파일마다
+  라우트를 등록하는 모드인데, 그것으로 바꿔서 실제로 재 봤다: ① dist 를 갈아
+  끼워도 재시작 전까지 옛 목록이 남고(사람이 손으로 밀어 넣는 것이 이 프로젝트의
+  배포 절차라 치명적이다), ② dist 에 `api/` 아래 파일이 하나라도 있으면
+  `FST_ERR_DUPLICATED_ROUTE` 로 **앱이 아예 안 뜬다.**
+  (이 문서가 예전에 적었던 "한글 맵 파일명이 깨진다"는 **틀렸다** — 재 보니
+  라우터가 %-인코딩을 풀어 맞춘다. 기본값을 지키는 이유는 위 둘이다.)
+- **등록 순서는 상관없다** — Fastify 라우터는 등록 순서가 아니라 경로 구체성으로
+  고른다. dist 안에 `api/health` 라는 **파일을 일부러 심어 놓아도** 라우트가
+  이긴다(`apps/server/src/clientDist.test.ts`).
+- **SPA 폴백은 두지 않았다.** 이 클라이언트에는 History API 라우터가 없다 —
+  화면 전환이 전부 Zustand 상태이고 주소는 늘 `/` 하나다(pushState·popstate
+  0건). 폴백을 두면 얻는 것 없이 오타 난 API 호출이 404 대신 HTML 을 받아,
+  클라이언트가 "JSON 이 아니다"로 엉뚱하게 죽는다.
+
+실측(포트 3055 에 서버 하나, dist 하나): 게임이 통째로 뜨고 타일셋·스프라이트·
+`maps/%ED%95%AD%EA%B5%AC%EB%A7%88%EC%9D%84.json`·가입·캐릭터 생성이 **전부 서버
+자신의 오리진**으로 갔다. 프리플라이트 0건, 콘솔 오류 0건.
+
+#### dist 를 서버 PC 로 옮기기
 
 **운영 부담을 정직하게 적는다.** `.github/workflows/deploy.yml` 은 서버만 배포하고
 **클라이언트를 빌드하지도 복사하지도 않는다.** 그리고 서버 PC 에는 라이선스 에셋이
 없다(`docs/deploy.md:239` — "미니PC 는 그림을 모른다"). 즉 릴리스마다 개발 PC 에서
-빌드한 3.1MB dist 를 사람이 서버 PC 로 옮겨야 한다.
+빌드한 3.1MB dist 를 사람이 서버 PC 로 옮겨야 한다. **자동 CI 로 만들지 마라** —
+러너에도 그림이 없어 그림 없는 사이트가 올라간다.
+
+Tailscale 로 두 기계가 이미 붙어 있으므로(개발 PC 100.96.41.41, 서버
+100.125.30.85) 관리 공유 위로 밀어 넣는 것이 손이 가장 덜 간다. 개발 PC 에서:
+
+```powershell
+pwsh -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
+```
+
+스크립트가 빌드하고, 5단계의 관문 둘을 돌리고, `robocopy /MIR` 로 옮긴다. 관문을
+**옮기기 앞에** 두는 것이 요점이다 — `/MIR` 은 목적지를 지우므로, 빈 dist 를
+미러하면 서버 PC 의 멀쩡한 화면을 지우고 아무것도 안 남긴다. `-SkipBuild` 를 주면
+지금 폴더에 있는 것을 그대로 잰다.
+
+sshd 를 켜 둔 서버라면 스크립트 없이 이렇게 해도 된다(관문은 손으로 돈다):
+
+```bash
+scp -r apps/client/dist/* user@100.125.30.85:/c/nogada-server/nogada-rpg-server/apps/client/dist/
+```
+
+**목적지를 저장소 안으로 고른 이유:** dist 는 gitignore 대상이고 배포 워크플로는
+`git clean` 을 일부러 안 돌린다(거기 `.env` 와 node_modules 가 있다). 그래서 한 번
+밀어 넣은 화면은 `git reset --hard` 를 지나도 남고, 서버의 `CLIENT_DIST` 기본값도
+그 자리라 `.env` 에 한 줄도 안 적어도 된다.
+
+**서버를 재시작할 필요는 없다.** `wildcard` 기본값이 요청 때마다 파일시스템을
+보므로 다음 요청부터 새 화면이 나간다. 브라우저에서 강력 새로고침(Ctrl+Shift+R)
+한 번은 해야 한다 — `index.html` 은 해시가 안 붙는 유일한 파일이다.
 
 감당하기 싫으면 대안은 Cloudflare Pages 에 `wrangler pages deploy` 로 dist 만
 올리는 것인데, 그러면 오리진이 갈려 CORS_ORIGIN 관리가 돌아온다. **리포 연결 자동

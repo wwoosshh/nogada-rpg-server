@@ -1,3 +1,6 @@
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 /**
  * 배포가 바꾸는 것들 — 환경변수를 값으로 옮기는 한 곳.
  *
@@ -174,6 +177,42 @@ export function parseListen(
   const host = rawHost?.trim() ?? ''
   const port = rawPort?.trim() ?? ''
   return { host: host === '' ? '0.0.0.0' : host, port: port === '' ? 3000 : Number(port) }
+}
+
+/**
+ * 클라이언트 dist 의 기본 자리 — 이 저장소 안의 `apps/client/dist`.
+ *
+ * 절대경로로 굳혀 두는 이유: 상대경로면 **어디서 띄웠는가**가 답을 바꾼다.
+ * 개발은 저장소 루트에서, WinSW 는 `apps\server` 에서 띄운다
+ * (docs/deploy-windows.md 의 workingdirectory) — 같은 설정이 두 자리에서 다른
+ * 폴더를 가리키면 한쪽에서만 그림 없는 사이트가 뜬다.
+ *
+ * 이 자리를 고른 것은 **배포가 이 폴더를 안 지우기 때문**이다. dist 는
+ * `.gitignore` 대상이고 배포 워크플로는 `git clean` 을 일부러 돌리지 않으므로
+ * (.github/workflows/deploy.yml — 거기 `.env` 와 node_modules 가 있다),
+ * 사람이 한 번 밀어 넣은 dist 는 `git reset --hard` 를 지나도 그대로 남는다.
+ */
+const DEFAULT_CLIENT_DIST = fileURLToPath(new URL('../../client/dist', import.meta.url))
+
+/**
+ * `CLIENT_DIST` — 서버가 같은 오리진으로 내줄 클라이언트 빌드가 어디 있는가.
+ *
+ * **없어도 서버는 뜬다.** 실제로 개발과 테스트는 dist 없이 서버를 띄우고, 서버
+ * PC 도 사람이 dist 를 밀어 넣기 전까지는 없는 상태다(라이선스 에셋이 없어
+ * 서버 PC 에서 빌드할 수 없다 — docs/deploy.md 의 "미니PC 는 그림을 모른다").
+ * 그래서 이 값이 가리키는 곳이 비어 있으면 정적 서빙을 그냥 안 붙인다. 폴더가
+ * 있는지 보는 것은 파일시스템의 일이라 여기서는 **경로만 정한다**(app.ts).
+ *
+ * 빈 값은 "안 정했다"로 읽는다 — `HOST`·`PORT` 와 같은 자세다(parseListen).
+ * `.env` 에 `CLIENT_DIST=` 한 줄만 남는 일이 흔한데, 그 빈 문자열을 경로로
+ * 넘기면 `resolve('')` 가 현재 작업 디렉터리가 되어 **저장소를 통째로 웹에
+ * 내놓는다.** 여기서 걸러야 하는 것이 그 한 가지다.
+ */
+export function parseClientDist(raw: string | undefined): string {
+  const value = raw?.trim() ?? ''
+  // 상대경로로 적어도 절대경로로 만든다. 사람이 `.env` 에 `../client/dist` 를
+  // 적을 때 기준으로 삼는 것은 그 서버를 띄우는 자리(cwd)다.
+  return value === '' ? DEFAULT_CLIENT_DIST : resolve(value)
 }
 
 /**

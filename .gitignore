@@ -23,6 +23,12 @@ assets/licensed/
 .env.*
 !.env.example
 
+# 예외 하나. 클라이언트의 프로덕션 주소는 **비밀이 아니라 빈 값**이고(같은 오리진
+# 서빙 — docs/deploy-public.md), 그 빈 값이 저장소에 없으면 `vite build` 가
+# `.env.local` 의 localhost 를 번들에 박는다. 위 세 줄에 걸려 커밋되지 않는 것이
+# 정확히 그 실패를 만든다.
+!apps/client/.env.production
+
 # pg_dump 산출물 (scripts/backup.sh). 남의 계정 해시와 진행도가 통째로 들었다 —
 # 저장소에 올릴 것이 아니라 다른 기계로 옮길 것이다.
 backups/

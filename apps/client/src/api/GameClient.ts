@@ -6,13 +6,16 @@ import type {
   PlayerState,
   RecipeInput,
 } from '@nogada/shared'
+import { resolveApiBase } from './apiBase.js'
 import { clearToken, readToken } from './sessionToken.js'
 
 /**
  * 서버 주소는 이 변수 하나로만 결정된다.
- * 개발은 localhost, 실기는 PC 의 LAN IP, 운영은 원격 — 코드는 그대로다.
+ * 개발은 localhost, 실기는 PC 의 LAN IP, 운영은 **빈 문자열**(같은 오리진) —
+ * 코드는 그대로다. 규칙 자체는 apiBase.ts 가 갖는다: 빈 문자열을 폴백시키지
+ * 않는 것이 공개 배포의 전제라, 그 한 줄에는 따로 자가 필요하다.
  */
-const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
+const BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL)
 
 export interface GatherOutcomeDto {
   success: boolean

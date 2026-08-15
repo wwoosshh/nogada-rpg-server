@@ -1,13 +1,15 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import { Writable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import type { LightMyRequestResponse } from 'fastify'
 import { describe, expect, it } from 'vitest'
 import { buildApp } from './app.js'
 import {
   LOG_CENSOR,
   isDevConsole,
+  parseClientDist,
   parseCorsOrigin,
   parseListen,
   parseLogger,
@@ -34,6 +36,39 @@ describe('parseListen', () => {
     // "아무 빈 포트나" 가 된다 — 서버는 멀쩡히 뜨고 아무도 못 찾는다.
     expect(parseListen('', '')).toEqual({ host: '0.0.0.0', port: 3000 })
     expect(parseListen('   ', '   ')).toEqual({ host: '0.0.0.0', port: 3000 })
+  })
+})
+
+describe('parseClientDist', () => {
+  it('기본은 이 저장소의 apps/client/dist 다 — 절대경로로 준다', () => {
+    const 기본 = parseClientDist(undefined)
+    expect(isAbsolute(기본)).toBe(true)
+    expect(기본.replace(/\\/g, '/')).toMatch(/\/apps\/client\/dist$/)
+    // **어디서 띄웠는가에 흔들리면 안 된다.** WinSW 는 apps\server 에서,
+    // 개발은 저장소 루트에서 띄운다(docs/deploy-windows.md 의 workingdirectory).
+    // 같은 값이 두 자리에서 다른 폴더를 가리키면 한쪽만 그림 없는 사이트가 뜬다.
+    expect(기본).toBe(fileURLToPath(new URL('../../client/dist', import.meta.url)))
+  })
+
+  it('빈 값은 "안 정했다"로 읽는다 — resolve("") 는 저장소를 통째로 내놓는다', () => {
+    // `.env` 에 `CLIENT_DIST=` 한 줄만 남기는 일이 흔한데, 그 빈 문자열을
+    // 경로로 넘기면 현재 작업 디렉터리가 웹 루트가 된다. 여기서 걸러야 한다.
+    //
+    // **기대값을 `parseClientDist(undefined)` 로 적으면 안 된다.** 빈 값 처리를
+    // 통째로 지워도 둘 다 `resolve('')` 로 같아져서 이 검사가 초록으로 남는다
+    // (실측으로 확인했다). 두 값을 서로 견주는 대신 **저장소 안의 그 자리**와
+    // 견주어야 한다.
+    const dist = fileURLToPath(new URL('../../client/dist', import.meta.url))
+    expect(parseClientDist('')).toBe(dist)
+    expect(parseClientDist('   ')).toBe(dist)
+    // 그리고 그것이 cwd 가 아니어야 한다 — 자를 대는 자리가 바로 여기다.
+    expect(parseClientDist('')).not.toBe(resolve(''))
+  })
+
+  it('적힌 경로를 절대경로로 만든다 — 상대경로의 기준은 띄운 자리다', () => {
+    expect(parseClientDist(' ./어떤/dist ')).toBe(resolve('./어떤/dist'))
+    const 절대 = resolve('/nogada-server/화면')
+    expect(parseClientDist(절대)).toBe(절대)
   })
 })
 

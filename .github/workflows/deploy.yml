@@ -84,6 +84,22 @@ jobs:
       - name: 게임 데이터 굽기
         run: pnpm data:build
 
+      # 클라이언트가 실제로 묶이는지 본다. 타입 검사만으로는 vite 설정이나
+      # 맵 복사 단계(vite.config.ts 의 closeBundle)가 깨진 것을 못 잡는다.
+      # 라이선스 에셋은 저장소에 없지만 빌드는 그것 없이도 선다 — public/ 의
+      # 빠진 폴더는 그냥 안 실릴 뿐이다.
+      #
+      # **테스트보다 앞에 둔다.** "번들에 서버 주소가 0건" 관문이 이제 테스트로
+      # 있고(apps/client/src/api/apiBase.test.ts), 그 검사는 dist 가 없으면
+      # 건너뛴다 — 빌드가 뒤에 있으면 CI 에서는 영영 안 도는 검사다. 건너뛴 것을
+      # 통과로 세지 않으려면 CI 가 조건을 마련해야 한다는 것은, 위 서비스
+      # 컨테이너가 계약 스위트에 DB 를 대 주는 것과 같은 판단이다.
+      #
+      # 값은 치른다: 빌드가 깨진 커밋은 이제 테스트 결과를 보기 전에 선다.
+      # 그래도 이쪽이 낫다 — 반대로 두면 잃는 것이 "관문 하나가 조용히 없다"다.
+      - name: 클라이언트 빌드
+        run: pnpm --filter @nogada/client build
+
       - name: 테스트
         # 이 한 줄이 계약 스위트의 건너뛰기를 푼다. 서비스 컨테이너가 호스트의
         # 5432 로 나와 있으므로 러너에서는 localhost 다.
@@ -93,13 +109,6 @@ jobs:
 
       - name: 타입 검사
         run: pnpm typecheck
-
-      # 클라이언트가 실제로 묶이는지 본다. 타입 검사만으로는 vite 설정이나
-      # 맵 복사 단계(vite.config.ts 의 closeBundle)가 깨진 것을 못 잡는다.
-      # 라이선스 에셋은 저장소에 없지만 빌드는 그것 없이도 선다 — public/ 의
-      # 빠진 폴더는 그냥 안 실릴 뿐이다.
-      - name: 클라이언트 빌드
-        run: pnpm --filter @nogada/client build
   deploy:
     name: 미니PC 배포
     needs: verify

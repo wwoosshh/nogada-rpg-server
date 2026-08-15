@@ -289,6 +289,29 @@ docker compose -f docker-compose.prod.yml up -d
 옛 프로세스가 계속 3000 을 쥔 채 `ok:true` 를 준다 — 커밋까지 대조해야 이 배포가
 실제로 올라간 것이 된다.
 
+### 게임 화면(dist)은 이 자동화에 없다
+
+**이 워크플로는 서버만 올린다.** 클라이언트를 빌드하지도 복사하지도 않으므로,
+화면을 바꾼 릴리스는 배포가 초록이어도 **옛 화면이 그대로 뜬다.** 이 단계를 여기에
+못 넣는 이유는 라이선스 에셋이다 — 이 PC 에도 GitHub 러너에도 그림이 없어서
+(6장의 "미니PC 는 그림을 모른다") 여기서 빌드하면 그림 없는 사이트가 올라간다.
+
+그래서 화면은 **그림을 가진 개발 PC 에서 사람이 밀어 넣는다.** 개발 PC 에서:
+
+```powershell
+pwsh -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
+```
+
+받는 자리가 `apps\client\dist` 인 것은 우연이 아니다: 그 폴더는 gitignore 대상이라
+2번의 `git reset --hard` 가 안 건드리고, `git clean` 은 이 워크플로가 일부러 안
+돌린다(`.env` 와 node_modules 가 거기 있다). 서버는 그 자리를 기본값으로 읽으므로
+(`CLIENT_DIST`) `.env` 에 한 줄도 안 적어도 된다.
+
+**서비스를 재시작할 필요는 없다** — 다음 요청부터 새 화면이 나간다. 사이트가
+404 이거나 화면이 안 바뀌면 먼저 볼 곳은 `logs\nogada-server.out.log` 의 기동 줄:
+dist 를 못 찾았으면 "클라이언트 dist 가 없어 정적 서빙을 붙이지 않는다" 와 함께
+서버가 찾아본 경로가 적혀 있다. 자세한 것은 `docs/deploy-public.md` 6단계.
+
 ### 러너 권한
 
 서비스 제어(`restart`)에는 권한이 필요하다. self-hosted 러너가 일반 사용자
