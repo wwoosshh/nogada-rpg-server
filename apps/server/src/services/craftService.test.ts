@@ -527,6 +527,24 @@ describe('performCraft — 무기는 combat 슬롯과 피해 축을 쓴다(전�
     expect(r.outcome.player.equipped.combat).toBe('newsword')
   })
 
+  // 왜: "낫다"의 피해는 정의의 damage 가 아니라 **실효 피해**(swingDamageOf —
+  //     강화 포함)다. 정의끼리 견주면 +4 검(실효 9)을 기본 9짜리 신품이 9>5 로
+  //     덮어써 강화 투자가 자동 착용 한 번에 증발한다 — D1 리뷰가 재현한 잠복이고,
+  //     craftService 의 옛 주석("그 셈이 생기면 이 두 줄을 대신한다")의 이행 자물쇠다.
+  it('+4 검(실효 9)은 기본 9짜리 신품에 자리를 내주지 않는다 — 낫다는 실효 피해다', () => {
+    const p = player({
+      stacks: { copper_ingot: 1 },
+      instances: [{ instanceId: 'oldsword', itemId: 'copper_sword', enhanceLevel: 4 }],
+      equipped: { combat: 'oldsword' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'sharp_sword', rng: alwaysSucceed, newId: () => 'newsword', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    // 실효 9 = 기본 9 — 동률이면 바꾸지 않는다(나아지는 것 없이 강화만 잃는다).
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.combat).toBe('oldsword')
+  })
+
   it('티어가 높아도 피해가 낮으면 갈아 끼지 않는다 — 채집의 간격 축으로 무기를 재는 회귀를 여기서 잡는다', () => {
     const p = player({
       stacks: { copper_ingot: 1 },

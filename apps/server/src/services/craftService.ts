@@ -6,6 +6,7 @@ import {
   effectiveIntervalFactor,
   equippedToolInfo,
   hammerChanceBonus,
+  swingDamageOf,
   newlyAchieved,
   rollInt,
   type CraftContext,
@@ -70,10 +71,11 @@ function spend(player: PlayerState, item: string, count: number): void {
 function isBetterTool(slot: EquipSlot, next: ItemDef, current: EquippedToolInfo | null): boolean {
   if (!current) return true
   if (slot === 'combat') {
-    // 무기는 정의의 damage 그대로 견준다 — 강화가 피해에 무엇을 얹는지는 아직
-    // 셈이 없다(그 셈이 생기면 shared 의 그 식이 이 두 줄을 대신한다). 동률
-    // 유지 규칙 덕에 지금도 만강 검을 같은 검 신품이 덮어쓰지는 못한다.
-    return (next.damage ?? 0) > (current.def.damage ?? 0)
+    // 무기는 **실효 피해**(swingDamageOf — 강화 포함)로 견준다. 정의의 damage
+    // 끼리 견주던 첫 판은 D1 이 그 셈을 만든 뒤 약속대로 교체됐다: 그대로 두면
+    // +3 검(실효 8)을 기본 6짜리 상위 검이 6>5 로 덮어써 만강 투자가 증발한다
+    // (D1 리뷰가 재현한 잠복 — 둘째 무기가 데이터에 오르는 날 실화한다).
+    return swingDamageOf(next, 0) > swingDamageOf(current.def, current.instance.enhanceLevel)
   }
   if (slot === 'crafting') {
     return (
