@@ -153,13 +153,27 @@ describe('performFight — 거절 경로', () => {
   // 왜: 체비쇼프 자였다면 대각 5칸(=맨해튼 10칸)이 정직한 걸음의 2배속으로
   //     통과한다(§2-3 실측). 이 게임의 이동은 4방향이라 자는 맨해튼뿐이다.
   it('대각 순간이동 주장은 implausible_move 로 거부한다', () => {
-    const p = player({ combat: { ...defaultCombatState(), lastClaim: { x: 3, y: 1, atMs: 500 } } })
+    const p = player({
+      combat: { ...defaultCombatState(), lastClaim: { mapId: '사냥터', x: 3, y: 1, atMs: 500 } },
+    })
     // 1,100ms 만에 대각 5칸: (3,1)→(8,6). 체비쇼프 5 ≤ 5.5+여유, 맨해튼 10 > 5.5+여유.
     expect(fight({ player: p, claim: { x: 8, y: 6 }, now: 1_600 })).toEqual({ ok: false, code: 'implausible_move' })
   })
 
   it('첫 주장은 개연성 검사가 공회전한다 — 그동안 걸어간 것과 등가라 위협 모델 안에서 무해하다(§12-앞 7)', () => {
     const r = fight({ claim: { x: 25, y: 25 }, now: 200 })
+    expect(r.ok).toBe(true)
+  })
+
+  // 왜: 직전 주장이 다른 맵이면 맨해튼을 잴 수 없다(§2-3 전환 공회전) — 이
+  //     공회전이 없으면 사냥터에서 스윙하고 나갔다 되돌아온 정직한 플레이어가
+  //     입구에서 거리 수십 칸으로 찍혀 몇 초 전투 불능이 된다(리뷰 재현).
+  it('전환으로 나갔다 돌아온 첫 주장은 공회전한다 — 다른 맵의 좌표와 재지 않는다', () => {
+    const p = player({
+      combat: { ...defaultCombatState(), lastClaim: { mapId: '눈의마을', x: 3, y: 1, atMs: 500 } },
+    })
+    // (3,1)→(28,15) 는 맨해튼 39 — 같은 맵의 주장이었다면 확실히 거절될 거리다.
+    const r = fight({ player: p, claim: { x: 28, y: 15 }, now: 1_600 })
     expect(r.ok).toBe(true)
   })
 })
@@ -219,10 +233,17 @@ describe('performFight — 위험 창(§3)과 피격', () => {
   })
 
   // 왜: 예고 중 공격은 자유다(결정 3) — 마지막까지 때리는 탐욕이 이 전투의
-  //     긴장이다. t=1600 은 t+ε(2600)도 활성 창(2000~2400) 밖이라 ε 스미어와
-  //     무관하게 무사해야 하는 순간이다.
-  it('예고 중의 공격은 무피해다', () => {
-    const r = fight({ claim: { x: 4, y: 0 }, now: 1600 })
+  //     긴장이다. 단 ε 는 구간이라(§2-5) 실효 위험 창이 활성 ± ε 로 붇는다:
+  //     예고가 ε(1,000ms)보다 짧은 몬스터는 무사한 예고 순간이 아예 없다.
+  //     그래서 예고 1,500ms 변주로 잰다(C6 저작 제약: 예고 ≥ ε + 700ms 가
+  //     이 픽스처 조건의 일반형이다) — t=1,600 은 t+ε(2,600)도 휩쓸기
+  //     시작(2,700) 전이다.
+  it('예고 중(휩쓸기에서 ε 밖)의 공격은 무피해다', () => {
+    const 긴예고 = {
+      ...들늑대,
+      attacks: [{ telegraphStartMs: 1200, telegraphMs: 1500, activeMs: 400, direction: 'right' as const, reach: 3 }],
+    }
+    const r = fight({ defs: { wolf: 긴예고 }, claim: { x: 4, y: 0 }, now: 1600 })
     if (!r.ok) throw new Error('명중이어야 한다')
     expect(r.outcome.hit).toBe(true)
     expect(r.outcome.tookHit).toBe(false)
@@ -330,6 +351,9 @@ describe('performFight — 죽음(§6): 처치가 먼저, 귀환은 그 다음�
     expect(r.outcome.playerHp).toBe(0)
     expect(r.outcome.player.location).toEqual(spawn)
     expect(r.outcome.player.combat.hunt).toBe(null)
+    // 귀환은 순간이동이다 — 방금 찍힌 주장이 남으면 스폰이 같은 맵인 날 부활
+    // 직후의 정직한 스윙이 implausible_move 가 된다(§2-3 전환 공회전).
+    expect(r.outcome.player.combat.lastClaim).toBe(null)
   })
 
   // 왜: 한 요청이 처치와 죽음을 같이 내면 처치가 먼저다(§2-2) — 드랍과 처치

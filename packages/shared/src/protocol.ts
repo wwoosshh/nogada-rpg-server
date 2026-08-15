@@ -97,7 +97,17 @@ const CombatStateSchema = z.object({
   proficiency: z.number().int().min(0).default(0),
   hp: z.number().min(0).default(COMBAT_MAX_HP),
   lastHitAt: z.number().default(0),
-  lastClaim: z.object({ x: z.number().int(), y: z.number().int(), atMs: z.number() }).nullable().default(null),
+  lastClaim: z
+    .object({
+      // mapId 가 없는 옛 칸(C4 초판이 쓴 세이브)은 '' 로 받는다 — 어느 맵과도
+      // 다른 이름이라 개연성 검사가 한 번 공회전할 뿐, 세이브는 안 깨진다.
+      mapId: z.string().default(''),
+      x: z.number().int(),
+      y: z.number().int(),
+      atMs: z.number(),
+    })
+    .nullable()
+    .default(null),
   hunt: z.object({ instanceId: z.string(), monsterHp: z.number() }).nullable().default(null),
   // 함수 기본값 — 리터럴이면 세이브 둘이 같은 slain 을 공유한다(donated 와 같다).
   slain: z.record(z.string(), z.number()).default(() => ({})),

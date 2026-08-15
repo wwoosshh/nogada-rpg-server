@@ -120,13 +120,16 @@ export function performFight(args: PerformFightArgs): FightResult {
   // 번갈아 눌러 배속하는 악용이 원리적으로 불가능하다"의 전부다.
   if (now < player.nextActionAt) return { ok: false, code: 'too_fast' }
 
-  // ② 속도 개연성(§2-3) — 부등호는 shared 의 claimPlausible 하나다.
-  if (!claimPlausible(combat.lastClaim, claim, now)) return { ok: false, code: 'implausible_move' }
+  // ② 속도 개연성(§2-3) — 부등호는 shared 의 claimPlausible 하나다. 직전 주장이
+  // 다른 맵이면(전환 뒤 재입장) 안에서 공회전한다 — 맵끼리 맨해튼은 못 잰다.
+  if (!claimPlausible(combat.lastClaim, player.location.mapId, claim, now)) {
+    return { ok: false, code: 'implausible_move' }
+  }
 
   // ③ 여기서부터 ok:true. 주장을 기록하고 간격을 소모한다 — 헛스윙도 허공에
   // A 를 휘두른 대가로 간격을 낸다(§2-2 갱신본). 간격은 증가 전 숙련으로 잰다
   // (채집이 판정에 쓴 숙련으로 스탬프를 찍는 그 순서).
-  combat.lastClaim = { x: claim.x, y: claim.y, atMs: now }
+  combat.lastClaim = { mapId: player.location.mapId, x: claim.x, y: claim.y, atMs: now }
   player.nextActionAt = now + combatIntervalMs(combat.proficiency)
 
   // 숙련은 성패 무관 회당 +1~2(§5) — 실패한 손질도 숙련이라는 채집의 규범 그대로다.
@@ -186,6 +189,10 @@ export function performFight(args: PerformFightArgs): FightResult {
   if (died) {
     player.location = { ...spawn }
     combat.hunt = null
+    // 귀환은 순간이동이다 — 방금 찍은 주장을 스폰 기준으로 재면 부활 직후의
+    // 정직한 스윙이 거절된다. 스폰이 같은 맵인 날에도 성립해야 하므로 mapId
+    // 공회전에 못 맡기고 지운다(§2-3 전환 공회전).
+    combat.lastClaim = null
   }
 
   // 달성 재판정은 무조건이다 — 드랍이 문턱을 넘겨도 축하가 침묵하면 안 된다

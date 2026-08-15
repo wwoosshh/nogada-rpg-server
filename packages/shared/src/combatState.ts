@@ -29,7 +29,7 @@ export const HP_REGEN_MS_PER_HP = 3_000
 
 /**
  * 판정 시간 허용폭 ε (설계 §2-5, §12-앞 3). 사거리·피격을 t 한 점이 아니라
- * t−ε·t·t+ε 셋 중 하나라도 성립하면 인정한다.
+ * **구간 [t−ε, t+ε] 에서 하나라도 성립하면** 인정한다.
  *
  * 1,000ms 인 이유(전부 실측): 시계 동기화는 어긋남 2,000ms 초과에만 재동기하므로
  * (`RESYNC_THRESHOLD_MS`) ±2초가 상시 용인되고, RTT 스파이크 중 잡힌 나쁜 앵커는
@@ -38,8 +38,38 @@ export const HP_REGEN_MS_PER_HP = 3_000
  */
 export const JUDGE_EPSILON_MS = 1_000
 
-/** ε 완화가 실제로 보는 세 시각. 연속 구간이 아니라 세 점인 것은 §2-5 의 문면 그대로다. */
-const EPSILON_OFFSETS = [-JUDGE_EPSILON_MS, 0, JUDGE_EPSILON_MS] as const
+/**
+ * 구간 [base−ε, base+ε] 판정이 실제로 보는 표본 시각들.
+ *
+ * 몬스터 상태는 계단 함수다 — 순찰 칸은 슬롯 경계에서, 구역은 공격 국면
+ * 경계에서만 바뀐다(monsterStateAt 의 정수 산술). 그래서 구간 시작점과 구간
+ * 안의 모든 불연속점을 표본하면 구간 판정과 **동치**다: 유한하고 정확하다.
+ *
+ * 세 점(t−ε·t·t+ε)만 보던 첫 구현은 표본 사이에만 성립하는 슬롯을 통째로
+ * 놓쳤다 — 나쁜 앵커의 오차는 0~1초 어디에나 오는데 세 점은 그중 세 근방만
+ * 삼켜서, 오차 ~650ms 의 정직한 스윙이 빗나가는 것을 리뷰가 재현했다.
+ */
+function epsilonSampleTimes(def: MonsterDef, baseMs: number): number[] {
+  const start = baseMs - JUDGE_EPSILON_MS
+  const end = baseMs + JUDGE_EPSILON_MS
+  const slotMs = def.periodMs / def.patrol.length
+  const boundaries = new Set<number>()
+  for (let k = 0; k < def.patrol.length; k++) boundaries.add(k * slotMs)
+  for (const a of def.attacks) {
+    const sweepStart = a.telegraphStartMs + a.telegraphMs
+    boundaries.add(a.telegraphStartMs % def.periodMs)
+    boundaries.add(sweepStart % def.periodMs)
+    boundaries.add((sweepStart + a.activeMs) % def.periodMs)
+  }
+  const times = [start]
+  for (const b of boundaries) {
+    // b + k·주기 가 (start, end] 에 드는 모든 시각 — 경계는 그 시각부터 새 상태다.
+    let t = b + Math.ceil((start - b) / def.periodMs) * def.periodMs
+    while (t <= start) t += def.periodMs
+    for (; t <= end; t += def.periodMs) times.push(t)
+  }
+  return times
+}
 
 /**
  * 속도 개연성의 여유(칸) — 예산 = 경과시간/STEP_MS + 이 값(§2-3).
@@ -101,9 +131,19 @@ export function currentHp(combat: Pick<CombatState, 'hp' | 'lastHitAt'>, now: nu
  * 2배속으로 통과한다(§12-앞 6, 실측). 직전 주장이 없으면 공회전한다 — 첫 주장·
  * 전환 직후는 "그동안 걸어간 것과 등가"라 위협 모델 안에서 무해하고, 이동·채집이
  * 이미 명문으로 수용한 노출 클래스다(moveService.ts:44-47, §12-앞 7).
+ *
+ * **직전 주장이 다른 맵이면 공회전한다**(§2-3 "전환 직후는 공회전한다") —
+ * 다른 맵의 좌표끼리 맨해튼을 재면 정직한 재입장이 거리 수십 칸으로 찍혀
+ * 몇 초 전투 불능이 된다(리뷰가 재입장 후 ~7초 거절을 재현했다). 치터의
+ * 이득은 전환 한 번 값의 "그동안 걸어간 것과 등가"뿐 — 위 노출 클래스다.
  */
-export function claimPlausible(lastClaim: CombatClaim | null, claim: TilePos, now: number): boolean {
-  if (!lastClaim) return true
+export function claimPlausible(
+  lastClaim: CombatClaim | null,
+  mapId: string,
+  claim: TilePos,
+  now: number,
+): boolean {
+  if (!lastClaim || lastClaim.mapId !== mapId) return true
   const budget = Math.max(0, now - lastClaim.atMs) / STEP_MS + CLAIM_SLACK_TILES
   return manhattanDistance(lastClaim, claim) <= budget
 }
@@ -120,29 +160,28 @@ export function monsterAlive(slain: Record<string, number>, instanceId: string, 
 }
 
 /**
- * 이 스윙이 몬스터에 닿는가 — withinAttackRange 를 t±ε 세 시각에 묻는다(§2-5).
+ * 이 스윙이 몬스터에 닿는가 — withinAttackRange 를 [t−ε, t+ε] 구간에 묻는다(§2-5).
  * 한 점 판정으로 되돌리면 나쁜 앵커의 1초 오차가 지속되는 5분 동안 화면에 붙어
  * 있는 늑대가 서버에서는 이미 떠난 자리다(오차 주입 테스트가 이 완화를 문다).
  */
 export function attackConnects(def: MonsterDef, phaseOffsetMs: number, claim: TilePos, tMs: number): boolean {
-  return EPSILON_OFFSETS.some((offset) =>
-    withinAttackRange(claim, monsterStateAt(def, tMs + phaseOffsetMs + offset).tile),
+  return epsilonSampleTimes(def, tMs + phaseOffsetMs).some((t) =>
+    withinAttackRange(claim, monsterStateAt(def, t).tile),
   )
 }
 
 /**
  * 이 주장 칸이 휩쓸기에 걸리는가 — dangerTiles(sweep 국면에만 비지 않는다)를
- * t±ε 세 시각에 묻는다(§2-5). 사거리와 무관한 것이 요점이다(§2-2 갱신본):
+ * [t−ε, t+ε] 구간에 묻는다(§2-5). 사거리와 무관한 것이 요점이다(§2-2 갱신본):
  * 위험은 구역이고, 사거리는 명중에만 관여한다.
  *
- * ε 의 대가: "예고 중 무사"(결정 3)는 휩쓸기 경계에서 ε 바깥의 예고 순간에만
- * 온전하다 — 오차를 양쪽으로 삼키는 값이다.
+ * ε 의 대가: 실효 위험 창이 활성 + 양쪽 ε 라, "예고 중 무사"(결정 3)는 휩쓸기
+ * 시작에서 ε 이상 떨어진 예고 순간에만 온전하다 — **C6 저작 제약: 예고 길이는
+ * ε + 700ms 이상**이어야 그 순간이 실존한다(C7 실측 후 ε 축소와 함께 재검토).
  */
 export function sweepCatches(def: MonsterDef, phaseOffsetMs: number, claim: TilePos, tMs: number): boolean {
-  return EPSILON_OFFSETS.some((offset) =>
-    monsterStateAt(def, tMs + phaseOffsetMs + offset).dangerTiles.some(
-      (tile) => tile.x === claim.x && tile.y === claim.y,
-    ),
+  return epsilonSampleTimes(def, tMs + phaseOffsetMs).some((t) =>
+    monsterStateAt(def, t).dangerTiles.some((tile) => tile.x === claim.x && tile.y === claim.y),
   )
 }
 

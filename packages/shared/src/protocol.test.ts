@@ -241,14 +241,27 @@ describe('PlayerStateSchema', () => {
     const save = {
       ...validSave(),
       combat: {
-        proficiency: 42, hp: 61, lastHitAt: 5, lastClaim: { x: 1, y: 2, atMs: 9 },
+        proficiency: 42, hp: 61, lastHitAt: 5, lastClaim: { mapId: '사냥터', x: 1, y: 2, atMs: 9 },
         hunt: { instanceId: 'wolf-1', monsterHp: 3 }, slain: { 'wolf-2': 7 },
       },
     }
     const parsed = PlayerStateSchema.parse(save)
     expect(parsed.combat.proficiency).toBe(42)
+    expect(parsed.combat.lastClaim).toEqual({ mapId: '사냥터', x: 1, y: 2, atMs: 9 })
     expect(parsed.combat.hunt).toEqual({ instanceId: 'wolf-1', monsterHp: 3 })
     expect(parsed.combat.slain).toEqual({ 'wolf-2': 7 })
+  })
+
+  // 왜: mapId 는 lastClaim 에 나중에 들어온 칸이다(전환 공회전, §2-3). 그 전에
+  //     적힌 세이브를 통째로 거절하면 칸 하나 때문에 캐릭터가 죽는다 — '' 는
+  //     어느 맵과도 다른 이름이라 개연성 검사가 한 번 공회전할 뿐이다.
+  it('mapId 가 없는 옛 lastClaim 은 빈 이름으로 받는다', () => {
+    const save = {
+      ...validSave(),
+      combat: { proficiency: 0, hp: 100, lastHitAt: 0, lastClaim: { x: 1, y: 2, atMs: 9 }, hunt: null, slain: {} },
+    }
+    const parsed = PlayerStateSchema.parse(save)
+    expect(parsed.combat.lastClaim).toEqual({ mapId: '', x: 1, y: 2, atMs: 9 })
   })
 
   it('파싱할 때마다 새 전투 상태를 만든다 — 세이브 둘이 같은 slain 을 공유하면 안 된다', () => {

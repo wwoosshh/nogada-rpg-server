@@ -613,7 +613,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pushAction(set, `${name} +${outcome.gained.count}`, 'good', outcome.gained.itemId, outcome.gained.count)
       }
       if (outcome.tookHit) {
-        const damage = data.monsterPlacements[instanceId]?.sweepDamage
+        // instanceId 는 요청에 실려 온 문자열이다 — 위 처치 분기와 같은 hasOwn
+        // 조회여야 한다(상속 키가 프로토타입에서 Function 을 찾으면 안 된다).
+        const damage = Object.hasOwn(data.monsterPlacements, instanceId)
+          ? data.monsterPlacements[instanceId]?.sweepDamage
+          : undefined
         // 홀드 중 연속 피격은 같은 숫자끼리만 누적한다 — 채집 실패의 groupKey 와
         // 같은 이유다: 값이 다른 피해를 한 글자에 묶으면 "-5 ×3" 이 거짓말이 된다.
         if (damage !== undefined) pushAction(set, `-${damage}`, 'bad', `sweep-${damage}`, 1)

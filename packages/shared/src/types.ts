@@ -197,6 +197,11 @@ export interface PlayerState {
 
 /** 전투 요청이 주장한 칸과 그 주장이 도착한 서버 시각 — 속도 개연성(§2-3)의 재료다. */
 export interface CombatClaim {
+  /**
+   * 주장이 선 맵. 개연성 검사는 같은 맵의 주장끼리만 잰다 — 다른 맵의 좌표끼리
+   * 맨해튼을 재면 정직한 재입장이 몇 초 전투 불능이 된다(§2-3 전환 공회전).
+   */
+  mapId: string
   x: number
   y: number
   atMs: number
