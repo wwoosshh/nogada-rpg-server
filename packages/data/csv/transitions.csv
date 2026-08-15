@@ -25,3 +25,5 @@ fromMap,fromX,fromY,toMap,toX,toY,facing,gateSkill,gateValue,gateTide
 광물채굴장,22,20,광물채굴장,22,22,down,,,
 허브채집장,29,16,허브채집장,29,14,up,herb,85000,1
 허브채집장,29,14,허브채집장,29,16,down,,,
+눈의마을,29,15,사냥터,1,9,right,,,
+사냥터,0,9,눈의마을,28,15,left,,,

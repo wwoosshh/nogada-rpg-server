@@ -225,6 +225,12 @@ npc_herbalist:Female/Female 17-1
 npc_miner:Male/Male 12-1
 NPCS
 
+# 몬스터 스프라이트 — 팩의 Enemy 41장에 늑대가 없어 Animal 의 회색 개를 색으로
+# 만든다(아래 "몬스터 스프라이트 대장"). 노드·아이콘 파생과 같은 sRGB 정수
+# 산술이다: 행렬 = 0.45·I + 0.55·L(부분 무채색화, L 은 BT.601 휘도) 를 곱한 뒤
+# 전 채널 ×0.72 로 어둡게 — 애완견의 밝은 회색이 들짐승의 어두운 잿빛이 된다.
+magick "$CHR/Animal/Dog 01-3.png"   -color-matrix "0.6145 0.3229 0.0627 0.1645 0.7729 0.0627 0.1645 0.3229 0.5127"   -channel RGB -evaluate multiply 0.72 +channel   -define png:color-type=6 apps/client/public/sprites/monster_wolf.png
+
 # 아이템 아이콘 72종(여기 복사 67 + 아래 색 파생 5) — 위 매핑 표와 같은 내용이다.
 # items.csv 는 이 중 68종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
@@ -530,6 +536,16 @@ Get-ChildItem apps\client\public\sprites\*.png | Where-Object { $_.Name -ne 'sig
 달리 "한 화면에 같이 안 나오니 비슷해도 된다" 가 통하지 않는다. 색이 여섯 방향(파랑·올리브·
 은회색·분홍·보라·청록)으로 흩어지고 셋은 머리, 둘은 모자, 하나는 투구다. 성별도 셋씩 섞었다.
 화자 여섯(`Male 07·12·14`, `Female 17·19·20`)과 플레이어 기본값(`Male 01-1`)은 피했다.
+
+### 몬스터 스프라이트 대장
+
+몬스터 데이터의 종 → 파일 → 원본. 클라이언트가 아는 목록은
+`apps/client/src/game/monsterSprites.ts` 이고, 모르는 id 는 그 자리에서 던진다 —
+화자 스프라이트와 같은 삼각 대조(이 표 · 그 파일 · CSV)다.
+
+| 종 | 파일 | 원본 | 왜 이 그림인가 |
+|---|---|---|---|
+| 들늑대 | `monster_wolf.png` | `Animal/Dog 01-3` 색 파생 (위 복원 명령) | Enemy 41장을 몽타주로 전부 봤으나 짐승이 없다(식물·해골·유령·고블린뿐). 회색 개를 어둡게 눌러 눈밭의 들짐승으로 — 원본 밝은 회색은 애완견으로 읽힌다 |
 
 ### 화자 스프라이트 대장
 
