@@ -173,6 +173,29 @@ async function enterSpeakerMap(me: TestPlayer): Promise<void> {
   await step(me, transitionBetween(startLocation(loadGameData()).mapId, speakerMapId(ELDER)))
 }
 
+/**
+ * 아래 CORS 검사들이 쓰는 오리진. **개발 중 Vite dev 서버의 주소다.**
+ *
+ * 이 값을 `CORS_ORIGIN` 에 명시하는 이유: 빈 값의 뜻이 자리에 따라 갈리게 됐다
+ * (config.ts 의 parseCorsOrigin — 개발 콘솔은 전부 허용, 그 밖은 전부 거절).
+ * 명시하지 않으면 이 검사들이 **vitest 워커의 stdout 이 콘솔인가**에 따라
+ * 초록·빨강이 갈리고, 그건 재려던 것(x-server-now 가 교차 출처로 보이는가)과
+ * 아무 상관이 없다.
+ */
+const DEV_ORIGIN = 'http://localhost:5173'
+
+/** `CORS_ORIGIN` 을 잠깐 갈아 끼운다. 끝나면 원래대로. */
+async function withCorsOrigin<T>(value: string, body: () => Promise<T>): Promise<T> {
+  const before = process.env.CORS_ORIGIN
+  process.env.CORS_ORIGIN = value
+  try {
+    return await body()
+  } finally {
+    if (before === undefined) delete process.env.CORS_ORIGIN
+    else process.env.CORS_ORIGIN = before
+  }
+}
+
 /** GIT_SHA 를 잠깐 갈아 끼운다. 끝나면 원래대로 — 다음 테스트가 이 값을 물려받으면 안 된다. */
 async function withGitSha<T>(value: string | undefined, body: () => Promise<T>): Promise<T> {
   const before = process.env.GIT_SHA
@@ -1492,48 +1515,49 @@ describe('x-server-now 헤더', () => {
   })
 
   it('CORS 프리플라이트(OPTIONS) 응답에도 실린다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-
     // onSend 훅이 캡슐화된 자식 컨텍스트로 옮겨지거나 누군가 OPTIONS 를 특별
     // 취급하도록 리팩터링하면, 프리플라이트 응답에서만 헤더가 조용히 빠질 수 있다.
     // 그러면 브라우저는 실제 요청을 보내기도 전에 드리프트 감지에 쓸 기준 시각을
     // 하나 놓치게 되는데, 테스트가 없으면 이 회귀는 아무 것도 빨갛게 만들지 않는다.
-    const res = await me.inject({
-      method: 'OPTIONS',
-      url: '/api/time',
-      headers: {
-        origin: 'http://localhost:5173',
-        'access-control-request-method': 'GET',
-      },
+    await withCorsOrigin(DEV_ORIGIN, async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+
+      const res = await me.inject({
+        method: 'OPTIONS',
+        url: '/api/time',
+        headers: { origin: DEV_ORIGIN, 'access-control-request-method': 'GET' },
+      })
+
+      expect(res.statusCode).toBe(204)
+      expect(Number(res.headers['x-server-now'])).toBeGreaterThan(0)
+
+      await app.close()
     })
-
-    expect(res.statusCode).toBe(204)
-    expect(Number(res.headers['x-server-now'])).toBeGreaterThan(0)
-
-    await app.close()
   })
 })
 
 describe('CORS exposedHeaders 설정', () => {
   it('Origin 요청에 access-control-expose-headers 로 x-server-now 를 실어 보낸다', async () => {
-    const app = await buildTestApp()
-    const me = await asPlayer(app)
-
     // app.ts 의 exposedHeaders: ['x-server-now'] 한 줄이 빠지거나 값이 바뀌면, 헤더
     // 자체는 여전히 응답에 실리지만 브라우저의 fetch 는 이 헤더를 볼 수 없게 된다.
     // app.inject() 는 Node 의 raw 응답을 읽을 뿐 브라우저의 CORS 가시성 필터링을
     // 적용하지 않으므로, 여기서는 서버가 Access-Control-Expose-Headers 를 실제로
     // 보내는지만 확인한다 — 브라우저 쪽 강제 여부는 이 테스트의 검증 범위가 아니다.
-    const res = await me.inject({
-      method: 'GET',
-      url: '/api/time',
-      headers: { origin: 'http://localhost:5173' },
+    await withCorsOrigin(DEV_ORIGIN, async () => {
+      const app = await buildTestApp()
+      const me = await asPlayer(app)
+
+      const res = await me.inject({
+        method: 'GET',
+        url: '/api/time',
+        headers: { origin: DEV_ORIGIN },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['access-control-expose-headers']).toBe('x-server-now')
+
+      await app.close()
     })
-
-    expect(res.statusCode).toBe(200)
-    expect(res.headers['access-control-expose-headers']).toBe('x-server-now')
-
-    await app.close()
   })
 })

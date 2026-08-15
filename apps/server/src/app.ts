@@ -100,13 +100,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const store = options.persistence ?? (await openStore(options.dataFile))
 
   // 개발 중 클라이언트(Vite dev server)와 오리진이 다르므로 허용한다.
-  // 배포에서는 `CORS_ORIGIN` 이 목록을 좁힌다. 웹은 이제 서버가 같은 오리진으로
-  // 내주므로(아래 serveClient) 목록이 필요한 것은 **APK 뿐**이고, 그때 적을
-  // 오리진은 `https://localhost` 다 — `capacitor://` 가 아니다(config.ts 의
-  // parseCorsOrigin 에 실측 근거). x-server-now 는 커스텀 헤더라 명시하지
-  // 않으면 브라우저가 읽지 못한다.
+  // 배포에서는 `CORS_ORIGIN` 이 목록을 좁히고, **적지 않으면 아무 데도 안 준다** —
+  // 빈 값의 뜻이 개발 콘솔과 그 밖에서 갈린다(config.ts 의 parseCorsOrigin).
+  // 웹은 이제 서버가 같은 오리진으로 내주므로(아래 serveClient) 목록이 필요한 것은
+  // **APK 뿐**이고, 그때 적을 오리진은 `https://localhost` 다 — `capacitor://` 가
+  // 아니다(config.ts 의 parseCorsOrigin 에 실측 근거). x-server-now 는 커스텀
+  // 헤더라 명시하지 않으면 브라우저가 읽지 못한다.
+  //
+  // `NODE_ENV`·isTTY 를 여기서 함께 넘기는 이유는 아래 `devConsole` 과 **같은
+  // 물음**이기 때문이다. 셋(요청 로그·500 리댁션·CORS)이 갈라져 판정하면
+  // 언젠가 하나만 고쳐지고, 그날 배포는 반쪽이 된다.
   app.register(cors, {
-    origin: parseCorsOrigin(process.env.CORS_ORIGIN),
+    origin: parseCorsOrigin(process.env.CORS_ORIGIN, process.env.NODE_ENV, process.stdout.isTTY),
     exposedHeaders: ['x-server-now'],
   })
 
@@ -273,10 +278,40 @@ export const CLIENT_DIST_NOT_DIR_LOG = '클라이언트 dist 가 폴더가 아�
  * 오타는 위의 방어를 전부 통과한다**(폴더가 맞으니까) — 그 폴더 안에
  * `.env.local` 과 `src/` 가 통째로 있다.
  *
- * `'deny'`(403) 가 아니라 `'ignore'`(404) 인 이유는 **답을 하나로 두기 위해서**다.
- * 403 은 "거기 뭔가 있다"를 알려 주고, 게다가 `..` 을 담은 경로까지 403 으로
- * 갈라져 나가 경로 이탈 시도와 없는 파일의 답이 달라진다. 없는 것도 못 주는
- * 것도 전부 404 면 밖에서 읽을 것이 없다.
+ * `'deny'`(403) 가 아니라 `'ignore'`(404) 인 이유는 **dotfile 의 답을 "그런 건
+ * 없다"와 같게 두기 위해서**다. `'deny'` 면 `/.env.local` 이 403 이 되어, 아무
+ * 파일도 안 주면서 **"이 서버에는 dotfile 규칙이 있다"를 알려 준다.**
+ *
+ * 오래 여기 "403 은 거기 뭔가 있다를 알려 준다"고 적혀 있었는데 **그건 틀렸다.**
+ * 재 봤다: `'deny'` 에서 있는 dotfile 과 없는 dotfile 이 **둘 다 403** 이다.
+ * 403 이 말하는 것은 파일의 존재가 아니라 **경로의 꼴**이다. 판단(=`'ignore'`)은
+ * 그대로지만 근거가 달랐다.
+ *
+ * **그리고 답은 실제로 하나가 아니다.** 같은 자리에 "없는 것도 못 주는 것도 전부
+ * 404" 라고 적혀 있던 것도 틀렸다 — `..` 을 담은 경로는 `dotfiles` 값과 무관하게
+ * **403** 이다(그 거절은 `send` 의 경로 해석에서 나오지 이 옵션에서 나오지 않는다).
+ * 실측:
+ *
+ * ```
+ * /../nogada-비밀.txt        403      /nosuchfile.txt   404
+ * /..%5cnogada-비밀.txt      403      /.env.local       404
+ * /../../../windows/win.ini  403
+ * ```
+ *
+ * **그 갈림을 없애지 않기로 했다.** 근거 셋:
+ * - **403 은 파일시스템에 대해 아무것도 말하지 않는다.** 있는 이웃과 없는 이웃이
+ *   같은 403 이고, 여섯 칸 위로 올라가는 경로도 같은 403 이다(위 실측). 밖에서
+ *   이 코드로 셀 수 있는 것이 없다 — dotfiles 를 404 로 둔 저울과 어긋나지 않는다.
+ * - **404 로 뭉치려면 우리가 URL 정규화를 앞단에 써야 한다.** 경로 이탈 버그가
+ *   태어나는 자리가 정확히 그런 코드다. 새는 것 없는 라이브러리의 거절을,
+ *   아무것도 안 새는 상태 코드 하나 때문에 우리 코드로 바꾸는 것은 남는 장사가
+ *   아니다.
+ * - **403 은 우리 쪽에 값이 있다.** 요청 로그에서 "누가 `..` 을 던졌다"와 "링크가
+ *   깨졌다"가 갈린다. 모니터링이 아직 없는 채로 공개하는 서버다
+ *   (docs/deploy-public.md 7장).
+ *
+ * `clientDist.test.ts` 가 이 셋을 **원시 소켓으로** 잰다 — `app.inject` 는 경로를
+ * 먼저 정규화해서 프로덕션과 다른 것을 재기 때문이다(검토가 잡았다).
  *
  * **`wildcard` 는 기본값(true)이다.** `false` 는 기동 시 파일마다 라우트를
  * 등록하는 모드다. 그것으로 바꿔 보고 실제로 깨지는 것을 쟀다:

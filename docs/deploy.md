@@ -133,7 +133,9 @@ nano apps/server/.env
    이 저장소에 iOS 는 없다. 브라우저로도 연다면 그 주소
    (`http://192.168.0.10:5173` 같은)를 쉼표로 덧붙인다.
    **빠뜨리면 "서버는 200 인데 화면은 아무것도 안 나온다"** — 거절하는 것은
-   브라우저이고 서버 로그에는 아무 흔적이 없다.
+   브라우저이고 서버 로그에는 아무 흔적이 없다. 그리고 **컨테이너로 도는 서버는
+   빈 값을 "전부 허용"이 아니라 "아무 데도 허용 안 함"으로 읽는다**(9장) —
+   같은 오리진으로만 논다면 그것이 맞는 상태다.
 3. **`TRUST_PROXY`** — 지금은 **비워 둔다**. 켜는 때는 10장에 있다.
 
 `.env` 는 커밋되지 않는다(`.gitignore`). 미니PC 를 새로 설치하는 날 이 파일만
@@ -231,9 +233,15 @@ docker compose -f docker-compose.prod.yml start server
 ```bash
 cd apps/client
 echo 'VITE_API_BASE_URL=http://192.168.0.10:3000' > .env.local
+pnpm data:build                             # ← 먼저다. 없으면 아래가 던진다.
 pnpm --filter @nogada/client build          # apps/client/dist/
 pnpm --filter @nogada/client android:sync   # 안드로이드 프로젝트에 반영
 ```
+
+> `data:build` 가 앞에 있는 이유: 클라이언트 빌드는 구운 맵 JSON 을 dist 로
+> 복사하는 것으로 끝나고, 그것이 없으면 `vite.config.ts` 의 `closeBundle` 이
+> `맵 JSON 이 없다 … 먼저 pnpm data:build 를 돌린다` 로 던진다. `android:sync` 도
+> 이 스크립트를 안 부른다(`deploy-public.md` 5장 6번).
 
 > **라이선스 에셋은 저장소에 없다.** 타일셋·스프라이트·아이콘은 재배포 금지
 > 조항 때문에 커밋되지 않는다(`assets/CREDITS.md`). 그래서 **클라이언트 빌드는
@@ -343,7 +351,10 @@ VITE_API_BASE_URL=http://100.x.y.z:3000
 넣을 것은 **화면이 어디서 로드됐는가**다:
 
 - 서버가 화면까지 내주면(지금 모습 — `CLIENT_DIST`) 오리진이 하나뿐이라
-  **교차 출처 요청 자체가 안 생긴다.** 이 줄을 안 적어도 된다.
+  **교차 출처 요청 자체가 안 생긴다.** 값이 필요 없다 — 그래도 `CORS_ORIGIN=`
+  한 줄은 남겨 둔다. **운영에서 빈 값은 "전부 허용"이 아니라 "아무 데도 허용
+  안 함"**이고(개발 콘솔에서만 전부 허용이다 — `config.ts` 의 isDevConsole),
+  APK 를 붙이는 날 손댈 자리가 그 줄이다.
 - Vite 개발 서버로 붙는다면 그 주소(`http://100.x.y.z:5173`).
 - APK 로 붙는다면 `https://localhost`.
 

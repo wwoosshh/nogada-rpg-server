@@ -73,38 +73,73 @@ describe('parseClientDist', () => {
 })
 
 describe('parseCorsOrigin', () => {
-  it('없거나 비어 있으면 전부 허용한다 — 개발 PC 가 그 상태다', () => {
-    expect(parseCorsOrigin(undefined)).toBe(true)
-    expect(parseCorsOrigin('')).toBe(true)
-    expect(parseCorsOrigin('   ')).toBe(true)
-    expect(parseCorsOrigin(',, ,')).toBe(true)
+  it('개발 콘솔에서 비어 있으면 전부 허용한다 — 5173 과 3000 이 다른 오리진이다', () => {
+    for (const raw of [undefined, '', '   ', ',, ,']) {
+      expect(parseCorsOrigin(raw, undefined, true)).toBe(true)
+    }
   })
 
-  it('별표도 전부 허용이다', () => {
-    expect(parseCorsOrigin('*')).toBe(true)
-    expect(parseCorsOrigin('https://nogada.example, *')).toBe(true)
+  // 왜: **이 줄이 이 파일에서 가장 값비싼 것이다.** 런북이 "웹에는 CORS_ORIGIN 이
+  //     필요 없다"고 적고(같은 오리진 서빙이라 사실이다) 그래서 배포 `.env` 에
+  //     이 줄이 없기 쉬운데, 빈 값이 전부 허용이면 아무 사이트나 방문자의
+  //     브라우저로 가입·로그인을 두드릴 수 있고 그때 IP 백오프의 열쇠가 방문자
+  //     IP 로 흩어진다. 실측으로 그랬다: `CORS_ORIGIN` 없이 띄운 서버가
+  //     `Origin: https://evil.example` 에 그대로 ACAO 를 돌려줬다.
+  it('사람이 안 보는 자리에서 비어 있으면 아무 데도 허용하지 않는다', () => {
+    // WinSW 서비스가 정확히 이 꼴이다 — 그 XML 은 NODE_ENV 를 놓지 않고
+    // (놓는 것은 GIT_SHA 하나다) stdout 은 파일로 흘러간다.
+    expect(parseCorsOrigin(undefined, undefined, undefined)).toBe(false)
+    expect(parseCorsOrigin('', undefined, false)).toBe(false)
+    // 컨테이너를 `-t` 로 띄워 들여다보는 날에도 배포는 배포다.
+    expect(parseCorsOrigin('', 'production', true)).toBe(false)
   })
 
-  it('쉼표로 나누고 공백을 떼고 빈 칸을 버린다', () => {
-    expect(parseCorsOrigin(' https://a.example , , http://b.example:5173 ')).toEqual([
-      'https://a.example',
-      'http://b.example:5173',
-    ])
+  // 왜: **여기서 `NODE_ENV` 로 따로 갈랐으면 배포가 전부 허용인 채로 공개
+  //     인터넷에 섰을 것이다.** WinSW 배포와 개발 PC 가 둘 다 `undefined` 라
+  //     그 하나로는 갈리지 않는다 — 요청 로그가 여태 안 남던 것과 같은 함정이고,
+  //     아래 두 줄이 그 함정에 다시 빠지는 날 빨개진다.
+  it('빈 값의 갈림은 로그·500 리댁션과 같은 판정이다 — NODE_ENV 하나로 가르지 않는다', () => {
+    for (const [nodeEnv, tty] of [
+      [undefined, true],
+      [undefined, undefined],
+      ['production', true],
+      ['development', false],
+    ] as const) {
+      expect(
+        parseCorsOrigin('', nodeEnv, tty),
+        `NODE_ENV=${String(nodeEnv)} isTTY=${String(tty)}`,
+      ).toBe(isDevConsole(nodeEnv, tty))
+    }
+  })
+
+  it('별표는 자리를 안 본다 — 사람이 명시적으로 그렇게 시킨 것이다', () => {
+    expect(parseCorsOrigin('*', undefined, undefined)).toBe(true)
+    expect(parseCorsOrigin('https://nogada.example, *', 'production', undefined)).toBe(true)
+  })
+
+  it('목록이 있으면 자리를 안 본다 — 배포에서도 개발에서도 그 목록이다', () => {
+    const 목록 = ' https://a.example , , http://b.example:5173 '
+    const 기대 = ['https://a.example', 'http://b.example:5173']
+    expect(parseCorsOrigin(목록, undefined, true)).toEqual(기대)
+    expect(parseCorsOrigin(목록, 'production', undefined)).toEqual(기대)
   })
 
   it('안드로이드 빌드의 출처를 그대로 통과시킨다 — 웹 주소가 아니라 고치면 앱에서만 막힌다', () => {
     // `https://localhost` 가 안드로이드 WebView 의 오리진이다(config.ts 의
     // parseCorsOrigin 에 실측 근거). 파서가 이것을 웹 주소로 오해해 손대면
     // 앱에서만 안 붙고, 거절하는 것은 WebView 라 서버 로그에 흔적이 없다.
-    expect(parseCorsOrigin('https://localhost,capacitor://localhost')).toEqual([
-      'https://localhost',
-      'capacitor://localhost',
-    ])
+    expect(parseCorsOrigin('https://localhost,capacitor://localhost', undefined, undefined)).toEqual(
+      ['https://localhost', 'capacitor://localhost'],
+    )
   })
 
   it('끝의 슬래시를 떼어 낸다 — 주소창에서 복사하면 붙어 온다', () => {
-    expect(parseCorsOrigin('https://a.example/')).toEqual(['https://a.example'])
-    expect(parseCorsOrigin('https://a.example///')).toEqual(['https://a.example'])
+    expect(parseCorsOrigin('https://a.example/', undefined, undefined)).toEqual([
+      'https://a.example',
+    ])
+    expect(parseCorsOrigin('https://a.example///', undefined, undefined)).toEqual([
+      'https://a.example',
+    ])
   })
 })
 
@@ -182,6 +217,68 @@ describe('CORS 배선', () => {
 
     expect(res.headers['access-control-allow-origin']).toBeUndefined()
   })
+
+  /**
+   * **런북이 시키는 그 `.env` 그대로 세운 서버가 어떻게 답하는가.**
+   *
+   * 4장 3단계는 `NODE_ENV=production` 을 시키고 `CORS_ORIGIN` 은 빈 채로 둔다 —
+   * 같은 오리진 서빙이라 웹은 CORS 를 안 쓰기 때문이다. 그 조합이 "전부 허용"
+   * 이면 아무 사이트나 방문자의 브라우저로 가입을 두드릴 수 있고, 그때 IP
+   * 백오프의 열쇠가 방문자 IP 로 흩어져 무력해진다(auth/rateLimit.ts).
+   *
+   * 파서 단위 검사만으로는 못 지키는 자리다 — app.ts 가 `NODE_ENV`·isTTY 를
+   * 안 넘기고 `parseCorsOrigin(process.env.CORS_ORIGIN)` 한 인자로 되돌아가는
+   * 날, 위 parseCorsOrigin 검사들은 전부 초록인 채 서버만 다시 열린다.
+   */
+  it('운영에서 CORS_ORIGIN 이 비면 아무 오리진에도 허용을 안 준다 — 런북의 .env 가 이 꼴이다', async () => {
+    const res = await corsProbe('', 'https://evil.example', 'simple', {
+      nodeEnv: 'production',
+      isTty: true,
+    })
+
+    // 서버가 거절하는 것이 아니다 — 응답 자체는 200 이고 브라우저가 막는다.
+    expect(res.statusCode).toBe(200)
+    expect(
+      res.headers['access-control-allow-origin'],
+      'CORS_ORIGIN 이 비었는데 허용 헤더가 나갔다 — 빈 값이 다시 "전부 허용"이다',
+    ).toBeUndefined()
+  })
+
+  it('그 서버는 프리플라이트도 안 받아 준다', async () => {
+    const res = await corsProbe('', 'https://evil.example', 'preflight', {
+      nodeEnv: 'production',
+      isTty: true,
+    })
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+    // @fastify/cors 는 origin 이 false 면 프리플라이트 라우트를 아예 안 든다
+    // (`corsPreflightEnabled` → callNotFound). 204 가 아니라 404 인 것이 실측이다.
+    expect(res.statusCode).toBe(404)
+  })
+
+  // 왜: **WinSW 배포는 `NODE_ENV` 를 놓지 않는다.** 위 둘이 `production` 으로만
+  //     재면, app.ts 가 `NODE_ENV !== 'production'` 하나로 가르도록 바뀌어도
+  //     초록인 채 실제 배포만 다시 열린다 — 요청 로그가 여태 안 남던 그 함정이다.
+  it('NODE_ENV 를 안 놓은 서비스에서도 닫힌다 — WinSW 가 정확히 그 꼴이다', async () => {
+    const res = await corsProbe('', 'https://evil.example', 'simple', {
+      nodeEnv: undefined,
+      isTty: undefined,
+    })
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined()
+  })
+
+  // 왜: 위 셋은 "닫힌다"만 재므로, 닫는 코드가 자리를 안 보고 **늘** 닫아도
+  //     초록이다. 그러면 개발 PC 의 Vite dev 서버(5173)가 조용히 끊기고, 막힌
+  //     사람은 원인을 CORS 에서 찾지 않는다. 양성 대조군이 그 자리다.
+  it('개발 콘솔에서 비면 그대로 전부 허용이다 — 5173 이 끊기면 안 된다', async () => {
+    const res = await corsProbe('', 'http://localhost:5173', 'simple', {
+      nodeEnv: undefined,
+      isTty: true,
+    })
+
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173')
+  })
 })
 
 /** 안드로이드 WebView 가 보내는 Origin. 근거는 config.ts 의 parseCorsOrigin. */
@@ -198,9 +295,18 @@ async function corsProbe(
   list: string,
   origin: string,
   kind: 'simple' | 'preflight' = 'simple',
+  자리?: { nodeEnv: string | undefined; isTty: boolean | undefined },
 ): Promise<LightMyRequestResponse> {
-  return withEnv({ CORS_ORIGIN: list }, async () => {
-    const app = await buildTestApp()
+  return withEnv({ CORS_ORIGIN: list, ...(자리 ? { NODE_ENV: 자리.nodeEnv } : {}) }, async () => {
+    // isTTY 를 못 박는 이유: 빈 값의 뜻이 이 값에 달렸는데(parseCorsOrigin),
+    // vitest 워커의 stdout 이 콘솔인지 파이프인지는 **누가 어떻게 돌렸는가**로
+    // 갈린다. 조건이 실행 환경에 달린 관문은 관문이 아니다(testSupport.ts 가
+    // logger 를 못 박는 것과 같은 이유).
+    const 원래isTty = process.stdout.isTTY
+    if (자리) process.stdout.isTTY = 자리.isTty as boolean
+    const app = await buildTestApp().finally(() => {
+      if (자리) process.stdout.isTTY = 원래isTty
+    })
     const response = await app.inject(
       kind === 'preflight'
         ? {

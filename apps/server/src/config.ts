@@ -12,8 +12,12 @@ import { fileURLToPath } from 'node:url'
  * 있어야 한다.
  */
 
-/** `@fastify/cors` 의 `origin` 에 그대로 실리는 값. `true` 는 "오는 대로 받는다"다. */
-export type CorsOrigin = true | string[]
+/**
+ * `@fastify/cors` 의 `origin` 에 그대로 실리는 값. `true` 는 "오는 대로 받는다",
+ * `false` 는 "아무 데도 안 준다"다(그 경우 ACAO 헤더가 아예 안 나가고
+ * 프리플라이트는 404 다 — @fastify/cors 의 `corsPreflightEnabled` 실측).
+ */
+export type CorsOrigin = boolean | string[]
 
 /** `app.listen` 에 그대로 실리는 한 벌. */
 export interface ListenAddress {
@@ -77,9 +81,10 @@ export type LoggerSetting = false | { level: LogLevel; redact: { paths: string[]
 /**
  * 이 프로세스는 **사람이 앞에 앉아 보고 있는 개발 콘솔**인가.
  *
- * 기본값 둘이 이 물음 하나에 매달려 있다 — 요청 로그를 남길 것인가
- * (parseLogger), 500 응답에 오류 문장을 실을 것인가(app.ts 의 에러 핸들러).
- * 둘을 따로 판정하면 언젠가 한쪽만 고쳐지고, 그날 배포는 "로그는 남는데 내부
+ * 기본값 **셋**이 이 물음 하나에 매달려 있다 — 요청 로그를 남길 것인가
+ * (parseLogger), 500 응답에 오류 문장을 실을 것인가(app.ts 의 에러 핸들러),
+ * 그리고 `CORS_ORIGIN` 이 비었을 때 문을 열어 둘 것인가(parseCorsOrigin).
+ * 따로 판정하면 언젠가 하나만 고쳐지고, 그날 배포는 "로그는 남는데 내부
  * 오류는 그대로 뱉는" 반쪽이 된다. 물음이 하나면 답도 하나다.
  *
  * **왜 `NODE_ENV` 만으로는 못 가르는가:** 이 게임이 실제로 도는 자리는
@@ -219,10 +224,29 @@ export function parseClientDist(raw: string | undefined): string {
 /**
  * `CORS_ORIGIN` — 쉼표로 나눈 허용 출처 목록.
  *
- * **비어 있으면 `true`(전부 허용)다.** 기본을 잠그지 않는 이유는 이 값이 없는
- * 환경이 곧 개발 PC 이기 때문이다 — 지금까지 `origin: true` 로 돌던 개발이
- * 이 변경으로 막히면, 막힌 사람은 원인을 CORS 에서 찾지 않는다. 배포에서는
- * `.env` 가 목록을 준다.
+ * **빈 값의 뜻이 자리에 따라 다르다** — 개발 콘솔에서는 `true`(전부 허용),
+ * 그 밖에서는 `false`(아무 데도 허용 안 함)다. 판정은 로그·500 리댁션과
+ * **같은 함수**를 쓴다(isDevConsole).
+ *
+ * 왜 개발에서 열어 두는가: 이 값이 없는 개발 PC 는 Vite dev 서버(5173)와 서버
+ * (3000)의 오리진이 달라서 지금까지 `origin: true` 로 돌았다. 그것을 막으면
+ * 막힌 사람은 원인을 CORS 에서 찾지 않는다.
+ *
+ * 왜 배포에서 닫는가: 런북이 `CORS_ORIGIN` 을 "웹에는 필요 없다"고 적고
+ * (같은 오리진 서빙이라 사실이다) 그래서 배포 `.env` 에 이 줄이 없기 쉬운데,
+ * 빈 값이 전부 허용이면 **아무 사이트나 방문자의 브라우저로 `/api/auth/login`·
+ * `register` 를 두드릴 수 있다.** 토큰이 쿠키가 아니라 localStorage 라 고전적
+ * CSRF 는 아니지만, 그때 IP 백오프의 열쇠가 방문자 IP 로 흩어져 무력해진다
+ * (auth/rateLimit.ts). 같은 오리진 서빙은 CORS 를 아예 안 쓰므로 닫아도 웹은
+ * 안 깨진다 — 실측으로 프리플라이트 0건이었다.
+ *
+ * **왜 `NODE_ENV` 하나로 안 가르는가:** WinSW XML 이 그 변수를 놓지 않아
+ * `undefined` 가 개발과 배포 둘 다를 가리킨다(isDevConsole 의 주석 — 요청
+ * 로그가 여태 안 남던 것이 정확히 그 결과다). 여기서 `NODE_ENV` 로 따로 갈랐으면
+ * 배포가 개발인 척하며 **전부 허용인 채로** 공개 인터넷에 섰을 것이다.
+ *
+ * `*` 를 적으면 어디서든 전부 허용이다 — 그건 사람이 명시적으로 그렇게 시킨 것이라
+ * 자리를 보지 않는다.
  *
  * **안드로이드 빌드(Capacitor)의 출처는 `https://localhost` 다.** 웹 주소가
  * 아니라서 잊기 쉽고, 잊으면 앱에서만 안 붙는다 — 그리고 거절하는 것은
@@ -246,10 +270,15 @@ export function parseClientDist(raw: string | undefined): string {
  * 라고 적으면 **영원히 일치하지 않는데**, 주소창에서 복사하면 그 슬래시가 붙어
  * 온다. 사람이 흔히 저지르는 오타 하나를 여기서 흡수한다.
  */
-export function parseCorsOrigin(raw: string | undefined): CorsOrigin {
+export function parseCorsOrigin(
+  raw: string | undefined,
+  nodeEnv: string | undefined,
+  stdoutIsTty: boolean | undefined,
+): CorsOrigin {
   const list = splitList(raw).map((origin) => origin.replace(/\/+$/, ''))
-  if (list.length === 0 || list.includes('*')) return true
-  return list
+  if (list.includes('*')) return true
+  if (list.length > 0) return list
+  return isDevConsole(nodeEnv, stdoutIsTty)
 }
 
 /**
