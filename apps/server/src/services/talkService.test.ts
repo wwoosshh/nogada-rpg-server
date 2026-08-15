@@ -4,6 +4,7 @@ import {
   REAL_MS_PER_GAME_DAY,
   REAL_MS_PER_GAME_MINUTE,
   RECENT_DIALOGUE_LIMIT,
+  defaultCombatState,
   emptyDialogueHistory,
   type BakedLeg,
   type DialogueRule,
@@ -126,6 +127,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     rewarded: [],
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     // 화자 둘 다 얼음채집장에 서 있으므로 기본 플레이어도 거기 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from '../dialogue.js'
+import { defaultCombatState } from '../combatState.js'
 import { testItem, testTool } from '../testing/items.js'
 import type { ItemDef, PlayerState } from '../types.js'
 import { TOKEN_SIGHT_FACTOR, TOKEN_SPEED_FACTOR, gatherHandOf } from './gatherHand.js'
@@ -43,6 +44,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     rewarded: [],
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: 'world', x: 0, y: 0 },
     ...overrides,

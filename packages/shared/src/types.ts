@@ -185,7 +185,76 @@ export interface PlayerState {
    * 두면 그 플레이어가 숙련도·인벤토리·강화한 도구까지 통째로 버려진다.
    */
   weather: PlayerWeather | null
+  /**
+   * 전투 상태 — 전부 여기, 전부 게으르게(전투 설계 §6).
+   *
+   * 전투 숙련이 `skills` 가 아니라 여기 사는 이유: skills 의 세이브 스키마는
+   * `.strict()`+필수라 키 하나를 넣는 순간 구세이브가 통째로 거절된다(재현됨,
+   * §12-앞 8). 이 필드는 통째로 `.default()` 라 마이그레이션 0 이다.
+   */
+  combat: CombatState
 }
+
+/** 전투 요청이 주장한 칸과 그 주장이 도착한 서버 시각 — 속도 개연성(§2-3)의 재료다. */
+export interface CombatClaim {
+  x: number
+  y: number
+  atMs: number
+}
+
+/**
+ * 전투 상태 전부. 스키마(protocol.ts)에서 모든 칸이 `.default()` 라 combat
+ * 키가 통째로 없는 구세이브도 그대로 통과한다(전투 설계 §6 — 마이그레이션 0).
+ */
+export interface CombatState {
+  /** 전투 숙련 — 간격(combatIntervalMs)만 산다. 회당 피해는 무기의 몫이다(§2-2). */
+  proficiency: number
+  /**
+   * `lastHitAt` 시점의 HP. **지금 HP 가 아니다** — 자연 회복은 저장하지 않고
+   * `currentHp(combat, now)` 가 게으르게 계산한다(§6). 이 칸을 직접 읽는 판정이
+   * 생기는 순간 회복이 그 판정에만 없는 셈이 된다.
+   */
+  hp: number
+  /** 마지막으로 맞은(또는 hp 칸이 마지막으로 실측이 된) 서버 시각. 자연 회복의 기준점이다. */
+  lastHitAt: number
+  /** 직전 전투 요청의 위치 주장. 없으면(첫 주장·전환 직후) 개연성 검사가 공회전한다 — 의도다(§12-앞 7). */
+  lastClaim: CombatClaim | null
+  /**
+   * 지금 교전 중인 몬스터 하나와 그 남은 HP. 다른 몬스터를 때리면 통째로
+   * 교체되고 이전 몬스터는 만혈로 돌아간다 — 한 번에 하나를 상대하는 단순화의
+   * 값이다(§4).
+   */
+  hunt: { instanceId: string; monsterHp: number } | null
+  /**
+   * 처치 기록 — **hunt 밖이다**(§12-앞 11). hunt 단수에 처치 시각을 실으면
+   * 다른 늑대와 교전하는 순간 기록이 사라져 리스폰 대기가 무효가 된다.
+   */
+  slain: Record<string, number>
+}
+
+/**
+ * 몬스터 배치 하나 — NodePlacement 의 전투판이다. 종(MonsterDef)은 패턴을,
+ * 배치는 자리·위상·개체값을 진다.
+ *
+ * C6 의 CSV 파서가 이 모양을 채우고, 그 전에는 fightService 가 픽스처로 받는다
+ * (gatherService 가 GatherTables 를 인자로 받는 그 모양 — 데이터보다 모양이 먼저다).
+ */
+export interface MonsterPlacement {
+  instanceId: string
+  /** MonsterDef 의 id. 패턴은 종이 소유한다. */
+  monsterId: string
+  mapId: string
+  /**
+   * 패턴 위상 오프셋(ms) — 이 배치의 t 시각 상태는 `monsterStateAt(def, t + 오프셋)` 이다.
+   * 배치 셋은 위상이 서로 달라야 한다(§12-앞 23) — 위상까지 같으면 한 마리를 세 번 잡는 것과 같다.
+   */
+  phaseOffsetMs: number
+  maxHp: number
+  /** 휩쓸기 한 번이 깎는 플레이어 HP. 피해 빈도 상한(수락된 스윙당 1회, §2-2) 위에서 잰 값이 C6 에 온다. */
+  sweepDamage: number
+}
+
+export type MonsterPlacements = Record<string, MonsterPlacement>
 
 export interface ItemDef {
   id: string

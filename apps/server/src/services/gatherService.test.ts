@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   ACTION_INTERVAL_MAX_MS,
+  defaultCombatState,
   emptyDialogueHistory,
   ENHANCE_CAP,
   ENHANCE_INTERVAL_FACTOR,
@@ -113,6 +114,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     rewarded: [],
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     // 배치가 전부 world 에 있으므로 기본 플레이어도 world 에 세운다 — 그래야
     // 기존 테스트들이 "맵이 같다"를 따로 말하지 않아도 앞뒤가 맞는다.

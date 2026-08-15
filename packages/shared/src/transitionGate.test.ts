@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
+import { defaultCombatState } from './combatState.js'
 import { GAME_EPOCH_MS, REAL_MS_PER_GAME_DAY, TIDE_WINDOWS } from './time.js'
 import { transitionGate } from './transitionGate.js'
 import type { PlayerState, TransitionDef } from './types.js'
@@ -51,6 +52,7 @@ function player(skills: Partial<PlayerState['skills']> = {}): PlayerState {
     celebrated: [],
     rewarded: [],
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: '얼음채집장', x: 5, y: 4 },
   }

@@ -1,5 +1,6 @@
 import {
   collectionGrade,
+  defaultCombatState,
   emptyDialogueHistory,
   type CollectionTable,
   type GameData,
@@ -79,6 +80,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: '', x: 0, y: 0 },
     weather: null,
+    combat: defaultCombatState(),
     ...overrides,
   }
 }

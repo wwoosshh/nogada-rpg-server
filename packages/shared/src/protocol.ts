@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DEFAULT_APPEARANCE } from './appearance.js'
+import { COMBAT_MAX_HP, defaultCombatState } from './combatState.js'
 import { emptyDialogueHistory } from './dialogue.js'
 import { SKILL_IDS, type PlayerLocation, type SkillId } from './types.js'
 import { WEATHER_KINDS } from './weather.js'
@@ -79,6 +80,27 @@ const defaultLocation = (): PlayerLocation => ({ mapId: '', x: 0, y: 0 })
 const PlayerWeatherSchema = z.object({
   kind: z.enum(WEATHER_KINDS),
   untilMs: z.number(),
+})
+
+/**
+ * 저장된 전투 상태(전투 설계 §6). **모든 칸에 기본값이 있다** — combat 키가
+ * 통째로 없는 세이브(전투 아크 이전의 전부)가 그대로 통과해야 하기 때문이다
+ * (마이그레이션 0). 전투 숙련이 `skills` 가 아니라 여기 사는 이유가 그 반대편이다:
+ * skillsShape 는 `.strict()`+필수라 키 하나를 넣는 순간 구세이브가 통째로
+ * 거절된다(재현됨, §12-앞 8).
+ *
+ * `hp` 에 상한 검증을 걸지 않는 이유: 상한(COMBAT_MAX_HP)은 언젠가 장비로
+ * 늘어날 수 있는 게임 값이고, 그때 이 문이 옛 상수로 남으면 새 상한의 세이브를
+ * 통째로 거절한다 — 이름 규칙을 세이브 게이트에서 안 보는 것과 같은 자리다.
+ */
+const CombatStateSchema = z.object({
+  proficiency: z.number().int().min(0).default(0),
+  hp: z.number().min(0).default(COMBAT_MAX_HP),
+  lastHitAt: z.number().default(0),
+  lastClaim: z.object({ x: z.number().int(), y: z.number().int(), atMs: z.number() }).nullable().default(null),
+  hunt: z.object({ instanceId: z.string(), monsterHp: z.number() }).nullable().default(null),
+  // 함수 기본값 — 리터럴이면 세이브 둘이 같은 slain 을 공유한다(donated 와 같다).
+  slain: z.record(z.string(), z.number()).default(() => ({})),
 })
 
 export const PlayerStateSchema = z.object({
@@ -163,6 +185,10 @@ export const PlayerStateSchema = z.object({
   // null 에는 없다. 값을 고쳐 쓰는 곳도 없다: 날씨는 언제나 통째로 새 객체로
   // 덮어써진다(useService).
   weather: PlayerWeatherSchema.nullable().default(null),
+  // gold·weather 와 **정확히 같은 이유로** 기본값을 단다: 전투 아크 전의 세이브에는
+  // 이 키가 통째로 없다. 기본값이 함수인 이유는 dialogueHistory 와 같다 — 안쪽
+  // slain 이 참조형이라, 리터럴이면 세이브 둘이 같은 기록을 공유한다.
+  combat: CombatStateSchema.default(defaultCombatState),
 })
 
 export const StateResponseSchema = z.object({ player: PlayerStateSchema })
@@ -304,3 +330,18 @@ export const MoveRequestSchema = z.object({
   y: z.number().int().min(0),
 })
 export type MoveRequest = z.infer<typeof MoveRequestSchema>
+
+/**
+ * 전투 요청(전투 설계 §2-2). 배치 인스턴스와 **주장 칸** — 어느 쪽도 판정 결과를
+ * 담지 않는다: 명중·피격·처치는 전부 서버가 monsterStateAt 으로 정하는 판정이고,
+ * 클라이언트가 그것을 보낼 수 있게 하면 요청 하나로 자기 명중을 자기가 매긴다.
+ *
+ * (x, y) 는 MoveRequest 처럼 주장이다 — 서버는 걸음마다 위치를 받지 않으므로
+ * 참을 알 수 없고, 대신 속도 개연성(claimPlausible)이 주장 사이의 일관성을 문다.
+ */
+export const FightRequestSchema = z.object({
+  instanceId: z.string().min(1),
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+})
+export type FightRequest = z.infer<typeof FightRequestSchema>

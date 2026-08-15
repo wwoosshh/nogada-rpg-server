@@ -1,6 +1,7 @@
 import {
   DEFAULT_APPEARANCE,
   SKILL_IDS,
+  defaultCombatState,
   emptyDialogueHistory,
   type PlayerState,
   type SkillId,
@@ -47,6 +48,7 @@ export function emptyPlayer(): PlayerState {
     // 아직 아무 가루도 써 보지 않은 사람이다 — 그 하늘에는 아무 일도 없다.
     // 시뮬레이터는 `--weather=rain` 으로 비 오는 날을 따로 그려 볼 수 있다.
     weather: null,
+    combat: defaultCombatState(),
     // 시뮬레이터가 "아직 아무 데도 안 간 사람" 을 흉내 내는 것이므로 시작 맵의
     // 시작 칸이다. 좌표를 여기 적지 않는다 — 그 칸은 world.tmx 의 spawn
     // 오브젝트가 갖고 있고, 맵을 고쳐 그리면 이 값도 함께 움직여야 한다.

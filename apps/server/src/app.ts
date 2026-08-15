@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import cors from '@fastify/cors'
-import { loadGameData } from '@nogada/data'
+import { loadGameData, startLocation } from '@nogada/data'
 // 별도 진입이다 — 배럴(index.ts)에 실리면 클라이언트 번들도 이 표를 받는다.
 // 브라켓 경계·잭팟 확률이 곧 숨은 문턱이라 그러면 F12 로 스포일된다(설계 §7-앞 9).
 import { loadGatherTables } from '@nogada/data/gather-tables'
@@ -19,6 +19,7 @@ import { registerCraftRoutes } from './routes/craft.js'
 import { registerDonateRoutes } from './routes/donate.js'
 import { registerEnhanceRoutes } from './routes/enhance.js'
 import { registerEquipRoutes } from './routes/equip.js'
+import { registerFightRoutes } from './routes/fight.js'
 import { registerGatherRoutes } from './routes/gather.js'
 import { registerMeRoutes } from './routes/me.js'
 import { registerMoveRoutes } from './routes/move.js'
@@ -147,6 +148,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     registerUseRoutes(guarded, store, data)
     registerMoveRoutes(guarded, store, data)
     registerDonateRoutes(guarded, store, data)
+    // 몬스터 세계는 아직 비어 있다 — CSV 는 C6 의 몫이고, 빈 목록이면 모든
+    // 전투 요청이 unknown_monster 로 떨어질 뿐 서버는 완전하다. 지금 배선해
+    // 두는 이유는 gatherTables 와 같다: 잊으면 컴파일러가 먼저 말하게.
+    // 죽음 귀환 자리는 시작 맵의 spawn 하나다(startLocation — newCharacter 가
+    // 마을 spawn 을 유일한 출처로 삼는 그 규범).
+    registerFightRoutes(guarded, store, data, { defs: {}, placements: {}, drops: {} }, startLocation(data))
   })
 
   return app

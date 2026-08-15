@@ -1,4 +1,4 @@
-import { emptyDialogueHistory, type EnhanceCostDef, type ItemDef, type PlayerState } from '@nogada/shared'
+import { defaultCombatState, emptyDialogueHistory, type EnhanceCostDef, type ItemDef, type PlayerState } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { performEnhance, performEquip } from './equipService.js'
@@ -75,6 +75,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     rewarded: [],
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     // 이 판정들은 맵을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.
     location: { mapId: 'world', x: 0, y: 0 },

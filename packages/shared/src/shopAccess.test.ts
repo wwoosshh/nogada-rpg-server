@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
+import { defaultCombatState } from './combatState.js'
 import { NPC_STEP_MS } from './npcSchedule.js'
 import { shopAccess, speakerPresence } from './shopAccess.js'
 import { GAME_EPOCH_MS, REAL_MS_PER_GAME_DAY, REAL_MS_PER_GAME_MINUTE } from './time.js'
@@ -99,6 +100,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     rewarded: [],
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: 채집장, x: 0, y: 0 },
     ...overrides,

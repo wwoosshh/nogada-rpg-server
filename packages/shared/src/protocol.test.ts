@@ -221,4 +221,41 @@ describe('PlayerStateSchema', () => {
     first.dialogueHistory.said.push('노인.greet.abc')
     expect(second.dialogueHistory.said).toEqual([])
   })
+
+  // 왜: 전투 상태(설계 §6)는 통째로 `.default()` 라 마이그레이션 0 이어야 한다 —
+  //     combat 키가 없는 세이브는 전투 아크 이전의 모든 세이브다. 필수로 두면
+  //     readPlayers 가 그 플레이어를 숙련도·인벤토리째 통째로 버린다.
+  it('combat 이 통째로 없는 옛 세이브를 만혈·무교전으로 받아들인다', () => {
+    const parsed = PlayerStateSchema.parse(validSave())
+    expect(parsed.combat).toEqual({
+      proficiency: 0,
+      hp: 100,
+      lastHitAt: 0,
+      lastClaim: null,
+      hunt: null,
+      slain: {},
+    })
+  })
+
+  it('적혀 있는 전투 상태는 그대로 읽는다', () => {
+    const save = {
+      ...validSave(),
+      combat: {
+        proficiency: 42, hp: 61, lastHitAt: 5, lastClaim: { x: 1, y: 2, atMs: 9 },
+        hunt: { instanceId: 'wolf-1', monsterHp: 3 }, slain: { 'wolf-2': 7 },
+      },
+    }
+    const parsed = PlayerStateSchema.parse(save)
+    expect(parsed.combat.proficiency).toBe(42)
+    expect(parsed.combat.hunt).toEqual({ instanceId: 'wolf-1', monsterHp: 3 })
+    expect(parsed.combat.slain).toEqual({ 'wolf-2': 7 })
+  })
+
+  it('파싱할 때마다 새 전투 상태를 만든다 — 세이브 둘이 같은 slain 을 공유하면 안 된다', () => {
+    const first = PlayerStateSchema.parse(validSave())
+    const second = PlayerStateSchema.parse(validSave())
+
+    first.combat.slain['wolf-1'] = 123
+    expect(second.combat.slain).toEqual({})
+  })
 })

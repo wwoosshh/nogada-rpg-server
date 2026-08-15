@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CollectionTable } from './collection.js'
 import { emptyDialogueHistory } from './dialogue.js'
+import { defaultCombatState } from './combatState.js'
 import { isStockUnlocked, stockProgress } from './stockUnlock.js'
 import type { PlayerState, ShopDef, ShopStockEntry } from './types.js'
 
@@ -37,6 +38,7 @@ function player(over: Partial<PlayerState> = {}): PlayerState {
     celebrated: [],
     rewarded: [],
     weather: null,
+    combat: defaultCombatState(),
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: 'world', x: 0, y: 0 },
     ...over,

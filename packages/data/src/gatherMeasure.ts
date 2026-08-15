@@ -3,6 +3,7 @@ import {
   DEFAULT_APPEARANCE,
   GATHER_ROLL_MAX,
   SKILL_IDS,
+  defaultCombatState,
   emptyDialogueHistory,
   gatherHandOf,
   gatherIntervalMs,
@@ -52,6 +53,7 @@ function fakePlayer(): PlayerState {
     donated: {},
     dialogueHistory: emptyDialogueHistory(),
     weather: null,
+    combat: defaultCombatState(),
     location: { mapId: '', x: 0, y: 0 },
   }
 }

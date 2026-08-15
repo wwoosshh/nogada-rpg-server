@@ -3,6 +3,7 @@ import {
   REAL_MS_PER_GAME_DAY,
   REAL_MS_PER_GAME_MINUTE,
   buyPrice,
+  defaultCombatState,
   emptyDialogueHistory,
   isSellTarget,
   sellPrice,
@@ -180,6 +181,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     location: { mapId: 채집장, x: 0, y: 0 },
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,
+    combat: defaultCombatState(),
     ...overrides,
   }
 }

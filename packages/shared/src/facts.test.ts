@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
+import { defaultCombatState } from './combatState.js'
 import { buildFacts } from './facts.js'
 import type { MilestoneDef } from './milestones.js'
 import { GAME_EPOCH_MS, REAL_MS_PER_GAME_DAY } from './time.js'
@@ -39,6 +40,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     location: { mapId: 'world', x: 0, y: 0 },
     // 가루를 쓴 적 없는 사람이다. 날씨를 보는 검사는 overrides 로 덮어 쓴다.
     weather: null,
+    combat: defaultCombatState(),
     ...overrides,
   }
 }

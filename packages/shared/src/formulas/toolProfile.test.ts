@@ -3,6 +3,7 @@ import { equippedToolInfo, type EquippedToolInfo } from '../equipment.js'
 import { testItem, testTool } from '../testing/items.js'
 import type { ItemDef, PlayerState } from '../types.js'
 import { emptyDialogueHistory } from '../dialogue.js'
+import { defaultCombatState } from '../combatState.js'
 import { hammerChanceBonus } from './craft.js'
 import {
   ACTION_INTERVAL_MAX_MS,
@@ -121,6 +122,7 @@ describe('gatherToolProfile', () => {
       equipped: { mineral: 'i1' },
       nextActionAt: 0, celebrated: [], rewarded: [], dialogueHistory: emptyDialogueHistory(),
       location: { mapId: 'world', x: 0, y: 0 }, weather: null,
+      combat: defaultCombatState(),
     }
     const items = { copper_pickaxe: copper }
     const wrongSkillTool = equippedToolInfo(player, 'herb', items)
