@@ -79,6 +79,9 @@ describe('buildCraftCards — 목록의 모양과 순서', () => {
       // 구리 검도 요구치 0 이라 구리 4종 곁이다(전투 §4) — 파일 끝에 붙이면
       // 잠긴 별똥 아래로 들어가, 요구치 낮은 문이 위에 오는 배치가 깨진다.
       'copper_sword',
+      // 가죽옷도 요구치 0 의 부트스트랩이라 검 곁이다(아크 E §3) — 재료(가죽)를
+      // 주는 동사(전투)가 같으니 자리도 같다.
+      'wolf_hide_armor',
       'copper_hammer',
       'iron_chisel',
       'iron_axe',

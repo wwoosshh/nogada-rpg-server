@@ -175,6 +175,8 @@ assets/licensed/
 | `snowflake` | icon152 | 파란 눈송이 |
 | `wolf_fang` | icon887 | 늑대 송곳니 — 흰 이빨 |
 | `sword_copper` | icon434 를 구리빛으로 | 구리 검 — 실루엣이 계열, 색이 등급 |
+| `wolf_pelt` | icon673 | 늑대 가죽 — 말아 놓은 갈색 가죽. 송곳니(흰 이빨)와 색·형태가 둘 다 갈려 같은 늑대의 두 드랍이 가방에서 안 섞인다 |
+| `wolf_hide_armor` | icon677 | 늑대 가죽옷 — 갈색 가죽 몸통옷. 재료(말린 가죽)와 같은 갈색이라 한 사슬로 읽히고, 실루엣(옷)이 재료와 완성품을 가른다 |
 
 증표 8종은 나머지와 고르는 방식이 다르다 — **종류를 형태로, 계열을 색으로** 읽는다(깃털 = 속도증표,
 반지 = 선별증표). 8종이 한 벌이라 가방에서 묻는 것이 "이게 무엇인가"보다 "내가 무슨 증표를 가졌는가"
@@ -234,8 +236,8 @@ NPCS
 # 전 채널 ×0.72 로 어둡게 — 애완견의 밝은 회색이 들짐승의 어두운 잿빛이 된다.
 magick "$CHR/Animal/Dog 01-3.png"   -color-matrix "0.6145 0.3229 0.0627 0.1645 0.7729 0.0627 0.1645 0.3229 0.5127"   -channel RGB -evaluate multiply 0.72 +channel   -define png:color-type=6 apps/client/public/sprites/monster_wolf.png
 
-# 아이템 아이콘 74종(여기 복사 68 + 아래 색 파생 6) — 위 매핑 표와 같은 내용이다.
-# items.csv 는 이 중 70종을 쓴다
+# 아이템 아이콘 76종(여기 복사 70 + 아래 색 파생 6) — 위 매핑 표와 같은 내용이다.
+# items.csv 는 이 중 72종을 쓴다
 # (ingot_iron·plate_reinforced·hammer_iron·hammer_mithril 은 아직 쓰는 아이템이
 # 없는 예비 배정 4종. ore_mithril·ingot_mithril·pickaxe_reinforced 는 각각 mithril_ore·
 # mithril_ingot·mithril_pickaxe(G5) 가 재사용하며 주인을 얻었고, chisel_mithril·
@@ -314,6 +316,8 @@ cloud_snow:122
 cloud_storm:124
 snowflake:152
 wolf_fang:887
+wolf_pelt:673
+wolf_hide_armor:677
 ICONS
 
 # 아이콘 다섯은 **팩에 없어서 색으로 만든다.** 4단 도구 넷은 미스릴 도구의 실루엣에
