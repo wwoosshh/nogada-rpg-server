@@ -182,16 +182,68 @@ docker compose -f docker-compose.prod.yml up -d
 
 ---
 
-## 6. 배포 자동화
+## 6. 겪은 함정 (전환 중 실측)
+
+전환하며 실제로 시간을 쓴 것들이다. 증상만 보고는 원인을 찾기 어려운 것들이라
+적어 둔다.
+
+- **Node.js 차단 방화벽 규칙이 허용 규칙을 이긴다.** 컨테이너 시절에는 Docker
+  Desktop 이 자기 이름으로 포트를 열어 줬는데, `node.exe` 가 직접 3000 을 잡자
+  예전에 눌린 "차단"이 드러났다. 증상은 **로컬은 되는데 밖에서만 안 되는 것**
+  이고, `netstat` 은 `0.0.0.0:3000 LISTENING` 이라 멀쩡해 보인다. 포트 허용 규칙을
+  아무리 더해도 소용없다 — **차단이 우선**이라 그것부터 지워야 한다:
+
+  ```powershell
+  Get-NetFirewallApplicationFilter -Program "*node.exe*" | Get-NetFirewallRule |
+    Where-Object Action -eq Block | Remove-NetFirewallRule
+  ```
+
+- **`--env-file` 은 이미 있는 환경변수를 덮어쓰지 않는다.** 시험 실행(3장)에서
+  `$env:PORT='3001'` 을 넣은 창에서 그대로 서버를 다시 띄우면 `.env` 의
+  `PORT=3000` 이 아니라 3001 로 뜬다. 창을 새로 열거나 `Remove-Item Env:PORT` 로
+  지운다. 서비스로 등록한 뒤에는 이 문제가 없다 — 새 프로세스라 세션 변수가 없다.
+
+- **관리자 계정은 다른 계정 소유의 저장소에서 git 을 못 돌린다**(dubious
+  ownership). 서비스 등록을 관리자 창에서 하면서 `git rev-parse HEAD` 가 조용히
+  실패해 `GIT_SHA` 가 비었고, `/api/health` 가 `sha: dev` 를 돌려줬다. 예외를
+  등록한다:
+
+  ```powershell
+  git config --global --add safe.directory C:/nogada-server/nogada-rpg-server
+  ```
+
+- **nssm.cc 다운로드가 자주 막힌다**(`winget install NSSM.NSSM` 이
+  `0x80072ee2` 로 실패). GitHub 에서 받는 WinSW 로 갈아탔고 이 문서의 4장이
+  그것이다.
+
+## 7. 배포 자동화
 
 `.github/workflows/deploy.yml` 의 미니PC job 이 컨테이너 대신 서비스를 다룬다.
-4단계까지 끝난 뒤에 그 파일을 바꾼다 — 먼저 바꾸면 준비가 안 된 서버로 배포가
-가서 실패한다. 새 job 이 하는 일:
+단계는 이렇다:
 
-1. `git reset --hard origin/main`
-2. `pnpm install --frozen-lockfile --filter "@nogada/server..."`
-3. `pnpm data:build` — CSV·TMX 에서 gamedata.json 을 굽는다(없으면 서버가 부팅 중 죽는다)
-4. `pnpm --filter @nogada/server migrate up` — 스키마부터. 실패하면 여기서 멈춰
-   옛 서버가 계속 돈다
-5. `nssm set nogada-server AppEnvironmentExtra GIT_SHA=<커밋>` → `nssm restart`
-6. `/api/health` 의 `sha` 가 그 커밋인지 확인
+1. 배포 폴더·`.env`·서비스 존재 확인
+2. `git reset --hard origin/main`
+3. `pnpm install --frozen-lockfile --filter "@nogada/server..."`
+4. `pnpm data:build` — CSV·TMX 에서 gamedata.json 을 굽는다(없으면 서버가 부팅 중 죽는다)
+5. `pnpm --filter @nogada/server migrate up` — 스키마부터, **서비스를 건드리기
+   전에**. 실패하면 여기서 멈춰 옛 서버가 계속 돈다
+6. WinSW XML 의 `GIT_SHA` 를 이번 커밋으로 갈고 `nogada-server.exe restart`
+7. `/api/health` 가 `ok:true` **와 그 커밋의 sha** 를 함께 줄 때까지 90초 대기
+
+**7번이 컨테이너 시절과 다른 점이다.** 네이티브에서는 재시작이 조용히 실패해도
+옛 프로세스가 계속 3000 을 쥔 채 `ok:true` 를 준다 — 커밋까지 대조해야 이 배포가
+실제로 올라간 것이 된다.
+
+### 러너 권한
+
+서비스 제어(`restart`)에는 권한이 필요하다. self-hosted 러너가 일반 사용자
+계정으로 돌면 6번에서 "액세스가 거부되었습니다" 로 선다. **그 편이 조용히
+넘어가는 것보다 낫다** — 배포가 초록인데 옛 코드가 도는 것이 가장 나쁘다.
+
+첫 배포에서 그 오류가 나면 둘 중 하나를 고른다:
+
+- 러너 서비스의 로그온 계정을 관리자 권한이 있는 것으로 바꾼다(`services.msc`).
+  그 경우 `git config --system --add safe.directory` 로 그 계정의 예외도 함께 건다.
+- 또는 `sc.exe sdset` 으로 러너 계정에 이 서비스만 제어 권한을 준다(범위가
+  좁은 대신 명령이 길고, 잘못 쓰면 서비스를 아무도 못 만지게 되므로 먼저
+  `sc.exe sdshow nogada-server` 로 현재 값을 적어 둔다).
