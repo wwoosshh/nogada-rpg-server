@@ -1,6 +1,6 @@
-import { monsterStateAt, type MonsterDef, type MonsterPlacement } from '@nogada/shared'
+import { JUDGE_EPSILON_MS, monsterStateAt, type MonsterDef, type MonsterPlacement } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
-import { monsterHpOf, monsterPixelCenter } from './monsterView.js'
+import { monsterHpOf, monsterPixelCenter, warningStyle } from './monsterView.js'
 
 /*
  * 몬스터 렌더의 순수 계산(설계 §12-앞 16 — 추격 보간 금지).
@@ -72,6 +72,47 @@ const placement: MonsterPlacement = {
   maxHp: 30,
   sweepDamage: 5,
 }
+
+/**
+ * 예고 1,800ms 의 제자리 몬스터 — C6 저작 제약(예고 ≥ ε + 700ms)을 지키는
+ * 값이라 'safe' 구간(앞 800ms)과 'smear' 구간(뒤 ε=1,000ms)이 둘 다 실존한다.
+ * 예고 [0, 1800) → 휩쓸기 [1800, 2200).
+ */
+const 예고긴놈: MonsterDef = {
+  id: 'wolf-long',
+  name: '들늑대',
+  periodMs: 4000,
+  patrol: [{ x: 0, y: 0 }],
+  attacks: [{ telegraphStartMs: 0, telegraphMs: 1800, activeMs: 400, direction: 'right', reach: 1 }],
+}
+
+describe('warningStyle — 예고의 마지막 ε 는 이미 위험이다(§2-5 스미어)', () => {
+  // 왜: 판정(sweepCatches)은 [t−ε, t+ε] 구간을 보므로 실제 안전 경계는
+  //     "휩쓸기 시작 − ε"다. 그 경계를 화면이 모르면 예고의 마지막 1초가
+  //     옅은 장판인 채 확정 피격 구간이 된다 — 본 대로 피했는데 맞았다.
+  it('휩쓸기까지 ε 넘게 남은 예고는 safe 다', () => {
+    expect(warningStyle(monsterStateAt(예고긴놈, 0))).toBe('safe') // 1800 남음
+    expect(warningStyle(monsterStateAt(예고긴놈, 799))).toBe('safe') // 1001 남음 — 경계 바로 위
+  })
+
+  // 왜: sweepCatches 는 t+ε 가 활성 시작과 같을 때 구간 [t−ε, t+ε] 의 끝점이
+  //     활성 첫 순간을 포함한다 — epsilonSampleTimes 가 t ≤ end 를 포함하는
+  //     그 부등호다. 그래서 남은 시간이 정확히 ε 인 순간도 이미 위험이고,
+  //     경계를 < 로 좁히는 돌연변이는 여기서 갈린다.
+  it('남은 시간이 정확히 JUDGE_EPSILON_MS 인 순간은 이미 smear 다', () => {
+    expect(warningStyle(monsterStateAt(예고긴놈, 1800 - JUDGE_EPSILON_MS))).toBe('smear')
+  })
+
+  it('휩쓸기까지 ε 안쪽의 예고는 smear 다', () => {
+    expect(warningStyle(monsterStateAt(예고긴놈, 1500))).toBe('smear') // 300 남음
+    expect(warningStyle(monsterStateAt(예고긴놈, 1799))).toBe('smear') // 1 남음
+  })
+
+  it('telegraph 가 아니면 null 이다 — 휩쓸기도 대기도', () => {
+    expect(warningStyle(monsterStateAt(예고긴놈, 1900))).toBeNull() // sweep
+    expect(warningStyle(monsterStateAt(예고긴놈, 2500))).toBeNull() // idle
+  })
+})
 
 describe('monsterHpOf — 교전 중인 그 배치만 깎인 HP 를 보인다(§4 hunt 단수)', () => {
   // 왜: hunt 는 단수라 다른 배치는 전부 만혈이다 — 서버(fightService)가 hpBefore

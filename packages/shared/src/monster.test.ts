@@ -224,6 +224,46 @@ describe('monsterStateAt — 공격 국면과 위험 구역', () => {
   })
 })
 
+describe('monsterStateAt — sweepInMs (휩쓸기까지 남은 시간, 화면 전용)', () => {
+  // 왜: 판정(sweepCatches)은 [t−ε, t+ε] 구간을 보므로 예고의 마지막 ε 는 이미
+  //     확정 피격 구간이다(§2-5). 화면이 그 경계를 알려면 "휩쓸기 시작까지
+  //     남은 시간"이 상태에 실려야 한다 — 이 값이 틀리면 스미어 표시가
+  //     엉뚱한 순간에 켜져 "본 대로 피했는데 맞았다"가 된다.
+  //
+  // 돌연변이 주의: "예고 끝까지 남은 시간"으로 바꾸는 돌연변이는 등가다
+  // (sweepStart == telegraphStartMs + telegraphMs). 여기 테스트가 무는 것은
+  // (1) 경과 시간(phaseMs − telegraphStartMs)으로 뒤집는 돌연변이와
+  // (2) null 조건을 없애는 돌연변이다.
+  it('예고 시작 순간에는 telegraphMs 전체가 남아 있다', () => {
+    // 예고 [1200,2000): t=1200 에서 sweepStart 2000 까지 800ms — 경과 시간
+    // 돌연변이(phaseMs − telegraphStartMs)는 여기서 0 을 내 갈린다.
+    expect(state(1200).sweepInMs).toBe(800)
+  })
+
+  it('예고 중간 시각의 값이 정확하다 — 감산 하나의 정수 ms 다', () => {
+    expect(state(1500).sweepInMs).toBe(500) // 2000 − 1500
+    expect(state(1999).sweepInMs).toBe(1) // 마지막 예고 ms — 아직 telegraph 다
+  })
+
+  it('휩쓸기 중에는 null 이다 — 음수를 내면 안 된다', () => {
+    // null 조건 제거 돌연변이(hit 면 무조건 감산)는 여기서 −100 을 내 갈린다.
+    expect(state(2100).sweepInMs).toBeNull()
+  })
+
+  it('대기 중에는 null 이다', () => {
+    expect(state(500).sweepInMs).toBeNull()
+    expect(state(2600).sweepInMs).toBeNull()
+  })
+
+  // 왜: 클라는 monsterStateAt(def, now + phaseOffsetMs) 로 부른다(MonsterSprite).
+  //     오프셋이 실려 t 가 주기를 몇 바퀴 감아도 t mod P 하나로 같은 값이
+  //     나와야 배치마다 스미어 경계가 어긋나지 않는다.
+  it('위상 오프셋과 합성해도 같은 값이다 — t mod P 규약', () => {
+    expect(state(1500 + 4000 * 7).sweepInMs).toBe(500)
+    expect(state(1500 - 4000).sweepInMs).toBe(500)
+  })
+})
+
 describe('combatIntervalMs — 로그 곡선, 자체 상수', () => {
   it('숙련 0 은 상한 800ms 다', () => {
     expect(combatIntervalMs(0)).toBe(COMBAT_INTERVAL_MAX_MS)

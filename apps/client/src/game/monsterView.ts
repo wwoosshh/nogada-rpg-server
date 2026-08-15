@@ -1,4 +1,4 @@
-import type { CombatState, MonsterPlacement, MonsterState } from '@nogada/shared'
+import { JUDGE_EPSILON_MS, type CombatState, type MonsterPlacement, type MonsterState } from '@nogada/shared'
 
 /**
  * 몬스터 렌더의 순수 계산 — MonsterSprite(Phaser)가 매 프레임 부르고, 테스트는
@@ -34,4 +34,23 @@ export function monsterPixelCenter(state: MonsterState): { x: number; y: number 
  */
 export function monsterHpOf(placement: MonsterPlacement, hunt: CombatState['hunt']): number {
   return hunt?.instanceId === placement.instanceId ? hunt.monsterHp : placement.maxHp
+}
+
+/**
+ * 예고 칸을 어떤 진하기로 칠할 것인가 — telegraph 가 아니면 null.
+ *
+ * 'smear' 는 판정의 ε 스미어를 화면에 옮긴 것이다(§2-5): sweepCatches 는
+ * [t−ε, t+ε] 구간에서 하나라도 성립하면 피격이라, 예고 구역의 실제 안전
+ * 경계는 "휩쓸기 시작 − ε"다. 그 뒤를 계속 옅게 칠하면 예고의 마지막 1초가
+ * "본 대로 피했는데 맞았다"가 된다 — 예고가 정직하려면 화면이 이 경계에서
+ * 진해져야 한다.
+ *
+ * 경계는 sweepInMs == JUDGE_EPSILON_MS 정확히 그 순간도 'smear' 다 — 이미
+ * 위험이기 때문이다: sweepCatches 는 t+ε 가 활성 시작과 같을 때 구간
+ * [t−ε, t+ε] 의 끝점이 활성 첫 순간을 포함한다(combatState.ts 의
+ * epsilonSampleTimes 가 t ≤ end 를 포함하는 그 부등호).
+ */
+export function warningStyle(state: MonsterState): 'safe' | 'smear' | null {
+  if (state.phase !== 'telegraph' || state.sweepInMs === null) return null
+  return state.sweepInMs <= JUDGE_EPSILON_MS ? 'smear' : 'safe'
 }

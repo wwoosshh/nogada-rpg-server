@@ -7,12 +7,13 @@ import {
   type Direction,
   type MonsterDef,
   type MonsterPlacement,
+  type MonsterState,
 } from '@nogada/shared'
 import { idleFrame, walkFrames } from './charSheet.js'
 import { DEPTH } from './depth.js'
 import { addText, FONT_SIZE } from './gameText.js'
 import { monsterSpriteKey } from './monsterSprites.js'
-import { monsterHpOf, monsterPixelCenter } from './monsterView.js'
+import { monsterHpOf, monsterPixelCenter, warningStyle } from './monsterView.js'
 
 /** NpcSprite 의 이름표와 같은 색 — 지도 위 글자가 한 종류로 읽혀야 한다. */
 const CAPTION_COLOR = '#e8dcc0'
@@ -20,15 +21,28 @@ const CAPTION_COLOR = '#e8dcc0'
 const TILE = 32
 
 /**
- * 장판 색 하나에 알파 둘 — 예고는 옅게, 휩쓸기는 진하게(설계 §7).
+ * 장판 색 하나에 알파 셋 — 예고는 옅게, 스미어는 중간, 휩쓸기는 진하게(설계 §7).
  *
- * 색이 하나인 것이 뜻이다: 둘 다 같은 구역("지금 여기서 공격하면 맞는다"의
- * 자리, §2-4)이고 다른 것은 **지금이냐 곧이냐**뿐이라, 색을 가르면 두 구역이
+ * 색이 하나인 것이 뜻이다: 셋 다 같은 구역("지금 여기서 공격하면 맞는다"의
+ * 자리, §2-4)이고 다른 것은 **지금이냐 곧이냐**뿐이라, 색을 가르면 구역들이
  * 다른 위험처럼 읽힌다. 에셋이 아니라 코드 렌더인 것은 §10 의 결정이다.
+ *
+ * 옅음(0.24) < 스미어(0.32) < 진함(0.42)의 계단 — 진하기가 곧 위험의 서열로
+ * 읽힌다. 예고 알파가 0.24 인 이유: 첫 값 0.16 은 실측 바닥색 RGB(176,186,163)
+ * 위에서 명도대비 1.17:1 로 사실상 안 보였다(C6 화면 심사 실측) — 예고가 안
+ * 보이면 예고 시간만큼의 회피 예산이 화면에서 깎인다.
  */
 const ZONE_COLOR = 0xd8422a
-const WARNING_ALPHA = 0.16
+const WARNING_ALPHA = 0.24
+/** 예고 중 휩쓸기까지 ε 이하 — 판정상 이미 확정 피격 구간이다(monsterView.warningStyle). */
+const SMEAR_ALPHA = 0.32
 const DANGER_ALPHA = 0.42
+/**
+ * 장판 칸 테두리 — 바닥색에 의존하지 않는 대비(화면 심사관의 실측 처방).
+ * 채움 알파는 바닥이 밝으면 묻히지만 테두리 선은 어떤 바닥에서도 윤곽을 남긴다.
+ */
+const ZONE_BORDER_WIDTH = 2
+const ZONE_BORDER_ALPHA = 0.5
 
 /** 몬스터 머리 위 HP 바 — 이름표와 겹치지 않게 몸 위에 얇게 얹는다. */
 const HP_BAR_WIDTH = 26
@@ -147,17 +161,28 @@ export class MonsterSprite {
     if (state.facing) this.facing = state.facing
     this.setWalking(state.tile.x !== state.nextTile.x || state.tile.y !== state.nextTile.y)
 
-    this.drawZone(state.warningTiles, state.dangerTiles)
+    this.drawZone(state)
     this.drawHpBar(monsterHpOf(this.placement, combat.hunt))
   }
 
-  /** 예고는 옅게, 휩쓸기는 진하게(§7). 두 목록은 국면상 동시에 비지 않는 일이 없다(monster.ts). */
-  private drawZone(warning: readonly { x: number; y: number }[], danger: readonly { x: number; y: number }[]): void {
+  /**
+   * 예고는 옅게(스미어 구간은 중간), 휩쓸기는 진하게(§7). 두 목록은 국면상
+   * 동시에 비지 않는 일이 없다(monster.ts). 어느 쪽이냐의 판단은 순수 함수
+   * warningStyle(monsterView.ts)이 진다 — 여기는 그리기만 한다.
+   */
+  private drawZone(state: MonsterState): void {
     this.zone.clear()
-    this.zone.fillStyle(ZONE_COLOR, WARNING_ALPHA)
-    for (const tile of warning) this.zone.fillRect(tile.x * TILE, tile.y * TILE, TILE, TILE)
+    this.zone.lineStyle(ZONE_BORDER_WIDTH, ZONE_COLOR, ZONE_BORDER_ALPHA)
+    this.zone.fillStyle(ZONE_COLOR, warningStyle(state) === 'smear' ? SMEAR_ALPHA : WARNING_ALPHA)
+    for (const tile of state.warningTiles) this.fillTile(tile)
     this.zone.fillStyle(ZONE_COLOR, DANGER_ALPHA)
-    for (const tile of danger) this.zone.fillRect(tile.x * TILE, tile.y * TILE, TILE, TILE)
+    for (const tile of state.dangerTiles) this.fillTile(tile)
+  }
+
+  /** 장판 한 칸 — 채움 + 테두리. 테두리는 바닥색과 무관하게 윤곽을 남긴다(상수 주석). */
+  private fillTile(tile: { x: number; y: number }): void {
+    this.zone.fillRect(tile.x * TILE, tile.y * TILE, TILE, TILE)
+    this.zone.strokeRect(tile.x * TILE, tile.y * TILE, TILE, TILE)
   }
 
   private drawHpBar(hp: number): void {

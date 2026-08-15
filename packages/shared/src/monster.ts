@@ -53,6 +53,17 @@ export interface MonsterState {
    * 거짓말하면 "본 대로 피했는데 맞았다"가 된다.
    */
   warningTiles: TilePos[]
+  /**
+   * telegraph 국면에서만: 이 공격의 휩쓸기 시작까지 남은 정수 ms
+   * (= sweepStart − phaseMs). sweep·idle 은 null.
+   *
+   * 화면 전용이고 판정은 이 값을 읽지 않는다(sweepCatches 는 구역과 시각만
+   * 본다). 화면이 이 값으로 ε 경계를 알아야 예고가 정직해진다(§2-5 스미어):
+   * 판정은 [t−ε, t+ε] 구간에서 하나라도 성립하면 피격이라, 예고의 마지막
+   * ε(JUDGE_EPSILON_MS)는 옅은 장판인 채 이미 확정 피격 구간이다 — 그
+   * 경계를 화면이 모르면 "본 대로 피했는데 맞았다"가 된다.
+   */
+  sweepInMs: number | null
 }
 
 /** 숙련 0 의 공격 간격 — 채집 상한(500)보다 무겁다. 스윙은 채집 클릭보다 큰 동작이다. */
@@ -190,5 +201,8 @@ export function monsterStateAt(def: MonsterDef, tMs: number): MonsterState {
     phase: hit ? hit.phase : 'idle',
     dangerTiles: hit?.phase === 'sweep' ? zone : [],
     warningTiles: hit?.phase === 'telegraph' ? zone : [],
+    // 정수끼리의 감산 하나 — 위상·창 경계가 전부 정수라 이 값도 정수다.
+    sweepInMs:
+      hit?.phase === 'telegraph' ? hit.attack.telegraphStartMs + hit.attack.telegraphMs - phaseMs : null,
   }
 }
