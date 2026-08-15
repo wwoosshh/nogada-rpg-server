@@ -14,9 +14,13 @@ import { loadBarrierRegions } from '@nogada/data/barriers'
 // 셋째 별도 진입 — 드랍 확률이 곧 숨은 문턱이라(전투 §4) 확률표와 같은 취급이다.
 // 몬스터의 패턴·배치는 반대로 GameData 에 실려 온다: 화면이 그릴 정보다.
 import { loadMonsterDrops } from '@nogada/data/monster-drops'
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify'
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from 'fastify'
 import { requireSession } from './auth/sessions.js'
-import { parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
+import { isDevConsole, parseCorsOrigin, parseLogger, parseTrustProxy } from './config.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerCraftRoutes } from './routes/craft.js'
 import { registerDonateRoutes } from './routes/donate.js'
@@ -58,12 +62,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // 아무나 헤더를 지어내 IP 인 척한다. 어느 쪽이든 레이트리미터가 무력해지므로
   // 배포 토폴로지가 정하게 두고, 기본은 끈 상태다(config.ts).
   //
-  // 로그는 오래 꺼져 있었다(`logger: false`). 그동안 미니PC 의 컨테이너 로그에
-  // 남는 것은 기동·마이그레이션·오류뿐이라, "그 요청이 서버까지 왔는가"를
-  // 물으려면 클라이언트가 받은 상태 코드를 되짚는 수밖에 없었다. 이제 그 줄이
-  // 남되, 자격증명은 지워진 채로 남는다(config.ts 의 LOG_REDACT_PATHS).
+  // 로그는 오래 꺼져 있었다(`logger: false`). 그동안 미니PC 의 로그에 남는 것은
+  // 기동·마이그레이션·오류뿐이라, "그 요청이 서버까지 왔는가"를 물으려면
+  // 클라이언트가 받은 상태 코드를 되짚는 수밖에 없었다. 이제 사람이 안 보는
+  // 자리에 선 서버는 아무 설정 없이도 그 줄을 남기되(config.ts 의 isDevConsole),
+  // 자격증명은 지워진 채로 남는다(같은 파일의 LOG_REDACT_PATHS).
   const app = Fastify({
-    logger: options.logger ?? parseLogger(process.env.LOG_LEVEL, process.env.NODE_ENV),
+    logger:
+      options.logger ??
+      parseLogger(process.env.LOG_LEVEL, process.env.NODE_ENV, process.stdout.isTTY),
     trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
   })
   const data = loadGameData()
@@ -96,14 +103,39 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // SIGTERM 을 받은 서버가 쓰다 만 연결을 남기지 않는다.
   app.addHook('onClose', () => store.close())
 
-  app.setErrorHandler((error, _request, reply) => {
+  // 오류의 자세한 사정을 밖으로 줄 것인가. 개발 콘솔에서만 준다 — 그 자리에서는
+  // 응답을 읽는 사람과 서버를 띄운 사람이 같은 사람이라 감출 것이 없다.
+  // 판정은 로그와 같은 물음 하나를 쓴다(config.ts 의 isDevConsole): 여기서
+  // `NODE_ENV !== 'production'` 을 따로 쓰면 WinSW 배포는 그 변수를 놓지 않아
+  // **운영에서도 개발처럼 뱉는다** — 요청 로그가 여태 안 남던 것과 같은 함정이다.
+  const devConsole = isDevConsole(process.env.NODE_ENV, process.stdout.isTTY)
+
+  // 타입을 손으로 적는 이유: 안 적으면 TS 가 아래 `instanceof` 하나로 오류의
+  // 타입을 CharacterStateError 로 좁혀 버려서, 그 밖의 오류를 다루는 자리에서
+  // statusCode 를 못 읽는다. 여기 오는 것은 Fastify 가 넘기는 모든 오류다.
+  app.setErrorHandler((error: FastifyError, request, reply) => {
     if (error instanceof CharacterStateError) {
       // 500 이다 — 400 이 아니다. 요청은 멀쩡했고 잘못된 것은 우리가 가진 자료다.
       // 그리고 행은 지우지 않았으므로 사람이 보고 고칠 수 있다.
       console.error(error.message)
       return reply.code(500).send({ code: 'character_unreadable' })
     }
-    return reply.send(error)
+
+    // 4xx 는 그대로 돌려준다. 그건 보낸 쪽이 고칠 수 있는 말이고(본문이 JSON 이
+    // 아니다, 너무 크다 같은 것) 우리 안쪽 사정이 아니다. 여기까지 오는 4xx 는
+    // Fastify 가 만든 것뿐이다 — 게임의 거절은 전부 라우트가 직접 코드로 답한다.
+    const status = error.statusCode ?? 500
+    if (status < 500) return reply.send(error)
+
+    // 자세한 것은 **로그로** 간다. 밖으로 나가면 안 되는 이유는 그 문장이 안쪽
+    // 지형이기 때문이다: DB 가 죽으면 message 가 `connect ECONNREFUSED
+    // 127.0.0.1:5432` 라, 공개된 주소를 두드리는 쪽이 우리 포트 배치를 공짜로
+    // 받아 간다. 로그에는 그대로 남으므로 디버깅은 잃지 않는다(WinSW 의 logs\).
+    request.log.error({ err: error }, '요청이 500 으로 끝났다')
+    if (devConsole) return reply.send(error)
+    // 코드만 준다. 클라이언트는 본문의 `code` 하나만 읽으므로(GameClient 의
+    // describeError) 이 형태가 기존 거절들과 같은 계약이다.
+    return reply.code(status).send({ code: 'internal_error' })
   })
 
   // 컨테이너의 HEALTHCHECK 가 두드리는 문이다. 프로세스가 살아 있다는 것만으로

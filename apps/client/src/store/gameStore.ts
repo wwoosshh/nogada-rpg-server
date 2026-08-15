@@ -1351,6 +1351,12 @@ function describeError(err: unknown): string {
   // cannot_gather 문구('도구나 숙련도 부족')는 은퇴했다 — 맨손 채집이 허용되면서
   // (도구 루프 설계 §2) 서버가 그 코드를 더는 보내지 않는다.
   switch (err.code) {
+    // 서버가 안에서 넘어졌다는 뜻이다(app.ts 의 에러 핸들러). 자세한 사정은
+    // **일부러** 안 온다 — 그 문장에 호스트·포트 같은 서버 안쪽 지형이 들어
+    // 있어서 밖으로 내보내지 않는다. 그러니 화면도 원인을 지어내지 말고,
+    // "네가 잘못한 게 아니고 다시 해 보면 될 수도 있다"까지만 말한다.
+    case 'internal_error':
+      return '서버가 답하지 못했다'
     case 'level_too_low':
       return '숙련도 부족'
     case 'missing_materials':

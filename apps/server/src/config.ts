@@ -12,6 +12,12 @@
 /** `@fastify/cors` 의 `origin` 에 그대로 실리는 값. `true` 는 "오는 대로 받는다"다. */
 export type CorsOrigin = true | string[]
 
+/** `app.listen` 에 그대로 실리는 한 벌. */
+export interface ListenAddress {
+  host: string
+  port: number
+}
+
 /** Fastify 의 `trustProxy` 에 그대로 실리는 값. */
 export type TrustProxy = boolean | number | string[]
 
@@ -66,31 +72,69 @@ export const LOG_REDACT_PATHS: readonly string[] = [
 export type LoggerSetting = false | { level: LogLevel; redact: { paths: string[]; censor: string } }
 
 /**
+ * 이 프로세스는 **사람이 앞에 앉아 보고 있는 개발 콘솔**인가.
+ *
+ * 기본값 둘이 이 물음 하나에 매달려 있다 — 요청 로그를 남길 것인가
+ * (parseLogger), 500 응답에 오류 문장을 실을 것인가(app.ts 의 에러 핸들러).
+ * 둘을 따로 판정하면 언젠가 한쪽만 고쳐지고, 그날 배포는 "로그는 남는데 내부
+ * 오류는 그대로 뱉는" 반쪽이 된다. 물음이 하나면 답도 하나다.
+ *
+ * **왜 `NODE_ENV` 만으로는 못 가르는가:** 이 게임이 실제로 도는 자리는
+ * 컨테이너가 아니라 윈도 서비스(WinSW)이고, 그 XML 은 `NODE_ENV` 를 놓지
+ * 않는다(docs/deploy-windows.md 의 서비스 정의 — 놓는 것은 `GIT_SHA` 하나다).
+ * 개발 PC 도 놓지 않는다. 즉 `NODE_ENV === undefined` 는 개발과 배포 **둘 다**를
+ * 가리켜서, 그 하나로 기본을 정하면 배포가 개발인 척한다. 공개 직전까지 요청
+ * 로그가 한 줄도 안 남아 있던 것이 정확히 그 결과다.
+ *
+ * 그래서 **stdout 이 콘솔에 붙어 있는가**를 함께 본다. 개발은 사람이 터미널에서
+ * 띄우고, 서비스는 아무도 안 보는 파일로 흘러간다(WinSW 의
+ * `logs\nogada-server.out.log`). 실측으로 확인한 것 둘: 새 콘솔을 붙여 띄우면
+ * `pnpm --filter … exec` 도 `tsx watch` 도 자식에게 stdio 를 물려주어 isTTY 가
+ * true 로 남는다(그래서 `pnpm dev:server` 는 계속 조용하다); WinSW 는 stdout 을
+ * 파일로 돌리므로 undefined 다.
+ *
+ * `NODE_ENV=production` 은 TTY 보다 세다 — 컨테이너를 `-t` 로 띄워 놓고 들여다
+ * 보는 일이 있는데, 그때 콘솔이 붙었다고 배포가 개발이 되지는 않는다.
+ *
+ * 틀리는 쪽의 값이 다르다는 것도 이 방향의 근거다: 개발을 배포로 잘못 보면
+ * 콘솔이 시끄러워지고 마는데(고치는 데 `LOG_LEVEL=off` 한 줄), 배포를 개발로
+ * 잘못 보면 아무 흔적도 안 남고 오류 문장이 밖으로 나간다.
+ */
+export function isDevConsole(
+  nodeEnv: string | undefined,
+  stdoutIsTty: boolean | undefined,
+): boolean {
+  if (nodeEnv?.trim() === 'production') return false
+  return stdoutIsTty === true
+}
+
+/**
  * `LOG_LEVEL` — 요청 로그를 남길 것인가, 어디까지.
  *
- * **컨테이너에서는 기본이 `info` 다.** 값을 정하는 것이 `LOG_LEVEL` 하나가
- * 아니라 `NODE_ENV` 와 둘인 이유가 여기 있다: 배포 중인 미니PC 의 `.env` 는
- * 이 변수를 모르는 채로 이미 쓰이고 있고(그 파일은 커밋되지 않아 우리가 고칠
- * 수 없다), 그 서버가 이번 배포 뒤에도 여전히 말이 없다면 이 변경은 아무것도
- * 한 것이 없다. 이미지가 `NODE_ENV=production` 을 박아 두므로(Dockerfile)
- * 컨테이너는 아무 설정 없이도 말을 하게 된다.
+ * **적지 않으면 개발 콘솔에서만 조용하다**(isDevConsole). 서비스로 돌든
+ * 컨테이너로 돌든, 사람이 안 보는 자리에 선 서버는 아무 설정 없이도 `info` 로
+ * 말한다 — 배포된 `.env` 는 커밋되지 않아 우리가 고칠 수 없고, 그 파일이 이
+ * 변수를 모르는 채 서버가 계속 말이 없다면 이 코드는 아무것도 한 것이 없다.
+ * 반대로 개발 PC 는 지금까지 조용했고 그것을 시끄럽게 바꾸는 것은 이 변경이
+ * 할 일이 아니다. 보고 싶으면 `LOG_LEVEL=debug`.
  *
  * **`NODE_ENV=test` 면 무조건 끈다.** 명시된 `LOG_LEVEL` 보다도 세게 이긴다 —
  * 셸에 남아 있던 환경변수 하나 때문에 테스트 출력이 사람마다 달라지면 안 된다.
  * 로그를 시험하는 테스트는 `buildApp({ logger })` 로 직접 앉힌다.
  *
- * 개발 PC(둘 다 아닌 경우)는 조용한 쪽이 기본이다. 지금까지 조용했고, 그것을
- * 시끄럽게 바꾸는 것은 이 변경이 할 일이 아니다. 보고 싶으면 `LOG_LEVEL=debug`.
- *
  * 모르는 값이 오면 **끄지 않고 `info` 로 간다.** `LOG_LEVEL=Info` 같은 오타에
  * pino 는 기동 중에 던지는데, 로그 심각도 한 글자 때문에 서버가 안 뜨는 것은
  * 어떤 계산으로도 남는 장사가 아니다.
  */
-export function parseLogger(raw: string | undefined, nodeEnv: string | undefined): LoggerSetting {
+export function parseLogger(
+  raw: string | undefined,
+  nodeEnv: string | undefined,
+  stdoutIsTty: boolean | undefined,
+): LoggerSetting {
   if (nodeEnv?.trim() === 'test') return false
 
   const word = raw?.trim().toLowerCase() ?? ''
-  if (word === '') return nodeEnv?.trim() === 'production' ? at('info') : false
+  if (word === '') return isDevConsole(nodeEnv, stdoutIsTty) ? false : at('info')
   if (LOG_OFF_WORDS.includes(word)) return false
   return at(LOG_LEVELS.includes(word) ? (word as LogLevel) : 'info')
 }
@@ -102,6 +146,34 @@ export function parseLogger(raw: string | undefined, nodeEnv: string | undefined
  */
 function at(level: LogLevel): LoggerSetting {
   return { level, redact: { paths: [...LOG_REDACT_PATHS], censor: LOG_CENSOR } }
+}
+
+/**
+ * `HOST`·`PORT` — 서버가 어느 문에 서는가.
+ *
+ * **기본은 `0.0.0.0` 이고 그대로 둔다.** 좁은 쪽이 안전하지만 기본을
+ * `127.0.0.1` 로 바꾸면 **오늘 붙어 있는 것들이 조용히 끊긴다** — 개발 중에는
+ * 폰과 다른 기계가 LAN 주소로 붙고, 지금 운영도 Tailscale 주소(100.125.30.85)로
+ * 닿는다. 이 변수가 하는 일은 좁혀 두는 것이 아니라 **좁힐 수 있게 하는 것**이다.
+ *
+ * 터널 뒤에서는 `HOST=127.0.0.1` 을 준다. cloudflared 가 `127.0.0.1:3000` 으로
+ * 들어오므로 다른 문은 열 이유가 없고, 열어 둔 채로는 터널을 세워도 3000 이
+ * LAN·Tailscale 에 평문으로 계속 열려 있다(docs/deploy-public.md 4장 3단계).
+ *
+ * 빈 값은 "안 정했다"로 읽는다. `.env` 에 `HOST=` 한 줄만 남기는 일이 흔한데,
+ * 그 빈 문자열을 그대로 넘기면 listen 이 터진다. `PORT=` 는 더 나쁘다 —
+ * `Number('')` 는 0 이고 0 은 "아무 빈 포트나 골라라"라서, 서버는 멀쩡히 뜨고
+ * 아무도 못 찾는 자리에 선다. 숫자가 아닌 오타(`PORT=삼천`)는 여기서 흡수하지
+ * **않는다**: 그건 사람이 값을 적었는데 뜻이 없는 경우라, 조용히 3000 으로
+ * 밀어 두면 "내가 적은 포트가 아닌 곳"에 선 서버를 아무도 못 알아챈다.
+ */
+export function parseListen(
+  rawHost: string | undefined,
+  rawPort: string | undefined,
+): ListenAddress {
+  const host = rawHost?.trim() ?? ''
+  const port = rawPort?.trim() ?? ''
+  return { host: host === '' ? '0.0.0.0' : host, port: port === '' ? 3000 : Number(port) }
 }
 
 /**

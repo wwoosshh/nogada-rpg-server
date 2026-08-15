@@ -1,6 +1,5 @@
 import { buildApp } from './app.js'
-
-const port = Number(process.env.PORT ?? 3000)
+import { parseListen } from './config.js'
 
 async function main(): Promise<void> {
   const app = await buildApp()
@@ -19,8 +18,13 @@ async function main(): Promise<void> {
     })
   }
 
-  await app.listen({ port, host: '0.0.0.0' })
-  console.log(`server listening on http://localhost:${port}`)
+  // 어느 문에 설지는 환경이 정한다(config.ts 의 parseListen) — 터널 뒤에서는
+  // 127.0.0.1 만 열고, 그 밖에서는 지금까지처럼 0.0.0.0 이다.
+  const { host, port } = parseListen(process.env.HOST, process.env.PORT)
+  await app.listen({ port, host })
+  // 주소는 사람이 두드릴 수 있는 것을 적는다. 0.0.0.0 은 "듣는 대역"이지
+  // 붙는 주소가 아니라, 그대로 찍으면 브라우저에 붙여 넣었을 때 안 열린다.
+  console.log(`server listening on http://localhost:${port} (host=${host})`)
 }
 
 main().catch((err: unknown) => {

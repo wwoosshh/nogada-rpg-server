@@ -691,6 +691,25 @@ describe('헌납 — not_collectable 문구(수집의 방 설계 §6-앞 1)', ()
   })
 })
 
+// 왜: 서버가 500 을 낼 때 밖으로 나오는 것은 코드 하나뿐이다 — 오류 문장에
+//     호스트·포트가 들어 있어 공개된 주소에 내보내지 않기 때문이다(서버
+//     app.ts 의 에러 핸들러). 그 대신 화면이 아무 말도 못 하면 플레이어에게는
+//     "눌렀는데 아무 일도 안 일어났다"만 남고, 문구가 없으면 그 자리에
+//     `오류: internal_error` 라는 날것이 뜬다.
+describe('서버가 넘어졌을 때 — internal_error 문구', () => {
+  it('500 의 코드 하나를 사람 말로 바꾼다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'internal_error' }, 500)),
+    )
+
+    useGameStore.getState().setOpenPanel('bag')
+    await useGameStore.getState().donate('copper_ore', 1)
+
+    expect(useGameStore.getState().bagError).toBe('서버가 답하지 못했다')
+  })
+})
+
 /*
  * 결계에 막힌 걸음은 이 저장소에서 **화면이 숫자를 말하는 유일한 거절**이다
  * (결계 설계 §5·§9-앞 13). 저숙련으로 결계를 밟았을 때 아무 말이 없으면

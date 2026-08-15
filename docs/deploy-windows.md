@@ -186,6 +186,11 @@ Move-Item .\WinSW-x64.exe C:\nogada-server\nogada-server.exe
 - **`<log mode="roll-by-size">`** — 로깅 드라이버의 `max-size: 10m` 자리다.
   `sizeThreshold` 는 **KB** 단위라 10240 이 10MB 다. 없으면 파일 하나가 무한히
   자라 SSD 를 채운다. 파일은 `logs\nogada-server.out.log`(+`.err.log`)로 나온다.
+  **여기에 요청 로그가 쌓인다** — 서비스로 도는 서버는 `LOG_LEVEL` 을 안 적어도
+  기본이 `info` 다(`config.ts` 의 isDevConsole: stdout 이 사람 보는 콘솔이 아니라
+  이 파일로 흘러가므로 켜는 쪽이 기본이다). 자격증명은 `[가려짐]` 으로 지워져
+  남지만, 누가 언제 어디를 두드렸는지의 기록이므로 이 파일은 남에게 주지
+  않는다. 조용히 하고 싶으면 `.env` 에 `LOG_LEVEL=warn`.
 - **`<env name="GIT_SHA" value=""/>`** — 이미지에 새기던 커밋 자리다. **빈 값으로
   두는 것이 맞다**: 배포 워크플로가 매번 이 원소의 `value` 를 그날 커밋으로
   갈아 끼우고(7장), 그래야 `/api/health` 가 자기 커밋을 말할 수 있다. 이

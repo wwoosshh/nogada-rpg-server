@@ -1,13 +1,40 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Writable } from 'node:stream'
+import type { LightMyRequestResponse } from 'fastify'
 import { describe, expect, it } from 'vitest'
 import {
   LOG_CENSOR,
+  isDevConsole,
   parseCorsOrigin,
+  parseListen,
   parseLogger,
   parseTrustProxy,
   type LoggerSetting,
 } from './config.js'
+import { JsonPersistence } from './state/jsonPersistence.js'
 import { buildTestApp } from './testSupport.js'
+
+describe('parseListen', () => {
+  it('아무것도 없으면 지금까지 서던 자리 그대로다 — 이 변경으로 아무것도 안 깨져야 한다', () => {
+    // 개발 중에는 폰·다른 기계가 LAN 으로 붙고 지금 운영도 Tailscale 주소로
+    // 닿는다. 기본을 좁히는 순간 그것들이 조용히 끊긴다.
+    expect(parseListen(undefined, undefined)).toEqual({ host: '0.0.0.0', port: 3000 })
+  })
+
+  it('HOST 로 좁힐 수 있다 — 터널 뒤에서는 127.0.0.1 하나만 연다', () => {
+    expect(parseListen('127.0.0.1', undefined)).toEqual({ host: '127.0.0.1', port: 3000 })
+    expect(parseListen(' 127.0.0.1 ', ' 8080 ')).toEqual({ host: '127.0.0.1', port: 8080 })
+  })
+
+  it('빈 값은 "안 정했다"로 읽는다 — .env 에 이름만 남기는 일이 흔하다', () => {
+    // 빈 호스트를 그대로 넘기면 listen 이 터지고, 빈 포트는 Number('') = 0 이라
+    // "아무 빈 포트나" 가 된다 — 서버는 멀쩡히 뜨고 아무도 못 찾는다.
+    expect(parseListen('', '')).toEqual({ host: '0.0.0.0', port: 3000 })
+    expect(parseListen('   ', '   ')).toEqual({ host: '0.0.0.0', port: 3000 })
+  })
+})
 
 describe('parseCorsOrigin', () => {
   it('없거나 비어 있으면 전부 허용한다 — 개발 PC 가 그 상태다', () => {
@@ -111,46 +138,76 @@ describe('CORS 배선', () => {
   })
 })
 
+describe('isDevConsole', () => {
+  it('콘솔이 붙어 있으면 개발이다', () => {
+    expect(isDevConsole(undefined, true)).toBe(true)
+    expect(isDevConsole('development', true)).toBe(true)
+  })
+
+  it('서비스로 도는 자리는 개발이 아니다 — NODE_ENV 가 없어도 그렇다', () => {
+    // 이 한 줄이 이 판정의 전부다. WinSW XML 은 NODE_ENV 를 놓지 않으므로
+    // (docs/deploy-windows.md), NODE_ENV 만 보던 시절의 배포는 개발과 구별되지
+    // 않았고 그래서 로그가 한 줄도 안 남았다. stdout 이 파일로 흘러가는 것이
+    // 그 자리를 가르는 유일한 신호다.
+    expect(isDevConsole(undefined, undefined)).toBe(false)
+    expect(isDevConsole(undefined, false)).toBe(false)
+  })
+
+  it('production 은 콘솔이 붙어 있어도 배포다 — 컨테이너를 -t 로 들여다볼 때', () => {
+    expect(isDevConsole('production', true)).toBe(false)
+    expect(isDevConsole(' production ', true)).toBe(false)
+  })
+})
+
 describe('parseLogger', () => {
   it('컨테이너는 아무 설정 없이도 말을 한다 — .env 를 고치지 않아도 info 다', () => {
     // 미니PC 의 .env 는 커밋되지 않아 우리가 고칠 수 없다. 그 파일이 LOG_LEVEL 을
     // 모르는 채로도 배포된 서버가 로그를 남기지 않으면 이 변경은 헛것이다.
-    expect(parseLogger(undefined, 'production')).toMatchObject({ level: 'info' })
+    expect(parseLogger(undefined, 'production', undefined)).toMatchObject({ level: 'info' })
   })
 
-  it('테스트에서는 무조건 끈다 — LOG_LEVEL 이 있어도', () => {
+  it('윈도 서비스도 아무 설정 없이 말을 한다 — NODE_ENV 가 없는 그 자리다', () => {
+    // 실제 배포는 컨테이너가 아니라 WinSW 다. 그쪽은 NODE_ENV 도 LOG_LEVEL 도
+    // 없이 뜨고 stdout 은 로그 파일로 간다 — 여기가 초록이 아니면 공개한 서버는
+    // 무슨 일이 나도 볼 것이 없다.
+    expect(parseLogger(undefined, undefined, undefined)).toMatchObject({ level: 'info' })
+  })
+
+  it('테스트에서는 무조건 끈다 — LOG_LEVEL 이 있어도, 콘솔이 붙어 있어도', () => {
     // 셸에 남은 환경변수 하나로 테스트 출력이 사람마다 달라지면 안 된다.
-    expect(parseLogger(undefined, 'test')).toBe(false)
-    expect(parseLogger('debug', 'test')).toBe(false)
-    expect(parseLogger('info', 'test')).toBe(false)
+    expect(parseLogger(undefined, 'test', true)).toBe(false)
+    expect(parseLogger('debug', 'test', true)).toBe(false)
+    expect(parseLogger('info', 'test', undefined)).toBe(false)
   })
 
   it('개발 PC 는 조용한 쪽이 기본이다 — 지금까지 조용했다', () => {
-    expect(parseLogger(undefined, undefined)).toBe(false)
-    expect(parseLogger('', 'development')).toBe(false)
+    // 콘솔이 붙어 있다는 것이 개발이라는 뜻이다. pnpm·tsx watch 를 지나도
+    // isTTY 가 살아 남는 것을 실측했다(config.ts 의 isDevConsole).
+    expect(parseLogger(undefined, undefined, true)).toBe(false)
+    expect(parseLogger('', 'development', true)).toBe(false)
   })
 
   it('심각도를 말한 대로 받는다', () => {
-    expect(parseLogger('debug', 'production')).toMatchObject({ level: 'debug' })
-    expect(parseLogger(' WARN ', undefined)).toMatchObject({ level: 'warn' })
-    expect(parseLogger('trace', 'development')).toMatchObject({ level: 'trace' })
+    expect(parseLogger('debug', 'production', undefined)).toMatchObject({ level: 'debug' })
+    expect(parseLogger(' WARN ', undefined, true)).toMatchObject({ level: 'warn' })
+    expect(parseLogger('trace', 'development', true)).toMatchObject({ level: 'trace' })
   })
 
   it('끄는 말은 배포에서도 끈다', () => {
     for (const word of ['off', 'none', 'silent', 'false', 'no', '0', 'OFF']) {
-      expect(parseLogger(word, 'production')).toBe(false)
+      expect(parseLogger(word, 'production', undefined)).toBe(false)
     }
   })
 
   it('모르는 값은 info 로 간다 — 오타 한 글자로 서버가 안 뜨면 안 된다', () => {
     // pino 는 모르는 심각도를 받으면 기동 중에 던진다. 여기서 흡수하지 않으면
     // `LOG_LEVEL=Verbose` 한 줄이 배포를 통째로 세운다.
-    expect(parseLogger('verbose', 'production')).toMatchObject({ level: 'info' })
-    expect(parseLogger('아무말', 'production')).toMatchObject({ level: 'info' })
+    expect(parseLogger('verbose', 'production', undefined)).toMatchObject({ level: 'info' })
+    expect(parseLogger('아무말', 'production', undefined)).toMatchObject({ level: 'info' })
   })
 
   it('자격증명이 실릴 수 있는 이름을 모두 가린다', () => {
-    const setting = parseLogger('info', 'production')
+    const setting = parseLogger('info', 'production', undefined)
     if (setting === false) throw new Error('꺼져 있으면 안 된다')
 
     // Fastify 는 `req`, 손으로 적으면 `request`, 헤더만 넘기면 `headers` 다.
@@ -171,8 +228,8 @@ describe('parseLogger', () => {
   })
 
   it('목록을 앱마다 새로 준다 — 공유하면 한쪽이 건드릴 때 다른 쪽까지 바뀐다', () => {
-    const a = parseLogger('info', 'production')
-    const b = parseLogger('info', 'production')
+    const a = parseLogger('info', 'production', undefined)
+    const b = parseLogger('info', 'production', undefined)
     if (a === false || b === false) throw new Error('꺼져 있으면 안 된다')
     expect(a.redact.paths).not.toBe(b.redact.paths)
   })
@@ -239,9 +296,107 @@ describe('요청 로그 배선', () => {
   })
 })
 
+/**
+ * 500 이 무엇을 말하는가 — 밖으로는 코드만, 로그에는 그대로.
+ *
+ * 둘을 함께 재는 이유: 응답만 재면 "오류를 통째로 삼켰다"도 초록이고, 로그만
+ * 재면 "밖으로도 여전히 뱉는다"가 초록이다. 감추는 것과 잃는 것은 다르고,
+ * 이 변경이 하려는 것은 앞의 하나뿐이다.
+ */
+describe('오류 응답 배선', () => {
+  it('운영에서는 500 본문에 내부 문장이 없다 — 코드 하나뿐이다', async () => {
+    const { res } = await failingLogin({ NODE_ENV: 'production' }, undefined)
+
+    expect(res.statusCode).toBe(500)
+    expect(res.json()).toEqual({ code: 'internal_error' })
+    // 글자로도 확인한다 — 어느 필드로 새든 걸리게.
+    expect(res.body).not.toContain('ECONNREFUSED')
+    expect(res.body).not.toContain('5432')
+  })
+
+  it('감춘 그 문장이 로그에는 그대로 남는다 — 디버깅을 잃으면 안 된다', async () => {
+    const { text } = await failingLogin({ NODE_ENV: 'production' }, undefined)
+
+    expect(text).toContain(STORE_FAILURE)
+    // 어느 요청이었는지도 함께 남아야 쓸모가 있다.
+    expect(text).toContain('/api/auth/login')
+  })
+
+  it('개발 콘솔에서는 지금처럼 자세히 준다 — 읽는 사람과 띄운 사람이 같다', async () => {
+    const { res } = await failingLogin({}, true)
+
+    expect(res.statusCode).toBe(500)
+    expect(res.body).toContain(STORE_FAILURE)
+  })
+
+  it('4xx 는 운영에서도 그대로 돌려준다 — 보낸 쪽이 고칠 수 있는 말이다', async () => {
+    // 안쪽 사정을 감춘다면서 "본문이 JSON 이 아니다"까지 코드로 뭉개면, 붙이려는
+    // 사람이 무엇을 잘못 보냈는지 알 길이 없어진다.
+    const res = await withConsole({ NODE_ENV: 'production' }, undefined, async () => {
+      const app = await buildTestApp()
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        headers: { 'content-type': 'application/json' },
+        payload: '{이건 JSON 이 아니다',
+      })
+      await app.close()
+      return response
+    })
+
+    expect(res.statusCode).toBe(400)
+    // `code` 만 보면 안 된다 — 500 을 뭉개는 가지로 400 이 새어 들어가도 상태
+    // 코드는 400 그대로라, 무엇이 잘못됐는지 적힌 문장이 남아 있는지를 재야 한다.
+    const body = res.json() as { code?: string; message?: string }
+    expect(body.code).not.toBe('internal_error')
+    expect(body.message).toBeTypeOf('string')
+    expect(body.message).toMatch(/JSON/i)
+  })
+})
+
+/** 진짜 DB 가 죽으면 오는 문장이다. 이 글자가 밖으로 나가면 우리 포트 배치가 나간 것이다. */
+const STORE_FAILURE = 'connect ECONNREFUSED 127.0.0.1:5432'
+
+/**
+ * 저장소가 던지는 서버를 세우고 로그인을 한 번 두드린다.
+ *
+ * 왜 로그인인가: 세션 없이 닿을 수 있으면서 **저장소를 반드시 만지는** 라우트라,
+ * 인증을 통과시키느라 다른 것을 섞지 않고 500 을 만들 수 있다.
+ */
+async function failingLogin(
+  vars: Record<string, string>,
+  isTty: boolean | undefined,
+): Promise<{ res: LightMyRequestResponse; text: string }> {
+  const lines = captureLines()
+  const dir = mkdtempSync(join(tmpdir(), 'nogada-오류-'))
+  const store = await JsonPersistence.open(join(dir, 'players.json'))
+  // 로그인이 처음 만지는 문 하나만 고장 낸다. 저장소 전체를 가짜로 바꾸면
+  // 시험하는 것이 에러 핸들러가 아니라 그 가짜가 된다.
+  store.findUser = () => Promise.reject(new Error(STORE_FAILURE))
+
+  const res = await withConsole(vars, isTty, async () => {
+    // 로거는 배포에 실리는 그 설정으로 앉힌다 — 로그에 남는지를 물을 것이므로
+    // buildTestApp 의 기본(조용함)으로는 잴 수 없다.
+    const app = await buildTestApp({
+      persistence: store,
+      logger: { ...deployLogger(), stream: lines.stream },
+    })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: '아무개', password: '비밀번호-nogada-1234' },
+    })
+    await app.close()
+    return response
+  })
+
+  rmSync(dir, { recursive: true, force: true })
+  return { res, text: lines.text() }
+}
+
 /** 배포에서 실제로 실리는 로거 설정. 시험하는 것이 그것이어야 한다. */
 function deployLogger(): Exclude<LoggerSetting, false> {
-  const setting = parseLogger(undefined, 'production')
+  const setting = parseLogger(undefined, 'production', undefined)
   if (setting === false) throw new Error('배포 설정이 꺼져 있으면 안 된다')
   return setting
 }
@@ -256,6 +411,32 @@ function captureLines(): { stream: Writable; text: () => string } {
     },
   })
   return { stream, text: () => chunks.join('') }
+}
+
+/**
+ * 환경변수와 "콘솔이 붙어 있는가"를 함께 갈아 끼운다.
+ *
+ * 둘을 같이 다루는 이유는 판정이 둘을 같이 보기 때문이다(config.ts 의
+ * isDevConsole). 그리고 그 판정은 **앱을 세우는 순간**에 한 번 내려지므로,
+ * buildTestApp 을 이 안에서 불러야 한다.
+ */
+async function withConsole<T>(
+  vars: Record<string, string>,
+  isTty: boolean | undefined,
+  body: () => Promise<T>,
+): Promise<T> {
+  const before = process.stdout.isTTY
+  setTty(isTty)
+  try {
+    return await withEnv(vars, body)
+  } finally {
+    setTty(before)
+  }
+}
+
+/** `process.stdout.isTTY` 는 붙어 있지 않으면 undefined 다 — 타입은 boolean 이라 우회한다. */
+function setTty(value: boolean | undefined): void {
+  ;(process.stdout as unknown as { isTTY: boolean | undefined }).isTTY = value
 }
 
 /** 환경변수를 잠깐 갈아 끼운다. 끝나면 원래대로 — 다음 테스트가 이 값을 물려받으면 안 된다. */
