@@ -1,5 +1,5 @@
 import { SPEED_DECADES, proficiencyProgress } from './formulas/proficiency.js'
-import type { Direction, TilePos } from './movement.js'
+import { manhattanDistance, type Direction, type TilePos } from './movement.js'
 import type { MonsterAttackDef, MonsterDef } from './types.js'
 
 /**
@@ -82,6 +82,20 @@ export const COMBAT_INTERVAL_MIN_MS = 400
 export function combatIntervalMs(proficiency: number): number {
   const t = proficiencyProgress(proficiency, SPEED_DECADES)
   return Math.round(COMBAT_INTERVAL_MAX_MS - (COMBAT_INTERVAL_MAX_MS - COMBAT_INTERVAL_MIN_MS) * t)
+}
+
+/** 사거리(칸) — 주장 칸이 몬스터 현재 칸에서 맨해튼 1 이내면 닿는다(설계 §2-2). */
+export const ATTACK_RANGE_TILES = 1
+
+/**
+ * 이 칸에서의 공격이 몬스터에 닿는가 — 서버 판정(C4)과 빌드 검증(C2 검사
+ * 2·3 의 "공격이 가능한 칸")이 같은 술어를 불러야 한다(transitionGate·
+ * nodeAvailable 규범). 거리 0(겹쳐 선 주장)도 포함이다: 위치는 어차피
+ * 주장이라 여기서 거를 수 없고, 겹친 칸도 부채꼴이 정기적으로 물어야
+ * 한다는 것은 C2 검사 2 가 강제한다.
+ */
+export function withinAttackRange(claim: TilePos, monsterTile: TilePos): boolean {
+  return manhattanDistance(claim, monsterTile) <= ATTACK_RANGE_TILES
 }
 
 /** JS 의 % 는 음수를 음수로 돌려준다 — 주기 위상은 언제나 [0, P) 여야 한다. */

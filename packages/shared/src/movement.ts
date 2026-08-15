@@ -47,6 +47,18 @@ export function samePos(a: TilePos, b: TilePos): boolean {
 }
 
 /**
+ * 두 칸 사이의 실제 걸음 수 — 이동이 4방향뿐이라 거리는 맨해튼이다.
+ *
+ * 체비쇼프(max)로 재면 대각 주장이 정직한 걸음의 2배속으로 통과한다(설계
+ * §2-3 실측: 대각 5칸 = 맨해튼 10칸 = 정직 2,000ms 를 체비쇼프 5 는 800ms 로
+ * 통과시킨다). 사거리·속도 개연성·빌드 검증 시뮬이 전부 이 하나를 불러야
+ * 하는 이유다 — 어느 한 곳이 다른 자로 재는 순간 그 자리가 치트의 문이 된다.
+ */
+export function manhattanDistance(a: TilePos, b: TilePos): number {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
+}
+
+/**
  * 그 대상이 지금 상호작용할 수 있는 자리에 있는가.
  *
  * 인접한 것만으로는 부족하고 바라보고 있어야 한다 — 원작의 결정 버튼 트리거가

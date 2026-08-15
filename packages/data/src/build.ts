@@ -8,6 +8,7 @@ import { parseEnhanceCosts, validateEnhanceCosts } from './enhanceCosts.js'
 import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
+import { validateMonsterPatterns } from './monsterChecks.js'
 import { parseMasters, parseShops } from './shops.js'
 import { parseSpeakers } from './speakers.js'
 import { bakeBarrierRegions, parseTransitions, validateTransitions } from './transitions.js'
@@ -172,6 +173,10 @@ const violations = [
   // 형평 검증은 표와 GameData 양쪽을 본다 — 문턱이 몇 분인지는 확률표만이 안다.
   ...validateCollection(data, gatherTables),
   ...validateSpeakerPlacements(data, terrains),
+  // 몬스터 패턴 검사(설계 §8 검사 1~4)는 데이터보다 먼저 파이프에 서 있다 —
+  // 몬스터 CSV 는 C6 이 싣고, 그때 이 빈 목록이 파싱 결과로 바뀐다. 풀 수
+  // 없는 패턴은 작가가 첫 행을 적는 순간부터 여기서 걸린다.
+  ...validateMonsterPatterns([], terrains),
   ...validateMapSpawns(data, terrains),
   ...validateTransitions(data, terrains),
   ...validatePlaces(data, terrains),

@@ -4,6 +4,7 @@ import {
   COMBAT_INTERVAL_MIN_MS,
   combatIntervalMs,
   monsterStateAt,
+  withinAttackRange,
   type MonsterState,
 } from './monster.js'
 import type { TilePos } from './movement.js'
@@ -213,5 +214,20 @@ describe('combatIntervalMs — 로그 곡선, 자체 상수', () => {
     for (let i = 1; i < points.length; i++) {
       expect(points[i]!).toBeLessThanOrEqual(points[i - 1]!)
     }
+  })
+})
+
+describe('withinAttackRange', () => {
+  it('겹친 칸과 십자 이웃까지가 사거리다 — 서버 판정과 C2 검증이 같은 술어를 읽는다', () => {
+    expect(withinAttackRange({ x: 3, y: 3 }, { x: 3, y: 3 })).toBe(true)
+    expect(withinAttackRange({ x: 2, y: 3 }, { x: 3, y: 3 })).toBe(true)
+    expect(withinAttackRange({ x: 3, y: 2 }, { x: 3, y: 3 })).toBe(true)
+  })
+
+  it('대각 이웃은 맨해튼 2 라 사거리 밖이다 — 체비쇼프 자면 여기가 뚫린다', () => {
+    // 대각을 1로 재는 순간 사거리 판 넓이가 5칸 → 9칸이 되고, 대각 주장이
+    // 정직한 걸음의 2배속으로 통과한다(설계 §12-앞 6).
+    expect(withinAttackRange({ x: 2, y: 2 }, { x: 3, y: 3 })).toBe(false)
+    expect(withinAttackRange({ x: 5, y: 3 }, { x: 3, y: 3 })).toBe(false)
   })
 })

@@ -4,6 +4,7 @@ import {
   STEP_MS,
   frontTile,
   isAdjacentFacing,
+  manhattanDistance,
   samePos,
   stepDelta,
   type Direction,
@@ -71,6 +72,19 @@ describe('samePos', () => {
   it('좌표가 같으면 참이다', () => {
     expect(samePos({ x: 1, y: 2 }, { x: 1, y: 2 })).toBe(true)
     expect(samePos({ x: 1, y: 2 }, { x: 2, y: 1 })).toBe(false)
+  })
+})
+
+describe('manhattanDistance', () => {
+  it('대각 5칸은 10걸음이다 — 체비쇼프로 재면 5가 되어 2배속 치트가 열린다', () => {
+    // 4방향 이동에서 대각은 지름길이 아니다: 정직한 걸음으로 x 5칸 + y 5칸이다.
+    // 설계 §2-3 실측 그대로 — 정직 2,000ms 구간을 체비쇼프 자는 800ms 로 통과시킨다.
+    expect(manhattanDistance({ x: 0, y: 0 }, { x: 5, y: 5 })).toBe(10)
+  })
+
+  it('축 위에서는 좌표차 그대로이고 방향이 없다', () => {
+    expect(manhattanDistance({ x: 3, y: 7 }, { x: 3, y: 2 })).toBe(5)
+    expect(manhattanDistance({ x: 3, y: 2 }, { x: 3, y: 7 })).toBe(5)
   })
 })
 
