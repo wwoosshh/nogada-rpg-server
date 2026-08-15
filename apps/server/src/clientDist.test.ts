@@ -1,4 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { connect, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
@@ -51,6 +52,41 @@ async function 앱(
   const app = await buildTestApp({ clientDist, logger })
   정리.push(() => app.close())
   return app
+}
+
+/**
+ * 그 앱을 **실제로 듣게 한다.** 포트는 OS 가 고르게 둔다(0) — 고정 포트를 적으면
+ * 그 포트를 쓰는 다른 무엇과 부딪히는 날 이 파일만 빨개진다.
+ *
+ * `app.close()` 는 이미 정리 목록에 있고 그것이 서버도 함께 닫는다.
+ */
+async function 듣게한다(app: FastifyInstance): Promise<number> {
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  return (app.server.address() as AddressInfo).port
+}
+
+/**
+ * **경로를 아무도 손대지 않은 채로** GET 한다.
+ *
+ * `app.inject`(light-my-request)도 `fetch`(undici)도 URL 을 정규화해서 `/../x` 를
+ * `/x` 로 만든다. 그러면 재는 것이 정적 서빙의 방어가 아니라 그 정규화가 된다 —
+ * 실측으로 둘의 답이 갈렸다(아래 '경로 이탈' 검사의 주석). 그래서 소켓에 글자를
+ * 그대로 쓴다. 공개된 주소를 두드리는 쪽이 하는 일이 바로 그것이다.
+ */
+function 원시GET(port: number, path: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => {
+      socket.write(`GET ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`)
+    })
+    const chunks: Buffer[] = []
+    socket.on('data', (chunk: Buffer) => chunks.push(chunk))
+    socket.on('error', reject)
+    socket.on('end', () => {
+      const 전문 = Buffer.concat(chunks).toString('utf8')
+      const [머리, ...나머지] = 전문.split('\r\n\r\n')
+      resolve({ status: Number(머리?.split(' ')[1]), body: 나머지.join('\r\n\r\n') })
+    })
+  })
 }
 
 /**
@@ -207,23 +243,81 @@ describe('클라이언트 dist 서빙', () => {
     }
   })
 
-  // 왜: dist 는 **서버 PC 의 저장소 안**에 있다(apps/client/dist). 그 폴더 밖으로
-  //     한 칸만 나가면 `apps/server/.env` 가 있고 거기에 DB 비밀번호가 있다.
-  //     지금은 라우터가 경로를 먼저 정규화해서 `..` 이 사라지지만, 그것은
-  //     @fastify/static 의 방어가 아니라 그 앞단의 성질이라 자를 대 둔다.
-  it('dist 밖을 가리키는 요청은 열리지 않는다 — 인코딩해서 물어도', async () => {
+  /**
+   * dist 는 **서버 PC 의 저장소 안**에 있다(apps/client/dist). 그 폴더 밖으로 한
+   * 칸만 나가면 `apps/server/.env` 가 있고 거기에 DB 비밀번호가 있다.
+   *
+   * **이 검사는 `app.inject` 로 쓰면 프로덕션과 다른 것을 잰다.** light-my-request
+   * 가 경로를 먼저 정규화해서 `/../x` 가 `/x` 가 되고, 그러면 재는 것이 정적
+   * 서빙의 방어가 아니라 그 정규화다. 실측으로 같은 프로세스·같은 app 에서
+   * 나란히 쟀다:
+   *
+   * ```
+   * /../nogada-비밀.txt      inject=404  소켓=403   <== 다르다
+   * /%2e%2e/nogada-비밀.txt  inject=404  소켓=403   <== 다르다
+   * /..%2fnogada-비밀.txt    inject=404  소켓=404
+   * ```
+   *
+   * 그래서 실제로 `listen` 하고 **원시 소켓**으로 묻는다. `fetch`(undici)도 안
+   * 된다 — 그쪽도 URL 을 정규화한다. 브라우저·curl 이 정규화하든 말든 상관없다:
+   * 공개된 주소를 두드리는 쪽은 소켓에 글자를 그대로 쓴다.
+   *
+   * **답이 404 하나가 아니라는 것을 그대로 못 박는다.** 상태 코드를 정확히
+   * 단정하는 이유가 그것이다 — 누가 자를 다시 `inject` 로 옮기면 404 를 받아
+   * 여기가 빨개진다.
+   */
+  it('dist 밖을 가리키는 요청은 열리지 않는다 — 원시 소켓으로 물어도', async () => {
     const root = 임시dist({ 'index.html': '<!doctype html>' })
     // 형제 폴더에 비밀을 하나 둔다 — 한 칸이라도 나가지면 이 글자가 응답에 실린다.
     const 비밀 = join(root, '..', 'nogada-비밀.txt')
     writeFileSync(비밀, 'DATABASE_URL=postgres://...', 'utf8')
     정리.push(() => rmSync(비밀, { force: true }))
 
-    const app = await 앱(root)
-    for (const url of ['/../nogada-비밀.txt', '/%2e%2e/nogada-비밀.txt', '/..%2fnogada-비밀.txt']) {
-      const res = await app.inject({ method: 'GET', url })
-      expect({ url, status: res.statusCode }).toEqual({ url, status: 404 })
-      expect(res.body).not.toContain('DATABASE_URL')
+    const port = await 듣게한다(await 앱(root))
+    const 이름 = encodeURIComponent('nogada-비밀.txt')
+    // 앞의 셋은 슬래시 계열, 뒤의 셋은 윈도 백슬래시 계열이다. 서버 PC 가
+    // 윈도라 후자를 빠뜨리면 이 검사는 그 기계에서 반만 재는 것이 된다.
+    const 기대 = {
+      [`/../${이름}`]: 403,
+      [`/%2e%2e/${이름}`]: 403,
+      [`/..%2f${이름}`]: 404,
+      [`/..\\${이름}`]: 403,
+      [`/..%5c${이름}`]: 403,
+      [`/assets%5c..%5c..%5c${이름}`]: 403,
+      // **이름만 대고 묻는 것.** 위의 것들은 전부 "나가려는 시도"라 라이브러리가
+      // 경로 꼴을 보고 거절하지만, root 가 한 칸 넓어지는 날(예: `root` 를
+      // 배열로 두거나 상위 폴더를 적는 날) 이 파일은 **아무 이탈 없이** 그냥
+      // 나간다 — 그때 위의 여섯은 전부 초록이다.
+      [`/${이름}`]: 404,
+      // 대조군 — 평범하게 없는 파일. 이게 404 가 아니면 위의 숫자들은 아무 뜻이 없다.
+      '/nosuchfile.txt': 404,
     }
+
+    for (const [path, status] of Object.entries(기대)) {
+      const res = await 원시GET(port, path)
+      expect({ path, status: res.status }).toEqual({ path, status })
+      expect(res.body, `${path} 가 dist 밖의 파일을 실어 보냈다`).not.toContain('DATABASE_URL')
+    }
+  })
+
+  // 왜: 403 과 404 로 갈리는 것을 그대로 두기로 한 판단의 근거다(app.ts 의
+  //     serveClient 주석). 403 이 파일시스템에 대해 **아무것도 말하지 않는다**는
+  //     것이 그 근거이므로, 그 사실 자체를 재 둔다 — 있는 이웃과 없는 이웃이
+  //     같은 답을 받아야 한다. 이것이 깨지는 날은 403 이 존재 여부를 세는 자가
+  //     되는 날이고, 그때는 판단을 다시 해야 한다.
+  it('403 은 거기 뭔가 있다는 뜻이 아니다 — 있는 이웃과 없는 이웃의 답이 같다', async () => {
+    const root = 임시dist({ 'index.html': '<!doctype html>' })
+    const 있는이웃 = join(root, '..', 'nogada-있다.txt')
+    writeFileSync(있는이웃, '있다', 'utf8')
+    정리.push(() => rmSync(있는이웃, { force: true }))
+
+    const port = await 듣게한다(await 앱(root))
+    const 있는 = await 원시GET(port, `/../${encodeURIComponent('nogada-있다.txt')}`)
+    const 없는 = await 원시GET(port, `/../${encodeURIComponent('nogada-없다.txt')}`)
+
+    expect(있는.status).toBe(403)
+    expect({ 있는: 있는.status, 없는: 없는.status }).toEqual({ 있는: 403, 없는: 403 })
+    expect(있는.body).not.toContain('있다')
   })
 
   // 왜: 이 프로젝트의 배포는 사람이 dist 를 서버 PC 로 밀어 넣는 것이다
@@ -254,9 +348,26 @@ describe('클라이언트 dist 서빙', () => {
     const app = await 앱(임시dist({ 'index.html': '<!doctype html>', '.env.local': 'SECRET=1' }))
 
     const res = await app.inject({ method: 'GET', url: '/.env.local' })
-    // 404 다. `'deny'`(403)가 아닌 이유는 app.ts 에 적었다 — 없는 것과 못 주는
-    // 것의 답이 같아야 밖에서 읽을 것이 없다.
+    // 404 다. `'deny'`(403)가 아닌 이유는 app.ts 에 적었다 — 없는 dotfile 과 못 주는
+    // dotfile 의 답이 같아야 밖에서 읽을 것이 없다.
     expect({ status: res.statusCode }, 'dotfiles 기본값(allow)이 그대로다').toEqual({ status: 404 })
+    expect(res.body).not.toContain('SECRET=1')
+  })
+
+  // 왜: **서버 PC 는 윈도다.** NTFS 는 `파일::$DATA` 로 같은 파일의 기본 스트림을
+  //     가리킬 수 있고, Node 의 `fs` 가 그 꼴을 그대로 연다 — 실측으로
+  //     `/index.html::$DATA` 는 200 에 본문까지 나온다. dist 의 파일은 어차피
+  //     공개라 그건 별칭 URL 이 하나 더 생기는 것뿐이지만, **그 접미사가 dotfile
+  //     방어를 지나가면** 이야기가 다르다: `.env.local` 이 그대로 나가는 길이 된다.
+  //     실측으로는 안 지나간다(404). 그 사실에 자를 대 둔다 — 방어를 이름 검사로
+  //     바꾸는 날 여기가 빨개져야 한다.
+  it('NTFS 대체 데이터 스트림으로도 숨김 파일을 못 꺼낸다', async () => {
+    const port = await 듣게한다(
+      await 앱(임시dist({ 'index.html': '<!doctype html>', '.env.local': 'SECRET=1' })),
+    )
+
+    const res = await 원시GET(port, '/.env.local::$DATA')
+    expect({ status: res.status }).toEqual({ status: 404 })
     expect(res.body).not.toContain('SECRET=1')
   })
 
