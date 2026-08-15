@@ -270,9 +270,9 @@ pnpm data:build
 pnpm --filter @nogada/client build
 ```
 
-### 5단계 — 두 개의 관문 (건너뛰면 폰에서야 발견된다)
+### 5단계 — 세 개의 관문 (건너뛰면 폰에서야 발견된다)
 
-**둘 다 `scripts/ship-client.ps1` 안에 들어갔다** — 6단계에서 옮길 때 자동으로
+**셋 다 `scripts/ship-client.ps1` 안에 들어갔다** — 6단계에서 옮길 때 자동으로
 돈다. 손으로 확인하고 싶으면 아래 그대로다.
 
 그림이 실제로 들어갔는지. **라이선스 에셋은 gitignore 대상이고, 비어 있어도 빌드는
@@ -294,9 +294,19 @@ Get-ChildItem -Recurse -File apps/client/dist | Where-Object { $_.Extension -in 
 건너뛰므로, CI 는 테스트 앞에서 클라이언트를 빌드해 이 자리가 실제로 돌게 한다
 (`.github/workflows/deploy.yml` — 계약 스위트에 DB 를 대 주는 것과 같은 판단이다).
 
-dist 를 읽는 관문이 하나 더 있다: `apps/client/src/hiddenThresholds.test.ts` 가
-드랍 확률·채집 브라켓·결계 좌표·소스맵을 같은 방식으로 잰다(8장 참조). 같은 이유로
-CI 의 클라이언트 빌드보다 뒤에 있어야 한다.
+숨은 문턱이 번들에 샜는지. **0 이어야 한다.** 드랍 확률·채집 브라켓 확률·결계
+좌표·소스맵이고, 값을 여기 베껴 적지 않으려고 자를 그대로 부른다(8장 참조).
+
+```bash
+pnpm vitest run apps/client/src/hiddenThresholds.test.ts
+```
+
+이 셋째가 **ship 안에 있어야 하는 이유는 둘째보다 크다.** 주소가 새면 다시
+배포하면 그만이지만, 한 번 받아 간 번들은 회수하지 못한다. 그리고 ship 은
+기본적으로 dist 를 새로 굽는다 — 그렇게 구운 폴더는 그 순간까지 어떤 테스트도 본
+적이 없고, CI 는 클라이언트를 빌드하되 **배포하지 않는다**(`deploy.yml` 은 서버만
+올리고, dist 는 사람이 옮긴다). 즉 공개로 나가는 그 폴더를 재는 자는 여기 말고
+없다.
 
 ### 6단계 — 서버가 dist 를 같은 오리진으로 서빙 (끝났다)
 
@@ -347,7 +357,7 @@ Tailscale 로 두 기계가 이미 붙어 있으므로(개발 PC 100.96.41.41, �
 powershell -File scripts/ship-client.ps1 -Destination '\\100.125.30.85\c$\nogada-server\nogada-rpg-server\apps\client\dist'
 ```
 
-스크립트가 빌드하고, 5단계의 관문 둘을 돌리고, `robocopy /MIR` 로 옮긴다. 관문을
+스크립트가 빌드하고, 5단계의 관문 셋을 돌리고, `robocopy /MIR` 로 옮긴다. 관문을
 **옮기기 앞에** 두는 것이 요점이다 — `/MIR` 은 목적지를 지우므로, 빈 dist 를
 미러하면 서버 PC 의 멀쩡한 화면을 지우고 아무것도 안 남긴다. `-SkipBuild` 를 주면
 지금 폴더에 있는 것을 그대로 잰다.
@@ -533,15 +543,21 @@ CORS 오귀속과 `TRUST_PROXY` 는 **닫혔다.** 지운 자리에 남기는 �
 전부에 zod, 없는 계정에도 argon2 를 돌려 타이밍으로 아이디 존재를 못 센다.
 
 드랍 확률표 비유출 규범도 지켜지고, **이제는 그것을 지키는 자가 있다** —
-`apps/client/src/hiddenThresholds.test.ts` 가 자를 둘 댄다.
+`apps/client/src/hiddenThresholds.test.ts` 가 자를 셋 댄다.
 
 - **소스 그래프**(빌드 없이 늘 돈다) — 클라이언트 진입에서 import 를 따라 걸어가
   서버 전용 진입(`@nogada/data` 의 서브경로 셋)과 그 생성 JSON 에 닿지 않는지 본다.
   금지 목록은 손으로 적지 않고 데이터 패키지의 `exports` 에서 읽는다.
+- **소스 본문**(빌드 없이 늘 돈다) — 위 자는 *어디서 오는가*만 보므로 import 없이
+  들어온 값을 통째로 못 본다. 그래서 같은 서명을 그래프에 닿은 파일들과
+  `public/`·`vite.config` 위에서도 찾는다 — 손으로 베낀 확률, 정적 자산에 놓아 둔
+  JSON, `define` 으로 박는 상수가 그 길이다.
 - **빌드된 번들**(dist 가 있을 때만) — 구운 JSON 에서 값을 읽어 만든 서명이 dist
   어디에도 없는지, 그리고 소스맵이 없는지 본다. 서명의 최소화된 꼴은 추측하지
   않고 빌드가 쓰는 그 esbuild 에게 시켜서 만든다(실측: 유출된 번들은 `0.5` 를
   `.5` 로, `60000` 을 `6e4` 로 적는다 — 손으로 적었으면 틀렸을 자리다).
+  **이 자는 폴더를 재지 소스를 재지 않는다** — 그래서 공개로 나가는 그 폴더를
+  굽고 나서 다시 재는 자리가 `scripts/ship-client.ps1` 의 관문 3 이다.
 
 배럴에 import 한 줄이 추가되는 날 이제 CI 가 잡는다. 실측으로 확인했다: 배럴에
 `export * from './loadGatherTables.js'` **한 줄만** 넣고 아무도 안 써도 확률표가
