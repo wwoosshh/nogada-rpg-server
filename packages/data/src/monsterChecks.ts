@@ -1,5 +1,6 @@
 import {
   COMBAT_INTERVAL_MIN_MS,
+  JUDGE_EPSILON_MS,
   STEP_MS,
   manhattanDistance,
   monsterStateAt,
@@ -28,6 +29,20 @@ import type { MapTerrain } from './placements.js'
  * 않는다. 이보다 짧은 예고는 협공(검사 1 픽스처가 보이는)의 재료가 된다.
  */
 export const TELEGRAPH_MIN_MS = 700
+
+/**
+ * 스미어를 견디는 예고 하한(ms) = ε + TELEGRAPH_MIN_MS — 설계 §3(D3).
+ *
+ * 판정은 t 한 점이 아니라 구간 [t−ε, t+ε] 에서 하나라도 성립하면 피격이라
+ * (JUDGE_EPSILON_MS, §2-5), 예고의 마지막 ε 는 바닥 표시가 떠 있는 채로 이미
+ * 확정 피격 구간이다. 그래서 회피 예산 700ms 는 예고 전체가 아니라 **스미어를
+ * 뺀 잔량**이 보장해야 한다: 700~(ε+700) 사이의 예고를 저작하면 위의 옛
+ * 하한은 침묵하는데 실제 안전 예고는 700ms 미만이 된다 — 출하 wolf 가 1,800
+ * 인 것은 우연이었고, 다음 몬스터 저작자가 700 을 적는 순간 "예고를 보고
+ * 피한다"가 조용히 죽는 자리다. 리터럴 사본이 아니라 상수 유도인 이유:
+ * ε 가 C7 재측정으로 줄면 이 하한도 따라 준다.
+ */
+export const TELEGRAPH_SMEAR_MIN_MS = JUDGE_EPSILON_MS + TELEGRAPH_MIN_MS
 
 /**
  * 휩쓸기 활성 창 하한(ms) = 공격 간격 하한. 같은 숫자인 것이 계약이다(설계
@@ -376,8 +391,8 @@ function checkNoSafeCamp(
 }
 
 /**
- * 검사 3 — 예고 ≥ 700ms · 활성 ≥ 400ms · A 홀드 방치자 휩쓸기당 기대 피격
- * ≥ 1(설계 §8-3, §12-앞 1).
+ * 검사 3 — 예고 ≥ 700ms(반응 예산) · 예고 ≥ ε+700ms(스미어 잔량, D3) ·
+ * 활성 ≥ 400ms · A 홀드 방치자 휩쓸기당 기대 피격 ≥ 1(설계 §8-3, §12-앞 1).
  *
  * 방치자 = 한 칸에 서서 최소 간격(COMBAT_INTERVAL_MIN_MS)으로 계속 공격하는
  * 사람. 스윙 위상이 균등하다고 보면 기대 피격 = (창 안에서 그 칸의 스윙이
@@ -406,6 +421,11 @@ function checkWindows(
     if (e.telegraphMs < TELEGRAPH_MIN_MS) {
       violations.push(
         `${who}: t=${e.telegraphStartMs}ms 공격의 예고가 ${e.telegraphMs}ms — 하한 ${TELEGRAPH_MIN_MS}ms. 이 밑으로는 보고 피하는 게임이 아니라 반응속도 시험이 된다`,
+      )
+    }
+    if (e.telegraphMs < TELEGRAPH_SMEAR_MIN_MS) {
+      violations.push(
+        `${who}: t=${e.telegraphStartMs}ms 공격의 예고가 ${e.telegraphMs}ms — 판정 스미어 ε(${JUDGE_EPSILON_MS}ms)가 예고의 끝을 이미 확정 피격 구간으로 먹으므로, 스미어를 빼면 안전한 예고가 ${e.telegraphMs - JUDGE_EPSILON_MS}ms 뿐이다. 하한 ${TELEGRAPH_SMEAR_MIN_MS}ms(ε+${TELEGRAPH_MIN_MS}ms)`,
       )
     }
     const activeMs = e.sweepEndMs - e.sweepStartMs
