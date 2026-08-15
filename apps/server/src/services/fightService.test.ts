@@ -366,6 +366,29 @@ describe('performFight — 처치·드랍·리스폰(§4)', () => {
   })
 })
 
+describe('performFight — 강화가 피해를 산다(아크 D §1): 식은 shared 의 swingDamageOf 하나다', () => {
+  /** 들늑대 출하값(HP 8) 상당의 배치 — +3 검(피해 8)의 1스윙 문턱을 서버 판정으로 잰다. */
+  const hp8 = { 'wolf-1': { ...world.placements['wolf-1']!, maxHp: 8 } }
+
+  it('+3 검은 HP 8 배치를 한 스윙에 처치한다 — 강화 사다리의 2스윙→1스윙 문턱', () => {
+    const p = player({ instances: [{ instanceId: 's1', itemId: 'copper_sword', enhanceLevel: 3 }] })
+    const r = fight({ player: p, placements: hp8, now: 1600, rng: seq(0, 0.9) })
+    if (!r.ok) throw new Error('처치여야 한다')
+    expect(r.outcome.slainNow).toBe(true)
+    expect(r.outcome.monsterHp).toBe(0)
+    expect(r.outcome.player.combat.slain['wolf-1']).toBe(1600)
+  })
+
+  // 왜: 문턱이 +3 "부터"라는 것의 반쪽 — +0 검(피해 5)이 같은 배치에 두 스윙이어야
+  //     위 단언이 강화의 값이지 픽스처의 우연이 아니다.
+  it('+0 검(피해 5)은 같은 HP 8 배치를 한 스윙에 못 잡는다 — 3 이 남는다', () => {
+    const r = fight({ placements: hp8, now: 1600 })
+    if (!r.ok) throw new Error('명중이어야 한다')
+    expect(r.outcome.slainNow).toBe(false)
+    expect(r.outcome.monsterHp).toBe(3)
+  })
+})
+
 describe('performFight — 죽음(§6): 처치가 먼저, 귀환은 그 다음이다', () => {
   it('휩쓸기가 HP 를 0 으로 만들면 마을 스폰으로 귀환하고 hunt 가 풀린다', () => {
     const p = player({ combat: { ...defaultCombatState(), hp: 10, lastHitAt: 2200 } })

@@ -4,6 +4,7 @@ import {
   EQUIP_SLOTS,
   hammerChanceBonus,
   SKILL_LABELS,
+  swingDamageOf,
   type CollectionThresholds,
   type EquipSlot,
   type ItemDef,
@@ -42,9 +43,11 @@ import { clampCount, formatGold } from './shopModel.js'
  */
 function toolSpeedLabel(skill: EquipSlot, def: ItemDef, enhanceLevel: number): string {
   // 무기의 축은 간격이 아니라 회당 피해다(전투 §4) — 예비 목록에 검이 오르는
-  // 순간부터 이 분기가 없으면 검에 채집 간격을 적게 된다. 전투 화면 자체는
-  // 뒤 태스크의 몫이라 여기는 정의의 숫자 하나만 정직하게 옮긴다.
-  if (skill === 'combat') return `피해 ${def.damage ?? 0}`
+  // 순간부터 이 분기가 없으면 검에 채집 간격을 적게 된다. 식은 서버 판정
+  // (swingDamage)이 부르는 shared 의 swingDamageOf 그대로다(아크 D §1) —
+  // def.damage 를 직접 읽으면 +3 검이 서버에서 8 로 때리는데 가방은 5 라
+  // 적는다: 1스윙 문턱(들늑대 HP 8 = +3)을 말해야 할 숫자가 거짓말이 된다.
+  if (skill === 'combat') return `피해 ${swingDamageOf(def, enhanceLevel)}`
   if (skill === 'crafting') {
     const bonusPct = hammerChanceBonus(def.toolTier ?? 0, enhanceLevel) * 100
     // 강화 배수만 곱한다 — craftIntervalMs 와 같은 셈이라야 이 줄이 참이다.

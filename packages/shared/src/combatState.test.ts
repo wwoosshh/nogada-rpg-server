@@ -12,6 +12,7 @@ import {
   monsterAlive,
   rollMonsterDrop,
   swingDamage,
+  swingDamageOf,
   sweepCatches,
   UNARMED_COMBAT_DAMAGE,
 } from './combatState.js'
@@ -210,7 +211,29 @@ describe('monsterAlive — 처치 기록과 리스폰 대기', () => {
   })
 })
 
-describe('swingDamage — 회당 피해는 무기가 진다(§2-2)', () => {
+describe('swingDamageOf — 강화가 피해를 산다(아크 D §1): 기본 피해 + n 선형', () => {
+  const sword = testTool('copper_sword', 'combat', 1, { damage: 5 })
+
+  it('+0 은 정의의 기본 피해 그대로다', () => {
+    expect(swingDamageOf(sword, 0)).toBe(5)
+  })
+
+  // 왜: 들늑대(HP 8)는 +3 부터 1스윙이 된다 — 첫 검의 강화 사다리에 실제
+  //     문턱(2스윙→1스윙)이 하나 놓이고, 그 문턱은 가방 피해 숫자가 말한다.
+  it('+3 은 8 — 들늑대(HP 8)의 1스윙 경계다', () => {
+    expect(swingDamageOf(sword, 3)).toBe(8)
+  })
+
+  it('+5(만강)는 10 이다', () => {
+    expect(swingDamageOf(sword, 5)).toBe(10)
+  })
+
+  it('damage 칸이 빈 정의는 맨손 상수에서 출발한다 — 파서가 막지만 식도 죽지 않는다', () => {
+    expect(swingDamageOf(testTool('blunt', 'combat', 1), 3)).toBe(UNARMED_COMBAT_DAMAGE + 3)
+  })
+})
+
+describe('swingDamage — 회당 피해는 무기가 진다(§2-2), 강화는 인스턴스가 진다(아크 D §1)', () => {
   const sword = testTool('copper_sword', 'combat', 1, { damage: 5 })
   const pickaxe = testTool('copper_pickaxe', 'mineral', 1)
   const items = { copper_sword: sword, copper_pickaxe: pickaxe }
@@ -226,15 +249,38 @@ describe('swingDamage — 회당 피해는 무기가 진다(§2-2)', () => {
     expect(swingDamage(player, items)).toBe(UNARMED_COMBAT_DAMAGE)
   })
 
-  it('combat 슬롯의 무기 damage 를 읽는다', () => {
+  it('combat 슬롯의 무기 damage 를 읽는다 — +0 은 정의 그대로다', () => {
     const player = { ...base, equipped: { combat: 's1' } } as unknown as PlayerState
     expect(swingDamage(player, items)).toBe(5)
+  })
+
+  // 왜: 강화 수치는 정의가 아니라 인스턴스에 있다(equipment.ts) — 판정이 def 만
+  //     보면 +5 검이 +0 과 똑같이 때려 강화 수요 전체의 보상이 죽는다(아크 D §0-1).
+  it('착용 인스턴스의 enhanceLevel 이 피해를 산다 — +3 검은 8 로 때린다', () => {
+    const player = {
+      ...base,
+      instances: [{ instanceId: 's1', itemId: 'copper_sword', enhanceLevel: 3 }],
+      equipped: { combat: 's1' },
+    } as unknown as PlayerState
+    expect(swingDamage(player, items)).toBe(swingDamageOf(sword, 3))
+    expect(swingDamage(player, items)).toBe(8)
   })
 
   // 왜: "엉뚱한 슬롯의 도구 = 맨손"(§6-앞 9)이 전투에서도 같은 조회(equippedToolInfo)로
   //     지켜져야 한다 — 곡괭이를 combat 칸에 우겨 넣은 세이브가 피해를 얻으면 안 된다.
   it('combat 칸에 엉뚱한 도구가 꽂혀 있으면 맨손이다', () => {
     const player = { ...base, equipped: { combat: 'p1' } } as unknown as PlayerState
+    expect(swingDamage(player, items)).toBe(UNARMED_COMBAT_DAMAGE)
+  })
+
+  // 왜: 맨손 낙하는 식보다 먼저다 — 엉뚱한 도구의 강화 수치가 맨손 위에 얹히면
+  //     +5 곡괭이가 검 없이 6 을 때리는 뒷문이 된다.
+  it('엉뚱한 도구는 강화돼 있어도 맨손 상수 그대로다 — 강화가 맨손을 사면 안 된다', () => {
+    const player = {
+      ...base,
+      instances: [{ instanceId: 'p1', itemId: 'copper_pickaxe', enhanceLevel: 5 }],
+      equipped: { combat: 'p1' },
+    } as unknown as PlayerState
     expect(swingDamage(player, items)).toBe(UNARMED_COMBAT_DAMAGE)
   })
 })

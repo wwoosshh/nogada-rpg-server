@@ -186,13 +186,32 @@ export function sweepCatches(def: MonsterDef, phaseOffsetMs: number, claim: Tile
 }
 
 /**
+ * 강화 +n 무기의 회당 피해 — 기본 피해 + n (선형 +1, 아크 D §1). 티어(승급)가
+ * 굵은 축, 강화가 가는 축이라는 도구 루프의 규범 그대로다. 구리 검 5 → +5 에 10,
+ * 들늑대(HP 8)는 +3 부터 1스윙. **서버 판정(swingDamage)과 가방 표시(BagPanel
+ * toolSpeedLabel 의 combat 분기)가 이 식 하나를 나눠 부른다** — 부등호 한 벌
+ * 규범: 두 벌이 되는 순간 화면이 "피해 8"이라 적어 놓고 서버는 5 로 때리는
+ * 날이 온다. damage 짝은 파서가 강제하지만 혹시 비어 있어도 맨손에서 출발한다.
+ *
+ * **열린 위험(기록)**: 들늑대(HP 8)에게 스윙 수를 바꾸는 단은 +3 하나다 —
+ * +1·+2·+4·+5 는 이 아크의 유일한 몬스터에게 죽은 단이다. 원인은 몬스터
+ * 하나 + 피해 단일 축 구조이지 식이 아니고(곡선도 문턱 수를 못 늘린다),
+ * 다음 몬스터(HP 9+)가 그 단들을 산다 — 방어구 사슬 아크의 몫.
+ */
+export function swingDamageOf(def: ItemDef, enhanceLevel: number): number {
+  return (def.damage ?? UNARMED_COMBAT_DAMAGE) + enhanceLevel
+}
+
+/**
  * 회당 피해 — 무기가 진다(§2-2: 간격은 숙련이, 피해는 무기가. 한 칸이 두 축을
- * 사면 안 된다). 조회는 equippedToolInfo 하나다: 없거나 엉뚱한 슬롯의 도구면
- * null = 맨손(§6-앞 9)이고, combat 도구의 damage 짝은 파서가 강제하지만 혹시
- * 비어 있어도 맨손으로 떨어진다.
+ * 사면 안 된다). 강화 수치는 정의가 아니라 인스턴스에 있으므로(equipment.ts)
+ * 조회는 equippedToolInfo 하나다: 없거나 엉뚱한 슬롯의 도구면 null = 맨손
+ * (§6-앞 9)이고, 맨손에는 강화가 없다 — 상수 그대로다(엉뚱한 도구의 강화
+ * 수치가 맨손 위에 얹히면 +5 곡괭이가 검 없이 6 을 때리는 뒷문이 된다).
  */
 export function swingDamage(player: PlayerState, items: Record<string, ItemDef>): number {
-  return equippedToolInfo(player, 'combat', items)?.def.damage ?? UNARMED_COMBAT_DAMAGE
+  const tool = equippedToolInfo(player, 'combat', items)
+  return tool ? swingDamageOf(tool.def, tool.instance.enhanceLevel) : UNARMED_COMBAT_DAMAGE
 }
 
 /**
