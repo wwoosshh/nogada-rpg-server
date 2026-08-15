@@ -61,10 +61,21 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
 }
 
-/** 로그인·가입이 끝나는 자리. 토큰은 이 한 번만 밖으로 나간다. */
+/**
+ * 로그인·가입이 끝나는 자리. 토큰은 이 한 번만 밖으로 나간다.
+ *
+ * 여는 김에 **그 계정의 지난 세션을 치운다.** 만료된 세션은 그 토큰이 다시
+ * 제시될 때 지워지지만(아래 requireSession), 다시 안 돌아오는 사람의 행은 아무도
+ * 제시하지 않으므로 영원히 남는다. 그렇다고 청소를 도는 주체를 세우지는 않는다 —
+ * 이 저장소가 만료 타이머를 피해 온 이유 그대로다. 이미 쓰기가 일어나는 이 자리에
+ * 얹으면 새 주체 없이 같은 일이 된다: 아무도 안 돌아오면 아무것도 안 쌓이고,
+ * 돌아오는 사람의 행은 그 사람이 돌아올 때 정리된다.
+ */
 export async function openSession(store: Persistence, userId: string): Promise<string> {
+  const now = Date.now()
+  await store.deleteExpiredSessions(userId, now)
   const token = mintSessionToken()
-  await store.createSession(hashToken(token), userId, Date.now() + SESSION_TTL_MS)
+  await store.createSession(hashToken(token), userId, now + SESSION_TTL_MS)
   return token
 }
 

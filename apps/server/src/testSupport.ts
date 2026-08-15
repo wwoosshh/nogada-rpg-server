@@ -163,6 +163,11 @@ class WaitingStore extends Persistence {
     return this.inner.deleteSession(tokenHash)
   }
 
+  async deleteExpiredSessions(userId: string, now: number): Promise<void> {
+    await WaitingStore.tick()
+    return this.inner.deleteExpiredSessions(userId, now)
+  }
+
   async createCharacter(userId: string, player: PlayerState): Promise<StoredCharacter | null> {
     await WaitingStore.tick()
     return this.inner.createCharacter(userId, player)

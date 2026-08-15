@@ -67,6 +67,9 @@ class CountingStore extends Persistence {
   async deleteSession(): Promise<void> {
     throw new Error('이 스위트는 세션을 안 쓴다')
   }
+  async deleteExpiredSessions(): Promise<void> {
+    throw new Error('이 스위트는 세션을 안 쓴다')
+  }
   async createCharacter(): Promise<StoredCharacter | null> {
     throw new Error('이 스위트는 캐릭터를 만들지 않는다')
   }

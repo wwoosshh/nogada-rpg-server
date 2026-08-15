@@ -5,6 +5,7 @@ import { START_MAP_ID, loadGameData, startVillages } from '@nogada/data'
 import { APPEARANCES, DEFAULT_APPEARANCE, type PlayerState } from '@nogada/shared'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { IP_BACKOFF, SIGNUP_BACKOFF } from './auth/rateLimit.js'
 import { hashToken } from './auth/sessions.js'
 import { JsonPersistence } from './state/jsonPersistence.js'
 import { asPlayer, buildTestApp, type TestPlayer } from './testSupport.js'
@@ -19,8 +20,15 @@ import { asPlayer, buildTestApp, type TestPlayer } from './testSupport.js'
 
 const credentials = { username: '노가다꾼', password: 'nogada-password' }
 
-const register = (app: FastifyInstance, payload: Record<string, unknown> = credentials) =>
-  app.inject({ method: 'POST', url: '/api/auth/register', payload })
+const register = (
+  app: FastifyInstance,
+  payload: Record<string, unknown> = credentials,
+  ip?: string,
+) => app.inject({ method: 'POST', url: '/api/auth/register', payload, ...(ip ? { remoteAddress: ip } : {}) })
+
+/** 아이디만 다른 가입 요청. 셈이 걸리는 것이 아이디가 아니라 IP 임을 분명히 한다. */
+const signup = (app: FastifyInstance, n: number, ip: string) =>
+  register(app, { username: `사람${n}`, password: credentials.password }, ip)
 
 const login = (app: FastifyInstance, payload: Record<string, unknown> = credentials, ip?: string) =>
   app.inject({ method: 'POST', url: '/api/auth/login', payload, ...(ip ? { remoteAddress: ip } : {}) })
@@ -69,6 +77,72 @@ describe('POST /api/auth/register', () => {
     const res = await register(app, { username: '  nogada  ', password: credentials.password })
 
     expect(res.statusCode).toBe(409)
+    await app.close()
+  })
+
+  // 왜: 리미터가 실패만 세던 시절, 가입 성공은 아무 데도 안 세였다. 같은 IP 로
+  //     순차 60회를 시도해도 429 가 하나도 안 나왔다 — 아이디만 바꾸면 한 IP 가
+  //     계정을 무한히 열 수 있었다는 뜻이다. 공개된 주소에서 그것은 몇 분 만에
+  //     찾아온다.
+  it('가입은 성공해도 세어진다 — 한 IP 가 계정을 무한히 열지 못한다', async () => {
+    const app = await buildTestApp()
+    const attempts = SIGNUP_BACKOFF.freeAttempts + 2
+
+    const codes: number[] = []
+    for (let i = 0; i < attempts; i += 1) codes.push((await signup(app, i, '10.9.9.9')).statusCode)
+
+    // 자유 횟수만큼은 열린다 — 사람이 가입 화면에서 두어 번 틀리는 것까지 막으면 안 된다.
+    expect(codes.slice(0, SIGNUP_BACKOFF.freeAttempts)).toEqual(
+      Array(SIGNUP_BACKOFF.freeAttempts).fill(201),
+    )
+    expect(codes).toContain(429)
+
+    await app.close()
+  })
+
+  // 왜: **이 회귀 검사는 반드시 동시여야 한다.** 순차로 쓰면 이 버그가 다시
+  //     들어와도 초록이다 — 게이트가 `확인 → await hashPassword(argon2, 수십 ms)
+  //     → 셈` 순서일 때, 동시에 들어온 요청은 전부 아무도 아직 세지 않은 표를
+  //     보고 통과한다. 리미터가 세는 것이 "시도 횟수"가 아니라 "왕복 라운드
+  //     수"가 되는 것이고, 실측으로 동시 128회가 606ms 에 128개 다 201 을 받았다.
+  it('동시에 쏟아진 가입은 한 라운드가 통째로 통과하지 못한다', async () => {
+    const app = await buildTestApp()
+    const burst = 32
+
+    const codes = (
+      await Promise.all(Array.from({ length: burst }, (_, i) => signup(app, i, '10.9.9.8')))
+    ).map((res) => res.statusCode)
+
+    expect(codes.filter((code) => code === 429).length).toBeGreaterThan(0)
+    // 자유 횟수를 넘겨 만들어진 계정이 있으면 안 된다. 문을 지난 요청 하나가
+    // 곧바로 세므로, 한 번에 통과하는 것은 자유 횟수 + 그 문턱의 하나뿐이다.
+    expect(codes.filter((code) => code === 201).length).toBeLessThanOrEqual(
+      SIGNUP_BACKOFF.freeAttempts + 1,
+    )
+
+    await app.close()
+  })
+
+  // 왜: 가입 표(SIGNUP_BACKOFF)와 별개로 가입 시도는 그 IP 의 셈에도 들어가야
+  //     한다. 스캐너는 가입과 로그인을 섞어 두드리는데, 둘이 서로의 셈을 모르면
+  //     한쪽을 자유 횟수 직전까지 쓰고 다른 쪽으로 넘어가는 것이 공짜가 된다.
+  it('가입 시도는 그 IP 의 로그인 셈에도 들어간다', async () => {
+    const app = await buildTestApp()
+    const ip = '10.9.9.7'
+    for (let i = 0; i < SIGNUP_BACKOFF.freeAttempts; i += 1) {
+      expect((await signup(app, i, ip)).statusCode).toBe(201)
+    }
+
+    // 아이디를 매번 바꾼다 — 계정별 셈이 아니라 IP 셈만 남기려는 것이다. 가입이
+    // 세어졌다면 이 여섯 번째에서 IP 의 자유 횟수를 넘긴다.
+    const remaining = IP_BACKOFF.freeAttempts - SIGNUP_BACKOFF.freeAttempts + 1
+    for (let i = 0; i < remaining; i += 1) {
+      const res = await login(app, { username: `없는사람${i}`, password: credentials.password }, ip)
+      expect(res.statusCode).toBe(401)
+    }
+
+    expect((await login(app, { username: '또다른사람', password: credentials.password }, ip)).statusCode).toBe(429)
+
     await app.close()
   })
 
@@ -164,6 +238,33 @@ describe('POST /api/auth/login', () => {
 
     // 다른 IP 는 멀쩡하다 — 한 사람이 두드려서 온 세상이 잠기면 안 된다.
     expect((await login(app, credentials, '10.2.2.2')).statusCode).toBe(401)
+
+    await app.close()
+  })
+
+  // 왜: 위의 두 검사는 **순차**라 이 버그를 못 잡는다. 검증(argon2)이 수십 ms 인
+  //     동안 셈이 뒤에 있으면, 동시에 들어온 요청들은 서로를 보지 못한 채 한
+  //     라운드가 통째로 지나간다 — 실측으로 동시 64회가 401 을 64개 받았다.
+  //     추측을 늦추는 것이 이 장치의 전부인데, 한 번에 64개를 시험할 수 있으면
+  //     늦춰지는 것은 아무것도 없다.
+  it('동시에 쏟아진 로그인 실패도 세어진다 — 한 라운드가 통째로 지나가지 못한다', async () => {
+    const app = await buildTestApp()
+    const burst = 32
+
+    // 아이디를 매번 바꾼다 — 계정 쪽 셈이 아니라 IP 쪽 셈이 이것을 막아야 한다.
+    const codes = (
+      await Promise.all(
+        Array.from({ length: burst }, (_, i) =>
+          login(app, { username: `사람${i}`, password: credentials.password }, '10.3.3.3'),
+        ),
+      )
+    ).map((res) => res.statusCode)
+
+    expect(codes.filter((code) => code === 429).length).toBeGreaterThan(0)
+    // 문을 지난 요청이 곧바로 세므로 한 번에 시험되는 것은 자유 횟수 + 하나다.
+    expect(codes.filter((code) => code === 401).length).toBeLessThanOrEqual(
+      IP_BACKOFF.freeAttempts + 1,
+    )
 
     await app.close()
   })
@@ -276,6 +377,28 @@ describe('세션', () => {
     await me.inject({ method: 'GET', url: '/api/state' })
 
     expect((await store.findSession(tokenHash))?.expiresAt).toBe(far)
+
+    await app.close()
+  })
+
+  // 왜: 만료된 세션은 그 토큰이 다시 제시될 때 지워진다 — 그러니 누수는 "영구
+  //     누적"이 아니라 **다시 안 돌아오는 기기의 행**이다. 아무도 그 토큰을 들고
+  //     오지 않으므로 아무도 그것을 지우지 않는다. 청소를 도는 주체를 세우는
+  //     대신(이 저장소는 그래서 만료 타이머를 피해 왔다) 이미 쓰기가 일어나는
+  //     자리에 얹는다: 그 사람이 다시 로그인할 때.
+  it('새 세션을 열면 그 계정의 만료된 세션이 함께 사라진다', async () => {
+    const app = await buildTestApp({ persistence: store })
+    const me = await asPlayer(app, { username: credentials.username, password: credentials.password })
+    const stale = hashToken(me.token)
+    // 그 기기는 다시 돌아오지 않는다 — 만료만 지나 있고 아무도 제시하지 않는다.
+    await store.extendSession(stale, Date.now() - 1)
+
+    const again = await login(app)
+    expect(again.statusCode).toBe(200)
+
+    expect(await store.findSession(stale)).toBeNull()
+    // 방금 연 세션은 멀쩡하다 — 청소가 지금 들어온 사람을 끊으면 로그인이 아니다.
+    expect(await store.findSession(hashToken((again.json() as { token: string }).token))).not.toBeNull()
 
     await app.close()
   })

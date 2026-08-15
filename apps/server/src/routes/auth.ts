@@ -1,6 +1,6 @@
 import { LoginRequestSchema, RegisterRequestSchema } from '@nogada/shared'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { FailureBackoff, IP_BACKOFF, USERNAME_BACKOFF } from '../auth/rateLimit.js'
+import { FailureBackoff, IP_BACKOFF, SIGNUP_BACKOFF, USERNAME_BACKOFF } from '../auth/rateLimit.js'
 import { hashPassword, verifyAgainstNobody, verifyPassword } from '../auth/passwords.js'
 import { hashToken, bearerToken, openSession } from '../auth/sessions.js'
 import type { Persistence } from '../state/persistence.js'
@@ -28,14 +28,29 @@ export function registerAuthRoutes(app: FastifyInstance, store: Persistence): vo
   // 테스트를 막고, 그런 실패는 원인을 찾는 데 반나절이 든다.
   const byIp = new FailureBackoff(IP_BACKOFF)
   const byUsername = new FailureBackoff(USERNAME_BACKOFF)
+  // 가입만 세는 표가 따로 있다 — 로그인 성공이 IP 기록을 지우기 때문이다
+  // (SIGNUP_BACKOFF 의 주석이 그 이유다).
+  const bySignup = new FailureBackoff(SIGNUP_BACKOFF)
 
   app.post('/api/auth/register', async (request, reply) => {
     const parsed = RegisterRequestSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ code: BAD_REQUEST })
 
     const now = Date.now()
-    const wait = byIp.retryAfterMs(ipOf(request), now)
+    const ip = ipOf(request)
+    const wait = Math.max(byIp.retryAfterMs(ip, now), bySignup.retryAfterMs(ip, now))
     if (wait > 0) return tooMany(reply, wait)
+
+    // **세는 것은 아래 `await` 보다 앞이다.** 뒤에서 세면 동시에 들어온 요청이
+    // 전부 위 문을 통과한 뒤 argon2 앞에 모이고, 그때까지 아무도 세지 않았으므로
+    // 한 라운드가 통째로 지나간다(실측: 동시 128회가 606ms 에 128개 다 201).
+    //
+    // **성공해도 지우지 않는다.** 로그인과 다른 점이다 — 로그인의 성공은 "이 사람이
+    // 맞다"라 세어 둔 것을 무를 이유가 되지만, 가입의 성공은 계정 하나가 실제로
+    // 생겼다는 뜻이다. 세어야 하는 것이 바로 그것이다. 사람이 오타로 두어 번
+    // 틀리는 것은 자유 횟수가 흡수한다.
+    byIp.fail(ip, now)
+    bySignup.fail(ip, now)
 
     const { username, password } = parsed.data
     // 해시를 먼저 만들고 넣는다. "있는지 보고 없으면 넣는다"로 쓰면 그 사이에
@@ -45,8 +60,7 @@ export function registerAuthRoutes(app: FastifyInstance, store: Persistence): vo
     if (!created) {
       // 아이디 중복이 밖에서 보이는 것은 수용한다(설계 규범 6). 가입 화면은
       // "그 아이디는 이미 있다"를 말해야 쓸 수 있고, 그 사실은 어차피 가입을
-      // 시도해 보면 알 수 있다. 대신 그 시도를 세어 사전 훑기를 늦춘다.
-      byIp.fail(ipOf(request), now)
+      // 시도해 보면 알 수 있다. 그 시도는 위에서 이미 세었다.
       return reply.code(409).send({ code: USERNAME_TAKEN })
     }
 
@@ -61,9 +75,17 @@ export function registerAuthRoutes(app: FastifyInstance, store: Persistence): vo
 
     const { username, password } = parsed.data
     const now = Date.now()
+    const ip = ipOf(request)
     // 둘 중 **긴 쪽**을 기다린다. 짧은 쪽만 보면 다른 하나가 있으나 마나다.
-    const wait = Math.max(byIp.retryAfterMs(ipOf(request), now), byUsername.retryAfterMs(username, now))
+    const wait = Math.max(byIp.retryAfterMs(ip, now), byUsername.retryAfterMs(username, now))
     if (wait > 0) return tooMany(reply, wait)
+
+    // 검증하기 **전에** 실패로 세어 둔다 — 아래 argon2 는 수십 ms 라, 뒤에서
+    // 세면 동시에 들어온 요청들이 전부 서로를 못 보고 지나간다(실측: 동시 64회가
+    // 401 을 64개 받았다). 맞는 비밀번호였다면 아래에서 지운다 — 정직한 사람에게
+    // 남는 것은 지금까지와 같이 아무것도 없다.
+    byIp.fail(ip, now)
+    byUsername.fail(username, now)
 
     const user = await store.findUser(username)
     // 없는 계정에도 같은 시간을 쓴다 — 응답 시간만으로 아이디의 존재를 셀 수
@@ -72,13 +94,10 @@ export function registerAuthRoutes(app: FastifyInstance, store: Persistence): vo
       ? await verifyPassword(user.passwordHash, password)
       : await verifyAgainstNobody(password)
 
-    if (!user || !ok) {
-      byIp.fail(ipOf(request), now)
-      byUsername.fail(username, now)
-      return reply.code(401).send({ code: INVALID_CREDENTIALS })
-    }
+    // 실패는 이미 세어져 있다 — 여기서 또 세면 한 번의 시도가 두 번이 된다.
+    if (!user || !ok) return reply.code(401).send({ code: INVALID_CREDENTIALS })
 
-    byIp.clear(ipOf(request))
+    byIp.clear(ip)
     byUsername.clear(username)
     return { token: await openSession(store, user.id) }
   })

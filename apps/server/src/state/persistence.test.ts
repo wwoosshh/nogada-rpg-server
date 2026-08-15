@@ -462,6 +462,35 @@ function contractSuite(harness: Harness): void {
     await expect(store.deleteSession('없는표')).resolves.toBeUndefined()
   })
 
+  // 왜: 만료된 세션은 그 토큰이 다시 제시될 때만 지워진다 — 다시 안 돌아오는
+  //     사람의 행은 아무도 제시하지 않으므로 영원히 남는다. 청소를 도는 주체를
+  //     세우지 않고 새 세션을 여는 자리에서 치우는 것이 이 메서드의 이유이고,
+  //     그러려면 **지난 것만** 지워야 한다: 지금 로그인해 있는 다른 기기까지
+  //     끊으면 로그인 한 번이 남의 기기를 로그아웃시키는 일이 된다.
+  it('그 계정의 지난 세션만 지운다 — 살아 있는 세션과 남의 세션은 그대로다', async () => {
+    const mine = await store.createUser('노가다', '해시')
+    const other = await store.createUser('남', '해시')
+    const now = Date.now()
+    await store.createSession('내지난표', mine!.id, now - 1)
+    await store.createSession('내살아있는표', mine!.id, now + 60_000)
+    await store.createSession('남의지난표', other!.id, now - 1)
+
+    await store.deleteExpiredSessions(mine!.id, now)
+
+    expect(await store.findSession('내지난표')).toBeNull()
+    // 다른 기기로 들어와 있는 나 자신 — 새로 로그인했다고 끊기면 안 된다.
+    expect(await store.findSession('내살아있는표')).not.toBeNull()
+    // 남의 행은 남의 로그인이 치운다. 여기서 표 전체를 훑으면 로그인 한 번의
+    // 값이 사용자 수에 비례해 커진다.
+    expect(await store.findSession('남의지난표')).not.toBeNull()
+  })
+
+  it('지울 지난 세션이 없어도 오류가 아니다', async () => {
+    const user = await store.createUser('노가다', '해시')
+
+    await expect(store.deleteExpiredSessions(user!.id, Date.now())).resolves.toBeUndefined()
+  })
+
   // 왜: 이중 제출(버튼 두 번, 느린 네트워크에서의 재시도)이 캐릭터 둘을 만들지
   //     못하게 하는 것은 코드의 순서가 아니라 제약이어야 한다. null 을 받은 쪽은
   //     이미 있는 캐릭터를 돌려준다 — 그것이 사람이 기대하는 답이다(설계 규범 6).

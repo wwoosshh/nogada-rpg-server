@@ -119,6 +119,20 @@ export class JsonPersistence extends Persistence {
     })
   }
 
+  async deleteExpiredSessions(userId: string, now: number): Promise<void> {
+    await this.enqueue(ACCOUNTS, async () => {
+      let removed = false
+      for (const [tokenHash, session] of Object.entries(this.save.sessions)) {
+        if (session.userId !== userId || session.expiresAt > now) continue
+        delete this.save.sessions[tokenHash]
+        removed = true
+      }
+      // 지운 것이 없으면 파일을 다시 쓰지 않는다. 이 메서드는 로그인마다 불리는데,
+      // 대개는 지울 것이 없다 — 그때마다 세이브 전체를 다시 쓰면 청소가 아니라 비용이다.
+      if (removed) await this.persist()
+    })
+  }
+
   async createCharacter(userId: string, player: PlayerState): Promise<StoredCharacter | null> {
     // 계정 큐 위에서 만든다 — "이 계정이 이미 캐릭터를 가졌는가"는 캐릭터 하나가
     // 아니라 표 전체에 걸친 사실이라, 캐릭터별 큐로는 두 요청을 세울 수 없다.

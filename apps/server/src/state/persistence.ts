@@ -112,6 +112,18 @@ export abstract class Persistence {
   abstract deleteSession(tokenHash: string): Promise<void>
 
   /**
+   * 그 계정의 **지난** 세션 행을 지운다. `now` 보다 만료가 이르거나 같으면 지난 것이다.
+   *
+   * 왜 계정 단위인가: 만료된 세션은 토큰이 다시 제시될 때 그 자리에서 지워지지만
+   * (sessions.ts 의 requireSession), 다시 안 돌아오는 사람의 행은 아무도 제시하지
+   * 않으므로 영원히 남는다. 그렇다고 청소를 도는 주체를 만들면 "남은 시간을 적으면
+   * 그것을 줄이는 주체가 필요해진다"는 자리로 돌아간다 — 그래서 청소는 **이미 쓰기가
+   * 일어나는 경로**(새 세션을 여는 자리)에 얹는다. 그 계정의 것만 보는 이유도 같다:
+   * 표 전체를 훑는 순간 로그인 한 번의 값이 사용자 수에 비례해 커진다.
+   */
+  abstract deleteExpiredSessions(userId: string, now: number): Promise<void>
+
+  /**
    * 캐릭터를 **만든다** — 저장소에서 캐릭터가 생기는 유일한 곳이다.
    *
    * 이미 그 키의 캐릭터가 있거나 그 계정이 이미 캐릭터를 가졌으면 **null** 이다.

@@ -92,6 +92,16 @@ export class PostgresPersistence extends Persistence {
     await this.pool.query('DELETE FROM sessions WHERE token_hash = $1', [tokenHash])
   }
 
+  async deleteExpiredSessions(userId: string, now: number): Promise<void> {
+    // 만료를 timestamptz 로 담았으므로(createSession 참고) 견주는 것도 그 타입이다 —
+    // epoch ms 를 문자열로 비교하면 자릿수가 늘어나는 날 순서가 뒤집힌다.
+    await this.pool.query(
+      `DELETE FROM sessions
+        WHERE user_id = $1 AND expires_at <= to_timestamp($2::double precision / 1000)`,
+      [userId, now],
+    )
+  }
+
   async createCharacter(userId: string, player: PlayerState): Promise<StoredCharacter | null> {
     // `ON CONFLICT DO NOTHING` 은 제약을 가리지 않는다 — 같은 키(id)든 이미
     // 캐릭터가 있는 계정(user_id UNIQUE)이든 0 행으로 돌아온다. 둘 다 답은
