@@ -1,4 +1,4 @@
-import type { ItemDef, SkillId } from '../types.js'
+import type { EquipSlot, ItemDef } from '../types.js'
 
 /**
  * 테스트용 아이템 정의 하나. **테스트에서만 쓴다** — 그래서 index.ts 가 아니라
@@ -29,6 +29,6 @@ export function testItem(id: string, overrides: Partial<ItemDef> = {}): ItemDef 
  * 도구의 `price` 가 0 인 것은 기본값을 물려받은 것이 아니라 출하 데이터가 그렇다
  * (도구는 팔 수 없다, 설계 §8).
  */
-export function testTool(id: string, toolSkill: SkillId, toolTier: number, overrides: Partial<ItemDef> = {}): ItemDef {
+export function testTool(id: string, toolSkill: EquipSlot, toolTier: number, overrides: Partial<ItemDef> = {}): ItemDef {
   return testItem(id, { kind: 'tool', toolSkill, toolTier, ...overrides })
 }

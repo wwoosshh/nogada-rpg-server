@@ -1,4 +1,5 @@
 import type {
+  EquipSlot,
   ItemDef,
   NodeDef,
   NodeTimeRequirement,
@@ -9,7 +10,7 @@ import type {
   TokenEffect,
   WeatherKind,
 } from '@nogada/shared'
-import { NODE_TIME_REQUIREMENTS, NODE_VARIANTS, SKILL_IDS, TOKEN_EFFECTS, WEATHER_KINDS } from '@nogada/shared'
+import { EQUIP_SLOTS, NODE_TIME_REQUIREMENTS, NODE_VARIANTS, SKILL_IDS, TOKEN_EFFECTS, WEATHER_KINDS } from '@nogada/shared'
 
 type Row = Record<string, string>
 
@@ -105,10 +106,27 @@ function isNodeTimeRequirement(value: string): value is NodeTimeRequirement {
   return (NODE_TIME_REQUIREMENTS as readonly string[]).includes(value)
 }
 
-/** CSV 의 skill/toolSkill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. 오타가 조용히 통과하는 것을 막는다. */
+/** CSV 의 skill 칸이 실제 SKILL_IDS 에 속하는지 검사한다. 오타가 조용히 통과하는 것을 막는다. */
 export function toSkillId(value: string, context: string): SkillId {
   if (!isSkillId(value)) {
     throw new Error(`${context}: skill "${value}" 는 알 수 없다 (허용값: ${SKILL_IDS.join(', ')})`)
+  }
+  return value
+}
+
+/**
+ * `toolSkill` 칸이 실제 슬롯인지 검사한다 — 기술 다섯에 무기 슬롯('combat')을
+ * 더한 것(전투 §12-앞 8).
+ *
+ * toSkillId 를 그대로 못 쓰는 이유가 이 파일의 요점이다: combat 은 기술이
+ * 아니라서 SKILL_IDS 에 넣을 수 없고(세이브 게이트의 skillsShape 가 거기서
+ * 생성돼 구세이브가 깨진다 — 재현됨), 그렇다고 skill 칸(계열)까지 combat 을
+ * 받으면 "combat 계열 상점" 같은 존재하지 않는 개념이 데이터에 적힐 수 있게
+ * 된다. 그래서 슬롯 칸만 따로 넓힌다.
+ */
+export function toEquipSlot(value: string, context: string): EquipSlot {
+  if (value !== 'combat' && !isSkillId(value)) {
+    throw new Error(`${context}: toolSkill "${value}" 는 알 수 없다 (허용값: ${EQUIP_SLOTS.join(', ')})`)
   }
   return value
 }
@@ -268,8 +286,18 @@ export function parseItems(rows: Row[]): Record<string, ItemDef> {
     // 전체를 보는 validateGameData 의 몫이다(증표 제약과 같은 분업).
     applyUseEffect(def, row, ctx)
     if (kind === 'tool') {
-      def.toolSkill = toSkillId(requireCell(row, 'toolSkill', ctx), ctx)
+      def.toolSkill = toEquipSlot(requireCell(row, 'toolSkill', ctx), ctx)
       def.toolTier = toInt(requireCell(row, 'toolTier', ctx), ctx, 'toolTier')
+    }
+    // damage 와 combat 슬롯은 짝이다(전투 §4) — gateSkill/gateValue 의 짝 강제와
+    // 같은 이유로 양방향을 다 본다. 무기인데 damage 가 없으면 아무리 때려도 닳지
+    // 않는 검이 되고, 무기 아닌 것의 damage 는 어느 판정도 읽지 않는 숫자로
+    // 조용히 실린다 — 둘 다 화면 어디에도 흔적이 없다. toInt 의 기본 최솟값 1 이
+    // "0 피해 무기"까지 함께 막는다(맨손 피해는 상수의 몫이지 데이터가 아니다).
+    if (def.toolSkill === 'combat') {
+      def.damage = toInt(requireCell(row, 'damage', ctx), ctx, 'damage')
+    } else if (optionalCell(row, 'damage') !== undefined) {
+      throw new Error(`${ctx}: damage 는 combat 도구만 가진다 — 회당 피해는 무기의 축이다(전투 §4)`)
     }
     addUnique(out, id, def, 'items.csv')
   }

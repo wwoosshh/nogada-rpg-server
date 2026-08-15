@@ -175,7 +175,50 @@ describe('parseItems', () => {
   it('알 수 없는 toolSkill 값을 거부한다', () => {
     expect(() =>
       parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'minig', toolTier: '2', skill: '' })]),
-    ).toThrow('items.csv[iron_pickaxe]: skill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting)')
+    ).toThrow('items.csv[iron_pickaxe]: toolSkill "minig" 는 알 수 없다 (허용값: ice, wood, mineral, herb, crafting, combat)')
+  })
+
+  it('toolSkill=combat 행을 받아들인다 — 무기는 여섯째 슬롯이지 여섯째 기술이 아니다(전투 §12-앞 8)', () => {
+    const items = parseItems([
+      itemRow({
+        id: 'copper_sword', name: '구리 검', kind: 'tool', toolSkill: 'combat', toolTier: '1',
+        damage: '5', icon: 'sword_copper', price: '0', skill: '',
+      }),
+    ])
+    expect(items.copper_sword).toEqual({
+      id: 'copper_sword', name: '구리 검', kind: 'tool', toolSkill: 'combat', toolTier: 1,
+      damage: 5, icon: 'sword_copper', price: 0,
+    })
+  })
+
+  it('combat 도구인데 damage 가 없으면 거부한다 — 회당 피해는 무기가 지는 축이라(전투 §4) 빠지면 아무리 때려도 닳지 않는 검이 된다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'copper_sword', kind: 'tool', toolSkill: 'combat', toolTier: '1', skill: '' })]),
+    ).toThrow('items.csv[copper_sword]: 필수 항목 "damage" 가 비어 있다')
+  })
+
+  it('damage 가 0 이하이면 거부한다 — 0 피해 무기는 맨손 상수보다도 못한 함정 데이터다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'copper_sword', kind: 'tool', toolSkill: 'combat', toolTier: '1', damage: '0', skill: '' })]),
+    ).toThrow('items.csv[copper_sword]: damage "0" 는 1 이상이어야 한다')
+  })
+
+  it('채집 도구에 damage 가 적히면 거부한다 — 피해 축은 무기만 산다, 곡괭이의 damage 는 어느 판정도 읽지 않는 숫자로 조용히 실린다', () => {
+    expect(() =>
+      parseItems([itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'mineral', toolTier: '2', damage: '3', skill: '' })]),
+    ).toThrow('items.csv[iron_pickaxe]: damage 는 combat 도구만 가진다')
+  })
+
+  it('재료에 damage 가 적히면 거부한다 — 채집 도구를 막는 것과 같은 이유다', () => {
+    expect(() => parseItems([itemRow({ damage: '3' })])).toThrow(
+      'items.csv[copper_ore]: damage 는 combat 도구만 가진다',
+    )
+  })
+
+  it('damage 칸이 아예 없는 CSV 도 읽는다 — 이 칸이 생기기 전의 행이 그대로 살아 있어야 한다', () => {
+    const row = itemRow({ id: 'iron_pickaxe', kind: 'tool', toolSkill: 'mineral', toolTier: '2', skill: '' })
+    expect('damage' in row).toBe(false)
+    expect(parseItems([row]).iron_pickaxe).not.toHaveProperty('damage')
   })
 
   it('toolTier 가 0 이하이면 거부한다', () => {

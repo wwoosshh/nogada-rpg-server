@@ -21,6 +21,13 @@ const data: GameData = {
     legend_pickaxe: testTool('legend_pickaxe', 'mineral', 5, { name: '전설 곡괭이', icon: 'pickaxe_legend' }),
     copper_hammer: testTool('copper_hammer', 'crafting', 1, { name: '구리 망치', icon: 'hammer_copper' }),
     iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
+    // 무기 셋 — combat 슬롯의 비교 축(회당 피해, 전투 §4)을 세 방향에서 못박는
+    // 픽스처다. heavy_sword 는 일부러 "티어는 높은데 피해는 낮다": 간격배수
+    // (채집 축)로 견주면 교체가 일어나고 피해로 견주면 안 일어나는 유일한
+    // 조합이라, 무기가 엉뚱한 축을 사는 회귀를 이것으로만 잡을 수 있다.
+    copper_sword: testTool('copper_sword', 'combat', 1, { name: '구리 검', icon: 'sword_copper', damage: 5 }),
+    sharp_sword: testTool('sharp_sword', 'combat', 1, { name: '날 선 검', icon: 'sword_sharp', damage: 9 }),
+    heavy_sword: testTool('heavy_sword', 'combat', 2, { name: '무딘 대검', icon: 'sword_heavy', damage: 3 }),
   },
   nodes: {},
   recipes: {
@@ -49,6 +56,23 @@ const data: GameData = {
     iron_hammer: {
       id: 'iron_hammer', name: '철 망치', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
       inputs: [{ item: 'copper_ingot', count: 2 }], output: { item: 'iron_hammer', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
+    },
+    // 무기 레시피 셋 — 요구 숙련도 0: 슬롯·비교 축 시나리오에 다른 조건이
+    // 끼어들지 않게 한다(legend_pickaxe 와 같은 이유).
+    copper_sword: {
+      id: 'copper_sword', name: '구리 검', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 1 }], output: { item: 'copper_sword', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
+    },
+    sharp_sword: {
+      id: 'sharp_sword', name: '날 선 검', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 1 }], output: { item: 'sharp_sword', count: 1 },
+      skillGainMin: 20, skillGainMax: 35,
+    },
+    heavy_sword: {
+      id: 'heavy_sword', name: '무딘 대검', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.5,
+      inputs: [{ item: 'copper_ingot', count: 1 }], output: { item: 'heavy_sword', count: 1 },
       skillGainMin: 20, skillGainMax: 35,
     },
     // 계열 문턱이 걸린 레시피 — 조합은 누구나 열려 있고(0) 얼음 채집 1,000 이
@@ -455,6 +479,62 @@ describe('performCraft — 자동 착용은 원시 tier 가 아니라 유효 효
 
     expect(r.outcome.autoEquipped).toBe(true)
     expect(r.outcome.player.equipped.crafting).toBe('newhammer')
+  })
+})
+
+describe('performCraft — 무기는 combat 슬롯과 피해 축을 쓴다(전투 §4·§12-앞 8)', () => {
+  it('빈 combat 슬롯이면 만든 검을 바로 착용한다 — 채집 슬롯은 건드리지 않는다', () => {
+    const p = player({ stacks: { copper_ingot: 1 } })
+    const r = performCraft({ player: p, data, recipeId: 'copper_sword', rng: alwaysSucceed, newId: () => 'sword1', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.combat).toBe('sword1')
+    // 무기가 채집 슬롯을 밀어내면 검 하나가 곡괭이를 벗긴다 — 슬롯은 정의(toolSkill)가 정한다.
+    expect(r.outcome.player.equipped.mineral).toBe('pick1')
+  })
+
+  it('더 센 검을 만들면 갈아 낀다 — 무기의 "낫다"는 간격이 아니라 회당 피해다', () => {
+    const p = player({
+      stacks: { copper_ingot: 1 },
+      instances: [{ instanceId: 'oldsword', itemId: 'copper_sword', enhanceLevel: 0 }],
+      equipped: { combat: 'oldsword' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'sharp_sword', rng: alwaysSucceed, newId: () => 'newsword', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    // 같은 1티어라 간격배수는 동률이다 — 간격 축으로 견주면 여기서 교체가 안
+    // 일어난다. 피해 9 > 5 만이 이 교체의 근거다.
+    expect(r.outcome.autoEquipped).toBe(true)
+    expect(r.outcome.player.equipped.combat).toBe('newsword')
+  })
+
+  it('티어가 높아도 피해가 낮으면 갈아 끼지 않는다 — 채집의 간격 축으로 무기를 재는 회귀를 여기서 잡는다', () => {
+    const p = player({
+      stacks: { copper_ingot: 1 },
+      instances: [{ instanceId: 'oldsword', itemId: 'copper_sword', enhanceLevel: 0 }],
+      equipped: { combat: 'oldsword' },
+    })
+    // heavy_sword 는 2티어·피해 3 — 간격배수(tier2 < tier1)로 견주면 교체,
+    // 피해(3 < 5)로 견주면 유지. 두 축이 반대의 답을 내는 유일한 픽스처다.
+    const r = performCraft({ player: p, data, recipeId: 'heavy_sword', rng: alwaysSucceed, newId: () => 'newsword', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.combat).toBe('oldsword')
+  })
+
+  it('피해가 같으면 갈아 끼지 않는다 — 나아지는 것 없이 강화 수치만 0 으로 잃는다', () => {
+    const p = player({
+      stacks: { copper_ingot: 1 },
+      instances: [{ instanceId: 'oldsword', itemId: 'copper_sword', enhanceLevel: 3 }],
+      equipped: { combat: 'oldsword' },
+    })
+    const r = performCraft({ player: p, data, recipeId: 'copper_sword', rng: alwaysSucceed, newId: () => 'newsword', now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+
+    expect(r.outcome.autoEquipped).toBe(false)
+    expect(r.outcome.player.equipped.combat).toBe('oldsword')
   })
 })
 

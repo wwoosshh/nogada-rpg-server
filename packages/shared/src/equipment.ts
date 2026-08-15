@@ -1,6 +1,7 @@
 import { toolMatchesSkill } from './formulas/gather.js'
 import type {
   EnhanceCostDef,
+  EquipSlot,
   GameData,
   ItemDef,
   ItemInstance,
@@ -18,14 +19,17 @@ export interface EquippedToolInfo {
 }
 
 /**
- * 해당 생활기술에 착용 중인 도구. 없거나 **엉뚱한 기술의 도구면 null** — 이
+ * 해당 슬롯에 착용 중인 도구. 없거나 **엉뚱한 슬롯의 도구면 null** — 이
  * null 이 곧 맨손이고, 판정자는 이것을 gatherToolProfile(null)·gatherIntervalMs
  * 에 그대로 넘긴다(§6-앞 9 — "엉뚱한 도구 = 맨손" 규범은 프로필이 아니라 이
  * 조회가 지킨다). 서버 판정과 클라 표시가 같은 함수를 쓴다.
+ *
+ * 무기 슬롯('combat')도 같은 조회다(전투 §12-앞 8) — 맨손 전투(§12-앞 9)가
+ * 채집의 맨손과 같은 null 로 표현되는 것이 이 공유의 뜻이다.
  */
 export function equippedToolInfo(
   player: PlayerState,
-  skill: SkillId,
+  skill: EquipSlot,
   items: Record<string, ItemDef>,
 ): EquippedToolInfo | null {
   const instanceId = player.equipped[skill]

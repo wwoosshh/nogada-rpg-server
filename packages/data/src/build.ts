@@ -167,7 +167,10 @@ const data: GameData = {
 // 확률표 검사는 표와 GameData 양쪽을 봐야 해서(아이템·노드 참조) 또 나뉘어 있다.
 const gatherCheck = validateGatherTables(gatherTables, data)
 const violations = [
-  ...validateGameData(data, gatherTables),
+  // 드랍표 자리는 아직 빈 표다 — validateMonsterPatterns 의 빈 목록과 같은
+  // 자세로, 획득 그물이 데이터(C6 의 드랍 CSV)보다 먼저 "전투 드랍" 출처를
+  // 안다(전투 §12-앞 2). C6 이 드랍 파서를 붙이면 그 결과가 이 자리에 실린다.
+  ...validateGameData(data, gatherTables, {}),
   ...gatherCheck.violations,
   ...validateEnhanceCosts(data),
   // 형평 검증은 표와 GameData 양쪽을 본다 — 문턱이 몇 분인지는 확률표만이 안다.

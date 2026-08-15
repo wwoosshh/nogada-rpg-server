@@ -16,6 +16,21 @@ export const SKILL_LABELS: Record<SkillId, string> = {
   crafting: '조합',
 }
 
+/**
+ * 착용 슬롯 — 생활기술 다섯에 무기 슬롯('combat')을 더한 것(전투 설계 §4·§12-앞 8).
+ *
+ * **SKILL_IDS 에 combat 을 넣지 않는다.** 세이브 게이트의 skillsShape 가
+ * SKILL_IDS 에서 생성되고 `.strict()`+필수라, 거기 넣는 순간 combat 키 없는
+ * 기존 세이브의 skills 가 통째로 거절된다(재현됨) — 숙련도도 인벤토리도 강화한
+ * 도구도 같이 버려진다. combat 은 기술이 아니라 슬롯이다: 전투 숙련은 skills 가
+ * 아니라 전투 상태(전투 설계 §6)에 실리고, 세이브의 equipped 는 열린 레코드라
+ * (protocol.ts) 이 타입은 빌드타임에만 존재한다 — 구세이브에 무해한 이유다.
+ */
+export type EquipSlot = SkillId | 'combat'
+
+/** 파서가 toolSkill 칸의 허용값을 말할 때 쓴다 — SKILL_IDS 처럼 목록이 먼저다. */
+export const EQUIP_SLOTS: readonly EquipSlot[] = [...SKILL_IDS, 'combat'] as const
+
 // STARTING_TOOL_IDS 는 은퇴했다(설계 §6-앞 8) — 시작 지급은 도구 4종이 아니라
 // 마을 하나의 도구 1개이고, 그 도구는 상수가 아니라 유도(equipment.ts 의
 // starterToolFor: "kind=tool ∧ toolTier=1 ∧ toolSkill=마을 기술")로 정해진다.
@@ -95,8 +110,14 @@ export interface PlayerState {
   gold: number
   /** 장비·도구 — 개별 행 */
   instances: ItemInstance[]
-  /** 생활기술별 착용 도구의 instanceId */
-  equipped: Partial<Record<SkillId, string>>
+  /**
+   * 슬롯별 착용 도구의 instanceId — 생활기술 다섯과 무기('combat') 하나다.
+   *
+   * 타입만 EquipSlot 로 넓다. 세이브 스키마(protocol.ts)는 처음부터 열린
+   * 레코드라 한 글자도 안 바뀌었고, 그래서 combat 키 없는 구세이브가 그대로
+   * 통과한다(전투 §12-앞 8 — SKILL_IDS 를 넓히는 길이 함정이었던 이유).
+   */
+  equipped: Partial<Record<EquipSlot, string>>
   /**
    * 다음 행동이 가능한 시각 (epoch ms, 서버 시계 기준).
    *
@@ -170,8 +191,20 @@ export interface ItemDef {
   id: string
   name: string
   kind: 'material' | 'tool'
-  toolSkill?: SkillId
+  /**
+   * 이 도구가 끼워지는 슬롯. SkillId 가 아니라 EquipSlot 인 것이 무기의 전부다
+   * (전투 §4) — `toolSkill='combat'` 이면 무기이고, 새 kind 를 만들지 않는 이유는
+   * 증표(tokenEffect)와 같다: kind 분기를 읽는 화면들이 무기를 조용히 숨긴다.
+   */
+  toolSkill?: EquipSlot
   toolTier?: number
+  /**
+   * 회당 피해 — **combat 도구만 갖는다**(전투 §4). 간격은 전투 숙련이, 피해는
+   * 무기가 진다: 한 칸이 두 축을 사면 안 된다(§2-2). 채집 도구가 이 칸을 가지면
+   * 어느 판정도 읽지 않는 숫자가 조용히 실리므로 파서가 짝(combat ⟺ damage)을
+   * 강제한다.
+   */
+  damage?: number
   icon: string
   /**
    * 정가(매수가). 매도가는 이 값의 절반이고, 그 계산은 formulas/price.ts 하나가 소유한다.
@@ -502,6 +535,28 @@ export interface GatherTableDef {
 }
 
 export type GatherTables = Record<string, GatherTableDef>
+
+/** 전투 드랍 한 줄 — 처치 한 번에 이 아이템이 나올 확률(0 초과 1 이하). */
+export interface MonsterDropDef {
+  itemId: string
+  chance: number
+}
+
+/**
+ * 몬스터 한 종의 드랍표. 채집표와 같은 취급의 **서버 전용 산출물**이다(전투 §4 —
+ * 확률이 곧 숨은 문턱이라 클라이언트 번들 금지, §7-앞 9 와 같은 근거).
+ *
+ * **이 모양의 주인은 획득 그물이다**(전투 §12-앞 2): validateGameData 의 획득·
+ * 도달 검사가 "전투 드랍"을 출처로 세려면 무엇을 읽을지가 데이터보다 먼저
+ * 정해져야 해서, C3 이 모양을 못박고 C6 의 드랍 CSV 파서가 이 모양을 채운다.
+ * 확률값의 검증(합계·범위)은 그 파서의 몫이다 — 그물은 itemId 만 읽는다.
+ */
+export interface MonsterDropTableDef {
+  monsterId: string
+  drops: MonsterDropDef[]
+}
+
+export type MonsterDropTables = Record<string, MonsterDropTableDef>
 
 /** 강화 한 단계가 먹는 원재료 한 줄. */
 export interface EnhanceMaterial {

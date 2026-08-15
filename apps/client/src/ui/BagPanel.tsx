@@ -5,6 +5,7 @@ import {
   SKILL_IDS,
   SKILL_LABELS,
   type CollectionThresholds,
+  type EquipSlot,
   type ItemDef,
   type ItemInstance,
   type SkillId,
@@ -40,7 +41,11 @@ import { clampCount, formatGold } from './shopModel.js'
  * 망치 강화가 무엇을 사 주는지 화면 어디에도 안 남는다 — 그 사다리를 아무도
  * 안 타던 이유가 바로 그것이었다.
  */
-function toolSpeedLabel(skill: SkillId, def: ItemDef, enhanceLevel: number): string {
+function toolSpeedLabel(skill: EquipSlot, def: ItemDef, enhanceLevel: number): string {
+  // 무기의 축은 간격이 아니라 회당 피해다(전투 §4) — 예비 목록에 검이 오르는
+  // 순간부터 이 분기가 없으면 검에 채집 간격을 적게 된다. 전투 화면 자체는
+  // 뒤 태스크의 몫이라 여기는 정의의 숫자 하나만 정직하게 옮긴다.
+  if (skill === 'combat') return `피해 ${def.damage ?? 0}`
   if (skill === 'crafting') {
     const bonusPct = hammerChanceBonus(def.toolTier ?? 0, enhanceLevel) * 100
     // 강화 배수만 곱한다 — craftIntervalMs 와 같은 셈이라야 이 줄이 참이다.

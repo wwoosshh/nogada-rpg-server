@@ -24,6 +24,26 @@ describe('PlayerStateSchema', () => {
     expect(PlayerStateSchema.safeParse(validSave()).success).toBe(true)
   })
 
+  // 전투 아크의 슬롯 확장(EquipSlot = SkillId | 'combat', §12-앞 8)이 세이브
+  // 게이트를 스치지도 않는다는 증거 한 쌍. equipped 는 열린 레코드라 combat
+  // 키가 있어도 없어도 통과하고, skills 는 다섯 키 그대로다 — SKILL_IDS 에
+  // combat 을 넣는 길은 skillsShape(.strict()+필수)가 combat 키 없는 세이브
+  // 전부를 버리게 만든다(재현됨). 이 테스트가 그 함정의 문지기다.
+  it('combat 슬롯이 든 세이브도, 없는 구세이브도 받아들인다 — 착용은 열린 레코드라 슬롯이 늘어도 스키마는 그대로다', () => {
+    // validSave() 가 곧 구세이브다: equipped 에 combat 없음, skills 는 다섯 키.
+    expect(PlayerStateSchema.safeParse(validSave()).success).toBe(true)
+
+    const armed = validSave()
+    ;(armed.equipped as Record<string, string>).combat = 'i1'
+    expect(PlayerStateSchema.safeParse(armed).success).toBe(true)
+  })
+
+  it('skills 에 combat 을 적은 세이브는 거부한다 — 전투 숙련은 기술 다섯이 아니라 전투 상태(설계 §6)의 몫이다', () => {
+    const save = validSave()
+    ;(save.skills as Record<string, number>).combat = 0
+    expect(PlayerStateSchema.safeParse(save).success).toBe(false)
+  })
+
   // skills 가 z.record 이던 시절엔 이 케이스가 통과했다 — 그러면 빠진 스킬은
   // 서버에서 undefined 로 읽히고, proficiencyProgress(undefined, ...) 는 NaN 을
   // 반환해 성공률이 NaN 이 되고, rng() < NaN 은 항상 false 라 그 스킬은 영원히

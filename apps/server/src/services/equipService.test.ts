@@ -11,6 +11,9 @@ const items: Record<string, ItemDef> = {
   copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
   iron_pickaxe: testTool('iron_pickaxe', 'mineral', 2, { name: '철 곡괭이', icon: 'pickaxe_iron' }),
   copper_axe: testTool('copper_axe', 'wood', 1, { name: '구리 도끼', icon: 'axe_copper' }),
+  // 무기 — 슬롯이 SkillId 다섯 밖('combat')인 도구다(전투 §12-앞 8). 착용 판정이
+  // 슬롯을 정의(toolSkill)에서 읽는다는 계약이 무기에도 그대로 서는지 본다.
+  copper_sword: testTool('copper_sword', 'combat', 1, { name: '구리 검', icon: 'sword_copper', damage: 5 }),
   copper_ore: testItem('copper_ore', { name: '구리 원석', icon: 'ore_copper', price: 80, skill: 'mineral' }),
   hard_log: testItem('hard_log', { name: '단단한 통나무', icon: 'log_hard', price: 400, skill: 'wood' }),
   lavender: testItem('lavender', { name: '라벤더', icon: 'flower_lavender', price: 130, skill: 'herb' }),
@@ -98,6 +101,20 @@ describe('performEquip', () => {
     const r = performEquip({ player: p, items, instanceId: 'axe1' })
     if (!r.ok) throw new Error('성공해야 한다')
     expect(r.outcome.player.equipped.wood).toBe('axe1')
+    expect(r.outcome.player.equipped.mineral).toBe('worn')
+  })
+
+  it('무기는 combat 슬롯으로 간다 — 슬롯 결정이 SkillId 다섯 밖으로도 정의를 따른다(전투 §12-앞 8)', () => {
+    const p = player({
+      instances: [
+        { instanceId: 'worn', itemId: 'copper_pickaxe', enhanceLevel: 0 },
+        { instanceId: 'sword1', itemId: 'copper_sword', enhanceLevel: 0 },
+      ],
+    })
+    const r = performEquip({ player: p, items, instanceId: 'sword1' })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.player.equipped.combat).toBe('sword1')
+    // 검이 채집 슬롯을 밀어내면 무기 하나가 곡괭이를 벗긴다.
     expect(r.outcome.player.equipped.mineral).toBe('worn')
   })
 

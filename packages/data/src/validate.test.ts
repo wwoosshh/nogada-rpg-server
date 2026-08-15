@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { DialogueRule, GameData, GatherTables, MilestoneDef, ShopDef, SpeakerDef } from '@nogada/shared'
+import type { DialogueRule, GameData, GatherTables, MilestoneDef, MonsterDropTables, ShopDef, SpeakerDef } from '@nogada/shared'
 import { NODE_VARIANTS, isSellTarget, sellPrice } from '@nogada/shared'
 import { testItem, testTool } from '@nogada/shared/testing'
 import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
@@ -177,6 +177,32 @@ function craftLockedData(): GameData {
     skillGainMin: 10, skillGainMax: 20,
   }
   return data
+}
+
+/**
+ * 전투 드랍으로만 세상에 들어오는 재료 하나와 그것을 먹는 무기 하나(전투 §4).
+ *
+ * 송곳니(wolf_fang)는 어느 표의 티어도, 어느 레시피의 산출물도, 어느 진열도
+ * 아니다 — 획득 그물의 세 출처 전부의 바깥이라, 드랍표를 모르는 검사에게는
+ * 위반으로 보이는 것이 맞다(§12-앞 2 의 위반 픽스처). 검(copper_sword)은 그
+ * 송곳니를 재료로 하므로 고정점 계산도 드랍 시드에서 자라야 도달한다.
+ */
+function combatDropData(): GameData {
+  const data = baseData()
+  data.items.wolf_fang = testItem('wolf_fang', { name: '늑대 송곳니', icon: 'fang_wolf' })
+  data.items.copper_sword = testTool('copper_sword', 'combat', 1, { name: '구리 검', icon: 'sword_copper', damage: 5 })
+  data.recipes.copper_sword = {
+    id: 'copper_sword', name: '구리 검', category: '도구', skill: 'crafting', requiredSkill: 0, baseChance: 0.6,
+    inputs: [{ item: 'copper_ingot', count: 1 }, { item: 'wolf_fang', count: 2 }],
+    output: { item: 'copper_sword', count: 1 },
+    skillGainMin: 10, skillGainMax: 20,
+  }
+  return data
+}
+
+/** 들늑대의 최소 드랍표 — validateGameData 가 읽는 모양(MonsterDropTables)의 견본이다. C6 파서가 이 모양을 채운다. */
+function fangDrops(): MonsterDropTables {
+  return { wolf: { monsterId: 'wolf', drops: [{ itemId: 'wolf_fang', chance: 0.35 }] } }
 }
 
 /** dialogue/ 아래 모든 .dlg 파일을 읽어 하나의 배열로 합친다. build.ts 와 같은 방식이다. */
@@ -392,7 +418,7 @@ describe('validateGameData', () => {
     const data = baseData()
     data.items.orphan = testItem('orphan', { name: '고아', icon: 'x' })
     expect(validateGameData(data, baseTables())).toContain(
-      'items[orphan]: 채집으로도 제작으로도 구매로도 획득할 수 없다',
+      'items[orphan]: 채집으로도 제작으로도 구매로도 전투 드랍으로도 획득할 수 없다',
     )
   })
 
@@ -404,8 +430,37 @@ describe('validateGameData', () => {
     const data = baseData()
     delete data.recipes.copper_pickaxe
     expect(validateGameData(data, baseTables())).toContain(
-      'items[copper_pickaxe]: 채집으로도 제작으로도 구매로도 획득할 수 없다',
+      'items[copper_pickaxe]: 채집으로도 제작으로도 구매로도 전투 드랍으로도 획득할 수 없다',
     )
+  })
+})
+
+describe('validateGameData 의 전투 드랍 출처 (§12-앞 2)', () => {
+  it('드랍표에 실리지 않은 전투 전용 재료는 획득 불가다 — 그물을 넓힌 뒤에도 출처 없는 아이템은 물려야 한다', () => {
+    // 드랍표가 빈 세계 = 지금의 출하 상태다. 여기서 안 물리면 "전투 드랍" 출처를
+    // 더한 것이 아니라 그물에 구멍을 낸 것이다(§12-앞 2 의 위반 픽스처).
+    expect(validateGameData(combatDropData(), baseTables(), {})).toContain(
+      'items[wolf_fang]: 채집으로도 제작으로도 구매로도 전투 드랍으로도 획득할 수 없다',
+    )
+  })
+
+  it('드랍표에 실리면 획득 가능이고, 고정점도 그 시드에서 자란다 — 검이 송곳니를 거쳐 도달한다', () => {
+    // .toEqual([]) 이라 두 자리를 한꺼번에 문다: 획득 검사(참조 단계)가 드랍
+    // 출처를 알고, 도달 가능성 고정점도 같은 시드를 안다 — 어느 한쪽만 알면
+    // wolf_fang 이나 copper_sword 가 위반으로 남는다.
+    expect(validateGameData(combatDropData(), baseTables(), fangDrops())).toEqual([])
+  })
+
+  it('1티어 combat 무기는 "기술별 1티어 도구 하나" 검사 밖이다 — 시작 지급은 채집 기술의 유도이고 무기는 전투 사슬로 온다(전투 §4)', () => {
+    // copper_sword(1티어 combat)와 copper_pickaxe(1티어 mineral)가 공존해도
+    // "정확히 하나" 위반이 없어야 한다. 무기가 후보에 섞이는 순간 시작 지급
+    // 유도(starterToolFor)가 어느 쪽을 줄지 정해지지 않는다.
+    const violations = validateGameData(combatDropData(), baseTables(), fangDrops())
+    expect(violations.filter((v) => v.includes('1티어 도구'))).toEqual([])
+  })
+
+  it('드랍표 인자를 생략하면 전투 없는 세계다 — 전투 이전의 픽스처들이 낡지 않는다', () => {
+    expect(validateGameData(baseData(), baseTables())).toEqual([])
   })
 })
 
@@ -416,13 +471,13 @@ describe('validateGameData 의 도달 가능성 검사', () => {
     // iron_pickaxe 까지 걸려 있다 — 셋 다 레시피 산출물이라 "획득 가능" 검사는
     // 통과하지만, 놓인 노드의 표에서 출발하는 어떤 사슬도 진입하지 못한다.
     expect(violations).toContain(
-      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 어느 드랍표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ore]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_ore]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 어느 드랍표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
     expect(violations).toContain(
-      'items[iron_ingot]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_ingot]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 어느 드랍표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
   })
 
@@ -1412,7 +1467,7 @@ describe('validateGameData 의 대화 검사 — 다른 데이터의 오타에 �
     const violations = validateGameData(data, baseTables())
     expect(violations).toContain('dialogue[노인] 노인.dlg:1행: 선언되지 않은 사실 "affinty" 를 쓴다')
     expect(violations).toContain(
-      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다',
+      'items[iron_pickaxe]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 어느 드랍표에도 없고, 재료가 전부 도달 가능한 레시피도 없다',
     )
   })
 })
@@ -2076,7 +2131,7 @@ describe('validateGameData 의 획득·도달 시드 — 상점 진열', () => {
     })
     data.shops = { 광물상점: mineralShop() }
     expect(validateGameData(data, baseTables())).toContain(
-      'items[mineral_speed_token]: 채집으로도 제작으로도 구매로도 획득할 수 없다',
+      'items[mineral_speed_token]: 채집으로도 제작으로도 구매로도 전투 드랍으로도 획득할 수 없다',
     )
   })
 })

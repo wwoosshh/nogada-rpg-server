@@ -7,6 +7,7 @@ import type {
   ItemDef,
   MapDef,
   MilestoneDef,
+  MonsterDropTables,
   SkillId,
 } from '@nogada/shared'
 import {
@@ -251,8 +252,21 @@ export function findDeadDialogueRules(dialogue: readonly DialogueRule[]): DeadDi
  * 규칙(아래 validateGameData)이 보장하기 때문이다 — 그 보장이 없으면 이
  * fixpoint 는 아이템 참조 사슬만 보고 "도달 가능"이라 오판한다.
  */
-function computeReachableItems(data: GameData, gatherTables: GatherTables): Set<string> {
+function computeReachableItems(
+  data: GameData,
+  gatherTables: GatherTables,
+  monsterDrops: MonsterDropTables,
+): Set<string> {
   const reachable = new Set<string>()
+
+  // 전투 드랍도 노드 표와 같은 자격의 시드다(전투 §12-앞 2). 처치는 무기를
+  // 요구하지만 맨손 전투가 열려 있으므로(전투 §12-앞 9 — 채집의 맨손과 같은
+  // 자리) 그라인딩으로 언젠가 항상 닿는다. 드랍 확률이 얼마든 여기서는 보지
+  // 않는 것도 브라켓과 같다 — 확률은 속도이지 접근이 아니다. 몬스터가 맵에
+  // 놓였는가는 배치 검사(C6, validateMonsterPatterns 의 자리)의 몫이다.
+  for (const table of Object.values(monsterDrops)) {
+    for (const drop of table.drops) reachable.add(drop.itemId)
+  }
 
   // 상점 진열은 노드 표와 같은 자격의 시드다(§6-앞 12). 매수는 골드를 요구하지만
   // 골드는 캔 것을 팔면 나오고, 진열의 문턱도 숙련도이거나 수집 총점이라 둘 다
@@ -351,8 +365,17 @@ function findEveryCycle(milestones: readonly MilestoneDef[]): string | null {
  * 번들 금지, 설계 §7-앞 9) 노드가 표를, 표가 아이템을 가리키므로 도달 가능성은
  * 양쪽을 다 봐야 계산된다. 표 자체의 검사(누적 순증가, ∞ 브라켓 등)는
  * validateGatherTables(gatherTables.ts)의 몫이다.
+ *
+ * `monsterDrops` 도 같은 이유로 따로 받는다(전투 §12-앞 2 — 드랍표도 서버
+ * 전용이다). 기본값이 빈 표인 것은 생략을 봐주려는 편의가 아니라 뜻이 정확히
+ * 맞아서다: 전투 이전의 픽스처들이 그리는 세계에는 몬스터가 없고, 빈 표가
+ * 곧 그 세계다. 드랍 CSV 파서(C6)가 생기면 build.ts 가 그 결과를 싣는다.
  */
-export function validateGameData(data: GameData, gatherTables: GatherTables): string[] {
+export function validateGameData(
+  data: GameData,
+  gatherTables: GatherTables,
+  monsterDrops: MonsterDropTables = {},
+): string[] {
   const violations: string[] = []
   const hasItem = (id: string): boolean => Object.hasOwn(data.items, id)
 
@@ -482,6 +505,11 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 길이 그 레시피뿐이기 때문이다(§2 의 부트스트랩 경로). 후보를 세는 술어는
   // 지급이 쓰는 starterToolCandidates 그대로다 — 결손이 캐릭터 생성 런타임이
   // 아니라 여기(빌드)에서 터지는 것이 이 검사의 존재 이유다.
+  //
+  // combat 무기는 이 검사 밖이다(전투 §4): 순회 대상이 노드가 존재하는 기술뿐
+  // 이고 combat 은 노드가 없어 애초에 목록에 오르지 않는다 — 1티어 검이 있어도
+  // 시작 지급 후보에 섞이지 않고, 검에게 "공짜 레시피" 의무도 지우지 않는다
+  // (첫 검은 구조적으로 드랍 사슬 뒤다, §12-앞 9).
   const gatheringSkills = new Set(Object.values(data.nodes).map((node) => node.skill))
   for (const skill of gatheringSkills) {
     const candidates = starterToolCandidates(skill, data.items)
@@ -627,9 +655,15 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   for (const shop of Object.values(data.shops)) {
     for (const entry of shop.stock) obtainable.add(entry.itemId)
   }
+  // 전투 드랍도 획득이다(전투 §12-앞 2) — 송곳니는 캐지지도 만들어지지도 팔리지도
+  // 않으므로, 드랍표를 세지 않으면 전투 아크의 데이터가 그대로 빌드를 세운다
+  // (재현됨 — 이 확장이 드랍 CSV 보다 먼저 있어야 하는 이유다).
+  for (const table of Object.values(monsterDrops)) {
+    for (const drop of table.drops) obtainable.add(drop.itemId)
+  }
   for (const item of Object.values(data.items)) {
     if (!obtainable.has(item.id)) {
-      violations.push(`items[${item.id}]: 채집으로도 제작으로도 구매로도 획득할 수 없다`)
+      violations.push(`items[${item.id}]: 채집으로도 제작으로도 구매로도 전투 드랍으로도 획득할 수 없다`)
     }
   }
 
@@ -918,11 +952,11 @@ export function validateGameData(data: GameData, gatherTables: GatherTables): st
   // 도매금 처리해 진짜 원인이 N+1 줄의 소음에 파묻힌다.
   if (referenceViolations > 0) return violations
 
-  const reachable = computeReachableItems(data, gatherTables)
+  const reachable = computeReachableItems(data, gatherTables, monsterDrops)
   for (const item of Object.values(data.items)) {
     if (!reachable.has(item.id)) {
       violations.push(
-        `items[${item.id}]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 재료가 전부 도달 가능한 레시피도 없다`,
+        `items[${item.id}]: 도달할 수 없다 — 맵에 놓인 어느 노드의 표에도 없고, 어느 상점도 팔지 않으며, 어느 드랍표에도 없고, 재료가 전부 도달 가능한 레시피도 없다`,
       )
     }
   }

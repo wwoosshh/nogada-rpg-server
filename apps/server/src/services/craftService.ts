@@ -10,12 +10,12 @@ import {
   rollInt,
   type CraftContext,
   type EquippedToolInfo,
+  type EquipSlot,
   type GameData,
   type ItemDef,
   type MilestoneDef,
   type PlayerState,
   type RecipeInput,
-  type SkillId,
 } from '@nogada/shared'
 
 export interface PerformCraftArgs {
@@ -57,8 +57,9 @@ function spend(player: PlayerState, item: string, count: number): void {
  *
  * 등급 숫자만 견주면(옛 코드) 강화가 보이지 않아, 만강 도구를 더 느린 신품이
  * 덮어쓰고 그 투자가 조용히 사라진다. 그래서 등급이 아니라 그 도구가 내는
- * 효과로 견준다 — 축은 기술마다 다르다. 망치는 성공률(등급·강화가 더하기로
- * 쌓인다), 채집 도구는 간격(곱하기로 쌓이고 작을수록 빠르다).
+ * 효과로 견준다 — 축은 슬롯마다 다르다. 망치는 성공률(등급·강화가 더하기로
+ * 쌓인다), 채집 도구는 간격(곱하기로 쌓이고 작을수록 빠르다), 무기는 회당
+ * 피해(전투 §4 — 간격은 전투 숙련의 것이라 무기가 사는 축이 아니다).
  *
  * 동률이면 바꾸지 않는다. 나아지는 것이 없는데 강화 수치만 0 으로 잃는다.
  *
@@ -66,9 +67,15 @@ function spend(player: PlayerState, item: string, count: number): void {
  * 판정(calcCraftSuccess)·화면(BagPanel)과 갈라져, 화면이 더 좋다고 적은 도구를
  * 서비스가 착용하지 않는 날이 온다(§6-앞 2).
  */
-function isBetterTool(skill: SkillId, next: ItemDef, current: EquippedToolInfo | null): boolean {
+function isBetterTool(slot: EquipSlot, next: ItemDef, current: EquippedToolInfo | null): boolean {
   if (!current) return true
-  if (skill === 'crafting') {
+  if (slot === 'combat') {
+    // 무기는 정의의 damage 그대로 견준다 — 강화가 피해에 무엇을 얹는지는 아직
+    // 셈이 없다(그 셈이 생기면 shared 의 그 식이 이 두 줄을 대신한다). 동률
+    // 유지 규칙 덕에 지금도 만강 검을 같은 검 신품이 덮어쓰지는 못한다.
+    return (next.damage ?? 0) > (current.def.damage ?? 0)
+  }
+  if (slot === 'crafting') {
     return (
       hammerChanceBonus(next.toolTier ?? 0, 0) >
       hammerChanceBonus(current.def.toolTier ?? 0, current.instance.enhanceLevel)
