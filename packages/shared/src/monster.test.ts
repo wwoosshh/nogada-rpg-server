@@ -57,6 +57,41 @@ const 부채꼴 = keysOf([
   { x: 6, y: 2 },
 ])
 
+/**
+ * 세로 방향 부채꼴을 따로 문다 — 리뷰가 찾은 살아남는 돌연변이의 자리다.
+ *
+ * 기존 픽스처 둘이 전부 direction 'right' 라, 수직축 벌어짐(`side`)을
+ * `{x:0, y:1}` 로 부숴도 19개 테스트가 전부 초록이었다. 이 기하는 C4 서버
+ * 피격 판정이 읽는 shared 술어라, 세로 공격 몬스터가 데이터에 들어오기 전에
+ * 축 하나가 아니라 **두 축 다** 물려 있어야 한다.
+ */
+const 위로늑대: MonsterDef = {
+  id: 'wolf-up',
+  name: '들늑대',
+  periodMs: 4000,
+  patrol: [
+    { x: 5, y: 5 },
+    { x: 5, y: 5 },
+  ],
+  attacks: [{ telegraphStartMs: 0, telegraphMs: 800, activeMs: 400, direction: 'up', reach: 2 }],
+}
+
+describe('부채꼴 기하 — 세로 방향', () => {
+  it('위로 나아가면 좌우(x)로 벌어진다 — 깊이 2 는 정확히 네 칸이다', () => {
+    // 앵커 (5,5)·up·reach 2: 깊이 1 = (5,4), 깊이 2 = (4,3),(5,3),(6,3).
+    // 벌어짐이 전진축(y)으로 새면 (5,2) 같은 칸이 대신 들어온다 — 그 돌연변이가
+    // 이 전수 대조에서 갈린다.
+    const s = monsterStateAt(위로늑대, 900)
+    expect(s.phase).toBe('sweep')
+    expect(keysOf(s.dangerTiles)).toEqual(keysOf([
+      { x: 5, y: 4 },
+      { x: 4, y: 3 },
+      { x: 5, y: 3 },
+      { x: 6, y: 3 },
+    ]))
+  })
+})
+
 describe('monsterStateAt — 순찰과 진행도', () => {
   // 왜: 클라 렌더가 이 진행도로 직접 보간한다(설계 §2-1 — NpcSprite 의 추격
   //     보간은 정상 상태에서 0~1칸 뒤진다). 진행도가 슬롯 안에서 단조가

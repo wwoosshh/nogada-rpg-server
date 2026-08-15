@@ -383,9 +383,16 @@ function checkNoSafeCamp(
  * 사람. 스윙 위상이 균등하다고 보면 기대 피격 = (창 안에서 그 칸의 스윙이
  * 실제로 닿는 시간) / 간격이므로, 구역 칸마다 **사거리 체류 시간 ≥ 간격
  * 하한**이어야 기대 피격이 1 을 넘는다 — 창 폭 하한만으로는 순찰이 휩쓸기
- * 중에 떠나는 패턴을 못 문다. 창 내내 사거리 밖인 구역 칸은 방치자의 스윙이
- * 애초에 안 닿으므로(피격은 수락된 스윙에만 실린다, §2-2) 여기선 안 보고,
- * 그 칸의 장기 안전은 검사 2 가 문다.
+ * 중에 떠나는 패턴도 문다 — **사거리 밖 스윙이 헛스윙(ok:true)이기 때문이다**
+ * (§2-2). 헛스윙도 간격을 소모하고 피격을 판정하므로, 구역 칸의 방치자는
+ * 몬스터가 어디 있든 활성 창 ≥ 간격 하한이면 반드시 한 번은 맞는다.
+ *
+ * 이 의미론이 아니었을 때의 구멍을 리뷰가 재현했다: 사거리 밖 스윙을 거절로
+ * 두면 "구역에 덮이지만 그 순간 사거리 밖인 칸"의 방치자는 스윙이 전부
+ * 거절이라(거절은 아무것도 판정하지 않는다) 영원히 무피격인 자판기 칸이 됐다.
+ * 검사 2 는 사거리 체류를 모르고 이 검사는 그 칸을 검사 2 에 미뤘다 — 순환
+ * 위임이었다. 헛스윙 의미론이 그 순환을 뿌리에서 끊는다: 위험은 구역 하나로
+ * 정의되고, 사거리는 명중(몬스터 HP)에만 관여한다.
  */
 function checkWindows(
   { instanceId, def }: PlacedMonster,
@@ -408,32 +415,10 @@ function checkWindows(
       )
     }
 
-    for (const zoneKey of e.zoneKeys) {
-      const [zx, zy] = zoneKey.split(',').map(Number)
-      const p = { x: zx!, y: zy! }
-      // 맵 밖 구역 칸은 설 수도 주장할 수도 없는 좌표계 밖이다.
-      if (p.x < 0 || p.y < 0 || p.x >= terrain.width || p.y >= terrain.height) continue
-
-      const inRangeMs = inRangeMsDuring(def, p, e.sweepStartMs, e.sweepEndMs)
-      if (inRangeMs > 0 && inRangeMs < COMBAT_INTERVAL_MIN_MS) {
-        violations.push(
-          `${who}: 휩쓸기(t=${e.sweepStartMs}~${e.sweepEndMs}ms) 구역 칸 (${p.x}, ${p.y}) 이 사거리에 ${inRangeMs}ms 만 머문다 — 최소 간격 ${COMBAT_INTERVAL_MIN_MS}ms 방치자의 기대 피격이 1 을 밑돈다. 휩쓸기 동안 순찰이 그 곁을 떠나지 않게 한다`,
-        )
-      }
-    }
+    // 구역 칸별 사거리 체류 검사는 은퇴했다 — 헛스윙 의미론(위 문서) 아래에서
+    // 기대 피격 ≥ 1 은 "활성 창 ≥ 간격 하한" 하나가 전 구역 칸에 균일하게
+    // 보장한다. 사거리 체류를 다시 재기 시작하면 위험의 정의가 둘이 된다.
   }
   return violations
 }
 
-/** [startMs, endMs) 동안 칸 p 가 몬스터 사거리 안에 머무는 총 시간 — 순찰은 슬롯마다만 움직이므로 슬롯 조각으로 자른다. */
-function inRangeMsDuring(def: MonsterDef, p: TilePos, startMs: number, endMs: number): number {
-  const slotMs = def.periodMs / def.patrol.length
-  let total = 0
-  let t = startMs
-  while (t < endMs) {
-    const segEnd = Math.min(endMs, (Math.floor(t / slotMs) + 1) * slotMs)
-    if (withinAttackRange(p, monsterStateAt(def, t).tile)) total += segEnd - t
-    t = segEnd
-  }
-  return total
-}

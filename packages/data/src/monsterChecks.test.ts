@@ -204,6 +204,54 @@ describe('검사 2 — 영원·유사영원 안전 공격 칸 없음 (§8-2, §1
   })
 })
 
+describe('검사 1 — 최대 고정점은 한 바퀴로 끝나지 않는다', () => {
+  /**
+   * **고정점 반복 자체를 무는 픽스처다.** 리뷰가 재현한 살아남는 돌연변이:
+   * `while (changed)` 를 한 바퀴로 제한해도 기존 픽스처 전부가 초록이었다 —
+   * 협공은 첫 바퀴에 비고, 나머지는 애초에 안 줄어서, "최대 고정점까지 반복"
+   * 이라는 §8-1 술어의 이름값을 아무도 증언하지 않았다.
+   *
+   * 이 통로는 산술로 지어졌다: 32칸 복도에서 휩쓸기 A(오른쪽 16칸)·B(왼쪽
+   * 14칸)·C(왼쪽 5칸, 앵커가 (5,1)로 걸어간 뒤)가 예산 5·5·6 걸음으로 이어진다.
+   * 1바퀴: A핵이 {6..9}를 잃고(i=0), 그 줄어든 A핵이 감기 참조로 C핵의 {22..}를
+   * 잘라낸다(i=2). **2바퀴째에야** 줄어든 C핵이 B핵의 {27..31}을 잘라낸다(i=1) —
+   * 그래서 B 예고의 좌초 칸이 8개(1바퀴)가 아니라 **10개**(고정점)다. 한 바퀴
+   * 돌연변이는 이 숫자에서 갈린다.
+   */
+  it('핵의 수축이 감기를 넘어 연쇄하면 두 바퀴째가 좌초 칸을 더 찾는다', () => {
+    const corridor: Record<string, MapTerrain> = {
+      [맵]: {
+        width: 32,
+        height: 3,
+        walls: new Set(
+          Array.from({ length: 32 * 3 }, (_, i) => `${i % 32},${Math.floor(i / 32)}`).filter(
+            (k) => !k.endsWith(',1'),
+          ),
+        ),
+      },
+    }
+    const patrol = [
+      ...Array.from({ length: 13 }, () => ({ x: 15, y: 1 })),
+      ...Array.from({ length: 10 }, (_, i) => ({ x: 14 - i, y: 1 })),
+      { x: 5, y: 1 },
+      ...Array.from({ length: 10 }, (_, i) => ({ x: 6 + i, y: 1 })),
+    ]
+    const def: MonsterDef = {
+      id: 'wolf',
+      name: '들늑대',
+      periodMs: 3400,
+      patrol,
+      attacks: [
+        attack(100, 'right', { reach: 16 }),
+        attack(1200, 'left', { reach: 14 }),
+        attack(2300, 'left', { reach: 5 }),
+      ],
+    }
+    const v = check(def, corridor)
+    expect(v.some((m) => m.includes('t=1200ms') && m.includes('10개'))).toBe(true)
+  })
+})
+
 describe('검사 3 — 예고·활성 하한과 방치자 기대 피격 (§8-3, §12-앞 1)', () => {
   it('예고 700ms 미만은 보고 피하는 게임이 아니라 반응속도 시험이다', () => {
     const v = check(기준늑대({ attacks: [attack(0, 'up', { telegraphMs: 600 }), ...기준늑대().attacks.slice(1)] }))
@@ -215,10 +263,13 @@ describe('검사 3 — 예고·활성 하한과 방치자 기대 피격 (§8-3, 
     expect(v.some((m) => m.includes('활성') && m.includes('300ms'))).toBe(true)
   })
 
-  it('휩쓸기 중 순찰이 떠나면 사거리 체류가 줄어 방치자 기대 피격이 1을 밑돈다', () => {
-    // 휩쓸기 [700,1100) 의 한가운데(t=900)에 몬스터가 옆 칸으로 걸어가 버려,
-    // 구역 칸 (3,2) 는 사거리에 200ms 만 머문다 — 400ms 간격 방치자의 기대
-    // 피격 0.5. 창 폭(400ms)은 하한을 지키므로 이 위반은 순수하게 체류의 것이다.
+  it('휩쓸기 중 순찰이 떠나도 위반이 아니다 — 헛스윙 의미론이 구역 칸을 사거리와 무관하게 문다', () => {
+    // 옛 검사는 여기서 "(3, 2) 가 사거리에 200ms 만 머문다" 위반을 냈다. 그
+    // 검사의 전제(피격은 사거리 안 스윙에만 실린다)가 자판기 칸 구멍을 낳아
+    // 은퇴했고(§2-2 헛스윙 의미론 — 리뷰가 재현한 순환 위임), 이제 구역 칸의
+    // 방치자는 몬스터가 어디 있든 활성 창 ≥ 간격 하한이면 맞는다. 이 작은
+    // 픽스처는 검사 2 의 정당한 안전 칸 위반은 그대로 내지만, **체류를 이유로 한
+    // 위반만은 더 이상 없어야 한다.**
     const def: MonsterDef = {
       id: 'wolf',
       name: '들늑대',
@@ -230,6 +281,7 @@ describe('검사 3 — 예고·활성 하한과 방치자 기대 피격 (§8-3, 
       attacks: [attack(0, 'up')],
     }
     const v = check(def)
-    expect(v.some((m) => m.includes('(3, 2)') && m.includes('200ms'))).toBe(true)
+    expect(v.some((m) => m.includes('머문다') || m.includes('체류'))).toBe(false)
+    expect(v.some((m) => m.includes('(3, 2)') && m.includes('200ms'))).toBe(false)
   })
 })
