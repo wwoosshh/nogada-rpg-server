@@ -254,6 +254,17 @@ export const TalkRequestSchema = z.object({ speakerId: z.string().min(1) })
 export type TalkRequest = z.infer<typeof TalkRequestSchema>
 
 /**
+ * 여관 요청. 화자 id 하나뿐이다(아크 D §2).
+ *
+ * 값이 담기지 않는다 — 여관비는 inns.csv 가 소유하는 등록부 값이라, 요청이
+ * 값을 보낼 수 있게 하면 자기 잠자리에 자기가 값을 매긴다(SellRequest 가 매도가를
+ * 안 담는 그 이유다). 무엇이 회복되는지도 담기지 않는다: 결과는 만혈 하나뿐이고
+ * 그것은 서버의 판정(performRest)이다.
+ */
+export const InnRequestSchema = z.object({ speakerId: z.string().min(1) })
+export type InnRequest = z.infer<typeof InnRequestSchema>
+
+/**
  * 수량. **요청이 수량을 담는 첫 사례**이고, 앞선 요청들의 최소성(EquipRequest·
  * EnhanceRequest·TalkRequest·MoveRequest 가 각자 그 이유를 적는다)에 대한 예외다.
  *

@@ -72,6 +72,7 @@ beforeEach(() => {
   useGameStore.setState({
     openPanel: null,
     pendingShop: null,
+    pendingInn: null,
     craftTally: {},
     lastAction: null,
     notice: null,
@@ -79,6 +80,8 @@ beforeEach(() => {
     tradeBusy: false,
     bagError: null,
     bagBusy: false,
+    innError: null,
+    innBusy: false,
     player: emptyPlayer(),
     boot: 'playing',
     connection: 'online',
@@ -275,6 +278,142 @@ describe('상점 — 문은 대사가 끝난 뒤에 열린다(설계 §6-앞 20)
 
     expect(useGameStore.getState().lastAction?.text).toBe('+1,000,000 G')
     expect(useGameStore.getState().lastAction?.tone).toBe('good')
+  })
+})
+
+/*
+ * 여관 — pendingShop 의 쌍둥이다(아크 D §2). 대화 갈래 기계는 없으므로
+ * (DialogueFlow 는 선형) 문이 열리는 길은 상점과 같은 것 하나뿐이다:
+ * talk 응답의 필드 → 대사 종료 → 패널.
+ */
+describe('여관 — 문은 대사가 끝난 뒤에 열린다(아크 D §2, pendingShop 쌍둥이)', () => {
+  // 왜: talk 응답이 바로 패널을 열면 그 직후 닫힌다 — 상점과 정확히 같은 사정이다
+  //     (DialogueScene 의 발화 구독이 가장 먼저 setOpenPanel(null) 을 부른다).
+  it('talk 의 inn 은 pendingInn 에 담기고 그 자리에서 열리지 않는다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(talkOutcome({ inn: '여관안주인' }))))
+
+    await useGameStore.getState().talk('여관안주인')
+
+    expect(useGameStore.getState().pendingInn).toBe('여관안주인')
+    expect(useGameStore.getState().openPanel).toBeNull()
+  })
+
+  // 왜: "대사가 끝났다"를 아는 자리는 하나뿐이고(DialogueScene 의 그 전환),
+  //     그 자리는 openPendingShop 하나를 부른다 — 여관을 위해 두 번째 훅을
+  //     파면 언젠가 한쪽만 불린다. 그래서 한 함수가 기다리던 문을 전부 연다.
+  it('대사가 끝나면 여관 패널이 열리고 채널이 비워진다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(talkOutcome({ inn: '여관안주인' }))))
+
+    await useGameStore.getState().talk('여관안주인')
+    useGameStore.getState().openPendingShop()
+
+    expect(useGameStore.getState().openPanel).toBe('inn:여관안주인')
+    expect(useGameStore.getState().pendingInn).toBeNull()
+    // 두 번째 호출은 아무 일도 없다 — 대사창은 여관과 무관한 말에도 매번 닫힌다.
+    useGameStore.getState().setOpenPanel(null)
+    useGameStore.getState().openPendingShop()
+    expect(useGameStore.getState().openPanel).toBeNull()
+  })
+
+  // 왜: 문이 안 열리는 대화가 앞선 대화의 여관을 물려받으면 아무 말이나 걸어도
+  //     여관이 열린다 — pendingShop 이 지키는 그 규칙이다.
+  it('여관 없는 대화는 기다리던 여관을 지운다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(jsonResponse(talkOutcome({ inn: '여관안주인' })))
+        .mockResolvedValueOnce(jsonResponse(talkOutcome())),
+    )
+
+    await useGameStore.getState().talk('여관안주인')
+    await useGameStore.getState().talk('채집장노인')
+
+    expect(useGameStore.getState().pendingInn).toBeNull()
+  })
+
+  // 왜: 만혈이면 버튼 자체를 안 그리지만(죽은 버튼 금지), 회복이 다 차기 직전에
+  //     누른 경합 창은 화면이 못 막는다 — 그때 조용하면 돈이 안 나간 이유를
+  //     아무도 모른다. 문구는 패널 안 채널(innError)에 앉는다: 머리 위 글자는
+  //     패널 뒤에서 뜨고 사라진다(상점 tradeError 의 그 이유).
+  it('경합 거절(already_full)은 패널 안에서 한국어로 말한다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'already_full' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('inn:여관안주인')
+    await useGameStore.getState().rest('여관안주인')
+
+    expect(useGameStore.getState().innError).toBe('이미 성한 몸이다')
+    expect(useGameStore.getState().lastAction).toBeNull()
+    expect(useGameStore.getState().openPanel).toBe('inn:여관안주인')
+  })
+
+  // 왜: 골드 부족은 상점과 같은 사실이라 같은 글자를 쓴다 — 문구가 갈라지면
+  //     그게 더 이상하다(describeError 의 not_enough_gold 재사용).
+  it('경합 거절(not_enough_gold)은 거래의 그 글자를 쓴다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ code: 'not_enough_gold' }, 400)),
+    )
+
+    useGameStore.getState().setOpenPanel('inn:여관안주인')
+    await useGameStore.getState().rest('여관안주인')
+
+    expect(useGameStore.getState().innError).toBe('골드 부족')
+  })
+
+  // 왜: 응답은 { player } 하나다 — 깎인 골드와 찬 HP 는 돌아온 상태가 말한다.
+  it('회복 성공은 응답의 player 를 그대로 갈아 끼우고 지난 거절을 지운다', async () => {
+    const rested = { ...emptyPlayer(), gold: 3_500 }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => jsonResponse({ player: rested })),
+    )
+
+    useGameStore.getState().setOpenPanel('inn:여관안주인')
+    useGameStore.setState({ innError: '골드 부족' })
+    await useGameStore.getState().rest('여관안주인')
+
+    expect(useGameStore.getState().player?.gold).toBe(3_500)
+    expect(useGameStore.getState().innError).toBeNull()
+    expect(useGameStore.getState().openPanel).toBe('inn:여관안주인')
+  })
+
+  // 왜: 두 번째 요청 자체를 막는 것이 근본이다(tradeBusy·bagBusy 의 그 교훈) —
+  //     왕복 중 한 번 더 누르면 둘째는 이미 만혈인 몸에 또 값을 치르려 한다.
+  it('요청이 나가 있는 동안에는 잠금 신호(innBusy)가 켜져 있다', async () => {
+    let release: (() => void) | null = null
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => {
+        await held
+        return jsonResponse({ player: emptyPlayer() })
+      }),
+    )
+
+    useGameStore.getState().setOpenPanel('inn:여관안주인')
+    const inflight = useGameStore.getState().rest('여관안주인')
+    expect(useGameStore.getState().innBusy).toBe(true)
+
+    release!()
+    await inflight
+    expect(useGameStore.getState().innBusy).toBe(false)
+  })
+
+  // 왜: 문구는 그 순간의 것이다 — 패널을 닫았다 다시 열었는데 지난 거절이
+  //     붙어 있으면 아무것도 안 했는데 실패한 화면이 된다(상점·가방과 같은 규칙).
+  it('패널을 닫으면 거절 문구도 함께 지워진다', async () => {
+    useGameStore.getState().setOpenPanel('inn:여관안주인')
+    useGameStore.setState({ innError: '이미 성한 몸이다' })
+
+    useGameStore.getState().setOpenPanel(null)
+
+    expect(useGameStore.getState().innError).toBeNull()
   })
 })
 

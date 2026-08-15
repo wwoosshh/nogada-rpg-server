@@ -6,6 +6,7 @@ import { parseCsv, parseItems, parseNodes, parseRecipes } from './parse.js'
 import { parseCollection, validateCollection } from './collection.js'
 import { parseEnhanceCosts, validateEnhanceCosts } from './enhanceCosts.js'
 import { parseGatherTables, validateGatherTables } from './gatherTables.js'
+import { parseInns } from './inns.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
 import { validateMonsterPatterns } from './monsterChecks.js'
@@ -144,6 +145,10 @@ function parseMapsOrFail(): ParsedMaps {
 
 const { maps, terrains, mapJson, placements, places } = parseMapsOrFail()
 
+// 화자 등록부를 먼저 세운다 — 여관 파서가 화자 실재 검사를 그 자리에서 지므로
+// (parseInns 문서) 데이터 조립보다 앞서 손에 있어야 한다.
+const speakers = parseSpeakers(readCsv('speakers.csv'))
+
 const data: GameData = {
   items: parseItems(readCsv('items.csv')),
   nodes,
@@ -152,13 +157,17 @@ const data: GameData = {
   transitions: parseTransitions(readCsv('transitions.csv')),
   placements,
   milestones: parseMilestones(readCsv('milestones.csv'), recipes),
-  speakers: parseSpeakers(readCsv('speakers.csv')),
+  speakers,
   // 상점·달인은 확률표와 달리 GameData 에 싣는다 — 클라이언트가 매도 목록과
   // 진열(잠긴 칸의 요구치까지)을 그려야 한다. 진열을 상점에 붙이는 일까지
   // parseShops 하나가 한다: 어느 상점에도 안 붙은 진열이라는 중간 상태를
   // 만들지 않기 위해서다.
   shops: parseShops(readCsv('shops.csv'), readCsv('shop_stock.csv')),
   masters: parseMasters(readCsv('masters.csv')),
+  // 여관도 상점·달인과 같은 자리다(아크 D §2) — 값(여관비)은 화면이 버튼에
+  // 숫자로 적어야 하므로 숨은 문턱이 아니고, GameData 에 실린다. 화자 실재
+  // 검사는 파서가 그 자리에서 진다(parseInns 문서).
+  inns: parseInns(readCsv('inns.csv'), speakers),
   // 강화 비용표도 GameData 에 싣는다(§6-앞 13) — 채집 확률표와 정확히 반대편
   // 결정이다. 저쪽은 브라켓 경계가 곧 숨은 문턱이라 감췄지만, 강화는 **가방이
   // 요구량을 숫자로 적어 주지 못하면** 플레이어가 무엇을 얼마나 모아야 하는지
@@ -279,6 +288,7 @@ console.log(
     `상점 ${Object.keys(data.shops).length}, ` +
     `진열 ${Object.values(data.shops).reduce((sum, shop) => sum + shop.stock.length, 0)}, ` +
     `달인 ${data.masters.length}, ` +
+    `여관 ${Object.keys(data.inns).length}, ` +
     `강화비용 ${data.enhanceCosts.length}, ` +
     `수집칸 ${Object.keys(data.collection).length}, ` +
     `전환 ${data.transitions.length}, ` +

@@ -182,7 +182,7 @@ export interface MenuRequest {
  * null` 하나를 보는 값 무관한 규칙이라(PanelScene.applyInput·applyWorldLock) 새
  * 패널은 그것을 공짜로 물려받는다 — 새 입력 키를 파지 않는 이유이기도 하다.
  */
-export type OpenPanel = 'bag' | 'craft' | 'codex' | 'menu' | ShopPanelKey | null
+export type OpenPanel = 'bag' | 'craft' | 'codex' | 'menu' | ShopPanelKey | InnPanelKey | null
 
 /**
  * 상점 패널의 열림 값 — 상점 **id 를 품은 문자열 키**다(설계 §6-앞 20).
@@ -203,6 +203,23 @@ export function shopPanelKey(shopId: string): ShopPanelKey {
 /** 열림 값이 상점이면 그 상점 id, 아니면 null — 상점 패널이 자기 차례인지 묻는 창구. */
 export function shopIdOf(panel: OpenPanel): string | null {
   return panel !== null && panel.startsWith('shop:') ? panel.slice('shop:'.length) : null
+}
+
+/**
+ * 여관 패널의 열림 값 — ShopPanelKey 의 쌍둥이다(아크 D §2). 화자 id 를 품은
+ * 문자열 키인 이유도 같다: setOpenPanel 의 항등 가드가 값 비교라 객체는 매번
+ * 새로 와서 가드를 뚫고, 문자열이면 상호배제도 그대로 공짜다.
+ */
+export type InnPanelKey = `inn:${string}`
+
+/** 여관 화자 id 하나를 열림 값으로 만든다 — shopPanelKey 의 쌍둥이. */
+export function innPanelKey(speakerId: string): InnPanelKey {
+  return `inn:${speakerId}`
+}
+
+/** 열림 값이 여관이면 그 화자 id, 아니면 null — 여관 패널이 자기 차례인지 묻는 창구. */
+export function innIdOf(panel: OpenPanel): string | null {
+  return panel !== null && panel.startsWith('inn:') ? panel.slice('inn:'.length) : null
 }
 
 /** 레시피 하나의 이번-열림 누적 성적. 제작 카드가 `+N · 실패 M` 로 보여준다(설계 §8-앞 3). */
@@ -235,6 +252,15 @@ interface GameStore {
    * 상인은 말을 마치고 나서 물건을 펼쳤다.
    */
   pendingShop: string | null
+  /**
+   * 대사가 끝나면 열릴 여관의 화자 id — pendingShop 의 쌍둥이다(아크 D §2).
+   *
+   * 존재 이유도 그대로다: DialogueScene 의 발화 구독이 가장 먼저
+   * setOpenPanel(null) 을 부르므로 응답에서 바로 열면 그 직후 닫힌다. 대화
+   * 갈래 기계는 없다(DialogueFlow 는 선형) — talk 응답의 inn 필드와 이 대기
+   * 하나가 여관으로 가는 유일한 길이다.
+   */
+  pendingInn: string | null
   /**
    * 제작 패널이 열려 있는 동안의 레시피별 누적 성공/실패(설계 §8-앞 3).
    * 결과가 초당 여러 번 오는 화면이라 점멸 대신 쌓이는 숫자를 쓴다 —
@@ -292,6 +318,21 @@ interface GameStore {
    * 나눠 쓰는 것처럼 잠금도 하나다 — 셋 다 같은 패널의 같은 왕복이다.
    */
   bagBusy: boolean
+  /**
+   * 여관 패널 안에서 거절된 이유 한 줄 — tradeError·bagError 의 쌍둥이다.
+   *
+   * 만혈이면 버튼 자체를 안 그리지만(죽은 버튼 금지), 회복 완료 직전에 누른
+   * 경합 창은 화면이 못 막는다 — 그 거절(already_full·not_enough_gold)이 머리
+   * 위 글자로 나가면 패널 뒤에서 뜨고 사라져 아무도 못 본다. seq 가 없는 이유도
+   * 저 둘과 같다: 사건이 아니라 상태다. 다음 요청·성공·패널 교체가 지운다.
+   */
+  innError: string | null
+  /**
+   * 여관 요청이 나가 있다 — [쉬어간다] 를 그동안 잠근다. tradeBusy·bagBusy 와
+   * 같은 신호·같은 이유: 왕복 중의 둘째 요청은 이미 만혈인 몸에 또 값을
+   * 치르려다 반드시 거절된다. 잠그면 그 거절이 애초에 생기지 않는다.
+   */
+  innBusy: boolean
   lastAction: ActionFeedback | null
   milestone: Milestone | null
   utterance: Utterance | null
@@ -318,6 +359,7 @@ interface GameStore {
   donate: (itemId: string, count: number) => Promise<void>
   sell: (shopId: string, itemId: string, count: number) => Promise<void>
   buy: (shopId: string, itemId: string, count: number) => Promise<void>
+  rest: (speakerId: string) => Promise<void>
   openMenu: (tab: DetailMenuTab) => void
   setOpenPanel: (panel: OpenPanel) => void
   /**
@@ -365,14 +407,18 @@ function gate(boot: BootPhase): {
   connection: Connection
   openPanel: null
   pendingShop: null
+  pendingInn: null
 } {
-  // 기다리던 상점도 함께 버린다 — 국면이 움직였다는 것은 그 대화가 있던 세계에서
-  // 나왔다는 뜻이라, 남겨 두면 재접속 뒤 첫 대화가 끝나는 순간 엉뚱한 상점이 열린다.
-  if (boot === 'playing') return { boot, connection: 'online', openPanel: null, pendingShop: null }
-  if (boot === 'checking') {
-    return { boot, connection: 'connecting', openPanel: null, pendingShop: null }
+  // 기다리던 상점·여관도 함께 버린다 — 국면이 움직였다는 것은 그 대화가 있던
+  // 세계에서 나왔다는 뜻이라, 남겨 두면 재접속 뒤 첫 대화가 끝나는 순간 엉뚱한
+  // 문이 열린다.
+  if (boot === 'playing') {
+    return { boot, connection: 'online', openPanel: null, pendingShop: null, pendingInn: null }
   }
-  return { boot, connection: 'offline', openPanel: null, pendingShop: null }
+  if (boot === 'checking') {
+    return { boot, connection: 'connecting', openPanel: null, pendingShop: null, pendingInn: null }
+  }
+  return { boot, connection: 'offline', openPanel: null, pendingShop: null, pendingInn: null }
 }
 
 /**
@@ -391,11 +437,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   confirmingDelete: false,
   openPanel: null,
   pendingShop: null,
+  pendingInn: null,
   craftTally: {},
   tradeError: null,
   tradeBusy: false,
   bagError: null,
   bagBusy: false,
+  innError: null,
+  innBusy: false,
   lastAction: null,
   milestone: null,
   utterance: null,
@@ -684,11 +733,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     try {
       const outcome: TalkOutcomeDto = await GameClient.talk(speakerId)
       applyPlayer(set, outcome.player)
-      // 상점은 여기서 열지 않는다 — 대사창이 이 발화를 받으며 패널을 전부 닫기
-      // 때문이다(pendingShop 문서). 문은 대사가 끝난 뒤 열린다(설계 §6-앞 20).
+      // 상점·여관은 여기서 열지 않는다 — 대사창이 이 발화를 받으며 패널을 전부
+      // 닫기 때문이다(pendingShop 문서). 문은 대사가 끝난 뒤 열린다(설계 §6-앞 20).
       set({
         utterance: { seq: ++utteranceSeq, speaker: outcome.speaker, lines: outcome.lines },
         pendingShop: outcome.shop ?? null,
+        pendingInn: outcome.inn ?? null,
       })
       // 달인의 1회성 대금 — 새 채널을 만들지 않고 머리 위 피드백으로 말한다.
       // 대사창은 화면 아래쪽만 쓰므로 이 글자는 그 위에 그대로 보인다. 누적
@@ -820,6 +870,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await trade(set, get, () => GameClient.buy(shopId, itemId, count))
   },
 
+  /**
+   * 여관 회복 — 여관 패널의 [쉬어간다] 버튼이 부른다(아크 D §2). trade() 와
+   * 같은 모양이되 not_here 갈래가 없다: 여관 판정은 현장을 다시 재지 않는다
+   * (문은 talk 가 열었고, 서버 performRest 는 골드·만혈만 본다). 성공은 알리지
+   * 않는다 — 깎인 골드(헤더)와 차오른 HP(상단 바)가 그 자리에서 직접 말한다.
+   * 거절은 패널 안(innError)에서 말한다: 머리 위 글자는 패널 뒤에서 뜨고
+   * 사라진다(tradeError 의 그 이유).
+   */
+  rest: async (speakerId) => {
+    set({ innBusy: true, innError: null })
+    try {
+      const { player } = await GameClient.rest(speakerId)
+      applyPlayer(set, player)
+    } catch (err) {
+      if (isNetworkFailure(err)) {
+        set({ ...gate('unreachable'), gateError: SERVER_UNREACHABLE })
+        return
+      }
+      set({ innError: describeError(err) })
+      console.error(err)
+    } finally {
+      // finally 인 것이 요점이다 — 거절로 끝난 왕복이 잠금을 켜 둔 채 돌아오면
+      // [쉬어간다] 가 영영 잠긴다(bagAction 의 그 교훈).
+      set({ innBusy: false })
+    }
+  },
+
   // 톱니 클릭 자체는 게임 상태가 아니지만, App.tsx 를 건드리지 않고 React ->
   // Phaser 로 "메뉴를 열어라"를 전달할 통로가 이 스토어뿐이라 여기 둔다.
   // openPanel 을 'menu' 로 함께 덮는다 — 열려 있던 가방·제작(DOM) 패널은 그
@@ -838,9 +915,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 거절 문구는 그 패널 그 순간의 것이다 — 남겨 두면 패널을 닫았다 다시
     // 연 사람이 아무것도 안 했는데 실패한 화면을 본다. craftTally 가 제작
     // 패널을 열 때 0 에서 시작하는 것과 같은 이유이고, 여기 한 곳이면 빠짐이 없다.
-    // 가방(bagError)과 상점(tradeError)을 함께 지우는 이유: 지우는 자리가 패널이
-    // 바뀌는 이 한 곳이라, 채널마다 따로 두면 언젠가 한쪽이 빠진다.
-    set({ tradeError: null, bagError: null })
+    // 가방(bagError)·상점(tradeError)·여관(innError)을 함께 지우는 이유: 지우는
+    // 자리가 패널이 바뀌는 이 한 곳이라, 채널마다 따로 두면 언젠가 한쪽이 빠진다.
+    set({ tradeError: null, bagError: null, innError: null })
     // 제작 패널이 열리는 순간 누적 카운터를 0 에서 시작한다(설계 §8-앞 3) —
     // 이 숫자는 "이번에 열어 둔 동안"의 성적이다.
     if (panel === 'craft') set({ openPanel: panel, craftTally: {} })
@@ -851,17 +928,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
   clearTradeError: () => set({ tradeError: null }),
 
   /**
-   * 대사가 끝났다 — 기다리던 상점이 있으면 지금 연다(설계 §6-앞 20).
+   * 대사가 끝났다 — 기다리던 문(상점 또는 여관)이 있으면 지금 연다(설계
+   * §6-앞 20, 아크 D §2).
    *
    * 부르는 곳은 DialogueScene 의 render() 하나다: 대사창이 열림→닫힘으로
-   * 바뀌는 그 순간이 유일하게 "말이 끝났다"를 아는 자리다. 기다리는 상점이
-   * 없으면 아무 일도 없다 — 대사창은 상점과 무관한 말에도 매번 닫힌다.
+   * 바뀌는 그 순간이 유일하게 "말이 끝났다"를 아는 자리다. 여관이 이 함수에
+   * 얹혀 가는 이유가 그것이다 — 그 자리를 아는 훅을 하나 더 파면 언젠가
+   * 한쪽만 불린다. 기다리는 문이 없으면 아무 일도 없다 — 대사창은 문과
+   * 무관한 말에도 매번 닫힌다.
+   *
+   * 상점이 먼저다: 한 화자가 두 등록부에 다 있으면(지금 데이터에는 없다)
+   * 응답에 두 필드가 함께 실릴 수 있는데, 열림 값은 하나라 순서가 있어야 한다.
    */
   openPendingShop: () => {
-    const shopId = get().pendingShop
-    if (shopId === null) return
-    set({ pendingShop: null })
-    get().setOpenPanel(shopPanelKey(shopId))
+    const { pendingShop, pendingInn } = get()
+    if (pendingShop !== null) {
+      set({ pendingShop: null, pendingInn: null })
+      get().setOpenPanel(shopPanelKey(pendingShop))
+      return
+    }
+    if (pendingInn === null) return
+    set({ pendingInn: null })
+    get().setOpenPanel(innPanelKey(pendingInn))
   },
 }))
 
@@ -1337,6 +1425,14 @@ function describeError(err: unknown): string {
       return '골드 부족'
     case 'already_owned':
       return '이미 가지고 있다'
+    // 여관(rest) 전용 코드다(아크 D §2). 만혈이면 패널이 버튼 자체를 안 그리므로
+    // (죽은 버튼 금지 — 서버와 같은 currentHp 를 부른다) 정상 조작으로는 오지
+    // 않는다 — 회복이 다 차기 직전에 누른 경합 창처럼 화면이 못 막는 경우에만
+    // 온다. 그때 조용하면 돈이 안 나간 이유를 아무도 모른다. 골드 부족은 위
+    // not_enough_gold 의 그 글자를 그대로 쓴다 — 상점에서든 여관에서든 같은
+    // 사실이고, 문구가 갈라지면 그게 더 이상하다.
+    case 'already_full':
+      return '이미 성한 몸이다'
     default:
       return `오류: ${err.code}`
   }

@@ -56,7 +56,7 @@ const data: GameData = {
   schedules: {},
   routes: [],
   dialogue: [],
-  monsters: {}, monsterPlacements: {},
+  inns: {}, monsters: {}, monsterPlacements: {},
 }
 
 function skills(over: Partial<Record<SkillId, number>> = {}): Record<SkillId, number> {

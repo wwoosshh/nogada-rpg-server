@@ -24,6 +24,7 @@ import { registerEnhanceRoutes } from './routes/enhance.js'
 import { registerEquipRoutes } from './routes/equip.js'
 import { registerFightRoutes } from './routes/fight.js'
 import { registerGatherRoutes } from './routes/gather.js'
+import { registerInnRoutes } from './routes/inn.js'
 import { registerMeRoutes } from './routes/me.js'
 import { registerMoveRoutes } from './routes/move.js'
 import { registerStateRoutes } from './routes/state.js'
@@ -148,6 +149,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     registerEnhanceRoutes(guarded, store, data)
     registerTalkRoutes(guarded, store, data)
     registerTradeRoutes(guarded, store, data)
+    registerInnRoutes(guarded, store, data)
     registerUseRoutes(guarded, store, data)
     registerMoveRoutes(guarded, store, data)
     registerDonateRoutes(guarded, store, data)

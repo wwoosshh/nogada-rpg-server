@@ -55,7 +55,7 @@ const 여관상점 = shop({ id: '여관상점', speakerId: '여관안주인', sk
 const 유령상점 = shop({ id: '유령상점', speakerId: '유령', unlockSkill: 0 })
 
 const data: GameData = {
-  monsters: {}, monsterPlacements: {},
+  inns: {}, monsters: {}, monsterPlacements: {},
   items: {},
   nodes: {},
   recipes: {},

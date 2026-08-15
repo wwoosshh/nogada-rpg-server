@@ -408,6 +408,28 @@ export interface MasterDef {
 }
 
 /**
+ * 여관 하나(아크 D §2). 상점(ShopDef)·달인(MasterDef)과 같은 줄의 결정이다:
+ * **대사가 아니라 이 등록부가 여관을 연다** — 대화 갈래 기계는 존재하지 않으므로
+ * (DialogueFlow 는 선형) talkService 가 화자로 여기를 조회해 `TalkOutcome.inn` 에
+ * 싣고, 대사가 끝나면 패널이 열린다(pendingShop 의 쌍둥이).
+ *
+ * 상점과 달리 문턱(unlockSkill)이 없다 — 여관은 숙련을 재지 않는다. id 를 따로
+ * 두지 않고 speakerId 가 곧 키인 이유도 그 단순함이다: 여관의 정체는 "그 화자가
+ * 재워 준다" 하나뿐이라, 이름을 하나 더 지으면 참조가 하나 더 생길 뿐이다.
+ */
+export interface InnDef {
+  /** 이 여관을 여는 화자 — 등록부(GameData.inns)의 키이기도 하다. */
+  speakerId: string
+  /**
+   * 하룻밤 값(회복비). **inns.csv 가 이 값의 유일한 주인이다**(씨앗 ⑦ 종결) —
+   * innPricing.test 는 구운 이 값을 읽어 §6 부등식(여관비 ≤ 자연 회복 대기
+   * 5분의 최악 벌이)을 못박고, 화면은 이 숫자를 버튼에 적는다(요구치를 숫자로
+   * 말하는 문). 코드 어디에도 사본을 두지 않는다.
+   */
+  gold: number
+}
+
+/**
  * 노드의 등급 — 목록이 먼저이고 타입이 거기서 나온다.
  *
  * `SKILL_IDS` 처럼 타입과 배열을 따로 적지 **않는** 이유: 등급은 표 id 의 접미사와
@@ -960,6 +982,14 @@ export interface GameData {
    * (대금이 들어온 뒤 무엇이 들어왔는지 화면이 말해야 한다).
    */
   masters: MasterDef[]
+  /**
+   * 여관 등록부. 키는 speakerId 다(아크 D §2).
+   *
+   * **확률표와 달리 GameData 에 싣는다** — 값(1,500G)은 화면이 버튼에 숫자로
+   * 적어야 하는 것이라(요구치를 숫자로 말하는 문) 숨은 문턱이 아니다. 상점
+   * 진열·강화 비용표를 싣는 그 저울이고, 채집 표(GatherTables)와 반대편이다.
+   */
+  inns: Record<string, InnDef>
   /**
    * 강화 비용표. 한 항목이 (도구 티어 × 강화 단계) 하나다.
    *

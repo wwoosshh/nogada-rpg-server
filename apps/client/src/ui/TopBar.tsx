@@ -6,6 +6,7 @@ import { BagPanel } from './BagPanel.js'
 import { CodexPanel } from './CodexPanel.js'
 import { CraftPanel } from './CraftPanel.js'
 import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
+import { InnPanel } from './InnPanel.js'
 import { ShopPanel } from './ShopPanel.js'
 import { formatGold } from './shopModel.js'
 
@@ -72,6 +73,7 @@ export function TopBar(): JSX.Element {
       <CraftPanel />
       <CodexPanel />
       <ShopPanel />
+      <InnPanel />
       <DeleteCharacterDialog />
       <div className="topbar">
         <span className="topbar__clock">

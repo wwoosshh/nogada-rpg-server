@@ -60,6 +60,12 @@ export interface TalkOutcomeDto {
    */
   shop?: string
   /**
+   * 이 대화가 여는 여관의 화자 id — `shop` 의 쌍둥이다(아크 D §2). 이 값이
+   * 있으면 대사가 끝난 뒤 여관 패널이 열린다(스토어의 pendingInn). 상점과
+   * 달리 문턱이 없어, 여관 화자와의 대화에는 언제나 실려 온다.
+   */
+  inn?: string
+  /**
    * 이번 대화에서 받은 달인의 1회성 대금. 두 번째 대화에는 실리지 않는다.
    *
    * 금액이 함께 오는 이유는 화면이 "+1,000,000 G" 를 말해야 하기 때문이다 —
@@ -415,5 +421,17 @@ export const GameClient = {
     request<{ player: PlayerState }>('/api/shop/buy', {
       method: 'POST',
       body: JSON.stringify({ shopId, itemId, count }),
+    }),
+
+  /**
+   * 여관 — 값을 치르고 만혈로 회복한다(아크 D §2). 값은 요청에 담기지 않는다:
+   * 여관비는 inns.csv 가 소유하는 등록부 값이다(InnRequestSchema 문서). 응답은
+   * 착용·거래와 같은 `{ player }` 하나 — 깎인 골드와 찬 HP 는 돌아온 상태가
+   * 이미 말한다.
+   */
+  rest: (speakerId: string) =>
+    request<{ player: PlayerState }>('/api/inn', {
+      method: 'POST',
+      body: JSON.stringify({ speakerId }),
     }),
 }

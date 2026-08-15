@@ -9,6 +9,7 @@ import {
   type BakedLeg,
   type DialogueRule,
   type GameData,
+  type InnDef,
   type MasterDef,
   type MilestoneDef,
   type PlaceDef,
@@ -99,7 +100,7 @@ function gameData(dialogue: DialogueRule[]): GameData {
       노인: { id: '노인', name: '채집장 노인', kind: 'npc', mapId: '얼음채집장', x: 1, y: 1, sprite: 'npc_elder', facing: 'down' },
       안내판: { id: '안내판', name: '안내판', kind: 'sign', mapId: '얼음채집장', x: 2, y: 2, sprite: 'sign_wood', facing: 'down' },
     },
-    shops: {}, masters: [], enhanceCosts: [], collection: {},
+    shops: {}, masters: [], inns: {}, enhanceCosts: [], collection: {},
     places: {}, schedules: {}, routes: [],
     dialogue,
     monsters: {}, monsterPlacements: {},
@@ -462,6 +463,39 @@ describe('performTalk — 등록부가 싣는 것(상점·달인 대금)', () =>
 })
 
 /**
+ * 여관도 **대사가 아니라 등록부가 연다**(아크 D §2) — 상점 `shop` 필드의
+ * 쌍둥이이고, 같은 자리·같은 시점에 실린다. 상점과 다른 것 하나는 문턱이
+ * 없다는 것뿐이다: 여관은 숙련을 재지 않는다.
+ */
+describe('performTalk — 등록부가 싣는 것(여관)', () => {
+  const 여관: InnDef = { speakerId: '노인', gold: 1_500 }
+  const base = gameData([greetA, otherRule])
+  const registry: GameData = { ...base, inns: { 노인: 여관 } }
+
+  it('여관 화자와 말하면 inn 이 실린다 — 상점과 같은 자리, 문턱은 없다', () => {
+    const r = performTalk({ player: player(), data: registry, speakerId: '노인', rng: pickFirst, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.inn).toBe('노인')
+    // 숙련 0 인데도 실린다 — 상점(unlockSkill)과 달리 여관에는 문턱이 없다.
+    expect(r.outcome.lines).toEqual(['허어, 또 왔는가.'])
+  })
+
+  it('여관을 열지 않는 화자와의 대화에는 inn 이 없다', () => {
+    const r = performTalk({ player: player(), data: registry, speakerId: '안내판', rng: pickFirst, now: 0 })
+    if (!r.ok) throw new Error('성공해야 한다')
+    expect(r.outcome.inn).toBeUndefined()
+  })
+
+  it('막힌 대화는 inn 도 내지 않는다 — 다른 맵에서 문이 열리면 안 된다', () => {
+    const 멀리 = player({ location: { mapId: '눈의마을', x: 1, y: 1 } })
+    expect(performTalk({ player: 멀리, data: registry, speakerId: '노인', rng: pickFirst, now: 0 })).toEqual({
+      ok: false,
+      code: 'wrong_map',
+    })
+  })
+})
+
+/**
  * 일과가 있는 화자는 speakers.csv 의 좌표에 있지 않다 — 자리는 시각이 정한다.
  *
  * 서버가 그 계산을 하지 않으면 밤에 자고 있는 사람과, 길 한복판을 지나가는
@@ -722,6 +756,29 @@ describe('performTalk — 출하 데이터의 지점 대사', () => {
     if (!r.ok) throw new Error(`문 앞에 서 있는 시각인데 ${r.code} 로 막혔다`)
     expect(r.outcome.lines).not.toEqual(PLAZA_LINE)
     expect(r.outcome.lines.length).toBeGreaterThan(0)
+  })
+
+  // 왜: 여관안주인은 ice 달인(masters.csv)이기도 하다(계획 D2 주의). 두 등록부가
+  //     같은 화자를 가리킬 때 한쪽이 다른 쪽을 덮으면 — 대금을 주느라 inn 을
+  //     빠뜨리면 — 문턱을 막 넘긴 사람의 그 대화에서만 여관이 안 열린다.
+  it('여관안주인은 달인이기도 하다 — 대금과 inn 이 한 응답에 공존한다', () => {
+    const 문턱넘긴사람 = player({
+      location: { mapId: shipped.speakers[INNKEEPER]!.mapId, x: 0, y: 0 },
+      skills: { ice: 63_235, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+    })
+    const r = performTalk({ player: 문턱넘긴사람, data: shipped, speakerId: INNKEEPER, rng: pickFirst, now: at(7) })
+    if (!r.ok) throw new Error(`서 있는 시각인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.inn).toBe(INNKEEPER)
+    expect(r.outcome.reward).toEqual({ id: 'ice_master', gold: 1_000_000 })
+  })
+
+  // 왜: 구운 데이터의 사슬 전체 — inns.csv → 빌드 → gamedata.json → talkService.
+  //     픽스처만 있으면 CSV 한 글자가 틀려도 전부 green 이다(위 이정표 대사
+  //     블록과 같은 이유).
+  it('출하 데이터에서 여관안주인과 말하면 inn 이 실린다', () => {
+    const r = talkToInnkeeper(at(7))
+    if (!r.ok) throw new Error(`서 있는 시각인데 ${r.code} 로 막혔다`)
+    expect(r.outcome.inn).toBe(INNKEEPER)
   })
 
   it('일과가 없는 화자에게는 place 사실 자체가 없다', () => {

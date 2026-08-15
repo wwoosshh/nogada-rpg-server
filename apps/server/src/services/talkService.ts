@@ -40,6 +40,13 @@ export interface TalkOutcome {
    */
   shop?: string
   /**
+   * 이 대화가 여는 여관의 화자 id — `shop` 의 쌍둥이다(아크 D §2). 같은 자리·
+   * 같은 시점에 실리고, 상점과 달리 문턱이 없어 화자가 등록부에 있으면 언제나
+   * 실린다. 대화 갈래 기계는 존재하지 않으므로(DialogueFlow 는 선형) 이 필드가
+   * 여관으로 가는 유일한 문이다 — 대사가 끝나면 패널이 열린다(pendingInn).
+   */
+  inn?: string
+  /**
    * 이번 대화에서 받은 달인의 1회성 대금. 두 번째 대화에는 실리지 않는다.
    *
    * 금액을 함께 싣는 이유는 화면이 "+1,000,000 G" 를 말해야 하기 때문이다 —
@@ -131,6 +138,12 @@ export function performTalk(args: PerformTalkArgs): TalkResult {
   // 적으면 sell·buy 와 갈라져서 "가게는 열리는데 아무것도 못 파는" 화면이 온다.
   const shop = Object.values(data.shops).find((s) => s.speakerId === speakerId)
   if (shop && shopAccess(data, shop.id, player, now) === 'ok') outcome.shop = shop.id
+
+  // 여관: 화자가 등록부에 있으면 싣는다 — 상점과 같은 자리·같은 시점(아크 D §2).
+  // 상점과 달리 접근 판정이 없다: 여관에는 문턱(unlockSkill)이 없고, 현장 판정은
+  // 이 함수 첫머리의 speakerPresence 가 이미 지났다. hasOwn 인 이유는 speakerId
+  // 가 클라이언트가 보낸 문자열이라서다(speakerPresence 의 그 방어).
+  if (Object.hasOwn(data.inns, speakerId)) outcome.inn = speakerId
 
   // 달인 대금: 문턱을 넘었고 아직 안 받았으면 준다. 조건이 상태(숙련도·rewarded)
   // 뿐이라 몇 번을 말해도 답이 같다 — 한 번 주고 나면 rewarded 가 그 답을 바꾼다.
