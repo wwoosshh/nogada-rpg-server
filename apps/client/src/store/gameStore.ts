@@ -1399,7 +1399,7 @@ function describeError(err: unknown): string {
     // 일어나므로 캔버스 플로터로 보내면 패널 뒤에서 뜨고 사라져 아무도 못 본다.
     // `not_here` 는 여기 없다 — 그건 문구가 아니라 패널을 닫는 사건이라
     // trade() 가 대화와 같은 안내로 따로 다룬다.
-    // 아래 둘은 전투(fight) 전용 코드다(서버 fightService 의 FightErrorCode).
+    // 아래 셋은 전투(fight) 전용 코드다(서버 fightService 의 FightErrorCode).
     // unknown_monster 는 데이터가 갈라졌을 때만, implausible_move 는 시계가
     // 크게 어긋났을 때만 온다 — 드물지만 조용하면 "가끔 A 가 안 먹힌다"로
     // 읽히므로 말은 있어야 한다. wrong_map 은 거래와 같은 글자를 쓴다.
@@ -1407,6 +1407,11 @@ function describeError(err: unknown): string {
       return '없는 몬스터'
     case 'implausible_move':
       return '그렇게 빨리 움직일 수 없다'
+    // 맵 밖 주장(아크 D §4) — 위조 전용이라 정상 조작으로는 오지 않지만,
+    // implausible_move 와 한 코드로 묶으면 정직한 시계 어긋남과 위조가 한
+    // 문구로 뭉개진다 — 제 코드에는 제 말이 있어야 한다.
+    case 'out_of_bounds':
+      return '그런 곳은 없다'
     case 'unknown_shop':
       return '없는 상점'
     case 'shop_locked':

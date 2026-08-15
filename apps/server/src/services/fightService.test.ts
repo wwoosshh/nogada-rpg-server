@@ -178,6 +178,47 @@ describe('performFight — 거절 경로', () => {
   })
 })
 
+describe('performFight — 주장 좌표 상한(아크 D §4)', () => {
+  // 왜: 상한이 없으면 (10⁹,10⁹) 첫 주장이 공회전 특례로 수락돼 lastClaim 에
+  //     박히고, 이후의 정직한 주장이 전부 implausible_move 로 묶인다(전체 리뷰
+  //     재현 — 치터 이득은 0이지만 자기 발 묶기가 가능하다). implausible_move
+  //     재사용이 아닌 이유: 속도 위반은 정직한 시계 어긋남에서도 오지만 맵 밖
+  //     주장은 위조 전용이라, 한 코드로 묶으면 문구와 로그 신호가 같이 오염된다.
+  it('맵 밖 주장은 out_of_bounds 로 거부하고 아무것도 적지 않는다', () => {
+    const p = player()
+    const r = fight({ player: p, claim: { x: 1_000_000_000, y: 1_000_000_000 } })
+    expect(r).toEqual({ ok: false, code: 'out_of_bounds' })
+    // 거절 경로는 아무것도 저장하지 않는다(§2-2) — lastClaim 이 안 박혔으니
+    // 자기 발 묶기가 원리적으로 사라진다.
+    expect(p.combat.lastClaim).toBe(null)
+    expect(p.nextActionAt).toBe(0)
+  })
+
+  it('경계 안 마지막 칸(width−1, height−1)은 수락한다', () => {
+    const r = fight({ claim: { x: 29, y: 29 }, now: 200 })
+    expect(r.ok).toBe(true)
+  })
+
+  it('x = width 는 거절한다 — 칸은 0부터라 width 자체가 첫 바깥 칸이다', () => {
+    expect(fight({ claim: { x: 30, y: 1 } })).toEqual({ ok: false, code: 'out_of_bounds' })
+  })
+
+  it('y = height 도 거절한다 — 두 축이 따로 물어야 한 축 제거 돌연변이가 잡힌다', () => {
+    expect(fight({ claim: { x: 3, y: 30 } })).toEqual({ ok: false, code: 'out_of_bounds' })
+  })
+
+  // 왜: 상한은 맵의 값이다 — 맵을 모르면(데이터에 없는 mapId) 재지 않고 기존
+  //     흐름을 따른다. 판정을 멈추는 것은 이 검사의 몫이 아니다.
+  it('맵이 data.maps 에 없으면 기존 흐름 그대로다', () => {
+    const r = fight({
+      data: { ...data, maps: {} },
+      claim: { x: 1_000_000_000, y: 1_000_000_000 },
+      now: 200,
+    })
+    expect(r.ok).toBe(true)
+  })
+})
+
 describe('performFight — 명중과 헛스윙(§2-2 갱신본)', () => {
   it('사거리 안(맨해튼 1)의 스윙은 무기 피해만큼 몬스터 HP 를 깎고 교전을 기록한다', () => {
     const r = fight({ now: 1600 })

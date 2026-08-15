@@ -58,13 +58,22 @@ export interface PerformFightArgs extends MonsterWorld {
  *
  * - `unknown_monster`·`wrong_map`: 위조된 요청에만 걸리는 검사(gatherService 의
  *   unknown_node·wrong_map 과 같은 자리).
+ * - `out_of_bounds`: 맵 밖 주장(아크 D §4) — 위조로만 만들 수 있는 좌표다.
+ *   `implausible_move` 와 코드를 나누는 이유: 속도 위반은 정직한 플레이어의
+ *   시계 어긋남에서도 오지만 맵 밖 좌표는 위조 전용이라, 한 코드로 묶으면
+ *   화면 문구("그렇게 빨리 움직일 수 없다")와 로그 신호가 둘 다 오염된다.
  * - `too_fast`: 간격 전이다 — 채집과 **같은 필드**(nextActionAt)를 본다(§12-앞 17).
  * - `implausible_move`: 속도 개연성 위반(§2-3) — 주장 사이의 맨해튼 거리가
  *   걸을 수 있는 예산을 넘었다.
  *
  * 사거리 밖은 여기 **없다** — 그것은 거절이 아니라 헛스윙이다(§2-2 갱신본).
  */
-export type FightErrorCode = 'unknown_monster' | 'wrong_map' | 'too_fast' | 'implausible_move'
+export type FightErrorCode =
+  | 'unknown_monster'
+  | 'wrong_map'
+  | 'out_of_bounds'
+  | 'too_fast'
+  | 'implausible_move'
 
 export interface FightOutcome {
   /** 사거리 안에서 몬스터에 닿았는가. false = 헛스윙(간격만 소모, 몬스터 무피해). */
@@ -118,6 +127,16 @@ export function performFight(args: PerformFightArgs): FightResult {
   // 안다(gatherService 의 wrong_map 과 같은 자리). 간격 검사보다 앞인 이유도
   // 같다: 다른 맵이면 몇 초를 기다려도 답이 안 바뀐다.
   if (placement.mapId !== args.player.location.mapId) return { ok: false, code: 'wrong_map' }
+
+  // ②′ 주장 좌표 상한(아크 D §4) — 주장의 참은 알 수 없지만 **맵 밖**만은
+  // 서버가 확실히 안다. lastClaim 을 적기 **전**의 거절이라 (10⁹,10⁹) 가
+  // 기준점에 박혀 이후의 정직한 주장을 implausible_move 로 묶는 자기 발 묶기가
+  // 원리적으로 사라진다. 스키마(비음수 정수)가 아니라 여기서 재는 이유:
+  // 상한은 맵마다 달라 판정의 몫이다. 맵을 모르면 재지 않는다 — 기존 흐름 유지.
+  const map = data.maps[args.player.location.mapId]
+  if (map && (claim.x >= map.width || claim.y >= map.height)) {
+    return { ok: false, code: 'out_of_bounds' }
+  }
 
   const player = structuredClone(args.player)
   const combat = player.combat

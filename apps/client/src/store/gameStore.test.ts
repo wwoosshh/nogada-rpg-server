@@ -1187,6 +1187,19 @@ describe('전투 — fight 액션은 gather 와 같은 모양이다(전투 §7·
     expect(useGameStore.getState().lastAction?.tone).toBe('bad')
   })
 
+  // 왜: 맵 밖 주장은 위조 전용이라(아크 D §4) 정상 조작으로는 오지 않지만,
+  //     implausible_move 와 한 코드로 묶으면 정직한 시계 어긋남과 위조가 한
+  //     문구로 뭉개진다 — 제 코드에는 제 말이 있어야 한다.
+  it('out_of_bounds 는 머리 위에 제 문구로 남는다', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse({ code: 'out_of_bounds' }, 400)),
+    )
+    await useGameStore.getState().fight('wolf-1', 3, 4)
+    expect(useGameStore.getState().lastAction?.text).toBe('그런 곳은 없다')
+    expect(useGameStore.getState().lastAction?.tone).toBe('bad')
+  })
+
   // 왜: 헛스윙(hit:false)은 세계가 제대로 돌아간 결과다 — 간격은 소모됐지만
   //     화면이 매번 "빗나감"을 띄우면 홀드 화면이 글자로 덮인다. 몬스터 HP 바가
   //     안 깎인 것으로 충분하다.
