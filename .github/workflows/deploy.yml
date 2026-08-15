@@ -209,14 +209,33 @@ jobs:
       #
       # **서비스 제어에는 권한이 필요하다.** 러너 계정이 그것을 못 가지면 여기서
       # 거부로 서는데, 그 편이 "배포는 초록인데 옛 코드가 돈다"보다 낫다.
+      # **문자열 치환이 아니라 XML 로 고친다.** 정규식이었을 때는 표기 하나에만
+      # 맞았다 — `value="x"/>` 는 물고 `value="x" />` 나 `></env>` 는 놓쳤는데,
+      # 하필 앞의 것이 WinSW 문서의 예시 표기다. 빗나가면 파일을 원문 그대로 다시
+      # 쓰고 재시작해, 90초 뒤 "health 가 sha 를 안 준다"로 — 원인과 전혀 다른
+      # 곳을 가리키며 — 실패한다. 파서는 표기를 안 가리고, 덤으로 XML 이 깨져
+      # 있으면 서비스를 건드리기 전에 여기서 잡는다.
       - name: 서비스 재시작
         working-directory: C:/nogada-server/nogada-rpg-server
         run: |
           $sha = git rev-parse HEAD
+          # 이 기계에서 실제로 겪었다: 다른 계정 소유의 저장소라 git 이 조용히
+          # 실패하면 $sha 가 비고, 그대로 두면 서비스 정의에 빈 값이 박힌다.
+          if ($sha -notmatch '^[0-9a-f]{40}$') {
+            Write-Host "::error::git rev-parse 가 커밋을 못 냈다(받은 값: '$sha'). docs/deploy-windows.md 6장의 safe.directory 항목을 본다."
+            exit 1
+          }
           $xmlPath = 'C:/nogada-server/nogada-server.xml'
-          $text = [System.IO.File]::ReadAllText($xmlPath)
-          $text = $text -replace '<env name="GIT_SHA" value="[^"]*"/>', "<env name=`"GIT_SHA`" value=`"$sha`"/>"
-          [System.IO.File]::WriteAllText($xmlPath, $text, (New-Object System.Text.UTF8Encoding $false))
+          $xml = New-Object System.Xml.XmlDocument
+          $xml.PreserveWhitespace = $true
+          $xml.Load($xmlPath)
+          $node = $xml.SelectSingleNode('/service/env[@name="GIT_SHA"]')
+          if (-not $node) {
+            Write-Host "::error::$xmlPath 에 GIT_SHA env 원소가 없다 — docs/deploy-windows.md 4장의 XML 과 맞춘다."
+            exit 1
+          }
+          $node.SetAttribute('value', $sha)
+          $xml.Save($xmlPath)
           & 'C:/nogada-server/nogada-server.exe' restart
           if ($LASTEXITCODE -ne 0) {
             Write-Host "::error::서비스 재시작 실패 — 러너 계정에 서비스 제어 권한이 있는지 본다(docs/deploy-windows.md)."
@@ -231,12 +250,16 @@ jobs:
         working-directory: C:/nogada-server/nogada-rpg-server
         run: |
           $sha = git rev-parse HEAD
+          # 포트의 주인은 .env 다(문서 3장). 여기에 3000 을 박아 두면 .env 를
+          # 고친 날 배포만 조용히 엉뚱한 포트를 두드린다.
+          $portLine = (Select-String -Path 'apps/server/.env' -Pattern '^PORT=' | Select-Object -First 1).Line
+          $port = if ($portLine) { ($portLine -split '=', 2)[1].Trim() } else { '3000' }
           $deadline = (Get-Date).AddSeconds(90)
           $ok = $false
           $last = '아직 한 번도 응답이 없다'
           while ((Get-Date) -lt $deadline) {
             try {
-              $res = Invoke-RestMethod -Uri 'http://localhost:3000/api/health' -TimeoutSec 5
+              $res = Invoke-RestMethod -Uri "http://localhost:$port/api/health" -TimeoutSec 5
               if ($res.ok -eq $true -and $res.sha -eq $sha) {
                 $ok = $true
                 Write-Host "건강함: items=$($res.items) nodes=$($res.nodes) recipes=$($res.recipes) sha=$($res.sha)"
@@ -254,9 +277,20 @@ jobs:
           }
 
       # 마무리 증거. 실패한 배포에서 더 필요한 그림이라 always() 로 둔다.
+      #
+      # **여기서는 아무것도 던지면 안 된다.** GitHub 이 powershell 셸에
+      # `$ErrorActionPreference='stop'` 을 앞세우므로, 없는 서비스를 그냥
+      # `Get-Service` 하면 이 단계까지 빨개지고 로그 꼬리가 안 찍힌다 — 하필
+      # 그 그림이 가장 필요한, 1단계가 "서비스가 없다"로 죽은 상황에서.
       - name: 서비스 상태·로그 꼬리
         if: always()
         run: |
-          Get-Service nogada-server | Format-Table -AutoSize Name, Status, StartType
-          $log = 'C:/nogada-server/logs/nogada-server.out.log'
-          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 40 }
+          $svc = Get-Service nogada-server -ErrorAction SilentlyContinue
+          if ($svc) { $svc | Format-Table -AutoSize Name, Status, StartType }
+          else { Write-Host 'nogada-server 서비스가 없다.' }
+          foreach ($name in 'nogada-server.out.log', 'nogada-server.err.log') {
+            $log = "C:/nogada-server/logs/$name"
+            Write-Host "--- $name ---"
+            if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 40 }
+            else { Write-Host '(파일 없음)' }
+          }

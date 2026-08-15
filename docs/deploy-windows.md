@@ -139,28 +139,69 @@ cd C:\nogada-server\nogada-rpg-server
 docker compose -f docker-compose.prod.yml down
 ```
 
-[nssm](https://nssm.cc/download) 으로 서비스를 만든다. **node 를 직접 등록한다**
-— `pnpm` 이나 배치 파일을 등록하면 중간 프로세스가 끼어 종료 신호가 서버까지
-가지 않고, 그러면 저장소 드레인(`index.ts` 의 SIGTERM 훅)이 돌지 않는다:
+[WinSW](https://github.com/winsw/winsw/releases) 로 서비스를 만든다
+(`WinSW-x64.exe`). **node 를 직접 등록한다** — `pnpm` 이나 배치 파일을 등록하면
+중간 프로세스가 끼어 종료 신호가 서버까지 가지 않고, 그러면 저장소
+드레인(`index.ts` 의 SIGTERM 훅)이 돌지 않는다.
+
+WinSW 는 **자기와 이름이 같은 XML** 을 읽는다. 받은 exe 를 그 이름으로 놓는다:
 
 ```powershell
-nssm install nogada-server "C:\Program Files\nodejs\node.exe"
-nssm set nogada-server AppParameters "--env-file=.env --import tsx src/index.ts"
-nssm set nogada-server AppDirectory "C:\nogada-server\nogada-rpg-server\apps\server"
-nssm set nogada-server AppStdout "C:\nogada-server\logs\server.log"
-nssm set nogada-server AppStderr "C:\nogada-server\logs\server.log"
-nssm set nogada-server AppRotateFiles 1
-nssm set nogada-server AppRotateBytes 10485760
-nssm set nogada-server Start SERVICE_AUTO_START
-nssm start nogada-server
+New-Item -ItemType Directory -Force C:\nogada-server\logs | Out-Null
+Move-Item .\WinSW-x64.exe C:\nogada-server\nogada-server.exe
 ```
 
-`AppRotateFiles` 가 컨테이너의 로그 회전(`max-size: 10m`) 자리다 — 없으면 파일
-하나가 무한히 자라 SSD 를 채운다.
+`C:\nogada-server\nogada-server.xml` 을 이 내용으로 만든다:
+
+```xml
+<service>
+  <id>nogada-server</id>
+  <name>nogada-server</name>
+  <description>노가다RPG 게임 서버</description>
+
+  <executable>C:\Program Files\nodejs\node.exe</executable>
+  <arguments>--env-file=.env --import tsx src/index.ts</arguments>
+  <workingdirectory>C:\nogada-server\nogada-rpg-server\apps\server</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <depend>postgresql-x64-17</depend>
+  <onfailure action="restart" delay="10 sec"/>
+
+  <logpath>C:\nogada-server\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+
+  <env name="GIT_SHA" value=""/>
+</service>
+```
+
+네 줄이 각각 컨테이너가 공짜로 해 주던 일을 대신한다:
+
+- **`<depend>`** — `depends_on` 자리다. 없으면 재부팅 때 서버가 DB 보다 먼저 떠
+  연결 실패로 죽는다. 서비스 이름은 `Get-Service postgresql*` 로 확인한다
+  (주 버전이 다르면 `postgresql-x64-18` 같은 다른 이름이다).
+- **`<onfailure>`** — `restart: unless-stopped` 자리다.
+- **`<log mode="roll-by-size">`** — 로깅 드라이버의 `max-size: 10m` 자리다.
+  `sizeThreshold` 는 **KB** 단위라 10240 이 10MB 다. 없으면 파일 하나가 무한히
+  자라 SSD 를 채운다. 파일은 `logs\nogada-server.out.log`(+`.err.log`)로 나온다.
+- **`<env name="GIT_SHA" value=""/>`** — 이미지에 새기던 커밋 자리다. **빈 값으로
+  두는 것이 맞다**: 배포 워크플로가 매번 이 원소의 `value` 를 그날 커밋으로
+  갈아 끼우고(7장), 그래야 `/api/health` 가 자기 커밋을 말할 수 있다. 이
+  원소를 빠뜨리면 배포가 "GIT_SHA env 원소가 없다"로 선다.
+
+등록하고 띄운다 — **관리자 권한 창**이어야 한다:
+
+```powershell
+C:\nogada-server\nogada-server.exe install
+C:\nogada-server\nogada-server.exe start
+```
 
 확인:
 
 ```powershell
+Get-Service nogada-server
 Invoke-RestMethod http://localhost:3000/api/health
 ```
 
@@ -172,10 +213,13 @@ Invoke-RestMethod http://localhost:3000/api/health
 안전하다 — 컨테이너 DB 볼륨(`nogada-prod-db`)은 지우지 않았으므로 그대로 있다:
 
 ```powershell
-nssm stop nogada-server
+C:\nogada-server\nogada-server.exe stop
 cd C:\nogada-server\nogada-rpg-server
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+서비스 등록 자체를 물리려면 `nogada-server.exe uninstall` 이다. 멈추기만 하면
+재부팅 때 자동 시작이 되살아나 3000 을 두고 컨테이너와 싸운다.
 
 **Docker Desktop 은 전환이 며칠 안정된 뒤에 지운다.** 되돌릴 길을 먼저 없애지
 않는다.
@@ -213,8 +257,9 @@ docker compose -f docker-compose.prod.yml up -d
   ```
 
 - **nssm.cc 다운로드가 자주 막힌다**(`winget install NSSM.NSSM` 이
-  `0x80072ee2` 로 실패). GitHub 에서 받는 WinSW 로 갈아탔고 이 문서의 4장이
-  그것이다.
+  `0x80072ee2` 로 실패). 그래서 GitHub 릴리스에서 받는 WinSW 로 갈아탔다 —
+  4장이 그 절차다. 서비스 래퍼로서 하는 일은 같고, 설정이 명령 나열 대신
+  XML 한 장이라 배포가 기계적으로 고쳐 쓸 수 있다(`GIT_SHA`).
 
 ## 7. 배포 자동화
 
@@ -223,7 +268,12 @@ docker compose -f docker-compose.prod.yml up -d
 
 1. 배포 폴더·`.env`·서비스 존재 확인
 2. `git reset --hard origin/main`
-3. `pnpm install --frozen-lockfile --filter "@nogada/server..."`
+3. `pnpm install --frozen-lockfile --filter "@nogada/server..."` — **옛 서버가
+   아직 도는 동안** 그 `node_modules` 를 갈아 치운다. 이미 적재된 모듈은 무해
+   하지만, 그 창에서 지연 `import()` 나 네이티브 바인딩(`@node-rs/argon2`)을
+   처음 부르는 요청이 있으면 터질 수 있다. 인플레이스 배포에 딸린 노출이고,
+   지금 규모(동시 접속 한 자리)에서는 받아들인다 — 무중단이 필요해지면 그때
+   폴더 두 개를 번갈아 쓰는 방식으로 바꾼다.
 4. `pnpm data:build` — CSV·TMX 에서 gamedata.json 을 굽는다(없으면 서버가 부팅 중 죽는다)
 5. `pnpm --filter @nogada/server migrate up` — 스키마부터, **서비스를 건드리기
    전에**. 실패하면 여기서 멈춰 옛 서버가 계속 돈다

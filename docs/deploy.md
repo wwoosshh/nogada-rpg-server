@@ -360,8 +360,14 @@ Caddy 컨테이너의 주소 하나로 보인다 — 누군가 비밀번호를 �
 
 ## 13. 자동 배포 (CI/CD)
 
+> **미니PC 쪽 절반은 `docs/deploy-windows.md` 로 옮겨 갔다.** 그 기계는 이제
+> 컨테이너가 아니라 윈도 서비스로 서버를 돌린다(WSL2 VM 계층을 걷어내며 2.9GB
+> 회수). 아래 `deploy` 칸은 그래서 갱신된 것이고, 그 기계를 처음 세우거나
+> 되돌리는 절차는 이 문서가 아니라 저쪽에 있다. `verify` 칸과 이 장의 나머지는
+> 그대로 유효하다.
+
 **하는 일:** `main` 에 커밋이 들어오면 GitHub 이 테스트를 돌리고, 통과하면
-미니PC 가 스스로 새 코드를 받아 컨테이너를 다시 세운다. 사람이 미니PC 앞에
+미니PC 가 스스로 새 코드를 받아 서비스를 다시 세운다. 사람이 미니PC 앞에
 앉는 일은 없어진다. 정의는 `.github/workflows/deploy.yml` 한 파일이다.
 
 ```
@@ -370,12 +376,16 @@ main 에 push ─▶ verify (GitHub 이 빌려주는 리눅스)
                  + 진짜 Postgres 를 붙여 계약 스위트까지 (평소엔 건너뛰는 29개)
                     │ 통과해야만
                     ▼
-               deploy (미니PC 의 self-hosted 러너)
+               deploy (미니PC 의 self-hosted 러너 — 윈도 네이티브)
                  git fetch + reset --hard origin/main
-                 docker compose -f docker-compose.prod.yml up -d --build
-                 /api/health 가 ok:true 를 줄 때까지 최대 90초 대기 → 아니면 실패
-                 docker compose ps 로 마무리
+                 pnpm install / data:build / migrate up
+                 WinSW XML 의 GIT_SHA 를 이번 커밋으로 갈고 서비스 restart
+                 /api/health 가 ok:true **와 그 커밋의 sha** 를 줄 때까지 90초
+                 서비스 상태·로그 꼬리로 마무리
 ```
+
+**sha 까지 대조하는 것이 컨테이너 시절과 다른 점이다.** 네이티브에서는 재시작이
+조용히 실패해도 옛 프로세스가 계속 3000 을 쥔 채 `ok:true` 를 준다.
 
 알아 둘 것 셋:
 
