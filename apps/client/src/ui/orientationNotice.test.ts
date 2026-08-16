@@ -6,6 +6,7 @@ import {
   ROTATE_BODY,
   ROTATE_HINT,
   ROTATE_KEEP,
+  ROTATE_LOCK,
   ROTATE_TITLE,
 } from './OrientationNotice.js'
 
@@ -63,19 +64,76 @@ function 회전클래스(글: string, 정규식: RegExp): Set<string> {
   return new Set(Array.from(글.matchAll(정규식), (m) => m[1]!))
 }
 
+/** 주석을 지운다 — 주석이 언급한 선택자 이름이 규칙으로 잡히지 않게. */
+function 주석없이(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/**
+ * 선택자 **하나의 선언 뭉치**만 꺼낸다.
+ *
+ * 왜 블록 전체가 아니라 규칙 하나인가. 미디어 블록 본문에 정규식을 그냥 대면
+ * 같은 블록 안의 **다른 규칙**이 대신 맞아 준다. 검토가 실측한 구멍이 그것이다 —
+ * `.rotate__box` 도 `display: flex` 라, `.rotate` 자신을 `display: none` 으로
+ * 바꿔 세로 화면에서 안내가 한 픽셀도 안 뜨게 만들어도 블록 전체를 훑는 자는
+ * 9개 전부 초록이었다. 이 자가 유일한 그물인데 잡으려던 바로 그 실패를
+ * 통과시킨 것이다. 그래서 이제 선언 뭉치를 떼어 내고 거기에만 자를 댄다.
+ *
+ * `\.rotate\s*\{` 는 `.rotate__box {` 에 안 걸린다 — "rotate" 다음이 `_` 라
+ * `\s*\{` 가 못 맞기 때문이다. 그래서 접두사가 겹쳐도 규칙이 안 섞인다.
+ */
+function 규칙(css: string, 선택자: string): string {
+  const 이름 = 선택자.replace(/\./g, '\\.')
+  const m = new RegExp(`${이름}\\s*\\{([^}]*)\\}`).exec(주석없이(css))
+  expect(m, `${선택자} 규칙을 못 찾았다`).not.toBeNull()
+  return m![1]!
+}
+
+/** 규칙에서 z-index 값 하나를 읽는다. 없으면 `undefined` — 그것도 사실이다. */
+function 쌓임순서(css: string, 선택자: string): number | undefined {
+  const m = /z-index:\s*(-?\d+)/.exec(규칙(css, 선택자))
+  return m ? Number(m[1]) : undefined
+}
+
 describe('세로 안내 — CSS', () => {
   it('orientation: portrait 블록이 있고 그 안에서 안내를 켠다', () => {
     // 누가 이 블록을 지우는 날을 잡는다. 지워도 화면은 안 바뀌므로(데스크톱은
     // 늘 가로다) 이 검사 말고는 알아챌 자리가 없다.
-    const 본문 = 세로블록(uiCss)
-    expect(본문).toMatch(/\.rotate\s*\{/)
-    expect(본문, '블록 안에서 덮개를 켜지 않으면 규칙만 있고 아무 일도 안 한다').toMatch(
+    //
+    // 단언은 전부 `.rotate` **한 규칙**에 건다. 블록 전체에 걸면 이웃 규칙이
+    // 대신 맞아 주어 정작 덮개가 죽은 날을 통과시킨다(위 `규칙()` 주석).
+    const 덮개 = 규칙(세로블록(uiCss), '.rotate')
+    expect(덮개, '블록 안에서 덮개를 켜지 않으면 규칙만 있고 아무 일도 안 한다').toMatch(
       /display:\s*flex/,
     )
     // 화면 전체를 덮는다는 판단 자체를 못 박는다 — `position: fixed; inset: 0` 이
     // 아니면 게임이 반쯤 비치고, 그 화면은 "놀 수 있는 것처럼" 보인다.
-    expect(본문).toMatch(/position:\s*fixed/)
-    expect(본문).toMatch(/inset:\s*0/)
+    expect(덮개).toMatch(/position:\s*fixed/)
+    expect(덮개).toMatch(/inset:\s*0/)
+    // 불투명한 배경이 곧 이 기능이다. 이 한 줄이 빠지면 덮개는 투명해지는데
+    // `pointer-events` 는 그대로라 터치만 계속 막는다 — 게임이 멀쩡히 비치니
+    // 사람은 못 쓰는 화면을 계속 두드리게 된다. ui.css 의 그 주석이 "반쯤
+    // 보여 주는" 쪽을 거부한 이유이고, 보이면서 안 먹는 쪽은 그보다도 나쁘다.
+    expect(덮개, '배경이 없으면 덮개가 투명해지고 터치만 막는다').toMatch(
+      /background:\s*var\(--c-ink\)/,
+    )
+  })
+
+  it('덮개가 모달·패널보다 위에 쌓인다', () => {
+    // 장식이 아니다. App 루트 div 는 `position: relative; z-index: auto` 라
+    // 쌓임 맥락을 안 만들고, `.modal`·`.panel` 은 z-index 를 가진 위치 요소다.
+    // 그래서 이 값이 빠지면 DOM 순서와 무관하게 **패널이 덮개 위로 올라온다** —
+    // 패널을 연 채 세로로 돌린 사람에게 덮개가 패널 밑에 깔린다.
+    //
+    // 상수 10 을 못 박지 않고 상대값으로 재는 이유: 나중에 패널 쪽이 올라가는
+    // 날도 같이 잡으려는 것이다. 그날 이 자를 안 고치면 조용히 진다.
+    const 덮개 = 쌓임순서(세로블록(uiCss), '.rotate')
+    expect(덮개, '덮개에 z-index 가 없다 — 패널이 위로 올라온다').toBeDefined()
+    for (const 이름 of ['.modal', '.panel']) {
+      const z = 쌓임순서(uiCss, 이름)
+      expect(z, `${이름} 의 z-index 를 못 읽었다 — 비교가 성립하지 않는다`).toBeDefined()
+      expect(덮개!, `덮개가 ${이름} 보다 아래다`).toBeGreaterThan(z!)
+    }
   })
 
   it('기본값은 감춤이다 — 미디어 쿼리가 깨져도 가로 화면을 덮지 않는다', () => {
@@ -136,17 +194,22 @@ describe('세로 안내 — 배선', () => {
 })
 
 describe('세로 안내 — 문구', () => {
-  const 문구들 = { ROTATE_TITLE, ROTATE_BODY, ROTATE_HINT, ROTATE_KEEP }
+  const 문구들 = { ROTATE_TITLE, ROTATE_BODY, ROTATE_HINT, ROTATE_LOCK, ROTATE_KEEP }
 
-  it('네 줄이 비어 있지 않다', () => {
+  it('다섯 줄이 비어 있지 않다', () => {
     for (const [이름, 값] of Object.entries(문구들)) {
       expect(값.trim().length, `${이름} 이 비었다`).toBeGreaterThan(0)
     }
   })
 
-  it('같은 글자가 저장소에 한 벌뿐이다 — 두 벌이 되면 한쪽만 고쳐진다', () => {
+  it('같은 글자가 apps/client/src 안에 한 벌뿐이다 — 두 벌이 되면 한쪽만 고쳐진다', () => {
     // `ALREADY_FULL_TEXT` 가 그 교훈이다. 이 검사 자신은 글자를 안 타이핑하고
     // 상수를 불러다 쓴다 — 그러지 않으면 자가 곧 두 번째 사본이 된다.
+    //
+    // 이름이 "저장소에"가 아니라 "apps/client/src 안에"인 이유: `소스파일들()` 이
+    // 걷는 곳이 거기까지다. 한때 docs/deploy-public.md 가 이 문구를 따옴표로
+    // 물고 있었는데 이 자는 그것을 못 봤다 — 그래서 문서 쪽의 따옴표를 지웠고
+    // (산문으로 풀어 쓰면 사본이 아니다), 이름도 재는 만큼으로 좁혔다.
     for (const [이름, 값] of Object.entries(문구들)) {
       const 가진파일 = 소스파일들().filter((f) => readFileSync(f, 'utf8').includes(값))
       expect(가진파일.map((f) => f.slice(srcDir.length)), `${이름} 이 여러 벌이다`).toHaveLength(1)

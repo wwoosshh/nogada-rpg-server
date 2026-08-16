@@ -44,12 +44,31 @@ export const ROTATE_BODY =
  */
 export const ROTATE_HINT = '폰이면 옆으로 눕히고, 창이면 가로로 넓혀 주세요.'
 
+/**
+ * 시킨 대로 했는데 아무 일도 안 나는 사람에게 주는 한 줄.
+ *
+ * iOS·안드로이드의 **화면 회전 잠금**은 흔하게 켜 두는 기능이고, 켜져 있으면
+ * 폰을 눕혀도 뷰포트가 안 돈다. 이 덮개는 불투명·전면·닫기 없음이라(의도한
+ * 설계다) 그 사람에게 남는 것은 빠져나갈 문이 없는 화면뿐이다 — 원인을 짚어
+ * 주는 말이 없으면 "고장났다"로 읽고 나간다. 상수 하나 값이라 싸다.
+ */
+export const ROTATE_LOCK = '눕혀도 그대로면 화면 회전 잠금을 꺼 주세요.'
+
 /** 돌려도 하던 것이 안 날아간다는 약속. 이 말이 없으면 돌리기를 망설인다. */
 export const ROTATE_KEEP = '돌리면 그대로 이어집니다.'
 
 export function OrientationNotice(): JSX.Element {
   return (
-    // role="alert" — 화면을 덮는 사건이라 스크린리더가 지금 읽어야 한다.
+    // role="alert" — 화면을 덮는 사건이라 스크린리더가 읽어 주기를 **기대한다**.
+    //
+    // **미검증이다.** 라이브 리전은 규격상 *리전 안의 내용이 바뀔 때* 읽히는데,
+    // 이 요소는 로드 때부터 늘 마운트돼 있고 글자가 한 번도 안 바뀐다 —
+    // 바뀌는 것은 `display: none` ↔ `flex` 라는 가시성뿐이고, 그 경우의 낭독
+    // 여부는 브라우저·보조기술마다 갈린다. 보조기술 없이 확인할 수 없어
+    // 재지 못했다. 단정하지 않는 이유가 그것이다.
+    //
+    // 그래도 두는 이유: 읽히면 버는 것이 크고 안 읽혀도 잃는 것이 없다.
+    // 지우지 말고, 실제 보조기술로 한 번 재게 되면 결과를 여기 적을 것.
     <div className="rotate" role="alert">
       <div className="rotate__box">
         {/*
@@ -63,6 +82,8 @@ export function OrientationNotice(): JSX.Element {
         <div className="rotate__title">{ROTATE_TITLE}</div>
         <p className="rotate__body">{ROTATE_BODY}</p>
         <p className="rotate__hint">{ROTATE_HINT}</p>
+        {/* 행동(hint) 바로 밑이다 — 이 줄은 그 행동이 안 먹었을 때의 출구다. */}
+        <p className="rotate__lock">{ROTATE_LOCK}</p>
         <p className="rotate__keep">{ROTATE_KEEP}</p>
       </div>
     </div>
