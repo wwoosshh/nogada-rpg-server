@@ -1,0 +1,70 @@
+/**
+ * 세로로 든 화면을 통째로 덮고 "가로로 돌려 달라"고 말한다.
+ *
+ * **왜 이것이 필요한가.** 이 게임은 812×375 가로 고정 전제로 지어졌다(ui.css 의
+ * 여러 주석). 세로로 들면 마을 카드 넉 장(`repeat(4, 1fr)`)이 짜부라지고 제작·
+ * 상점의 좌우 분할이 못 쓰게 되는데, **캔버스(Phaser)는 멀쩡히 늘어난다.** 그래서
+ * 증상이 "고장났다"가 아니라 "게임은 떴는데 창을 열면 못 쓴다"로 나오고, 아무도
+ * 무엇이 잘못됐는지 모른다 — 말해 주는 자가 없으면 그냥 나간다.
+ *
+ * manifest 의 `orientation: landscape` 로는 안 끝난다. 그건 **홈 화면에 추가해서
+ * standalone 으로 열었을 때만** 걸리는데 친구가 링크를 처음 여는 방식은 그냥
+ * 브라우저다. 그리고 **iOS 사파리는 manifest 의 orientation 을 아예 안 읽는다**
+ * (docs/deploy-public.md 8단계). 아이폰 사용자에게는 이 한 겹이 유일한 방어다.
+ *
+ * **왜 App.tsx 가 아니라 main.tsx 에서 그리는가.** App.tsx 는 불가침 파일이다.
+ * 그리고 여기가 더 맞는 자리이기도 하다 — 이 안내는 게임의 어느 국면에도 속하지
+ * 않는다. 연결 전(ConnectionGate)에도, 플레이 중에도, 똑같이 세로면 뜬다.
+ *
+ * **상태를 하나도 안 만든다.** 화면 방향은 이미 CSS 가 아는 것이고(`@media
+ * (orientation: portrait)`), 그것을 JS 로 다시 관측해 스토어에 담으면 같은 사실의
+ * 사본이 둘이 된다 — 그 둘이 어긋나는 날 화면과 상태가 다른 말을 한다. 그래서
+ * 이 컴포넌트는 늘 렌더되고, 보일지 말지는 ui.css 의 그 한 블록이 혼자 정한다.
+ * 덕분에 **가로로 돌리는 순간 아무 일도 안 일어난다** — 리렌더도 언마운트도 없고,
+ * Phaser 게임은 이 덮개 뒤에서 계속 돌고 있었으므로 하던 것이 그대로 이어진다.
+ */
+
+/**
+ * 문구는 여기 한 벌만 있다.
+ *
+ * 같은 문구를 CSS 의 `content` 나 검사 파일에 두 번째로 타이핑하면 한쪽만 고쳐지는
+ * 날이 온다 — `ALREADY_FULL_TEXT` 가 그 교훈이라 여기서도 상수로 낸다. 아래
+ * orientationNotice.test.ts 가 이 글자가 저장소에 **한 벌뿐인지** 실제로 센다.
+ */
+export const ROTATE_TITLE = '가로로 돌려 주세요'
+
+/** 왜 돌려야 하는지. 이유를 안 대면 "왜 못 하게 하지"로 읽힌다. */
+export const ROTATE_BODY =
+  '이 게임은 가로 화면에 맞춰 지어졌습니다. 세로에서는 마을 카드와 제작·상점 패널이 무너져 손을 댈 수 없습니다.'
+
+/**
+ * 데스크톱의 세로로 긴 창도 `orientation: portrait` 다 — 거기서 "돌려 주세요"는
+ * 할 수 없는 일을 시키는 말이다. 그래서 행동 한 줄이 둘을 함께 받는다.
+ * (그 창이 왜 여기까지 오는지는 ui.css 의 미디어 쿼리 주석에 적혀 있다.)
+ */
+export const ROTATE_HINT = '폰이면 옆으로 눕히고, 창이면 가로로 넓혀 주세요.'
+
+/** 돌려도 하던 것이 안 날아간다는 약속. 이 말이 없으면 돌리기를 망설인다. */
+export const ROTATE_KEEP = '돌리면 그대로 이어집니다.'
+
+export function OrientationNotice(): JSX.Element {
+  return (
+    // role="alert" — 화면을 덮는 사건이라 스크린리더가 지금 읽어야 한다.
+    <div className="rotate" role="alert">
+      <div className="rotate__box">
+        {/*
+          그림 한 조각. 글자를 못 읽는 순간에도 "돌려라"가 먼저 도착하게 한다.
+          유니코드 픽토그램을 안 쓰는 이유는 Neo둥근모에 없는 글자가 대체 글꼴로
+          떨어져 혼자 다른 세계의 물건으로 보이기 때문이다 — 스크롤바를 게임의
+          것으로 갈아 끼운 것과 같은 판단이다(ui.css 머리). 그래서 네모 하나를
+          CSS 로 그리고 돌린다.
+        */}
+        <div className="rotate__glyph" aria-hidden="true" />
+        <div className="rotate__title">{ROTATE_TITLE}</div>
+        <p className="rotate__body">{ROTATE_BODY}</p>
+        <p className="rotate__hint">{ROTATE_HINT}</p>
+        <p className="rotate__keep">{ROTATE_KEEP}</p>
+      </div>
+    </div>
+  )
+}

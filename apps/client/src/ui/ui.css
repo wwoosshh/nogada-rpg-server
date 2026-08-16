@@ -1787,3 +1787,146 @@
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * ─── 세로로 든 화면 ─────────────────────────────────────────────────────────
+ *
+ * **이 파일에서 유일한 @media 다.** 반응형으로 가는 문을 여는 것이 아니다 —
+ * 이 게임은 가로 전용이고 그것을 바꿀 생각이 없다. 여기서 하는 일은 딱 하나,
+ * 못 쓰는 화면에서 **왜 못 쓰는지 말해 주는 것**이다.
+ * (왜 manifest 의 orientation 으로 안 끝나는지는 OrientationNotice.tsx 에 있다.)
+ *
+ * 기본값이 `display: none` 인 것이 요점이다. 미디어 쿼리가 나중에 깨지거나
+ * 누가 통째로 지우면 **안 뜨는 쪽으로** 실패한다 — 가로로 게임하는 사람 앞에
+ * 덮개가 남는 것보다 그쪽이 낫다.
+ */
+.rotate {
+  display: none;
+}
+
+/*
+ * **왜 폭 조건을 함께 거는가.** `orientation: portrait` 는 기기의 방향이 아니라
+ * 뷰포트의 종횡비다 — 세로로 긴 데스크톱 창(예: 900×1200)도 여기에 걸린다.
+ * 그런데 그 창은 폭이 넉넉해서 화면이 멀쩡히 돌아가고, 거기 대고 "돌려 주세요"라고
+ * 말하면 할 수 없는 일을 시키는 꼴이다. 실제로 무너지는 원인은 방향이 아니라
+ * **가로 폭**이다(마을 카드 넉 장, 제작·상점의 좌우 분할). 그래서 둘을 함께 건다.
+ *
+ * 812 는 이 게임의 설계 폭이다. 그 폭이면 세로로 길어도 UI 는 다 들어가므로
+ * `max-width: 811px` — 812 자신은 통과시킨다.
+ *
+ * **방향 조건을 빼고 폭만 재면 안 된다.** 작은 폰을 가로로 든 화면(아이폰 SE 는
+ * 667×375)이 811 아래라, 이미 가로인 사람에게 "가로로 돌리라"고 말하게 된다.
+ *
+ * `pointer: coarse` 같은 것으로 폰만 골라내지 **않는다.** 그러면 좁은 데스크톱
+ * 창에서는 안 뜨겠지만, 손가락을 fine 으로 보고하는 기기가 하나라도 있으면 정작
+ * 이 안내가 필요한 사람 앞에서 조용히 사라진다. 두 실패의 값이 다르다 — 개발자가
+ * 창을 좁혔다가 안내를 보는 것은 창을 넓히면 끝이고(그리고 그 좁은 창에서 게임이
+ * 정말 못 쓸 만한 것도 사실이다), 폰에서 안 뜨는 것은 이 작업 전체가 없던 것과
+ * 같다. 그래서 **뜨는 쪽으로 기운다.**
+ */
+@media (orientation: portrait) and (max-width: 811px) {
+  .rotate {
+    position: fixed;
+    inset: 0;
+    /*
+     * `.topbar`·`.modal`·`.panel` 이 z-index: 1 을 쓴다. 그것들은 App 의 루트
+     * div(position: relative, z-index 없음 — 쌓임 맥락을 만들지 않는다) 아래
+     * 있으므로 이 덮개와 같은 맥락에서 겨룬다. 넉넉히 위로 둔다.
+     */
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    /*
+     * **화면 전체를 덮는다 — 캔버스까지.** 게임을 반쯤 보여 주면 세로에서도
+     * 놀 수 있는 것처럼 보이고, 캔버스의 가상 컨트롤러는 실제로 터치를 받으므로
+     * 사람이 못 쓰는 화면을 계속 두드리게 된다. 불투명한 것이 안내다.
+     * `pointer-events` 는 손대지 않는다 — 기본값(auto)이 이미 뒤를 막는다.
+     */
+    background: var(--c-ink);
+    /* 노치·펀치홀을 피한다. 세로에서는 위아래가 잘린다 — `.screen` 과 같은 규칙. */
+    padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-3)
+      max(var(--space-3), env(safe-area-inset-bottom));
+    text-align: center;
+  }
+
+  /*
+   * 돌아가는 네모 하나. 세로(24×40)에서 가로로 눕는 것을 반복해서, 글자를 읽기
+   * 전에 무엇을 하라는 것인지 도착하게 한다. 픽셀 화면이라 모서리는 `--radius`
+   * 하나뿐이고 그림자도 광택도 없다.
+   */
+  .rotate__glyph {
+    width: 24px;
+    height: 40px;
+    border: 2px solid var(--c-panel-edge);
+    border-radius: var(--radius);
+    background: var(--c-panel);
+    animation: rotate-hint 2.4s ease-in-out infinite;
+  }
+
+  .rotate__box {
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .rotate__title {
+    color: var(--c-accent);
+    font-size: 16px;
+  }
+
+  .rotate__body {
+    margin: 0;
+    color: var(--c-parchment);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* 행동 한 줄 — 이유(본문)보다 밝게 두어 눈이 먼저 닿게 한다. */
+  .rotate__hint {
+    margin: 0;
+    color: var(--c-parchment-dim);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* 약속 한 줄. 배경 정보라 가장 흐리다 — `.codex__slot-final` 과 같은 자세다. */
+  .rotate__keep {
+    margin: 0;
+    color: var(--c-parchment-dim);
+    font-size: 11px;
+    opacity: 0.7;
+  }
+}
+
+/*
+ * 90도까지만 돌리고 잠깐 머문다 — 한 바퀴 돌리면 "돌려라"가 아니라 "기다려라"로
+ * 읽힌다(로딩 스피너의 문법이다).
+ */
+@keyframes rotate-hint {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  55%,
+  85% {
+    transform: rotate(-90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+/*
+ * 움직임을 줄여 달라고 한 사람에게는 세워 둔다. 네모는 그대로 있고 글자도 그대로라
+ * 안내가 사라지지는 않는다 — 없앨 수 있는 것은 움직임뿐이다.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .rotate__glyph {
+    animation: none;
+  }
+}

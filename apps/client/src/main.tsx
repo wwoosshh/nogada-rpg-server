@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './ui/App.js'
+import { OrientationNotice } from './ui/OrientationNotice.js'
 import './styles/global.css'
 
 const root = document.getElementById('root')
@@ -30,6 +31,17 @@ void waitForFont().then(() => {
   createRoot(root).render(
     <StrictMode>
       <App />
+      {/*
+        세로로 든 화면을 덮는 안내. App 밖에 두는 이유는 둘이다: App.tsx 가
+        불가침 파일이고, 이 안내가 게임의 어느 국면에도 속하지 않는다(연결 전에도
+        플레이 중에도 똑같이 뜬다). 보일지 말지는 전적으로 ui.css 의 미디어
+        쿼리가 정하므로 여기서는 조건 없이 늘 그린다 — 세로가 아니면
+        `display: none` 이라 자리를 한 픽셀도 안 먹는다.
+
+        **App 뒤에 둔다.** 위치 지정된 형제끼리는 DOM 순서로도 겨루므로, 앞에
+        두면 z-index 를 고쳐 쓰는 날 App 의 패널들에 덮인다.
+      */}
+      <OrientationNotice />
     </StrictMode>,
   )
 })
