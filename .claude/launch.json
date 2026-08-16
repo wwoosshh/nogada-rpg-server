@@ -12,6 +12,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev:server"],
       "port": 3000
+    },
+    {
+      "name": "nogada-client-dist",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@nogada/client", "preview"],
+      "port": 4173
     }
   ]
 }

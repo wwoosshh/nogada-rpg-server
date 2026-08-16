@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "노가다 RPG",
+  "short_name": "노가다",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#241c1c",
+  "theme_color": "#241c1c",
+  "icons": [
+    {
+      "src": "app-icon/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "app-icon/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
