@@ -15,6 +15,16 @@ import { describe, expect, it } from 'vitest'
  * 끊기는 자리가 넷이라 자도 넷이다: ① JSON 이 깨지는 것, ② index.html 이 다른
  * 이름을 가리키는 것, ③ 적은 크기와 실제 PNG 가 다른 것(192 라 적고 180 을 두면
  * 크롬이 설치를 **거부한다**), ④ 색이 tokens.css 와 갈라지는 것.
+ *
+ * **이 자가 재지 않는 것 — 폰이 실제로 설치를 제안하는가.** 여기 있는 검사는
+ * 전부 manifest 쪽 요건이고, 안드로이드 크롬의 설치 배너·WebAPK 발급은 그것
+ * 말고도 **fetch 핸들러를 가진 서비스워커**를 오래 함께 요구해 왔다. 이
+ * 클라이언트에는 서비스워커가 한 개도 없다(실측: `apps/client/src` 에
+ * `serviceWorker` grep 0건). 즉 아래가 전부 초록이어도 "홈 화면에 추가하면
+ * 게임처럼 열린다"가 성립한다는 뜻은 **아니다** — manifest 쪽은 여기서 재고,
+ * 설치가 실제로 되는지는 진짜 안드로이드에서 ⋮ → '앱 설치' 가 뜨는지 눈으로
+ * 봐야 알며 아직 아무 기계에서도 안 재 봤다. 안 뜨면 붙일 것은 최소한의
+ * 서비스워커 한 장이고, 그 자리는 여기가 아니라 별도 태스크다.
  */
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -111,7 +121,6 @@ describe('manifest.webmanifest', () => {
     // 오리진 서빙이라 절대 주소를 적을 이유가 없고, 적으면 주소가 바뀌는 날
     // 설치된 폰들이 옛 주소를 계속 연다 — 그건 재빌드로도 못 고친다.
     const 주소칸 = [
-      manifest.id,
       manifest.start_url,
       manifest.scope,
       ...manifest.icons.map((i: { src: string }) => i.src),
@@ -120,6 +129,20 @@ describe('manifest.webmanifest', () => {
       expect(값, '절대 주소가 박혔다').not.toMatch(/^[a-z]+:\/\//i)
       expect(값, '오리진 루트를 박으면 하위 경로로 옮기는 날 깨진다').not.toMatch(/^\//)
     }
+  })
+
+  it('id 를 적지 않는다 — 이 칸만 상대값이 상대값으로 안 풀린다', () => {
+    const manifest = 읽기()
+    // **위 검사가 못 재는 칸이라 따로 판다.** 위는 글자 모양만 보는데(`^/` 와
+    // `^scheme://`), `id` 는 명세상 **start_url 의 오리진**을 기준으로 풀린다 —
+    // manifest 파일의 위치가 아니다. 그래서 `"id": "./"` 라고 적어도 그것은
+    // 상대값이 아니라 오리진 루트를 박는 것과 같고, 위 자는 그 차이를 못 본다.
+    //
+    // 지금 배치(manifest 가 웹 루트)에서는 둘이 같은 주소라 아무 일도 안 하지만,
+    // 하위 경로(`/game/`)로 옮기는 날 start_url·scope·icons 만 따라 움직이고 id 는
+    // 루트에 남아 갈라진다. 생략하면 기본값이 곧 start_url 이라 **적을 때보다
+    // 정확하다** — 그래서 이 저장소는 이 칸을 비워 둔다.
+    expect(manifest.id, 'id 는 오리진 기준이라 상대값 약속을 못 지킨다 — 비워 둔다').toBeUndefined()
   })
 
   it('아이콘이 실제로 있고 적힌 크기와 파일이 같다 — 다르면 크롬이 설치를 거부한다', () => {
@@ -179,12 +202,34 @@ describe('index.html', () => {
     expect(값?.toLowerCase()).toBe(manifest.theme_color.toLowerCase())
   })
 
-  it('apple-touch-icon 이 있고 실제 파일을 가리킨다 — 사파리는 manifest 를 안 읽는다', () => {
+  it('apple-touch-icon 이 진짜 그림이고 manifest 가 적은 그것과 같은 파일이다', () => {
     // iOS 홈 화면 아이콘은 이 줄로만 정해진다. 없으면 화면을 축소한
     // 스크린샷이 아이콘이 되는데, 그 실패는 아이폰에서만 보인다.
+    //
+    // **전에는 존재만 쟀고, 그래서 안 물었다** — href 를 `/manifest.webmanifest`
+    // 로 바꿔 놔도 열 검사가 전부 초록이었다(실측). 개발 PC 에서 절대 안 보이는
+    // 유일한 칸을 가장 약한 자로 재고 있었던 셈이라, manifest 쪽과 같은 자를 댄다.
+    const manifest = 읽기()
     const href = 링크href(indexHtml, 'apple-touch-icon')
     expect(href, '<link rel="apple-touch-icon"> 가 없다').toBeDefined()
-    expect(existsSync(join(publicDir, href!)), `${href} 가 public/ 에 없다`).toBe(true)
+    const 경로 = join(publicDir, href!)
+    expect(existsSync(경로), `${href} 가 public/ 에 없다`).toBe(true)
+
+    // 사파리는 이 파일을 **그림으로** 읽는다. PNG 가 아니면 아이콘이 통째로 없는
+    // 것과 같고, 그때도 콘솔에는 아무 말이 안 남는다.
+    const { width, height } = png크기(경로)
+    expect(width, 'apple-touch-icon 이 정사각형이 아니다 — iOS 가 찌그러뜨린다').toBe(height)
+    // 180x180 이 iOS 가 홈 화면에 쓰는 가장 큰 크기다. 그보다 작은 것을 주면
+    // 늘려서 박으므로 픽셀 아트가 흐려진다.
+    expect(width, 'iOS 홈 화면은 180px 까지 쓴다 — 그보다 작으면 늘어난다').toBeGreaterThanOrEqual(
+      180,
+    )
+
+    // manifest 가 안 적은 그림을 아이폰에만 따로 주면 두 그림이 갈라지는데,
+    // 그 어긋남은 안드로이드와 아이폰을 나란히 놓아야만 보인다. index.html 은
+    // `/app-icon/…`, manifest 는 `app-icon/…` 라 앞의 `/` 를 떼고 잰다.
+    const 아이콘들 = manifest.icons.map((i: { src: string }) => i.src)
+    expect(아이콘들, 'manifest 에 없는 그림을 아이폰에만 준다').toContain(href!.replace(/^\//, ''))
   })
 })
 

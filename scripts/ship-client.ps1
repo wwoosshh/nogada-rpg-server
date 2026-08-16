@@ -25,7 +25,9 @@
      한 번 받아 간 번들은 회수하지 못한다. 그리고 이 스크립트는 기본적으로 dist 를
      새로 굽는다: 그렇게 구운 dist 는 그 순간까지 어떤 테스트도 본 적이 없고,
      CI 는 클라이언트를 빌드하되 **배포하지 않는다**(deploy.yml 은 서버만). 즉
-     공개로 나가는 그 폴더를 재는 자는 여기 말고는 없다.
+     공개로 나가는 그 폴더를 재는 자는 여기 말고는 없다. **홈 화면 사슬**
+     (manifest·아이콘이 dist 에 실제로 복사됐는가)도 같은 이유로 여기서 함께
+     돈다 — 빠지면 폰에서 아이콘이 기본 지구본으로 남고, 그것 말고는 신호가 없다.
 
 .PARAMETER Destination
 서버 PC 의 `apps\client\dist` 자리. robocopy 가 아는 경로면 무엇이든 된다.
@@ -148,10 +150,17 @@ if ($baked) {
 # 파일 하나만 지목해서 도는 데 실측 1.5초다 — 옮기기 절차에 체감이 없다.
 # 그리고 이 자는 dist 가 없으면 그 부분을 건너뛰는데, 여기서는 위에서 dist 의
 # 존재를 이미 확인했으므로 반드시 실제로 잰다.
-Write-Host '숨은 문턱을 잰다(드랍 확률·채집 브라켓·결계 좌표·소스맵)...'
-pnpm vitest run apps/client/src/hiddenThresholds.test.ts
+#
+# **manifest 도 여기서 함께 부른다.** webManifest.test.ts 의 dist 블록도 같은
+# `describe.skipIf(!existsSync(distDir))` 라, 빌드 안 한 기계에서는 조용히
+# 건너뛴다. 그런데 그 블록이 잡겠다고 적은 실패는 "`public/` 이 dist 로 복사가
+# 안 되는 것" 이고, **그 실패가 사람을 무는 순간이 정확히 여기다** — 옮기고 나면
+# 폰에서 아이콘이 기본 지구본으로 남는 것 말고는 아무 신호가 없다. 관문 3 이
+# hiddenThresholds 를 부르는 이유와 같은 이유이므로 같은 자리에 둔다.
+Write-Host '숨은 문턱과 홈 화면 사슬을 잰다(드랍 확률·채집 브라켓·결계 좌표·소스맵 / manifest·아이콘)...'
+pnpm vitest run apps/client/src/hiddenThresholds.test.ts apps/client/src/webManifest.test.ts
 if ($LASTEXITCODE -ne 0) {
-  throw '숨은 문턱이 번들에 샜다 — 위 실패가 어느 표인지 말한다. 이 dist 를 옮기지 마라.'
+  throw '관문 3 이 빨갛다 — 위 실패가 어느 표인지 말한다. 이 dist 를 옮기지 마라.'
 }
 
 # --- 옮기기 -------------------------------------------------------------------

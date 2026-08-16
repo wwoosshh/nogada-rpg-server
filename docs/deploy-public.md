@@ -337,8 +337,13 @@ Get-ChildItem -Recurse -File apps/client/dist | Where-Object { $_.Extension -in 
 좌표·소스맵이고, 값을 여기 베껴 적지 않으려고 자를 그대로 부른다(8장 참조).
 
 ```bash
-pnpm vitest run apps/client/src/hiddenThresholds.test.ts
+pnpm vitest run apps/client/src/hiddenThresholds.test.ts apps/client/src/webManifest.test.ts
 ```
+
+`webManifest.test.ts` 를 여기 같이 부르는 이유는 그 파일의 dist 블록도 **dist 가
+있을 때만** 도는데, 그것이 잡겠다는 실패("`public/` 이 dist 로 안 복사됨")가
+사람을 무는 순간이 바로 옮기기 직전이기 때문이다. 빠지면 폰에서 아이콘이 기본
+지구본으로 남고, 그것 말고는 아무 신호가 없다.
 
 이 셋째가 **ship 안에 있어야 하는 이유는 둘째보다 크다.** 주소가 새면 다시
 배포하면 그만이지만, 한 번 받아 간 번들은 회수하지 못한다. 그리고 ship 은
@@ -489,6 +494,22 @@ curl -i -X OPTIONS -H "Origin: http://evil.example" \
 `"orientation":"landscape"`, 192/512 아이콘. `index.html <head>` 에
 `<link rel="manifest">` 와 `<meta name="theme-color">`. 친구에게 "크롬 ⋮ → 홈 화면에
 추가"를 안내하면 주소창 50px 을 되찾고 가로가 잠긴다.
+
+**manifest·아이콘·head 는 섰다**(`apps/client/src/webManifest.test.ts` 가 잰다).
+**그런데 "설치가 실제로 되는가"는 아직 어느 기계에서도 안 쟀다** — 안드로이드
+크롬의 설치 배너·WebAPK 는 manifest 말고 **fetch 핸들러를 가진 서비스워커**를
+오래 함께 요구해 왔는데 이 클라이언트에는 서비스워커가 0개다. 그러니 다음 릴리스를
+옮긴 뒤 **진짜 안드로이드 폰에서 ⋮ 메뉴에 '앱 설치' 가 뜨는지, 설치본이 가로로
+잠기는지** 한 번 눌러 보고 이 자리에 결과를 적어라. 안 뜨면 붙일 것은 통과형
+서비스워커 한 장이다. (아이폰은 별개다 — 사파리는 manifest 를 거의 안 읽고
+`apple-touch-icon` 한 줄로만 아이콘을 정한다.)
+
+정적 파일이 제대로 나가는지 **확인할 때는 `vite preview` 를 쓰지 마라.** 공개
+사이트가 쓰는 것은 vite 가 아니라 서버의 `@fastify/static` 이고 둘은 다른 코드다
+(MIME 결정도 404 처리도 dotfiles 도 다르다). 서버는 Postgres 없이도 뜬다 —
+`DATABASE_URL` 이 없으면 JsonPersistence 로 떨어지므로(`app.ts` 의 `openStore`)
+`pnpm --filter @nogada/server start` 한 줄이면 3000 에서 **프로덕션과 같은 경로**로
+dist 를 받아 볼 수 있다.
 
 **세로로 들면 패널이 무너진다.** 클라이언트 CSS 전체에 `@media` 쿼리가 **0개**이고,
 마을 카드는 `repeat(4, 1fr)`, 제작·상점은 좌우 분할이라 375px 폭에서 못 쓴다.
