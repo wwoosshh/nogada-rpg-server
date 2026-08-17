@@ -73,8 +73,18 @@ export interface WorldMapMark {
  * 지름길로도 쓰지 않는다 — 그 맵을 통과하는 길이 세워지면 「2홉」이 플레이어가
  * 실제로 걸을 길이 아니게 된다.
  *
+ * **이 표가 대답하는 것은 「목록에 무엇이 실리는가」와 「길로 무엇을 쓰는가」
+ * 둘이다.** 그 둘이 같은 자리에 있어도 되는 이유는 등록부에 실리는 맵끼리는
+ * 서로 걸어 닿기 때문이고, **틀린 이유는 서 있는 사람이 목록 밖에 설 수
+ * 있기 때문이다** — 그래서 세 번째 물음(「어디서 재는가」)만 아래 `hopGraph`
+ * 로 갈라 뒀다. 갈라 두기 전에는 개발맵에 선 채로 지도를 열면 이 파일이 던졌다.
+ *
  * **자기 자신으로 돌아오는 문(결계)은 이음이 아니다.** `fromMap === toMap` 인
- * 전환 넷은 한 맵 안의 벽이라, 여기 넣으면 자기 홉을 자기가 갱신하려 든다.
+ * 전환 넷은 한 맵 안의 벽이다. 거르는 이유는 홉이 망가져서가 아니라 — 자기
+ * 변은 `breadthFirst` 의 `hops.has(next)` 에 걸려 애초에 큐에 못 들어간다
+ * (돌연변이로 확인했다: 이 줄을 지워도 검사가 전부 초록이다) — **인접표에
+ * 뜻 없는 자기 변이 실리기 때문**이다. 「얼음채집장에서 얼음채집장으로 가는
+ * 문이 있다」는 이 표가 말해도 되는 문장이 아니다.
  *
  * **결계가 걸린 문을 걸러 내지 않는다 — 그래도 되는 것이 아니라 오늘 그런 문이
  * 없는 것이다.** 맵과 맵을 잇는 전환 스물넷에는 `gateSkill` 이 하나도 안 붙어
@@ -96,6 +106,42 @@ function doorGraph(data: GameData): Map<string, string[]> {
     if (!out || out.includes(t.toMap)) continue
     out.push(t.toMap)
   }
+  return graph
+}
+
+/**
+ * 홉을 **어디서부터** 재는가 — 서 있는 맵이 목록 밖이면 출발 노드로만 얹는다.
+ *
+ * **개발용 시험장에 선 채로 지도를 열 수 있다.** `눈의마을,0,15 → 개발맵` 은
+ * 잠기지도 숨지도 않은 실재하는 문이고 spawn 에서 15칸이라, 미니맵이 그 문을
+ * 안 찍어도 사람은 그 안에 서고 미니맵도 거기서 그대로 눌린다. 그때 서 있는
+ * 맵은 `doorGraph` 에 없으므로 너비 우선이 빈 표를 돌려주고, 등록부 열 줄이
+ * 전부 「길이 없다」로 떨어져 **화면 전체가 죽었다**(MapPanel 은 이 함수를
+ * 렌더 중에 부른다).
+ *
+ * 고치는 자리가 여기인 이유: 개발맵을 **목록에서 빼는 것**과 **거기서부터
+ * 재는 것**은 다른 물음이다. 앞의 것은 설계 ⑤ 가 정한 것이고(따라간 신규가
+ * 샌드박스에 들어간다), 뒤의 것은 그 사람이 지금 어디 서 있는가일 뿐이다.
+ * 그래서 출발 노드로만 얹는다 — 나가는 변만 달고 **들어오는 변은 안 단다.**
+ * 등록부 항목은 여전히 `doorGraph` 의 키라 개발맵은 안 실리고, 다른 맵에서
+ * 잰 홉이 개발맵을 지름길로 쓰는 일도 없다.
+ */
+function hopGraph(
+  data: GameData,
+  listed: ReadonlyMap<string, readonly string[]>,
+  here: string,
+): ReadonlyMap<string, readonly string[]> {
+  if (listed.has(here)) return listed
+
+  // 복사한다 — 부르는 쪽이 `listed.keys()` 로 목록을 만들므로, 여기에 얹으면
+  // 개발맵이 등록부 열한 번째 줄로 선다.
+  const graph = new Map<string, readonly string[]>(listed)
+  const out: string[] = []
+  for (const t of data.transitions) {
+    if (t.fromMap !== here || t.toMap === here || !listed.has(t.toMap)) continue
+    if (!out.includes(t.toMap)) out.push(t.toMap)
+  }
+  graph.set(here, out)
   return graph
 }
 
@@ -185,21 +231,25 @@ function opensOn(data: GameData, mapId: string): string[] {
  * 없는 것은 부족이 아니라 결정이다(설계 ⑨ — 아크 2로 미룬 것도 그 필드다).
  */
 export function mapRegistry(data: GameData, mapId: string): RegistryEntry[] {
-  const graph = doorGraph(data)
-  const spine = spineOrder(graph)
-  const hops = breadthFirst(graph, mapId)
+  const listed = doorGraph(data)
+  const spine = spineOrder(listed)
+  // 실리는 것은 `listed`, 재는 것은 `hopGraph` — 서 있는 사람이 목록 밖에 설 수
+  // 있어서 갈랐다(hopGraph 문서).
+  const hops = breadthFirst(hopGraph(data, listed, mapId), mapId)
 
   const entries: RegistryEntry[] = []
-  for (const id of graph.keys()) {
+  for (const id of listed.keys()) {
     const map = data.maps[id]
-    // graph 의 키가 곧 `data.maps` 의 키라 이 분기는 참이 될 수 없다 — 그래도
+    // listed 의 키가 곧 `data.maps` 의 키라 이 분기는 참이 될 수 없다 — 그래도
     // 조용히 건너뛰지 않는 이유는 그날 목록이 한 줄 짧아진 채로 멀쩡해 보여서다.
     if (!map) throw new Error(`등록부: 맵 "${id}" 이 등록부에 없다`)
     const hop = hops.get(id)
     if (hop === undefined) {
       throw new Error(
         `등록부: "${mapId}" 에서 "${id}" 로 가는 길이 전환표에 없다 — ` +
-          `빌드의 도달 가능성 검사(validateTransitions)가 이미 보는 사실이다`,
+          `빌드의 도달 가능성 검사(validateTransitions)가 이미 보는 사실이다. ` +
+          `서 있는 맵이 등록부 밖(개발용 시험장 등)이라면 그 맵에서 나가는 문이 ` +
+          `transitions.csv 에 있는지부터 보라(hopGraph)`,
       )
     }
     entries.push({ mapId: id, name: map.name, hops: hop, opens: opensOn(data, id) })

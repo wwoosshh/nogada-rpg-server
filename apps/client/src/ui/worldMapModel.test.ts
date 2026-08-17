@@ -46,6 +46,36 @@ describe('등록부 — 무엇이 실리는가', () => {
     }
   })
 
+  it('개발용 시험장에 **서서** 열어도 열 줄이고, 거기에도 개발맵이 없다', () => {
+    // 위 두 검사의 표본은 전부 `게임맵들` — 개발맵을 걸러 낸 목록이라 **서 있는
+    // 맵이 개발맵인 자리**가 통째로 빠져 있었다. 그 자리에서 등록부는 던졌고,
+    // 이 저장소에는 에러 경계가 없어 React 가 오버레이 전체를 언마운트했다:
+    // 상단 바도 모든 패널도 사라지는데 `openPanel` 은 `'map'` 으로 남아 세계는
+    // 잠긴 채고 컨트롤러는 숨어 있다. 폰에서는 새로고침 말고 길이 없다.
+    //
+    // 그 문은 실재하고 잠기지도 않았다 — `눈의마을,0,15 → 개발맵` 은 spawn 에서
+    // 15칸으로, 설계 ⑤ 가 「목표인 북문 20칸보다 가깝다」고 적어 둔 바로 그 문이다.
+    // 미니맵이 그 문을 안 찍을 뿐, 사람은 그 안에 서고 미니맵도 거기서 눌린다.
+    for (const dev of DEV_ONLY_MAP_IDS) {
+      expect(() => mapRegistry(data, dev), `${dev} 에 서서 열면 던진다`).not.toThrow()
+      const entries = mapRegistry(data, dev)
+      expect(entries.map((e) => e.mapId).sort()).toEqual([...게임맵들].sort())
+      expect(entries.map((e) => e.mapId)).not.toContain(dev)
+    }
+  })
+
+  it('개발용 시험장에서 잰 홉은 그 맵에서 **나가는** 문만 쓴다', () => {
+    // 출발 노드로만 얹는다는 것이 이 표다. 개발맵 → 눈의마을이 한 홉이고
+    // (transitions.csv 의 `개발맵,29,16,눈의마을,1,15`), 그 뒤는 눈의마을에서 잰
+    // 것에 1 을 더한 값이다 — 아무도 개발맵을 **지나서** 어딘가로 가지 않는다.
+    const 여기서 = new Map(mapRegistry(data, '개발맵').map((e) => [e.mapId, e.hops]))
+    const 눈의마을에서 = new Map(mapRegistry(data, '눈의마을').map((e) => [e.mapId, e.hops]))
+    for (const [id, hop] of 여기서) {
+      expect(hop, `${id} 의 홉`).toBe(눈의마을에서.get(id)! + 1)
+    }
+    expect(여기서.get('눈의마을')).toBe(1)
+  })
+
   it('이름은 maps.csv 그대로다 — 화면이 두 번째 사본을 갖지 않는다', () => {
     for (const entry of mapRegistry(data, WORLD_MAP_ID)) {
       expect(entry.name).toBe(data.maps[entry.mapId]?.name)

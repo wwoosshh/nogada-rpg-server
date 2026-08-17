@@ -3,6 +3,7 @@ import type { InputHub } from '../../input/InputState.js'
 import { useGameStore } from '../../store/gameStore.js'
 import { DIM_COLOR, SETTINGS_ACTION, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
 import { addText, FONT_SIZE } from '../gameText.js'
+import { PANEL_BOX, panelBoxRect } from '../panelBox.js'
 import { ScrollList } from '../ScrollList.js'
 import { renderScale, viewSize } from '../viewport.js'
 import type { ControlScene } from './ControlScene.js'
@@ -28,41 +29,17 @@ const INK_COLOR = '#241c1c'
 /** 배경 위에서도 글자가 또렷이 읽혀야 하므로 컨트롤러 버튼(0.55)보다 훨씬 불투명하다. */
 const PANEL_ALPHA = 0.94
 
-/** 상단 바를 침범하지 않을 위쪽 여백 — 실측 상단 바 높이(약 34px: ui.css 의 .topbar 패딩 4px×2 + 톱니 min-height 24px + 테두리 2px)보다 살짝 크게 잡았다. DOM 쪽 전면 패널(ui.css 의 .panel)도 같은 높이에 카드 윗변을 맞춘다. */
-const TOP_MARGIN = 40
-
-/**
- * 위쪽을 뺀 나머지 세 면(좌·우·아래)에서 패널이 남기는 여백.
+/*
+ * 카드의 치수(위쪽 여백·세 면 여백·최소/최대 폭·헤더 줄 높이)는 panelBox.ts 에
+ * 있다 — 각 값이 왜 그 수인지도 그 파일에 적었다.
  *
- * 컨트롤러를 피하려는 값이 더는 아니다 — 패널이 하나라도 열리면 컨트롤러
- * 전체가 숨고 입력도 꺼진다(ControlScene.setControllerVisible — 스토어 구독이
- * 부른다. 클래스 문서 참고). 그래도 화면의 물리적 가장자리는 여전히 피한다:
- * 아래쪽이 안드로이드 제스처 내비게이션 영역과 겹치면 ScrollList 의 드래그
- * 스크롤을 OS 가 먼저 가로챌 수 있다(ControlScene.EDGE_MARGIN_BOTTOM 과 같은
- * 이유) — 좌우는 그 정도로 민감하지 않지만 화면 끝에 내용이 딱 붙지 않을
- * 정도의 여유는 준다.
+ * **이 파일 밖으로 뺀 이유는 자다.** 이 카드는 화면 위쪽에서 미니맵 상자와
+ * 겹치고, 그 겹침이 「닫힌 패널이 입력을 먹으면 무엇이 죽는가」를 정한다.
+ * 그 물음은 좌표만으로 답할 수 있는데 상수가 씬 안의 리터럴인 동안에는 잴
+ * 방법이 없었다(minimap.ts 가 MINIMAP 을 밖에 둔 것과 같은 이유).
  */
-const PANEL_MARGIN = 16
-
-/** 아주 좁은 창에서도 패널이 찌그러지지 않는 최소 폭. */
-const MIN_WIDTH = 240
-/** 극단적으로 낮은 화면에서도 두 줄 글자가 안 뭉개지는 최소 높이. */
-const MIN_HEIGHT = 64
-/**
- * 패널 폭의 상한.
- *
- * "화면을 거의 다 쓴다"는 요구는 실제 세로 모바일 화면(가로로 눕혀도 이
- * 값에 닿지 않는다) 얘기다 — 데스크톱에서 개발용 창을 비정상적으로 넓게
- * 열었을 때 목록 줄이 화면 끝까지 죽 늘어지는 것만 막는 방어값이다.
- */
-const MAX_PANEL_WIDTH = 900
-
-/**
- * 상단 헤더 줄 높이. 닫기 버튼(CLOSE_BUTTON_DIAMETER)이 온전히 들어가는
- * 높이로 잡았다 — 같은 줄에 탭도 놓는다(탭 라벨은 작아도 손끝으로 누를 칸은
- * 이 줄 전체 높이만큼 크다).
- */
-const HEADER_HEIGHT = 48
+const TOP_MARGIN = PANEL_BOX.topMargin
+const HEADER_HEIGHT = PANEL_BOX.headerHeight
 /** 헤더 줄 바로 아래, 실제 내용(목록)이 시작되기 전 틈. */
 const CONTENT_GAP = 8
 /** 목록 좌우·아래 안쪽 여백. */
@@ -218,8 +195,9 @@ export class PanelScene extends Phaser.Scene {
       Phaser.Geom.Circle.Contains,
     )
     // 닫기는 스토어 액션 하나다 — setOpenPanel(null) 은 이미 닫혀 있으면 같은
-    // 값 가드로 조용히 넘어가므로(gameStore), 탭 hitZone 과 달리 이 버튼은
-    // 안 보일 때도 인터랙티브를 따로 끄지 않는다.
+    // 값 가드로 조용히 넘어간다(gameStore). 오브젝트마다 인터랙티브를 껐다
+    // 켜지 않는 이유는 그 일을 씬 하나가 대신하기 때문이다 — render() 의
+    // `this.input.enabled` 참고.
     this.closeButtonShape.on('pointerdown', () => useGameStore.getState().setOpenPanel(null))
 
     this.closeButtonLabel = addText(this, 0, 0, '✕', {
@@ -235,6 +213,11 @@ export class PanelScene extends Phaser.Scene {
     // ControlScene 과 같은 이유로 카메라 원점을 좌상단에 둔다 — 이 파일의 좌표를
     // 하나도 고치지 않고 기기 픽셀 배율만 얹기 위해서다. viewport.ts 참고.
     this.cameras.main.setOrigin(0, 0).setZoom(renderScale())
+
+    // 열림 값이 처음 반영되는 자리는 bind() → render() 다. 그 사이의 한 프레임도
+    // 이 씬이 포인터를 먹으면 그것은 곧 미니맵이 안 눌리는 프레임이므로(render()
+    // 의 `input.enabled` 주석), 시작 상태를 닫힌 쪽으로 못박는다.
+    this.input.enabled = false
 
     this.relayout()
     this.scale.on('resize', this.handleResize, this)
@@ -384,9 +367,15 @@ export class PanelScene extends Phaser.Scene {
 
   /** 메뉴 안 탭 바를 눌렀을 때. 메뉴는 이미 열려 있으므로 열림 값은 건드리지 않는다. */
   private selectTab(tab: DetailMenuTab): void {
-    // 탭 hitZone 은 안 보일 때도 인터랙티브가 켜져 있다(닫기 버튼과 같은
-    // 이유로 켜고 끄지 않는다). 메뉴가 아닐 때 이 눌림을 무시하지 않으면,
-    // 패널이 닫힌 동안 세계의 그 자리를 탭하는 것만으로 menuTab 이 바뀐다.
+    // 메뉴가 아닐 때의 눌림은 이제 여기까지 오지 않는다 — 닫힌 동안 씬 입력이
+    // 통째로 꺼져 있다(render() 의 `this.input.enabled`). 그래도 이 가드를
+    // 남긴다: 여기 오는 길이 하나뿐이라는 것은 위쪽 한 줄에 달린 사실이고,
+    // 값을 바꾸는 함수가 자기 전제를 스스로 확인하는 편이 싸다.
+    //
+    // **원래 이 주석이 진짜 버그를 적어 두고도 못 막았다.** 「패널이 닫힌 동안
+    // 세계의 그 자리를 탭하는 것만으로 menuTab 이 바뀐다」— menuTab 만 바뀌는
+    // 것이 아니라 그 탭이 세계의 그 눌림을 **먹어 버린다**는 것이 값이었고,
+    // 미니맵이 그 자리에 놓이자 지도가 안 열렸다.
     if (useGameStore.getState().openPanel !== 'menu') return
     if (this.menuTab === tab) return
     this.menuTab = tab
@@ -399,9 +388,34 @@ export class PanelScene extends Phaser.Scene {
    * 이 씬이 그리는 것은 `'menu'` 하나뿐이다 — `bag`·`craft` 값일 때 이 씬은
    * 아무것도 그리지 않는다(그건 DOM 의 일이다). 잠금은 applyWorldLock 이
    * 따로 반영하므로 여기서는 화면만 만진다.
+   *
+   * **그리지 않는 동안에는 포인터도 안 먹는다**(아래 첫 줄). 그 한 줄이 없어서
+   * 미니맵의 위 절반이 안 눌렸다 — 자세한 것은 그 줄의 주석에 있다.
    */
   private render(): void {
     const showMenu = useGameStore.getState().openPanel === 'menu'
+
+    // **아무것도 안 그리는 씬은 아무것도 안 먹어야 한다.**
+    //
+    // 이 씬의 히트 영역 둘(탭 칸 셋 · 목록 뷰포트)은 안 보이는 동안에도 살아
+    // 있었다. 탭 칸은 `render()` 가 라벨만 숨겼기 때문이고, ScrollList 의
+    // hitZone 은 애초에 컨테이너와 별개 오브젝트라 `setVisible` 이 안 닿는다
+    // (그 파일이 스스로 그렇게 적어 뒀다). 812×375 에서 그 둘은 각각
+    // (16,40)~(740,88) 과 (24,96)~(788,351) 이고, 미니맵 상자는
+    // (9,39)~(125,155) 다 — 즉 상자 116px 중 **왼쪽 가장자리와 8px 짜리 띠를
+    // 뺀 거의 전부**가 이 씬 밑에 깔려 있었다.
+    //
+    // 그것이 왜 곧 "안 눌린다" 인가: 씬 배열이 [World, Hud, Panel, Control,
+    // Dialogue] 라 입력 처리 차례는 Panel → Hud 이고, 위 씬이 무언가를 잡으면
+    // Phaser 는 그 프레임을 통째로 아래 씬에 안 내려보낸다(InputManager 의
+    // `globalTopOnly`). 미니맵을 눌러도 지도가 안 열렸다.
+    //
+    // 히트 영역을 하나씩 끄지 않고 **씬 입력 자체**를 끄는 이유는 그것이 이
+    // 씬의 참말이기 때문이다 — 닫혀 있는 동안 이 씬에는 누를 것이 하나도 없다.
+    // 하나씩 끄면 다음에 여기 무언가를 더하는 사람이 같은 함정을 다시 판다.
+    // (이미 그렇게 한 번 팠다: 탭 hitZone 의 값 가드 `selectTab` 은 "닫힌
+    // 동안에도 눌린다"를 알고 쓴 것인데, 그 앎이 눌림 자체를 막지는 못했다.)
+    this.input.enabled = showMenu
 
     this.panelBox.setVisible(showMenu)
     this.closeButtonShape.setVisible(showMenu)
@@ -487,10 +501,11 @@ export class PanelScene extends Phaser.Scene {
    * 사이를 꽉 채운다 — "화면을 거의 다 쓴다"는 요구가 그대로 이 한 사각형이다.
    */
   private layout(width: number, height: number): void {
-    const boxWidth = Phaser.Math.Clamp(width - PANEL_MARGIN * 2, MIN_WIDTH, MAX_PANEL_WIDTH)
-    const boxHeight = Math.max(MIN_HEIGHT, height - TOP_MARGIN - PANEL_MARGIN)
-    const boxLeft = (width - boxWidth) / 2
-    const boxTop = TOP_MARGIN
+    const box = panelBoxRect(width, height)
+    const boxWidth = box.width
+    const boxHeight = box.height
+    const boxLeft = box.x
+    const boxTop = box.y
     const centerX = width / 2
 
     this.panelBox.setPosition(centerX, boxTop + boxHeight / 2).setSize(boxWidth, boxHeight)

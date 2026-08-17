@@ -1,5 +1,5 @@
 import type { GameData } from '@nogada/shared'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Component, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { renderScale } from '../game/viewport.js'
 import { useGameStore } from '../store/gameStore.js'
 import { worldMapImage } from './worldMapImage.js'
@@ -47,14 +47,58 @@ export function MapPanel(): JSX.Element | null {
         </header>
         {/* 본문 두 단 — 왼쪽이 그림, 오른쪽이 등록부. 훅을 쓰는 쪽(그림)을 별도
             컴포넌트로 두는 이유는 위의 이른 반환 때문이다: 같은 함수 안에 두면
-            패널이 닫혀 있는 프레임에 훅이 안 불려 React 가 순서를 잃는다. */}
+            패널이 닫혀 있는 프레임에 훅이 안 불려 React 가 순서를 잃는다.
+
+            두 단을 **각자의 상자에 가둔다**(Fence) — 이유는 아래 그 클래스 문서에
+            있다. 하나로 묶지 않는 이유는 둘이 서로 무관한 실패라서다: 그림이
+            안 나와도 등록부 열 줄은 여전히 참이고, 그 반대도 같다. */}
         <div className="worldmap">
-          <WorldMapPicture data={data} />
-          <Registry data={data} mapId={mapId} />
+          <Fence what="지도">
+            <WorldMapPicture data={data} />
+          </Fence>
+          <Fence what="등록부">
+            <Registry data={data} mapId={mapId} />
+          </Fence>
         </div>
       </section>
     </div>
   )
+}
+
+/**
+ * 렌더 중에 터진 예외를 **자기 상자 안에 가둔다.**
+ *
+ * **왜 필요한가 — 이 한 줄이 화면 전체를 죽인 적이 있다.** 개발용 시험장에 선
+ * 채로 지도를 열면 `mapRegistry` 가 던졌고, 이 저장소에는 에러 경계가 하나도
+ * 없어서 React 가 루트를 통째로 언마운트했다. 사라지는 것은 이 패널이 아니라
+ * **상단 바와 모든 패널**이고, 그 순간 `openPanel` 은 `'map'` 으로 남아 세계
+ * 입력은 잠긴 채 가상 컨트롤러도 숨어 있다 — 폰에서 빠져나갈 길이 새로고침밖에
+ * 없다. 던진 원인은 고쳤지만(worldMapModel 의 hopGraph), **다음 어긋남도 같은
+ * 값을 물게 두지 않는다**: 이 두 함수는 렌더 중에 데이터를 직접 걷는다.
+ *
+ * 그림 쪽은 이미 자기 `catch` 로 상자 안에서 죽고 있었다(WorldMapPicture 의
+ * `setFailed`) — 그것은 **비동기** 실패라 애초에 렌더를 안 죽인다. 이 경계가
+ * 맡는 것은 그 짝인 **동기** 실패다.
+ *
+ * `App.tsx` 를 안 건드린다(불가침). 경계를 루트가 아니라 여기 두는 것은 그
+ * 제약을 피한 결과이기도 하지만, 더 나은 자리이기도 하다 — 루트 경계는 "게임이
+ * 죽었다"를 그리고, 여기 있는 경계는 나머지 화면을 살려 둔 채 **한 단만**
+ * 죽는다. 닫기 버튼도 헤더에 그대로 남아 손가락이 빠져나갈 길이 있다.
+ */
+class Fence extends Component<{ what: string; children: ReactNode }, { failed: string | null }> {
+  override state: { failed: string | null } = { failed: null }
+
+  static getDerivedStateFromError(err: unknown): { failed: string } {
+    return { failed: err instanceof Error ? err.message : String(err) }
+  }
+
+  override render(): ReactNode {
+    const { failed } = this.state
+    // 빈 자리로 두지 않는다 — 그림 쪽 `setFailed` 와 같은 이유다. 조용히 사라진
+    // 칸은 "오늘 여기 적을 것이 없다" 와 화면에서 구분되지 않는다.
+    if (failed !== null) return <p className="worldmap__note">{this.props.what}를 못 그렸다 — {failed}</p>
+    return this.props.children
+  }
 }
 
 /**

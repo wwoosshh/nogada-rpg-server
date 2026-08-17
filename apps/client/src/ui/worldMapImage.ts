@@ -29,7 +29,8 @@ import { bakeMinimap } from '../game/minimapBake.js'
  *    올린다). 그래서 첫 열림에 실제로 새로 나가는 요청은 맵 JSON 하나이고, 그림
  *    여섯 장은 브라우저 캐시에서 온다.
  *
- * 그리고 **두 번째 열림부터는 0 이다** — 받은 것도 구운 것도 여기 남는다.
+ * 그리고 **두 번째 열림부터는 0 이다 — 첫 열림이 성공했을 때만.** 실패한 약속은
+ * 캐시에서 도로 지운다(forgetIfRejected). 받은 것도 구운 것도 여기 남는다.
  * 미니맵이 텍스처를 안 지우는 그 이유이고(HudScene 의 minimapTextureKey), 값도
  * 같은 자리에서 나온다: 월드맵은 조각이 9,382개라 굽는 것 자체가 데스크톱에서도
  * 기록만 26.7ms 다.
@@ -38,6 +39,26 @@ import { bakeMinimap } from '../game/minimapBake.js'
  * (전송 59,416바이트)이고 타일셋 여섯 장은 전부 304 다(이미 받아 둔 것이라는 위
  * ③ 이 실제로 그렇다). 두 번째 열림 0ms.
  */
+
+/**
+ * **성공한 약속만 붙잡는다.**
+ *
+ * `x ??= 만들기()` 는 「값이 있으면 다시 안 만든다」이지 「성공했으면」이 아니다.
+ * 거절된 Promise 도 값이라 그대로 캐시에 남고, 그 뒤의 모든 호출이 요청조차 안
+ * 내보낸 채 같은 거절을 즉시 되돌려준다 — 지하철에서 한 번 끊긴 사람은 그 세션
+ * 내내 지도를 못 연다. 화면에는 「지도를 못 그렸다 — …」가 뜨므로 그것은 「지금
+ * 안 되는 것」이 아니라 「안 되는 것」으로 보이고, 새로고침이 답이라는 것은 아무
+ * 데도 안 적혀 있다. 대상이 폰이고 58KB 를 마을 한복판에서 받는다는 것이 이
+ * 파일이 스스로 적어 둔 전제다.
+ *
+ * 「두 번째 열림 0ms」는 **성공한 경우에만** 지키기로 한 약속이다.
+ */
+export function forgetIfRejected<T>(promise: Promise<T>, forget: () => void): Promise<T> {
+  return promise.catch((err: unknown) => {
+    forget()
+    throw err
+  })
+}
 
 /** 한 번 받아 온 맵 JSON. 두 번째 열림부터는 이 약속이 바로 답한다. */
 let mapJsonOnce: Promise<TiledMapJson> | null = null
@@ -118,9 +139,15 @@ function loadImages(map: TiledMapJson): Promise<Map<string, HTMLImageElement>> {
  * 기기 픽셀로 굽는 그 이유이고, 안 하면 배율 2 인 폰에서 두 배로 늘어나 뭉갠다.
  */
 export async function worldMapImage(sizePx: number, density: number): Promise<WorldMapImage> {
-  mapJsonOnce ??= loadMapJson()
+  // 실패한 약속은 캐시에서 도로 지운다(forgetIfRejected) — 안 그러면 첫 열림이
+  // 네트워크 오류로 한 번 실패한 사람은 새로고침 전까지 지도를 영영 못 연다.
+  mapJsonOnce ??= forgetIfRejected(loadMapJson(), () => {
+    mapJsonOnce = null
+  })
   const map = await mapJsonOnce
-  imagesOnce ??= loadImages(map)
+  imagesOnce ??= forgetIfRejected(loadImages(map), () => {
+    imagesOnce = null
+  })
   const images = await imagesOnce
 
   const scale = Math.min(sizePx / map.width, sizePx / map.height)
