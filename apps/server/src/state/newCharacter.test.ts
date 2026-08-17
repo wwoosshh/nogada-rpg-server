@@ -1,4 +1,4 @@
-import { START_MAP_ID, loadGameData, startLocation, startVillages } from '@nogada/data'
+import { START_MAP_ID, emptyPlayer, loadGameData, startLocation, startVillages } from '@nogada/data'
 import { DEFAULT_APPEARANCE, SKILL_IDS, type SkillId } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { createInitialPlayer } from './newCharacter.js'
@@ -69,6 +69,25 @@ describe('createInitialPlayer', () => {
   //     (설계 §2). 빈손이 신규 캐릭터의 상태라는 점에서 빈 스택·빈 슬롯과 같은 줄이다.
   it('빈손으로 시작한다 — 첫 골드는 채집한 것을 팔아서 번다', () => {
     expect(born('local').gold).toBe(0)
+  })
+
+  // 왜: 유도등이 겨냥한 사람이 정확히 이 사람이다(퀘스트 설계 ③ — 첫 3.5분).
+  //     빈손·빈 스택·빈 슬롯과 같은 줄의 "아직 아무것도 하지 않았다" 이고, 첫 값이
+  //     어긋나면 신규가 사슬 한가운데에서 시작해 띠가 「가방을 열어 바쳐라」부터
+  //     말한다. 세이브 게이트(protocol.test.ts)는 **옛 세이브의 기본값**만 보므로
+  //     신규의 첫 값은 여기서만 물린다.
+  it('사슬의 첫 마디에서, 아직 아무것도 세지 않은 채로 시작한다', () => {
+    expect([born('local').story, born('local').storyCount]).toEqual([0, 0])
+  })
+
+  // 왜: `emptyPlayer` 는 "신규와 같은 상태" 를 흉내 낸다고 스스로 적어 두었고
+  //     (packages/data 의 emptyPlayer.ts), 대사 시뮬레이터(`pnpm content dialogue`)와
+  //     공급자↔선언 드리프트 검사가 그 약속 위에 선다. 두 벌이 갈라지면 시뮬레이터가
+  //     신규에게 안 뜨는 대사를 뜬다고 말한다 — 두 값이 함께 보이는 자리는 여기뿐이다.
+  it('대사 시뮬레이터의 빈 플레이어도 같은 첫 마디에 선다', () => {
+    const empty = emptyPlayer()
+    expect([empty.story, empty.storyCount]).toEqual([0, 0])
+    expect([empty.story, empty.storyCount]).toEqual([born('local').story, born('local').storyCount])
   })
 
   // 왜: 이름과 외형은 사람이 고른 것이고, 상태가 그것의 원본이다(설계 규범 4).

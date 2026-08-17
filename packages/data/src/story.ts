@@ -329,7 +329,37 @@ function goalTargetError(kind: StoryGoalKind, arg: string, data: GameData): stri
 const PIN_MIN_NAME_LENGTH = 2
 
 /**
- * **계열 무관 행이 한 마을에 못박혀 있는가** — 이 아크에서 가장 값이 큰 검사(설계 ⑧-2).
+ * 글 쪽에서 **빼는** 주인 — 순수 수(`{t1}` 이 채우는 50·150·200).
+ *
+ * 위 최소 길이와 같은 성격의 한 줄이다: 두 글자 문턱은 한 글자 방향 이름표를
+ * 거르려고 세운 것인데 숫자는 그 문턱을 그냥 넘는다. 「여관은 1,500 골드다」라고
+ * 적으면 그 안의 「50」이 광물의 `{t1}` 로 걸려서, 계열과 아무 상관 없는 글이
+ * 「광물의 {t1} 를 못박았다」는 **완전히 엉뚱한 설명**과 함께 빌드를 세운다 —
+ * 작가는 자기가 무엇을 못박았는지 찾을 수 없다.
+ *
+ * 잃는 이빨은 없다: 숫자 슬롯의 못박기는 인자 쪽(`goalCount` 가 통째로 "200")이
+ * 정확히 잡는다. 거기서는 값이 통째로 같은지만 보므로 「1,500」에 걸릴 일이 없다.
+ */
+const PURE_NUMBER = /^\d+$/
+
+/**
+ * 사슬 한 벌이 실제로 도는 자리 — **마을 하나**와 그 마을이 채우는 슬롯.
+ *
+ * 계열이 아니라 마을을 단위로 삼는 이유: 계열로 키를 잡으면 같은 계열의 마을
+ * 둘째가 첫째를 덮어써서, 덮인 마을은 슬롯 유도도 못박기도 연속성도 **한 번도
+ * 검사받지 않는다**. 오늘은 마을 넷 계열 넷이라 터지지 않지만 이 검사가 막겠다고
+ * 한 상태가 정확히 그것이고, 다른 검사가 대신 막아 주지도 않는다 —
+ * `validateVillageFields` 는 두 마을이 같은 **채집장 맵**을 대표로 삼는 것만
+ * 위반으로 세므로 서로 다른 얼음 채집장 둘은 그대로 통과한다.
+ */
+interface Chain {
+  village: MapDef
+  skill: SkillId
+  slots: StorySlots
+}
+
+/**
+ * **행이 남의 마을에 못박혀 있는가** — 이 아크에서 가장 값이 큰 검사(설계 ⑧-2).
  *
  * 슬롯이 펴지는지만 보면 이 사고를 못 잡는다: `arrive 얼음채집장` 이라고 **이름을
  * 그대로 적은** 행은 슬롯이 하나도 없으니 무사히 펴지고, 얼음채집장은 실재하니
@@ -337,34 +367,53 @@ const PIN_MIN_NAME_LENGTH = 2
  * 채집장으로 가라고 말한다 — 심사에 올라온 설계안 셋이 전부 그 상태였고, 그대로
  * 지었으면 새 계정 넷 중 셋이 안내를 한 글자도 못 받았다.
  *
- * 그래서 **마을 넷이 소유한 값**(슬롯이 내놓는 id·이름 전부)을 모아 두고, 계열이
- * 안 적힌 행이 그중 하나를 이름으로 적고 있으면 위반으로 센다. 계열이 적힌 행은
- * 묻지 않는다 — 마디 4·5 는 애초에 계열마다 다른 것을 가리키려고 갈라 놓은 행이라
- * (광물에는 1,000 짜리 문이 없다) 거기 적힌 `ice_1000` 은 못박기가 아니라 그 행의 뜻이다.
+ * 그래서 **마을마다 자기가 채우는 값**(슬롯이 내놓는 id·이름 전부)을 적어 두고,
+ * 행이 적은 값을 **그 행이 실제로 걸리는 마을들**과 맞춰 본다. 그중 하나라도 그
+ * 값을 안 채우면 그 마을 사람은 남의 것을 가리키는 안내를 받으므로 위반이다.
+ *
+ * **계열 행도 함께 본다.** 계열을 적었다는 것은 "이 행은 그 계열에서만 걸린다" 이지
+ * "무엇을 적어도 된다" 가 아니다. `field=ice` 행의 `ice_1000`·「얼음 조각」은 눈의마을이
+ * 스스로 채우는 값이라 그대로 통과하고(마디 4·5 는 애초에 그러라고 갈라 놓은 행이다),
+ * 같은 행의 `허브채집장` 만 짖는다 — 계열 행을 통째로 면제하면 눈의마을 사람이 지도
+ * 반대편 허브채집장으로 불려도 위반이 0 이 된다.
  */
-function collectPinnedViolations(
-  story: readonly StoryStepDef[],
-  chains: ReadonlyMap<SkillId, { village: MapDef; slots: StorySlots }>,
-): string[] {
-  const owners = new Map<string, Set<string>>()
-  const remember = (value: string, owner: string): void => {
-    const list = owners.get(value)
-    if (list) list.add(owner)
-    else owners.set(value, new Set([owner]))
+function collectPinnedViolations(story: readonly StoryStepDef[], chains: readonly Chain[]): string[] {
+  /** 값 → 그 값을 실제로 채우는 마을들. */
+  const owners = new Map<string, Set<Chain>>()
+  /** 값 → 사람이 읽는 주인 이름들. 계열이 아니라 마을까지 적는다(Chain 참고). */
+  const labels = new Map<string, Set<string>>()
+  const remember = (value: string, chain: Chain, slotName: string): void => {
+    const by = owners.get(value) ?? new Set<Chain>()
+    by.add(chain)
+    owners.set(value, by)
+    // id 와 이름이 같은 슬롯(숫자)도 있어 집합으로 모은다 — 같은 주인을 두 번 적지 않는다.
+    const text = labels.get(value) ?? new Set<string>()
+    text.add(`${chain.skill}(${chain.village.id}) 의 {${slotName}}`)
+    labels.set(value, text)
   }
-  for (const [skill, { slots }] of chains) {
-    for (const [name, slot] of Object.entries(slots)) {
-      // id 와 이름이 같은 슬롯(숫자)도 있어 집합으로 모은다 — 같은 주인을 두 번 적지 않는다.
-      remember(slot.id, `${skill} 의 {${name}}`)
-      remember(slot.name, `${skill} 의 {${name}}`)
+  for (const chain of chains) {
+    for (const [name, slot] of Object.entries(chain.slots)) {
+      remember(slot.id, chain, name)
+      remember(slot.name, chain, name)
     }
   }
-  const ownerText = (value: string): string => [...(owners.get(value) ?? [])].join(' · ')
+  const ownerText = (value: string): string => [...(labels.get(value) ?? [])].join(' · ')
+  const villageText = (list: readonly Chain[]): string =>
+    list.map((c) => `${c.skill}(${c.village.id})`).join(' · ')
+
+  /** 이 행이 실제로 걸리는 마을들 — 계열이 안 적혔으면 전부다. */
+  const scopeOf = (def: StoryStepDef): Chain[] =>
+    chains.filter((chain) => def.field === undefined || chain.skill === def.field)
+
+  /** 그 값을 안 채우는데도 이 행이 걸리는 마을들. 비어 있으면 못박기가 아니다. */
+  const strangersOf = (value: string, def: StoryStepDef): Chain[] => {
+    const by = owners.get(value)
+    return by ? scopeOf(def).filter((chain) => !by.has(chain)) : []
+  }
 
   const violations: string[] = []
   for (const def of story) {
-    if (def.field !== undefined) continue
-    const at = `${FILE}[마디 ${def.step}]`
+    const at = `${FILE}[마디 ${def.step}${def.field === undefined ? '' : ` · ${def.field}`}]`
 
     // 인자 쪽 — 값이 통째로 같은지만 본다.
     for (const [field, raw] of [
@@ -372,9 +421,11 @@ function collectPinnedViolations(
       ['goalCount', def.goal.count],
       ['catchUpArg', def.catchUp?.arg],
     ] as const) {
-      if (raw === undefined || raw === '' || !owners.has(raw)) continue
+      if (raw === undefined || raw === '') continue
+      const strangers = strangersOf(raw, def)
+      if (strangers.length === 0) continue
       violations.push(
-        `${at}: ${field} 에 "${raw}" 가 그대로 적혔다 — 그것은 ${ownerText(raw)} 가 채우는 값이다. 계열이 안 적힌 행은 네 마을이 함께 쓰므로, 이름을 못박으면 나머지 세 마을의 사람이 남의 마을을 가리키는 안내를 받는다. 슬롯으로 적거나 field 칸에 계열을 적는다`,
+        `${at}: ${field} 에 "${raw}" 가 그대로 적혔다 — 그것은 ${ownerText(raw)} 가 채우는 값인데, 이 행은 ${villageText(strangers)} 에서도 걸린다. 그 마을 사람은 남의 마을을 가리키는 안내를 받는다. 슬롯으로 적거나 field 칸에 그 계열을 적는다`,
       )
     }
 
@@ -384,18 +435,46 @@ function collectPinnedViolations(
       ['announce', def.announce],
     ] as const) {
       const hits = [...owners.keys()].filter(
-        (value) => value.length >= PIN_MIN_NAME_LENGTH && raw.includes(value),
+        (value) =>
+          value.length >= PIN_MIN_NAME_LENGTH &&
+          !PURE_NUMBER.test(value) &&
+          raw.includes(value) &&
+          strangersOf(value, def).length > 0,
       )
       // 「얼음 조각」이 걸리면 「얼음」도 함께 걸린다 — 원인은 하나이므로 가장 긴
       // 것만 말한다(collection.ts 가 순증가 위반 뒤의 비율을 안 묻는 것과 같은 저울).
       for (const value of hits.filter((v) => !hits.some((other) => other !== v && other.includes(v)))) {
         violations.push(
-          `${at}: ${field} 이 "${value}" 를 그대로 적는다 — 그것은 ${ownerText(value)} 가 채우는 이름이다. 띠는 네 마을에서 같은 글을 쓰므로, 이름을 못박으면 세 마을에서 화면이 거짓말을 한다`,
+          `${at}: ${field} 이 "${value}" 를 그대로 적는다 — 그것은 ${ownerText(value)} 가 채우는 이름인데, 이 행은 ${villageText(strangersOf(value, def))} 에서도 걸린다. 그 마을에서 화면이 거짓말을 한다`,
         )
       }
     }
   }
   return violations
+}
+
+/**
+ * `reach` 가 **남의 계열**의 이정표를 요구하는가 — 요구하면 그 계열, 아니면 `null`.
+ *
+ * 이정표 id 는 슬롯이 채우는 값이 아니라서(`ice_1000` 은 어느 슬롯의 얼굴도 아니다)
+ * 위 못박기 검사의 그물을 그냥 지나간다. 그런데 광물 마을 사람에게 `ice_1000` 을
+ * 요구하는 행은 정확히 같은 사고다 — 자기 계열에 없는 이정표라 사슬이 그 자리에서
+ * 영원히 멈추고, 화면에도 빌드에도 흔적이 없다.
+ *
+ * **시작 마을의 계열이 아닌 지표는 남의 것이 아니다.** 설계 ③ 이 광물의 마디 4·5 를
+ * 조합 200(`crafting_200`)으로 보내기 때문이다 — 광물에는 1,000 짜리 문이 없다.
+ * 조합은 어느 마을의 대표 계열도 아니므로 네 사슬 누구나 가리킬 수 있다.
+ */
+function foreignReachField(
+  data: GameData,
+  milestoneId: string,
+  mine: SkillId,
+  fields: ReadonlySet<SkillId>,
+): SkillId | null {
+  const metric = data.milestones.find((m) => m.id === milestoneId)?.metric
+  if (metric?.kind !== 'skill') return null
+  if (metric.skill === mine || !fields.has(metric.skill)) return null
+  return metric.skill
 }
 
 /**
@@ -419,11 +498,15 @@ export function validateStory(data: GameData): string[] {
   }
 
   // ---- 3. 슬롯이 네 시작 마을 전부에서 유도되는가 ----
-  const chains = new Map<SkillId, { village: MapDef; slots: StorySlots }>()
+  //
+  // **마을마다 한 벌씩 쌓는다**(계열로 키를 잡지 않는다 — Chain 참고). 마을을
+  // 다섯째로 그리는 날 그 마을의 계열이 이미 있는 것이어도 이 목록에서 빠지지
+  // 않는다.
+  const chains: Chain[] = []
   for (const village of villages) {
     try {
       const field = villageField(data, village.id)
-      chains.set(field.skill, { village, slots: storySlots(data, village.id) })
+      chains.push({ village, skill: field.skill, slots: storySlots(data, village.id) })
     } catch (err) {
       violations.push(`${FILE}: 마을 "${village.id}" 의 슬롯을 유도할 수 없다 — ${(err as Error).message}`)
     }
@@ -437,16 +520,39 @@ export function validateStory(data: GameData): string[] {
   // 참조 무결성의 첫 줄이다. 없는 계열을 적은 행은 어느 마을의 사슬에도 안 실려
   // 조용히 죽고, 그 자리에 있어야 할 마디는 아래 연속성 검사에서 "빠졌다" 로만
   // 드러난다 — 원인을 이름으로 말한다.
+  const fields = new Set(chains.map((chain) => chain.skill))
   for (const def of data.story) {
-    if (def.field === undefined || chains.has(def.field)) continue
+    if (def.field === undefined || fields.has(def.field)) continue
     violations.push(
-      `${FILE}[마디 ${def.step} · ${def.field}]: "${def.field}" 은 어느 시작 마을의 계열도 아니다 (있는 것: ${[...chains.keys()].join(', ')}) — 이 행은 아무의 사슬에도 안 실린다`,
+      `${FILE}[마디 ${def.step} · ${def.field}]: "${def.field}" 은 어느 시작 마을의 계열도 아니다 (있는 것: ${[...fields].join(', ')}) — 이 행은 아무의 사슬에도 안 실린다`,
     )
   }
 
   violations.push(...collectPinnedViolations(data.story, chains))
 
-  for (const [skill, { village, slots }] of chains) {
+  // ---- 2'. 계열마다 사슬 길이가 같은가 ----
+  //
+  // 연속성은 계열마다 따로 세므로 **한 계열의 마지막 마디를 통째로 빠뜨린 표**는
+  // 아래 검사를 그냥 통과한다: 광물의 마디 1 이 없으면 광물 사슬은 "길이 1, 0부터
+  // 연속" 으로 멀쩡하다. 그런데 설계 ③ 은 네 계열 전부 마디 0~5 를 걷게 되어 있고,
+  // 마디 4·5 는 계열별 8행이라 **한 계열 두 행을 빠뜨리는 것이 가장 흔한 사고**다.
+  // 그때 그 마을 사람만 3.5분짜리 유도등이 두 마디 일찍 꺼지는데, 화면에도 빌드에도
+  // 흔적이 없다.
+  //
+  // 행 수가 아니라 **마디 수**(step 의 가짓수)를 센다 — 같은 마디가 두 행인 사고는
+  // 바로 아래 연속성 검사가 이름으로 말하므로, 여기서 그 그림자를 한 번 더 세면
+  // 원인 하나가 위반 둘로 불어난다.
+  const lengths = new Map<SkillId, number>()
+  for (const skill of fields) {
+    lengths.set(skill, new Set(chainOf(data.story, skill).map((def) => def.step)).size)
+  }
+  if (new Set(lengths.values()).size > 1) {
+    violations.push(
+      `${FILE}: 계열마다 사슬 길이가 다르다 (${[...lengths].map(([skill, n]) => `${skill} ${n}마디`).join(' · ')}) — 네 계열은 같은 수의 마디를 걷는다(설계 ③). 짧은 쪽은 마디가 통째로 빠진 것이고, 그 계열로 시작한 사람만 유도등이 일찍 꺼진다`,
+    )
+  }
+
+  for (const { village, skill, slots } of chains) {
     const chain = chainOf(data.story, skill)
     const label = `${skill}(${village.id})`
 
@@ -498,6 +604,18 @@ export function validateStory(data: GameData): string[] {
       const arg = fillArg(def.goal.arg, slots)
       const targetError = goalTargetError(def.goal.kind, arg, data)
       if (targetError) violations.push(`${at}: goalKind=${def.goal.kind} 인데 ${targetError}`)
+
+      // 실재하는 이정표를 가리키더라도 **그 이정표가 남의 계열**일 수 있다
+      // (foreignReachField 참고). 참조 무결성이 통과한 뒤에만 묻는다 — 없는
+      // 이정표는 위에서 이미 이름으로 말했다.
+      if (!targetError && def.goal.kind === 'reach') {
+        const foreign = foreignReachField(data, arg, skill, fields)
+        if (foreign) {
+          violations.push(
+            `${at}: reach 가 ${foreign} 계열의 이정표 "${arg}" 를 가리킨다 — 이 사슬은 ${skill} 로 돈다. 그 마을 사람은 자기가 캐지도 않는 계열의 문턱을 요구받고 사슬이 그 자리에서 멈춘다. 슬롯 {계열} 로 적거나 field 칸에 그 계열을 적는다`,
+          )
+        }
+      }
 
       if (def.goal.count !== undefined) {
         const count = Number(fillArg(def.goal.count, slots))

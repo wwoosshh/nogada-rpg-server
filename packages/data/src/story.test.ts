@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { GameData, StoryStepDef } from '@nogada/shared'
+import type { GameData, MapDef, StoryStepDef } from '@nogada/shared'
 import { fillArg, fillText } from '@nogada/shared'
 import { loadGameData } from './load.js'
+import { WORLD_MAP_ID } from './maps.js'
 import { parseCsv } from './parse.js'
 import { parseStory, storySlots, validateStory } from './story.js'
 
@@ -41,6 +42,32 @@ function row(overrides: Record<string, string> = {}): Record<string, string> {
 /** 표본 마디들을 실제 세계 위에 얹은 GameData — 검증이 마을 넷을 상대로 돌게 한다. */
 function worldWith(rows: Record<string, string>[]): GameData {
   return { ...loadGameData(), story: parseStory(rows) }
+}
+
+/**
+ * **같은 계열의 시작 마을이 둘인 세계** — 오늘은 없지만 검증이 "마을을 다섯째로
+ * 그리는 날에도 그렇다"고 약속한 상태다.
+ *
+ * 얼음 마을 하나를 복사하고 채집장으로 나가는 문만 반대쪽 가장자리에 낸다 — 두
+ * 마을의 `{문방향}` 이 갈리므로, 둘째 마을이 검사에서 조용히 빠지면 그 사실이
+ * 값으로 드러난다(첫째의 `up` 이 아무의 것도 아니게 되어 못박기가 안 걸린다).
+ */
+function twinIceWorld(rows: Record<string, string>[]): GameData {
+  const data = loadGameData()
+  const twin: MapDef = { ...data.maps['눈의마을']!, id: '눈의마을둘', name: '눈의 마을 둘' }
+  const fromWorld = data.transitions.find((t) => t.fromMap === WORLD_MAP_ID && t.toMap === '눈의마을')!
+  const toField = data.transitions.find((t) => t.fromMap === '눈의마을' && t.toMap === '얼음채집장')!
+
+  return {
+    ...data,
+    maps: { ...data.maps, [twin.id]: twin },
+    transitions: [
+      ...data.transitions,
+      { ...fromWorld, toMap: twin.id },
+      { ...toField, fromMap: twin.id, fromY: twin.height - 1 },
+    ],
+    story: parseStory(rows),
+  }
 }
 
 describe('parseStory — 정상 행', () => {
@@ -249,6 +276,22 @@ describe('validateStory — ② 연속성', () => {
     expect(violations.filter((v) => /마디 0 이 2행이다/.test(v))).toHaveLength(1)
   })
 
+  // 왜: 연속성은 계열마다 따로 세므로 **한 계열의 마지막 마디를 통째로 빠뜨린 표**는
+  //     그 검사를 그냥 통과한다 — 광물 사슬은 "길이 1, 0부터 연속" 으로 멀쩡하다.
+  //     그런데 마디 4·5 는 계열별 8행이라 한 계열 두 행을 빠뜨리는 것이 가장 흔한
+  //     사고이고, 그때 그 마을 사람만 유도등이 두 마디 일찍 꺼진다.
+  it('한 계열의 마지막 마디가 통째로 빠지면 위반이다', () => {
+    const violations = validateStory(
+      worldWith([
+        row(),
+        ...(['ice', 'wood', 'herb'] as const).map((field) =>
+          row({ step: '1', field, objective: '{계열} 숙련 1,000', goalKind: 'reach', goalArg: `${field}_1000` }),
+        ),
+      ]),
+    )
+    expect(violations.some((v) => /계열마다 사슬 길이가 다르다.*mineral 1마디/.test(v))).toBe(true)
+  })
+
   it('계열별 행 넷이 같은 step 을 쓰는 것은 정상이다 — 마디 4·5 가 그 모양이다', () => {
     expect(
       validateStory(
@@ -281,6 +324,69 @@ describe('validateStory — ③ 계열 슬롯이 네 시작 마을 전부에서 
   it('계열 무관 행이 한 마을의 이름을 띠에 못박으면 위반이다', () => {
     const violations = validateStory(worldWith([row({ objective: '눈의 마을 북문으로 나가라' })]))
     expect(violations.some((v) => /objective 이 "눈의 마을" 를 그대로 적는다/.test(v))).toBe(true)
+  })
+
+  // 왜: 계열을 적었다는 것은 "이 행은 그 계열에서만 걸린다" 이지 "무엇을 적어도
+  //     된다" 가 아니다. 계열 행을 통째로 면제하면 **눈의마을 사람이 지도 반대편
+  //     허브채집장으로 불려도 위반이 0** 이다 — 바로 위 검사가 잡는 사고의 거울상이고,
+  //     하필 그 면제가 덮는 행이 Q3 이 서로 비슷한 네 줄을 복붙해서 쓸 마디 4·5 다.
+  it('계열 행이 남의 마을 것을 못박으면 위반이다', () => {
+    const violations = validateStory(
+      worldWith([row({ field: 'ice', goalArg: '허브채집장', objective: '허브채집장으로 가라' })]),
+    )
+    expect(violations.some((v) => /goalArg 에 "허브채집장" 가 그대로 적혔다/.test(v))).toBe(true)
+    expect(violations.some((v) => /objective 이 "허브채집장" 를 그대로 적는다/.test(v))).toBe(true)
+  })
+
+  // 왜: 이정표 id 는 어느 슬롯의 얼굴도 아니라서(`ice_1000` 은 슬롯이 채우는 값이
+  //     아니다) 위 못박기의 그물을 그냥 지나간다. 그런데 광물 마을 사람에게
+  //     `ice_1000` 을 요구하는 행은 정확히 같은 사고다 — 자기가 캐지도 않는 계열의
+  //     문턱이라 사슬이 그 자리에서 영원히 멈춘다.
+  it('reach 가 남의 계열 이정표를 가리키면 위반이다', () => {
+    const violations = validateStory(worldWith([row({ field: 'mineral', goalKind: 'reach', goalArg: 'ice_1000' })]))
+    expect(violations.some((v) => /reach 가 ice 계열의 이정표 "ice_1000" 를 가리킨다/.test(v))).toBe(true)
+  })
+
+  it('계열 무관 행이 한 계열의 이정표를 가리키면 나머지 세 마을이 말한다', () => {
+    const violations = validateStory(worldWith([row({ goalKind: 'reach', goalArg: 'ice_1000' })]))
+    expect(violations.filter((v) => /reach 가 ice 계열의 이정표/.test(v))).toHaveLength(3)
+  })
+
+  // 왜: 설계 ③ 의 마디 4 가 그 모양이다 — 광물에는 1,000 짜리 문이 없어서(gateSkill
+  //     붙은 레시피가 wood·herb·ice 뿐이다) 광물만 조합 200 을 가리킨다. 조합은 어느
+  //     마을의 대표 계열도 아니므로 남의 것이 아니고, 위 검사가 이 행을 거절하면
+  //     설계가 정한 사슬을 빌드가 막는다.
+  it('설계 ③ 의 마디 4 — 광물만 조합 200 을 가리키는 계열별 넷은 통과한다', () => {
+    expect(
+      validateStory(
+        worldWith([
+          row({ field: 'mineral', objective: '조합 200', goalKind: 'reach', goalArg: 'crafting_200' }),
+          ...(['ice', 'wood', 'herb'] as const).map((field) =>
+            row({ field, objective: '{계열} 숙련 1,000', goalKind: 'reach', goalArg: `${field}_1000` }),
+          ),
+        ]),
+      ),
+    ).toEqual([])
+  })
+
+  // 왜: 두 글자 문턱은 한 글자 방향 이름표(북·남)를 거르려고 세운 것인데 숫자는
+  //     그 문턱을 그냥 넘는다 — 「1,500」 안의 「50」이 광물의 {t1} 로 걸리면, 계열과
+  //     아무 상관 없는 글이 완전히 엉뚱한 설명과 함께 빌드를 세운다.
+  it('숫자가 든 계열 무관 글은 못박기가 아니다', () => {
+    expect(
+      validateStory(worldWith([row({ objective: '여관은 1,500 골드다 — {마을} {문방향}문으로 나가라' })])),
+    ).toEqual([])
+  })
+
+  // 왜: `chains` 를 계열로 키잡으면 같은 계열의 둘째 마을이 첫째를 덮어써서, 덮인
+  //     마을은 슬롯 유도도 못박기도 연속성도 **한 번도 검사받지 않는다** — 이 검사가
+  //     막겠다고 한 상태 그 자체다. validateVillageFields 는 두 마을이 같은 채집장
+  //     맵을 대표로 삼는 것만 보므로 이것을 대신 막아 주지 않는다.
+  it('같은 계열의 시작 마을이 둘이면 둘째도 검사받는다', () => {
+    const violations = validateStory(twinIceWorld([row({ field: 'ice', goalArg: 'up' })]))
+    expect(violations.some((v) => /goalArg 에 "up" 가 그대로 적혔다.*ice\(눈의마을둘\) 에서도 걸린다/.test(v))).toBe(
+      true,
+    )
   })
 
   it('계열 행이 자기 계열의 것을 이름으로 적는 것은 못박기가 아니다 — 마디 4·5 가 그 모양이다', () => {

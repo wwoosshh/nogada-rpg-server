@@ -36,6 +36,8 @@ export const COUNTED_GOAL_KINDS: readonly StoryGoalKind[] = ['gather', 'donate',
  * `arg` 가 어느 등록부의 id 인지는 `kind` 가 정한다 — arrive→맵, gather→계열,
  * donate→아이템, craft→레시피, reach→이정표. 그 id 가 실재하는지는 빌드 검증이
  * 마을 넷 전부에서 본다(`validateStory` 의 참조 무결성).
+ *
+ * 펴진 쪽이라 아직 부르는 데가 없다 — `StoryStep` 의 주석을 볼 것.
  */
 export interface StoryGoal {
   kind: StoryGoalKind
@@ -57,6 +59,8 @@ export interface StoryGoal {
  * 지표 셋(skill·every·collection)이 전부 단조 증가라는 것은 이정표가 이미 지고
  * 있는 약속이고(`milestones.ts` 의 MilestoneMetric), 값을 읽는 함수도
  * `metricValue` 하나를 그대로 쓴다. 단조가 아닌 문턱은 **적을 방법 자체가 없다.**
+ *
+ * 펴진 쪽이라 아직 부르는 데가 없다 — `StoryStep` 의 주석을 볼 것.
  */
 export interface StoryCatchUp {
   metric: MilestoneMetric
@@ -68,6 +72,13 @@ export interface StoryCatchUp {
  *
  * 날것(`StoryStepDef`)의 슬롯이 전부 펴져 있다: `objective`·`announce` 에는
  * 이름이, `goal.arg` 에는 id 가 들어가 있다.
+ *
+ * **펴진 쪽 세 벌(`StoryStep`·`StoryGoal`·`StoryCatchUp`)은 아직 부르는 데가
+ * 없다** — 이 모양을 받는 것은 판정 훅 `advanceStory`(설계 ⑧-4)와 띠(⑧-6)이고,
+ * 그 둘은 이 아크의 다음 태스크다. 지금 이 셋이 선 채로 `*Def` 쪽에 칸이 하나
+ * 늘면 짝을 손으로 맞춰야 하는데, 쓰는 데가 없으니 안 맞아도 타입 검사조차
+ * 조용하다. 고아 타입으로 오해하지 말 것 — 다음 사람이 지울 것이 아니라, 칸을
+ * 늘릴 때 함께 늘려야 하는 두 번째 모양이다.
  */
 export interface StoryStep {
   step: number
