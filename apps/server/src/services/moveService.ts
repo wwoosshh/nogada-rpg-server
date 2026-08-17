@@ -82,7 +82,11 @@ export function moveThroughTransition(args: MoveArgs): MoveResult {
   // 보므로(`storyVillage` 의 ②), 이 순서라야 판정이 본 세계와 응답에 실려 저장되는
   // 세계가 같다 — 앞에서 부르면 사슬이 "떠나온 곳"을 기준으로 서고, 그 답이 저장된
   // 자리와 어긋나는 날 왜 그런지 되짚을 자리가 없다.
-  runStoryHook(args.data, player, { kind: 'arrive', mapId: transition.toMap })
+  //
+  // 밀어올림이 읽는 것은 **넘기 전**의 그 사람이다(`before`) — 얼음 200,000 인
+  // 테스터가 오늘도 채집장에 나가는 그 한 걸음이 마침 마디 0 을 만족시키므로,
+  // 지금 상태로 재면 그 사람이 초보 마디를 「해냈다」로 받는다.
+  runStoryHook({ data: args.data, player, before: args.player, event: { kind: 'arrive', mapId: transition.toMap } })
 
   return { ok: true, outcome: { player } }
 }

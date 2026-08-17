@@ -58,9 +58,18 @@ export interface StoryGoal {
  * 있는 약속이고(`milestones.ts` 의 MilestoneMetric), 값을 읽는 함수도
  * `metricValueOf` 하나를 그대로 쓴다. 단조가 아닌 문턱은 **적을 방법 자체가 없다.**
  *
- * **문턱은 그 마디가 스스로 만드는 값보다 위여야 한다** — 아래 `advanceStory` 의
- * 순서 문단을 볼 것. 「그 마디를 하면 넘는 문턱」을 걸면 그 마디는 끝난 것이
- * 아니라 지나친 것이 되어, 해낸 사람이 `announce` 를 못 듣는다.
+ * **재는 것은 이 행동 앞의 상태다**(`AdvanceStoryArgs.before`). 「이미 지나쳤다」의
+ * "이미" 가 그 뜻이고, 그래서 방금 문을 넘은 것·방금 바친 200개는 이 판정에
+ * 안 들어간다.
+ *
+ * **그래도 문턱은 그 마디가 스스로 만드는 값보다 위여야 한다.** `before` 가 막는
+ * 것은 **한 행동 안**의 혼동뿐이고, 델타 방어(`caughtUp` 의 `delta > 0`)가 막는
+ * 것은 그 마디를 이미 걷기 시작한 사람뿐이다. 둘 다 못 막는 자리가 하나 남는다:
+ * **아직 델타가 0 인데 그 마디의 행동이 이미 문턱을 넘겨 놓은 경우.** `gather ×1`
+ * 마디에 `skill.{계열}>=1` 을 걸면 첫 **헛손질**이 정확히 그것이다 — 실패는 델타를
+ * 안 올리지만 숙련은 올리므로, 두 번째 손질의 `before` 가 이미 문턱 위다. 문턱이
+ * 얼마여야 하는지는 계열마다 다르고 그 답은 서버만 아는 확률표 안에 있으므로,
+ * 여기서 막지 않고 표를 쓰는 쪽의 규칙으로 둔다.
  */
 export interface StoryCatchUp {
   metric: MilestoneMetric
@@ -239,16 +248,45 @@ export interface AdvanceStoryArgs {
    * push 하는 그 자리, 그 자세다.
    */
   player: PlayerState
+  /**
+   * 이 훅의 행동 **앞**의 플레이어 — 서비스가 `structuredClone` 하기 전의 그것이다.
+   *
+   * **밀어올림만 이쪽을 읽는다.** 훅은 행동이 상태를 이미 바꾼 뒤에 돌아서
+   * (헌납은 `donated` 를, 채집은 숙련을 먼저 올린다) `player` 로 밀어올림을 재면
+   * 방금 그 행동이 만든 값을 「예전부터 그랬다」로 읽는다 — 처음 얼음 조각 200개를
+   * 바친 신규가 `collection>=1` 에 걸려 첫 별을 **끝낸** 것이 아니라 **지나친** 것이
+   * 되고, 문을 나선 고인물이 마디 0 을 **끝낸** 것이 된다. 둘 다 같은 원인이고,
+   * 그 원인은 판정 순서가 아니라 **어느 상태를 재는가** 였다.
+   *
+   * 읽는 것은 단조 지표뿐이라(StoryCatchUp) 이 객체에서 쓰이는 칸은 `skills`·
+   * `donated` 다. 자리(`location`)는 안 본다 — 사슬을 그 사람의 것으로 펴는
+   * 유도(`storyVillage`)는 **도착한 뒤**를 봐야 하므로 `player` 쪽 몫이다.
+   */
+  before: PlayerState
   /** `reach` 와 `catchUp` 이 읽는 세계. `GameData` 가 그대로 이 모양이다. */
   world: MilestoneWorld
   /** 방금 한 것. 없으면(실패한 손질처럼) 상태에서 유도되는 것만 다시 본다. */
   event: StoryEvent | null
 }
 
-/** 이 마디를 이미 지나쳤다고 볼 수 있는가 — 단조 지표 문턱을 넘었는가. */
-function caughtUp(step: StoryStep, player: PlayerState, world: MilestoneWorld): boolean {
+/**
+ * 이 마디를 이미 지나쳤다고 볼 수 있는가 — 단조 지표 문턱을 넘었는가.
+ *
+ * **`before` 를 받는다**(지금이 아니다). 「이미」의 뜻이 그것이고, 그 한 글자가
+ * 「방금 그것을 해낸 사람」과 「예전에 지나쳐 온 사람」을 가른다.
+ *
+ * **델타가 이미 오른 마디는 안 민다**(`delta > 0`). 그 수는 이 사람이 **지금 이
+ * 마디를 걷고 있다**는 증거이고, 걷고 있는 사람은 정의상 아직 지나친 사람이 아니다.
+ * 이 한 줄이 없으면 나눠 바치는 사람의 별이 사라진다: 마디 2 의 문턱은
+ * `collection>=1` 인데 그 지표에서는 「마디가 만드는 값보다 위」로 적을 수가 없다 —
+ * 마디를 끝내는 것(t1 개를 바친다)과 첫 단이 채워지는 것이 **같은 순간**이라서다.
+ * 그래서 가방이 한 번에 t1 을 못 채운 사람은 두 번째 [바치기] 에서 `before` 로도
+ * 이미 문턱 위에 서 있고, 그 사람을 가려내는 정보는 델타뿐이다.
+ */
+function caughtUp(step: StoryStep, before: PlayerState, world: MilestoneWorld, delta: number): boolean {
   const at = step.catchUp
-  return at !== undefined && metricValueOf(at.metric, player, world) >= at.threshold
+  if (at === undefined || delta > 0) return false
+  return metricValueOf(at.metric, before, world) >= at.threshold
 }
 
 /**
@@ -303,30 +341,31 @@ function countedBy(step: StoryStep, event: StoryEvent | null): number {
  * 버린다 — 이어 붙이려면 "남은 사건" 이라는 개념이 생기고, 그것을 들고 다닐
  * 자리는 세 번째 상태 필드다.
  *
- * ## 순서 — **사건이 먼저다**
+ * ## 순서 — **밀어올림이 먼저다**(설계 ⑦)
  *
- * ① 지금 마디에 사건을 적용한다 → ② 그 뒤에 밀어올림(`catchUp`)과 상태로 끝나는
- * 마디(`reach`)를 지나갈 수 있는 만큼 지나간다.
+ * ① 밀어올림(`catchUp`)과 상태로 끝나는 마디(`reach`)를 지나갈 수 있는 만큼
+ * 지나간다 → ② 남은 지금 마디 하나에 사건을 적용한다 → ③ 끝냈으면 다시 ①.
  *
- * **밀어올림을 뒤에 두는 이유**: 훅은 **행동이 상태를 이미 바꾼 뒤**에 돈다
- * (헌납은 `donated` 를, 채집은 숙련을 먼저 올린다). 밀어올림을 먼저 재면 방금
- * 그 행동이 만든 값을 "예전부터 그랬다" 로 읽는다 — 얼음 조각 200개를 처음
- * 바친 신규가 `collection>=1` 문턱에 걸려, 그 마디를 **끝낸** 것이 아니라
- * **지나친** 것이 되고 첫 별의 `announce` 가 통째로 사라진다(설계 ⑦ 이 예로
- * 든 문턱이 정확히 그것이다). 사건을 먼저 쓰면 그 사람의 마디는 자기 손으로
- * 끝나고, 밀어올림은 그 뒤에 남은 것만 본다.
+ * **사건보다 앞에 두어야 하는 이유**: 뒤에 두면 「고인물이 자기 마을 문을 나서는
+ * 순간」이 `completed` 가 된다 — 얼음 200,000 인 사람의 마디 0 은 「{마을}
+ * {방향}문으로 나가라」이고, 그 사람이 오늘도 채집장에 나가는 그 한 걸음이 마침
+ * 그 조건을 만족시킨다. 사건이 먼저 닿으면 밀어올림은 그 마디를 볼 기회가 없고,
+ * 그 사람은 초보 안내 한 줄을 축하로 받는다(설계 ⑦, 실기 확인 1번).
  *
- * **그래도 고인물이 초보 안내를 한 마디씩 밟지 않는 이유**(설계 ⑦, 실기 확인
- * 1번): 사건은 **지금 마디 하나에만** 닿는다. 얼음 200,000 인 사람의 첫 훅이
- * 채집이면 그의 마디 0 은 「나가라」(arrive)라서 채집이 닿을 자리가 없고, ②가
- * 그 자리에서 사슬을 끝까지 민다. 그 첫 훅이 하필 문을 넘는 것이라면 마디 0 은
- * 실제로 그 사람이 방금 한 일이므로 끝난 것으로 세는 편이 옳다.
+ * **그런데도 신규가 자기 마디를 지나치지 않는 이유는 순서가 아니라 `before` 다.**
+ * 한때 이 순서를 뒤집어 막으려 했던 사고(처음 200개를 바친 신규가 `collection>=1`
+ * 에 걸려 첫 별을 지나친다)는 순서 탓이 아니었다 — 훅이 돌 때 `donated` 에는 방금
+ * 바친 200 개가 **이미 들어 있어서**, 사건을 먼저 쓰든 나중에 쓰든 `player` 로
+ * 재는 한 그 값은 문턱을 넘긴다(나눠 바치면 실제로 그대로 샜다). 밀어올림이
+ * **행동 앞의 상태**를 재는 지금은 순서를 되돌려도 그 사람의 마디가 자기 손으로
+ * 끝난다(AdvanceStoryArgs.before).
  *
- * **`catchUp` 문턱은 그 마디가 스스로 만드는 값보다 위여야 한다.** 위 순서가
- * 신규의 주 경로를 지켜 주지만, `gather ×1` 마디에 `skill.{계열}>=1` 처럼 그
- * 마디의 **실패한 시도**만으로 넘는 문턱을 걸면 여전히 `skipped` 로 샌다. 표를
- * 쓰는 쪽의 규칙이라 여기서 막지 않는다 — 문턱이 얼마여야 하는지는 계열마다
- * 다르고, 그 답은 서버만 아는 확률표 안에 있다.
+ * ③이 필요한 이유: 끝낸 마디 뒤에 **이미 넘긴 이정표**가 걸려 있을 수 있다
+ * (마지막 얼음 조각을 바치는 순간 이미 숙련 1,000 인 사람).
+ *
+ * ①의 두 갈래 순서 — **밀어올림이 `reach` 판정보다 앞이다.** 고인물은 `reach`
+ * 마디에서 둘 다 참이다(얼음 200,000 이면 문턱을 넘겼고, 지나쳤다고도 볼 수 있다).
+ * 뒤집으면 그 사람이 「얼음에 익숙해졌다」를 오늘 처음 달성한 것처럼 받는다.
  *
  * **매 훅마다 미는 것이 "첫 판정 훅이 돌 때 한 번"과 같은 뜻인 이유**: 문턱이
  * 전부 단조 지표라(StoryCatchUp) 한 번 밀리고 나면 그 뒤의 훅은 같은 답을 보고
@@ -335,7 +374,7 @@ function countedBy(step: StoryStep, event: StoryEvent | null): number {
  * 전용 라우트가 아니다** — 설계가 기각한 「접속 시 재판정」이 안 되는 이유는
  * `GET /api/state` 가 세이브를 쓰게 되기 때문이지, 미는 횟수 때문이 아니다.
  */
-export function advanceStory({ chain, player, world, event }: AdvanceStoryArgs): StoryAdvance {
+export function advanceStory({ chain, player, before, world, event }: AdvanceStoryArgs): StoryAdvance {
   const out: StoryAdvance = { completed: [], skipped: [] }
 
   /** 마디를 넘긴다 — 델타는 새 마디의 것이므로 0 으로 돌아간다. */
@@ -345,22 +384,29 @@ export function advanceStory({ chain, player, world, event }: AdvanceStoryArgs):
     player.storyCount = 0
   }
 
-  // ① 사건 — **지금 마디 하나에만** 닿는다.
+  /** 사건 없이 지나갈 수 있는 만큼 — 이미 지나친 것(`before`)과 이미 넘긴 것(`player`). */
+  const drift = (): void => {
+    while (player.story < chain.length) {
+      const next = chain[player.story]!
+      if (caughtUp(next, before, world, player.storyCount)) pass(next, out.skipped)
+      else if (metByState(next, player, world)) pass(next, out.completed)
+      else break
+    }
+  }
+
+  // ① 밀어올림이 먼저다 — 고인물의 마디를 사건이 먼저 집어 가지 않게.
+  drift()
+
+  // ② 사건 — **지금 마디 하나에만** 닿는다.
   //
   // 세이브의 `story` 가 사슬 길이를 넘으면(마디를 지운 날의 옛 세이브) 여기서
   // undefined 가 나와 사슬이 끝난 것으로 본다 — celebrated 가 없는 이정표를
   // 무시하는 그 자세다. 길이를 따로 재지 않는 것은 색인 하나가 이미 그 답이라서다.
   const step = chain[player.story]
-  if (step && appliesTo(step, player, event)) pass(step, out.completed)
-
-  // ② 사건 없이 지나갈 수 있는 만큼.
-  while (player.story < chain.length) {
-    const next = chain[player.story]!
-    if (caughtUp(next, player, world)) pass(next, out.skipped)
-    // 끝낸 마디 뒤에 **이미 넘긴 이정표**가 걸려 있을 수 있다(마지막 얼음 조각을
-    // 바치는 순간 이미 숙련 1,000 인 사람).
-    else if (metByState(next, player, world)) pass(next, out.completed)
-    else break
+  if (step && appliesTo(step, player, event)) {
+    pass(step, out.completed)
+    // ③ 끝낸 마디 뒤에 남은 것.
+    drift()
   }
 
   return out

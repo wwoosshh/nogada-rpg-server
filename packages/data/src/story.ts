@@ -781,20 +781,33 @@ export function storyChainOf(data: GameData, player: PlayerState): StoryStep[] {
     .map((def) => resolveStep(def, slots, `${FILE}[마디 ${def.step}](${skill}(${village.id}))`))
 }
 
+export interface StoryHookArgs {
+  data: GameData
+  /**
+   * 이 행동이 반영된 **지금**의 플레이어 — 서비스가 `structuredClone` 한 사본.
+   * 제자리에서 고쳐진다(advanceStory 문서). 사슬을 그 사람의 것으로 펴는 유도도
+   * 이쪽을 본다 — 문을 넘은 사람은 **도착한** 채집장에 서 있어야 한다.
+   */
+  player: PlayerState
+  /**
+   * 이 행동 **앞**의 플레이어 — 서비스가 손대기 전의 `args.player` 그대로다.
+   * 밀어올림만 이쪽을 읽는다(AdvanceStoryArgs.before).
+   *
+   * 이름 있는 인자로 받는 이유: 둘 다 `PlayerState` 라 자리로 받으면 바꿔 넣어도
+   * 타입이 안 짖는데, 바뀐 순간 고인물이 초보 안내를 받는다 — 화면 어디에도
+   * 오류로 안 보이는 종류의 사고다.
+   */
+  before: PlayerState
+  event: StoryEvent | null
+}
+
 /**
  * 판정 훅 하나 — **서비스가 부르는 한 줄**(설계 ⑧-4).
  *
  * 사슬을 이 플레이어의 것으로 펴서 `advanceStory`(packages/shared)에게 넘긴다.
  * 판정 규칙이 shared 에 있고 마을 유도가 여기 있는 이유는 `villageField` 가 여기
  * 있는 이유와 같다 — 규칙은 세계 데이터를 향해 의존하지 않는다.
- *
- * `player` 를 제자리에서 고친다(advanceStory 문서). 부르는 자리는 전부
- * `structuredClone` 뒤의 사본을 들고 있는 서비스다.
  */
-export function runStoryHook(
-  data: GameData,
-  player: PlayerState,
-  event: StoryEvent | null,
-): StoryAdvance {
-  return advanceStory({ chain: storyChainOf(data, player), player, world: data, event })
+export function runStoryHook({ data, player, before, event }: StoryHookArgs): StoryAdvance {
+  return advanceStory({ chain: storyChainOf(data, player), player, before, world: data, event })
 }

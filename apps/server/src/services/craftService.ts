@@ -205,7 +205,9 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   // (skillGained 0) 재료만 축내므로 사슬이 볼 것이 하나도 바뀌지 않는다 — 부르면
   // 매번 같은 답을 다시 계산할 뿐이다. 채집이 그 반대인 이유는 위 ②(숙련 증가는
   // 성패 무관)가 실패한 손질에도 문턱을 넘길 힘을 주기 때문이다.
-  runStoryHook(data, player, { kind: 'craft', recipeId })
+  //
+  // 밀어올림이 읽는 것은 **이 제작 앞**의 상태다(`before`, advanceStory 문서).
+  runStoryHook({ data, player, before: args.player, event: { kind: 'craft', recipeId } })
 
   return {
     ok: true,

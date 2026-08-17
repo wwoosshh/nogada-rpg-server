@@ -1,4 +1,4 @@
-import { loadGameData, parseStory, validateStory } from '@nogada/data'
+import { loadGameData, parseStory, runStoryHook, validateStory, WORLD_MAP_ID } from '@nogada/data'
 import { loadBarrierRegions } from '@nogada/data/barriers'
 import { loadGatherTables } from '@nogada/data/gather-tables'
 import type { GameData, PlayerState } from '@nogada/shared'
@@ -99,8 +99,31 @@ describe('스토리 훅 — 이동(새 훅이다)', () => {
     const player = novice({ location: { mapId: '얼음채집장', x: arrival.toX, y: arrival.toY } })
 
     const result = moveThroughTransition({ player, data: walled, now: 0, x: barrier.fromX, y: barrier.fromY })
-    expect(result.ok).toBe(false)
-    expect(player.story).toBe(0)
+    // **거절에는 응답에 실릴 플레이어 자체가 없다** — 그것이 이 성질의 전부다.
+    // 입력 `player` 를 재는 것은 뜻이 없다: 이 함수는 첫 줄에서 `structuredClone`
+    // 하므로 훅을 어디로 옮기든, 아예 지우든 입력은 안 바뀐다. 그래서 반환값이
+    // `{ok:false, code}` 하나뿐이라는 것을 통째로 못박는다.
+    expect(result).toEqual({ ok: false, code: 'locked' })
+  })
+
+  // 왜: 훅은 **자리를 옮긴 뒤**에 돌아야 한다(moveService 의 훅 자리 주석). 사슬
+  //     유도는 숙련 0 인 사람에게 서 있는 자리를 보므로(`storyVillage` 의 ②), 앞에서
+  //     부르면 사슬이 "떠나온 곳" 기준으로 선다 — 월드맵에는 그 사람이 어느 마을에서
+  //     났는지 말해 주는 정보가 없어서 유도가 늘 같은 답(눈의마을)으로 떨어진다.
+  //     그 한 줄을 위로 올려도 2,300 이 전부 초록이던 자리다.
+  it('훅은 자리를 옮긴 뒤에 돈다 — 월드맵에서 넘어오면 사슬은 도착한 마을 것이다', () => {
+    // 마디 0 을 「{마을}에 닿아라」로 둔다. 사슬이 어느 마을 것으로 폈는지가
+    // 그대로 값이 된다 — 눈의마을 것으로 폈으면 항구마을 도착은 아무것도 안 끝낸다.
+    const rows = [{ ...ROWS[0]!, goalArg: '{마을}', objective: '{마을}로 돌아가라' }]
+    const homeward: GameData = { ...data, story: parseStory(rows) }
+    expect(validateStory(homeward)).toEqual([])
+
+    const door = data.transitions.find((t) => t.fromMap === WORLD_MAP_ID && t.toMap === '항구마을')!
+    // 숙련이 전부 0 이라 유도는 오직 서 있는 자리로만 갈린다(storyVillage ②·③).
+    const player = novice({ location: { mapId: WORLD_MAP_ID, x: door.fromX, y: door.fromY } })
+
+    const result = moveThroughTransition({ player, data: homeward, now: 0, x: door.fromX, y: door.fromY })
+    expect(result.ok && result.outcome.player.story).toBe(1)
   })
 })
 
@@ -146,6 +169,24 @@ describe('스토리 훅 — 채집', () => {
     expect(result.ok && result.outcome.player.story).toBe(1)
   })
 
+  // 왜: ②의 숙련 증가는 **성패 무관**이라 헛손질 하나가 문턱을 넘긴다. 훅에게
+  //     지금 숙련을 넘기면 그 헛손질이 「이 사람은 예전부터 문턱 위였다」로 읽혀서,
+  //     아직 얼음 조각을 한 번도 못 캔 사람의 「{노드} 앞에서 A」가 조용히 사라진다.
+  //     마디 1 의 문턱을 1 이 아니라 1,000 으로 적은 것(위 ROWS 주석)은 이 새는
+  //     자리를 **표 쪽에서** 좁힌 것이고, 이 검사는 **배선 쪽**이 같은 자리를
+  //     닫는지를 본다.
+  it('손질 앞의 숙련을 훅에게 넘긴다 — 헛손질이 자기 마디를 지나친 것으로 만들지 않는다', () => {
+    const player = novice({
+      story: 1,
+      skills: { ice: 999, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      location: { mapId: '얼음채집장', x: arrival.toX, y: arrival.toY },
+    })
+    const result = gatherAt(player, () => 0.999_999)
+    expect(result.ok && result.outcome.success).toBe(false)
+    expect(result.ok && result.outcome.player.skills.ice).toBeGreaterThanOrEqual(1000)
+    expect(result.ok && result.outcome.player.story).toBe(1)
+  })
+
   it('실패한 손질은 안 센다 — 마디가 세는 것은 손에 들어온 것이다', () => {
     const player = novice({
       story: 1,
@@ -170,6 +211,20 @@ describe('스토리 훅 — 헌납', () => {
     const result = performDonate({ player, data, itemId: 'ice_shard', count: 50 })
     expect(result.ok && [result.outcome.player.story, result.outcome.player.storyCount]).toEqual([2, 50])
   })
+
+  // 왜: 이 서비스가 훅에게 넘기는 것은 **바치기 전**의 `donated` 여야 한다. 지금
+  //     것을 넘기면 이 헌납이 방금 채운 첫 단(마디 2 의 문턱이 정확히
+  //     `collection>=1` 이다)이 「예전부터 그랬다」로 읽혀서, 아직 델타를 절반밖에
+  //     못 채운 사람의 마디가 그 자리에서 `skipped` 로 사라진다 — 수집의 방 첫 별
+  //     축하가 통째로 없어지고, 그 사고는 화면 어디에도 오류로 안 보인다.
+  //     100 개를 미리 바쳐 둔 사람이 나머지를 채우는 이 배선이 그것을 값으로 가른다.
+  it('바치기 전의 방을 훅에게 넘긴다 — 방금 채운 첫 단이 그 사람의 마디를 집어 가지 않는다', () => {
+    const player = novice({ story: 2, stacks: { ice_shard: 100 }, donated: { ice_shard: 100 } })
+    const result = performDonate({ player, data, itemId: 'ice_shard', count: 100 })
+    // 델타는 100 뿐이라 마디 2(200)는 아직 안 끝났다. 지금 상태로 밀어올림을 재면
+    // 여기서 story 가 3 으로 튄다 — 바친 적 없는 마디를 지나쳤다고 세는 것이다.
+    expect(result.ok && [result.outcome.player.story, result.outcome.player.storyCount]).toEqual([2, 100])
+  })
 })
 
 describe('스토리 훅 — 제작', () => {
@@ -180,6 +235,30 @@ describe('스토리 훅 — 제작', () => {
     })
     expect(result.ok && result.outcome.success).toBe(true)
     expect(result.ok && result.outcome.player.story).toBe(4)
+  })
+
+  // 왜: 제작은 조합 숙련을 올린다 — 훅에게 지금 숙련을 넘기면 이번 제작이 방금
+  //     넘긴 문턱이 「예전부터 그랬다」로 읽혀서, 이 제작과 상관없는 마디가 조용히
+  //     지나간 것이 된다. **목표를 다른 레시피로 둬야** 그 차이가 값으로 갈린다:
+  //     같은 레시피면 사건이 어차피 그 마디를 끝내므로 두 배선이 같은 수를 낸다.
+  it('제작 앞의 숙련을 훅에게 넘긴다 — 이번 제작이 넘긴 문턱은 밀어올림이 아니다', () => {
+    const rows = [{
+      ...ROWS[3]!, step: '0', objective: '무언가 만들어라', goalArg: 'snow_powder',
+      catchUpKind: 'skill', catchUpArg: 'crafting', catchUpThreshold: '200',
+    }]
+    const world: GameData = { ...data, story: parseStory(rows) }
+    expect(validateStory(world)).toEqual([])
+
+    // 조합 195 — 구리 주괴 하나가 10~20 을 올리므로 이 제작이 문턱(200)을 넘긴다.
+    const player = novice({
+      skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 195 },
+      stacks: { copper_ore: 2 },
+    })
+    const result = performCraft({
+      player, data: world, recipeId: 'copper_ingot', rng: () => 0, newId: () => 'x', now: 1,
+    })
+    expect(result.ok && result.outcome.player.skills.crafting).toBeGreaterThanOrEqual(200)
+    expect(result.ok && result.outcome.player.story).toBe(0)
   })
 
   it('사슬이 끝난 뒤에는 더 안 나아간다', () => {
@@ -215,6 +294,23 @@ describe('스토리 훅 — 밀어올림', () => {
   it('이동 훅도 같은 자리를 민다 — 훅마다 따로 배선하지 않았다', () => {
     const result = moveThroughTransition({ player: veteran(), data, now: 0, x: 15, y: 0 })
     expect(result.ok && result.outcome.player.story).toBe(data.story.length)
+  })
+
+  // 왜: 고인물의 **가장 흔한 첫 훅이 마을 문을 나서는 것**이고, 마디 0 이 하필
+  //     「{마을} {방향}문으로 나가라」다. `story` 만 재면 이 사고가 안 보인다 —
+  //     끝냈든 지나쳤든 그 사람은 사슬 끝에 선다. 갈리는 것은 **무엇으로 세는가**
+  //     이고, Q6 이 `completed` 의 `announce` 를 띄우는 순간 그 차이가 화면에 뜬다.
+  //     `StoryAdvance` 자신이 「`skipped` 는 말하면 안 되는 것」이라 적어 놓았다.
+  it('고인물이 문을 나서도 마디 0 은 해낸 것이 아니다 — 초보 안내를 축하로 받지 않는다', () => {
+    const player = veteran()
+    const out = runStoryHook({
+      data,
+      player,
+      before: structuredClone(player),
+      event: { kind: 'arrive', mapId: '얼음채집장' },
+    })
+    expect(out.completed).toEqual([])
+    expect(out.skipped.map((s) => s.step)).toEqual([0, 1, 2, 3])
   })
 
   it('신규는 하나도 안 밀린다 — 밀어올림은 이미 지나친 사람만 태운다', () => {

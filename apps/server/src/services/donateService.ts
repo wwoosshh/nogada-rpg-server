@@ -121,7 +121,15 @@ export function performDonate(args: PerformDonateArgs): DonateResult {
   // 세는 것은 **개수**다(advanceStory 의 `storyCount` 문서) — 한 번에 200개를
   // 바치면 200 이 오른다. 실제로 그렇게 바친다: [바치기] 는 가진 것을 통째로 넣는
   // 손짓이라, 한 개씩 세는 규칙이면 10분치 가방을 바친 사람의 사슬이 1 만 오른다.
-  runStoryHook(args.data, player, { kind: 'donate', itemId: args.itemId, count: args.count })
+  // 밀어올림이 읽는 것은 **바치기 전**의 `donated` 다(`before`) — 지금 것으로 재면
+  // 방금 채운 첫 단(collection>=1)이 「예전부터 그랬다」로 읽혀서, 처음 별을 딴
+  // 사람이 그 마디를 끝낸 것이 아니라 지나친 것이 된다.
+  runStoryHook({
+    data: args.data,
+    player,
+    before: args.player,
+    event: { kind: 'donate', itemId: args.itemId, count: args.count },
+  })
 
   return { ok: true, outcome: { player, achieved } }
 }

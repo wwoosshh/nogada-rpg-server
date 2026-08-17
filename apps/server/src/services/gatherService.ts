@@ -206,7 +206,16 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 다만 **세는 사건은 성공했을 때만** 실린다: 마디 1·2 가 세는 것은 손에 들어온
   // 것이고(설계 ③ — 「첫 채집. 얼음 조각이 가방에 들어온다」), 그래야 띠의
   // `n / 40` 이 가방에 쌓인 수와 같은 수가 된다(advanceStory 의 `storyCount` 문서).
-  runStoryHook(data, player, success ? { kind: 'gather', skill: node.skill } : null)
+  //
+  // 밀어올림이 읽는 것은 **이 손질 앞**의 숙련이다(`before`) — ②가 성패 무관으로
+  // 올린 숫자를 밀어올림이 그대로 다시 보면, 문턱 바로 아래에 서 있던 사람의 마디가
+  // 그 한 번으로 「해낸 것」이 아니라 「지나친 것」이 된다.
+  runStoryHook({
+    data,
+    player,
+    before: args.player,
+    event: success ? { kind: 'gather', skill: node.skill } : null,
+  })
 
   if (!success) {
     return { ok: true, outcome: { success: false, gained: null, skillGained, achieved, player } }

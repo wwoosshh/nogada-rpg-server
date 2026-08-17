@@ -561,13 +561,33 @@ describe('runStoryHook — 서비스가 부르는 한 줄', () => {
   it('사건이 사슬을 민다', () => {
     const data = worldWith(CHAIN_ROWS)
     const p = villager({ location: { mapId: '얼음채집장', x: 1, y: 1 } })
-    runStoryHook(data, p, { kind: 'arrive', mapId: '얼음채집장' })
+    runStoryHook({ data, player: p, before: structuredClone(p), event: { kind: 'arrive', mapId: '얼음채집장' } })
     expect(p.story).toBe(1)
   })
 
   it('표가 비면 아무 일도 없다', () => {
     const p = villager()
-    runStoryHook(loadGameData(), p, { kind: 'arrive', mapId: '얼음채집장' })
+    runStoryHook({
+      data: loadGameData(),
+      player: p,
+      before: structuredClone(p),
+      event: { kind: 'arrive', mapId: '얼음채집장' },
+    })
     expect([p.story, p.storyCount]).toEqual([0, 0])
+  })
+
+  // 왜: `before` 와 `player` 는 둘 다 PlayerState 라 바꿔 넣어도 타입이 안 짖는다.
+  //     사슬을 그 사람의 것으로 펴는 유도(`storyVillage` 의 ②)가 봐야 하는 것은
+  //     **도착한 뒤**의 자리다 — 밀어올림이 읽으라고 준 `before` 를 유도까지 읽으면
+  //     숙련 0 인 사람의 사슬이 "떠나온 곳" 기준으로 서고, 그 답이 저장된 자리와
+  //     어긋나는 날 되짚을 자리가 없다(moveService 의 훅 자리 주석과 같은 짝이다).
+  it('사슬은 player 의 자리로 편다 — before 의 자리가 아니다', () => {
+    const data = worldWith(CHAIN_ROWS)
+    // 숙련이 전부 0 이라 마을 유도는 오직 서 있는 자리로만 갈린다(storyVillage ②).
+    const before = villager({ location: { mapId: WORLD_MAP_ID, x: 1, y: 1 } })
+    const p = villager({ location: { mapId: '항구마을', x: 1, y: 1 } })
+
+    runStoryHook({ data, player: p, before, event: { kind: 'arrive', mapId: '허브채집장' } })
+    expect(p.story).toBe(1)
   })
 })
