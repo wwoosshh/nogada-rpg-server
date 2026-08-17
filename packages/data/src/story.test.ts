@@ -617,7 +617,8 @@ describe('runStoryHook — 서비스가 부르는 한 줄', () => {
     const veteran = villager({
       skills: { ice: 200000, wood: 0, mineral: 0, herb: 0, crafting: 5000 },
       location: { mapId: '얼음채집장', x: 1, y: 1 },
-      // 수집의 방 첫 칸(마디 3 의 문턱)은 바쳐 본 적이 있다는 뜻이다.
+      // 헌납·제작 이력이 있는 고인물이다. **이력이 하나도 없는 쪽**은 출하 사슬
+      // 스위트가 따로 잰다 — 밀어올림이 이력을 요구하던 시절에 갈라진 두 사람이다.
       donated: { ice_shard: 1000 },
     })
     const advance = runStoryHook({
@@ -719,22 +720,62 @@ describe('출하 사슬 — 설계 ③ 의 두 표를 그대로 잰다', () => {
   })
 
   /**
-   * **마디 5 의 announce 가 적는 숫자는 그 계열 상점의 실제 해금치다.**
+   * 그 글이 적은 수들 — 「1,000」 처럼 자릿점을 찍어도 같은 수로 읽는다.
    *
-   * 아크 1 은 상점을 열지 않고 **말만 한다**(설계 ⑨) — 그 한 줄이 적는 5000 은
-   * `shops.csv` 의 `unlockSkill` 을 CSV 밖으로 한 번 옮겨 적은 값이고, 옮겨 적은
-   * 숫자는 원본이 바뀌는 날 조용히 거짓말이 된다. 그 거짓말이 정확히 이 태스크가
-   * 지운 것(채집장 노인의 「아직은 아닐세」)과 같은 종류라, 새로 들여온 사본에도
-   * 같은 자를 댄다.
+   * `toContain(String(n))` 대신 수를 뽑아 비교하는 이유: 「조합 숙련 2000」 은
+   * 글자로는 "200" 을 포함하므로, 문턱 200 을 지키려던 자가 2000 을 통과시킨다.
    */
-  it.each(FIELDS)('%s 의 마디 5 는 그 계열 상점의 해금치를 그대로 적는다', (village, skill) => {
-    const shop = Object.values(data.shops).find((s) => s.skill === skill)
-    expect(shop, `${skill} 계열 상점`).toBeDefined()
-    expect(chainOfVillage(village)[5]!.announce).toContain(String(shop!.unlockSkill))
+  function numbersIn(text: string): number[] {
+    return [...text.matchAll(/\d[\d,]*/g)].map((m) => Number(m[0].replaceAll(',', '')))
+  }
+
+  /**
+   * **마디 4 의 objective 가 적는 숫자는 그 마디가 요구하는 이정표의 문턱이다.**
+   *
+   * 마디 4 는 사슬에서 **유일하게 요구치를 숫자로 직접 적는 마디**이고(「얼음 숙련
+   * 1000」·「조합 숙련 200」), 그 숫자는 `milestones.csv` 에서 오지 않고 CSV 글자로
+   * 박혀 있다. 옮겨 적은 숫자는 원본이 바뀌는 날 조용히 거짓말이 되는데, 설계 ⑥ 이
+   * 지키겠다고 한 장치가 하필 「요구치를 숫자로 말하는 문」이라 그때 띠는 장치가
+   * 아니라 함정이 된다 — 이 태스크가 대사에서 지운 것과 정확히 같은 종류다.
+   * 아크 2 에서 `ice_1000` 문턱을 손대는 날 이 자가 먼저 짖는다.
+   */
+  it.each(FIELDS)('%s 의 마디 4 는 그 이정표의 문턱을 그대로 적는다', (village, _skill, _item, _t1, reach) => {
+    const milestone = data.milestones.find((m) => m.id === reach)!
+    expect(numbersIn(chainOfVillage(village)[4]!.objective)).toContain(milestone.threshold)
   })
 
   /**
-   * **밀어올림 문턱 — 이 표에서 유일하게 설계에 없는 숫자들이라 유도를 적어 둔다.**
+   * **마디 5 의 objective 가 적는 이름은 그 마디가 시키는 레시피의 이름이다.**
+   *
+   * 띠는 「제작에서 눈 가루를 만들어라」라고 적고 판정은 `snow_powder` 를 센다 —
+   * 이름과 id 가 다른 자리에 따로 적혀 있어서, 레시피 이름이 바뀌면 띠가 제작
+   * 패널에 없는 물건을 만들라고 시킨다. 슬롯이 아니라 손으로 적은 이름이라
+   * `fillText` 도 이것을 못 잡는다.
+   */
+  it.each(FIELDS)('%s 의 마디 5 는 그 레시피의 이름을 그대로 적는다', (village, _skill, _item, _t1, _reach, recipe) => {
+    const def = data.recipes[recipe]!
+    expect(chainOfVillage(village)[5]!.objective).toContain(def.name)
+  })
+
+  /**
+   * **마디 5 의 announce 가 적는 숫자와 이름은 그 계열 상점의 실제 해금치와 주인이다.**
+   *
+   * 아크 1 은 상점을 열지 않고 **말만 한다**(설계 ⑨) — 그 한 줄이 적는 5000 은
+   * `shops.csv` 의 `unlockSkill` 을, 「채집장 노인」은 `speakers.csv` 의 `name` 을
+   * CSV 밖으로 한 번 옮겨 적은 값이고, 옮겨 적은 것은 원본이 바뀌는 날 조용히
+   * 거짓말이 된다. 그 거짓말이 정확히 이 태스크가 지운 것(채집장 노인의
+   * 「아직은 아닐세」)과 같은 종류라, 새로 들여온 사본에도 같은 자를 댄다.
+   */
+  it.each(FIELDS)('%s 의 마디 5 는 그 계열 상점의 해금치와 주인 이름을 그대로 적는다', (village, skill) => {
+    const shop = Object.values(data.shops).find((s) => s.skill === skill)
+    expect(shop, `${skill} 계열 상점`).toBeDefined()
+    const announce = chainOfVillage(village)[5]!.announce
+    expect(numbersIn(announce)).toContain(shop!.unlockSkill)
+    expect(announce).toContain(data.speakers[shop!.speakerId]!.name)
+  })
+
+  /**
+   * **밀어올림 문턱 — 마디 0~2 는 설계에 없는 숫자라 유도를 적어 둔다.**
    *
    * 문턱이 지켜야 하는 부등식은 하나다: **그 마디를 지금 걷고 있는 신규가 델타 0
    * 인 채로 닿을 수 있는 값보다 위**여야 한다(StoryCatchUp 의 마지막 문단). 아래로
@@ -750,17 +791,9 @@ describe('출하 사슬 — 설계 ③ 의 두 표를 그대로 잰다', () => {
    *   마디가 요구하는 성공 횟수이고(설계 ③), 그만큼 연달아 실패하는 손은 없다.
    * - **마디 2** — 마디 1 문턱의 두 배. 진입 상한은 「문턱 바로 아래에서 성공한
    *   사람」이라 79+2 = 81 이고, 거기서 다시 (160−81)/2 = 39회 연속 실패해야 밀린다.
-   * - **마디 3** — `collection >= 1`. 한 번도 안 바친 사람은 지나친 사람이 아니다.
-   *   나눠 바치는 사람은 델타가 지킨다(advanceStory 의 `caughtUp`).
-   * - **마디 4** — 그 마디가 요구하는 이정표의 문턱 **그대로**. 자기 손으로 넘긴
-   *   사람은 넘긴 그 순간의 `before` 가 아직 아래라 `completed` 로 지나가고, 예전부터
-   *   위였던 사람만 `skipped` 가 된다 — 두 사람을 가르는 것이 `before` 하나다.
-   * - **마디 5** — 조합 이정표의 문턱 중 **그 사슬이 마디 5 에 들어설 때 이미 넘겼을
-   *   수 있는 값보다 큰 최솟값**. 광물만 500 인 것이 이 규칙의 요점이다: 광물의 마디
-   *   4 가 이미 조합 200 을 요구하므로(광물 1,000 에는 문이 없다) 200 을 그대로 쓰면
-   *   광물 신규가 마디 5 에 서자마자 밀려 올라가 띠가 두 마디 일찍 꺼진다.
+   * - **마디 3·4·5** — 계열 숙련 `VETERAN_SKILL`. 아래에 따로 적는다.
    */
-  it.each(FIELDS)('%s 의 밀어올림 문턱이 유도한 값 그대로다', (village, skill, _item, _t1, reach) => {
+  it.each(FIELDS)('%s 의 마디 0~2 밀어올림 문턱이 채집표에서 유도한 값 그대로다', (village, skill) => {
     const chain = chainOfVillage(village)
     const table = normalTableOf(village)
     const failStreak = chain[2]!.goal.count!
@@ -777,20 +810,75 @@ describe('출하 사슬 — 설계 ③ 의 두 표를 그대로 잰다', () => {
       metric: { kind: 'skill', skill },
       threshold: 2 * failStreak * table.skillGainMax,
     })
-    expect(chain[3]!.catchUp).toEqual({ metric: { kind: 'collection' }, threshold: 1 })
+  })
 
-    const milestone = data.milestones.find((m) => m.id === reach)!
-    expect(chain[4]!.catchUp).toEqual({ metric: milestone.metric, threshold: milestone.threshold })
+  /**
+   * **고인물 기준선 — 설계 ⑧ 실기 확인 1번이 정한 수다**(「얼음 3,000+ 기존 캐릭터
+   * 접속 → 띠가 안 뜬다」). 이 표에서 계열 숙련 밖의 것을 문턱으로 삼지 않는 이유가
+   * 이 한 줄이다.
+   */
+  const VETERAN_SKILL = 3000
 
-    // 마디 4 가 조합을 요구했으면 그 값 위에서 고른다 — 아니면 조합 문턱 전체에서.
-    const alreadySpent = milestone.metric.kind === 'skill' && milestone.metric.skill === 'crafting'
-      ? milestone.threshold
-      : 0
-    const next = Math.min(
-      ...data.milestones
-        .filter((m) => m.metric.kind === 'skill' && m.metric.skill === 'crafting' && m.threshold > alreadySpent)
-        .map((m) => m.threshold),
-    )
-    expect(chain[5]!.catchUp).toEqual({ metric: { kind: 'skill', skill: 'crafting' }, threshold: next })
+  /**
+   * **마디 3·4·5 의 밀어올림은 계열 숙련 하나로만 갈린다.**
+   *
+   * 처음에는 이 셋이 그 마디가 만드는 지표를 그대로 문턱으로 삼았다 — 마디 3 은
+   * `collection>=1`, 마디 5 는 `crafting>=200`(광물 500). 유도는 깔끔했지만
+   * **재는 것이 숙련이 아니라 이력**이라, 얼음 200,000 인데 **한 번도 안 바친**
+   * 또는 **한 번도 안 만든** 계정이 그 마디에서 멈추고 초보 안내 띠를 받았다.
+   * 게임은 이미 공개돼 돌고 있고 친구들 계정이 살아 있으므로 이건 가정이 아니다.
+   *
+   * 밀어올림 문턱이 지켜야 하는 부등식은 하나뿐이다 — **그 마디를 걷는 신규가
+   * 델타 0 인 채로 닿을 수 있는 값보다 위**(StoryCatchUp). 3,000 은 그것을 셋 다
+   * 지키면서 실기 1번의 기준선과 같은 수다:
+   *
+   * - **마디 3** 에 선 신규는 t1 개를 모으는 동안만 델타가 0 이고(한 개라도 바치면
+   *   델타 방어가 걸린다), 설계 ③ 의 실측으로 그 순간 계열 숙련은 600~800 이다
+   *   (60초에 257 · 마디 3 완료 1.5~2.6분). 3,000 은 그 위로 4배다.
+   * - **마디 4** 는 신규가 계열 1,000 에 닿는 순간 `metByState` 로 **끝난다** —
+   *   밀어올림이 볼 기회 자체가 없다. 문턱이 이정표 문턱(1,000)이든 3,000 이든
+   *   신규에게는 같은 마디이고, 다른 것은 계열 1,000~3,000 짜리 계정이 마디 4 를
+   *   `skipped`(조용히) 대신 `completed`(축하 한 줄) 로 지난다는 것뿐이다. 그 사람은
+   *   방금 마디 3 을 자기 손으로 끝낸 참이라 축하가 어색하지 않다.
+   * - **마디 5** 에 선 신규는 계열 1,000 을 막 넘긴 참이고(설계 ③: 3.4분), 조합은
+   *   계열 숙련을 안 올린다. 3,000 은 그 위로 3배 — 띠를 무시하고 8분을 더 캐야
+   *   닿는다.
+   *
+   * 광물만 다른 값을 쓰던 것도 이 규칙이 지운다. 광물의 마디 4 는 조합 200 을
+   * 가리키는데(광물 1,000 에는 문이 없다) 그 문턱을 밀어올림에도 쓰면 **한 번도
+   * 안 만든 광물 고인물**이 마디 4 에서 멈춘다 — 마디 3·5 와 똑같은 사고다.
+   */
+  it.each(FIELDS)('%s 의 마디 3·4·5 는 계열 숙련 %s 의 고인물 기준선 하나로 갈린다', (village, skill) => {
+    const chain = chainOfVillage(village)
+    for (const step of [3, 4, 5]) {
+      expect(chain[step]!.catchUp, `마디 ${step}`).toEqual({
+        metric: { kind: 'skill', skill },
+        threshold: VETERAN_SKILL,
+      })
+    }
+  })
+
+  /**
+   * **설계 ⑧ 실기 확인 1번 그 자체** — 이력이 하나도 없는 고인물도 띠를 안 받는다.
+   *
+   * 위 검사는 문턱이 무엇인지를 재고, 이것은 그 문턱들이 **합쳐서** 무엇을 하는지를
+   * 잰다: 사슬은 순서대로 걷히므로 한 마디만 이력을 요구해도 그 사람은 거기서
+   * 멈춘다. 바친 적도 만든 적도 없는 계정으로 재는 것이 요점이다 — 이력을 채워
+   * 주면 이 검사는 고쳐야 했던 그 상태에서도 초록이었다.
+   */
+  it.each(FIELDS)('%s 의 계열 %s 3,000 고인물은 바친 적도 만든 적도 없이 여섯 마디를 지나친다', (village, skill) => {
+    const veteran = villager({
+      skills: { ice: 0, wood: 0, mineral: 0, herb: 0, crafting: 0, [skill]: VETERAN_SKILL },
+      location: { mapId: village, x: 1, y: 1 },
+    })
+    const advance = runStoryHook({
+      data,
+      player: veteran,
+      before: structuredClone(veteran),
+      event: { kind: 'gather', skill },
+    })
+    expect(veteran.story).toBe(6)
+    expect(advance.completed).toEqual([])
+    expect(advance.skipped.map((s) => s.step)).toEqual([0, 1, 2, 3, 4, 5])
   })
 })
