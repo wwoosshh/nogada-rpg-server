@@ -9,6 +9,7 @@ import { parseGatherTables, validateGatherTables } from './gatherTables.js'
 import { parseInns } from './inns.js'
 import { parseMaps, type ParsedMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
+import { parseStory, validateStory } from './story.js'
 import { validateMonsterPatterns } from './monsterChecks.js'
 import { parseMonsters } from './monsters.js'
 import { parseMasters, parseShops } from './shops.js'
@@ -157,6 +158,10 @@ const data: GameData = {
   transitions: parseTransitions(readCsv('transitions.csv')),
   placements,
   milestones: parseMilestones(readCsv('milestones.csv'), recipes),
+  // 스토리 사슬도 GameData 에 싣는다 — 띠에 뜨는 글은 애초에 화면이 읽어 주기로
+  // 한 것이라 숨은 문턱이 아니다(이정표를 싣는 그 저울). 슬롯은 여기서 펴지 않는다:
+  // 어느 마을의 사슬인지는 세이브가 정하므로 굽는 시점에는 답이 넷이다.
+  story: parseStory(readCsv('story.csv')),
   speakers,
   // 상점·달인은 확률표와 달리 GameData 에 싣는다 — 클라이언트가 매도 목록과
   // 진열(잠긴 칸의 요구치까지)을 그려야 한다. 진열을 상점에 붙이는 일까지
@@ -217,6 +222,9 @@ const violations = [
   ...validateSchedules(data),
   // 마을 → 대표 숙련도는 화면이 아니라 여기서 정해진다(설계 규범 14).
   ...validateVillageFields(data),
+  // 사슬은 한 벌인데 마을은 넷이다 — 슬롯이 넷 전부에서 펴지는지를 여기서 본다
+  // (퀘스트 설계 ⑧-2: 이 검사가 이 아크에서 가장 값이 크다).
+  ...validateStory(data),
 ]
 if (violations.length > 0) fail(violations)
 
@@ -283,6 +291,7 @@ console.log(
     `노드 ${Object.keys(data.nodes).length}, 레시피 ${Object.keys(data.recipes).length}, ` +
     `채집표 ${Object.keys(gatherTables).length}, ` +
     `맵 ${Object.keys(data.maps).length}, ` +
+    `스토리 마디 ${data.story.length}, ` +
     `배치 ${Object.keys(data.placements).length}, 이정표 ${data.milestones.length}, ` +
     `화자 ${Object.keys(data.speakers).length}, 대사 ${data.dialogue.length}, ` +
     `상점 ${Object.keys(data.shops).length}, ` +

@@ -27,7 +27,12 @@ function parsePipeList(value: string, context: string, field: string): string[] 
   return parts
 }
 
-const METRIC_KINDS = ['skill', 'every', 'collection'] as const
+/**
+ * 이정표가 볼 수 있는 지표 전부 — **셋 다 단조 증가한다**(milestones.ts 의
+ * MilestoneMetric 주석). 그 사실이 이 목록의 값어치라, 스토리의 밀어올림 문턱도
+ * 자유 문법 대신 이 목록을 빌려 쓴다(설계 ⑦).
+ */
+export const METRIC_KINDS = ['skill', 'every', 'collection'] as const
 // 'nodes' 는 은퇴했다(설계 §7-앞 2) — 노드 tier 게이트가 폐지되어 선언할 게이트가 없다.
 const EFFECT_KINDS = ['repeat', 'recipes', 'stock', 'barrier', 'title'] as const
 
@@ -43,22 +48,76 @@ function requireEmpty(row: Row, field: string, ctx: string, why: string): void {
   if (value !== '') throw new Error(`${ctx}: ${field} 에 "${value}" 가 적혔다 — ${why}`)
 }
 
-function toMetric(row: Row, ctx: string): MilestoneMetric {
-  const kind = requireCell(row, 'metricKind', ctx)
+/** 지표를 적는 두 칸의 이름. 표마다 다르므로 오류 문구가 부르는 쪽의 칸을 가리키게 받는다. */
+export interface MetricFields {
+  kind: string
+  arg: string
+}
 
-  // 인자를 요구하기 **전에** 인자 없는 종류를 가른다 — requireCell 은 빈 칸을
-  // 던지므로, 위에 두면 인자가 없는 것이 정상인 지표를 적을 방법이 사라진다.
-  if (kind === 'collection') {
-    requireEmpty(row, 'metricArg', ctx, '수집 총점은 방 하나의 점수라 고를 인자가 없다')
+const MILESTONE_METRIC_FIELDS: MetricFields = { kind: 'metricKind', arg: 'metricArg' }
+
+/**
+ * 종류 칸만 좁힌다 — 인자를 아직 손에 못 쥔 자리가 있어서다.
+ *
+ * `story.csv` 의 `catchUpArg` 에는 슬롯(`{계열}`)이 남아 있어 파싱 시점에는 값이
+ * 아니다. 그래도 **종류의 오타는 그때 잡는 것이 옳다**: 슬롯과 무관한 칸이라
+ * 마을을 몰라도 알 수 있고, 미루면 오타 하나가 마을 넷의 위반 넷으로 불어난다.
+ */
+export function toMetricKind(value: string, ctx: string, field = 'metricKind'): MilestoneMetric['kind'] {
+  if (!(METRIC_KINDS as readonly string[]).includes(value)) {
+    throw new Error(`${ctx}: ${field} "${value}" 는 알 수 없다 (허용값: ${METRIC_KINDS.join(', ')})`)
+  }
+  return value as MilestoneMetric['kind']
+}
+
+/**
+ * 지표 두 칸(종류·인자)을 `MilestoneMetric` 으로 옮긴다 — **허용 목록과 인자 규칙의
+ * 유일한 소유자**다.
+ *
+ * 행이 아니라 값 둘을 받는 이유: 같은 문법을 읽는 표가 둘이 됐다. `milestones.csv`
+ * 의 `metricKind`·`metricArg` 와 `story.csv` 의 `catchUpKind`·`catchUpArg` 다
+ * (설계 ⑦: 밀어올림 문턱을 자유 문법으로 두지 않고 **이정표의 지표 그대로**로
+ * 제한한다 — 그 셋이 전부 단조 증가라는 것이 이정표가 이미 지고 있는 약속이라,
+ * 목록을 빌리는 것이 곧 단조를 빌리는 것이다). 규칙을 두 벌로 적으면 지표가
+ * 넷째로 늘어나는 날 한쪽만 따라가고, 그 갈라짐은 "이정표에는 쓸 수 있는데
+ * story.csv 에서만 거절당한다" 로만 드러난다 — 작가는 오타를 의심하며 자기 CSV 만
+ * 들여다본다.
+ *
+ * 다만 `story.csv` 의 인자에는 슬롯이 남아 있으므로, 그쪽은 마을이 정해져 슬롯이
+ * 펴진 **뒤에** 이 함수를 부른다.
+ */
+export function toMilestoneMetric(
+  kind: string,
+  arg: string,
+  ctx: string,
+  fields: MetricFields = MILESTONE_METRIC_FIELDS,
+): MilestoneMetric {
+  const narrowed = toMetricKind(kind, ctx, fields.kind)
+
+  // 인자를 요구하기 **전에** 인자 없는 종류를 가른다 — 빈 인자를 던지므로,
+  // 위에 두면 인자가 없는 것이 정상인 지표를 적을 방법이 사라진다.
+  if (narrowed === 'collection') {
+    if (arg !== '') {
+      throw new Error(
+        `${ctx}: ${fields.arg} 에 "${arg}" 가 적혔다 — 수집 총점은 방 하나의 점수라 고를 인자가 없다`,
+      )
+    }
     return { kind: 'collection' }
   }
 
-  const arg = requireCell(row, 'metricArg', ctx)
+  if (arg === '') throw new Error(`${ctx}: 필수 항목 "${fields.arg}" 가 비어 있다`)
 
-  if (kind === 'skill') return { kind: 'skill', skill: toSkillId(arg, ctx) }
-  if (kind === 'every') return { kind: 'every', of: parsePipeList(arg, ctx, 'metricArg') }
+  if (narrowed === 'skill') return { kind: 'skill', skill: toSkillId(arg, ctx) }
+  return { kind: 'every', of: parsePipeList(arg, ctx, fields.arg) }
+}
 
-  throw new Error(`${ctx}: metricKind "${kind}" 는 알 수 없다 (허용값: ${METRIC_KINDS.join(', ')})`)
+function toMetric(row: Row, ctx: string): MilestoneMetric {
+  return toMilestoneMetric(
+    requireCell(row, 'metricKind', ctx),
+    row['metricArg'] ?? '',
+    ctx,
+    MILESTONE_METRIC_FIELDS,
+  )
 }
 
 /**

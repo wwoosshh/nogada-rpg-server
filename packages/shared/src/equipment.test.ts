@@ -6,7 +6,7 @@ import { testItem, testTool } from './testing/items.js'
 import type { GameData, ItemDef, PlayerState } from './types.js'
 
 const data: GameData = {
-  inns: {}, monsters: {}, monsterPlacements: {},
+  inns: {}, monsters: {}, monsterPlacements: {}, story: [],
   items: {
     copper_pickaxe: testTool('copper_pickaxe', 'mineral', 1, { name: '구리 곡괭이', icon: 'pickaxe_copper' }),
     iron_hammer: testTool('iron_hammer', 'crafting', 2, { name: '철 망치', icon: 'hammer_iron' }),
@@ -42,6 +42,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    // 사슬은 이 스위트가 보는 판정이 아니다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    story: 0,
+    storyCount: 0,
     rewarded: [],
     // 가루를 쓴 적 없는 사람이다 — PlayerState 의 필수 칸이라 채워만 둔다.
     weather: null,

@@ -25,7 +25,7 @@ const terrains: Record<string, MapTerrain> = {
 
 function data(transitions = parseTransitions(ROWS)): GameData {
   return {
-    inns: {}, monsters: {}, monsterPlacements: {},
+    inns: {}, monsters: {}, monsterPlacements: {}, story: [],
     items: {}, nodes: {}, recipes: {}, milestones: [], speakers: {}, dialogue: [],
     shops: {}, masters: [], enhanceCosts: [], collection: {},
     places: {}, schedules: {}, routes: [],
@@ -425,7 +425,7 @@ function shipped(): { real: GameData; realTerrains: Record<string, MapTerrain> }
     nodes,
   )
   const real: GameData = {
-    inns: {}, monsters: {}, monsterPlacements: {},
+    inns: {}, monsters: {}, monsterPlacements: {}, story: [],
     items: parseItems(readRealCsv('items.csv')),
     nodes,
     recipes: parseRecipes(readRealCsv('recipes.csv')),

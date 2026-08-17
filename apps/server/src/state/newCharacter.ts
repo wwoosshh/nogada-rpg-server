@@ -70,6 +70,12 @@ export function createInitialPlayer(spec: NewCharacterSpec): PlayerState {
     equipped,
     nextActionAt: 0,
     celebrated: [],
+    // 사슬의 첫 마디에서 시작한다 — 이 사람이 곧 유도등이 겨냥한 사람이다
+    // (설계 ③: 첫 3.5분). 어느 계열의 사슬인가는 여기 적지 않는다: 마디는 슬롯
+    // (`{계열}`·`{채집장}`·`{문방향}`)으로 쓰이고 값은 고른 마을에서 유도된다
+    // (storySlots) — 시작 도구를 여기 안 적는 것과 같은 이유다.
+    story: 0,
+    storyCount: 0,
     // 달인의 대금은 하나도 받지 않은 채로 시작한다 — 가장 낮은 문턱도 7,587
     // 이고, 그 숫자는 캐서 넘는 것이지 시작할 때 주어지는 것이 아니다.
     rewarded: [],

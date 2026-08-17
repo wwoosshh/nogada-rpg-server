@@ -66,7 +66,7 @@ const data: GameData = {
   shops: {}, masters: [], enhanceCosts: [], collection: {},
   places: {}, schedules: {}, routes: [],
   dialogue: [],
-  inns: {}, monsters: {}, monsterPlacements: {},
+  inns: {}, monsters: {}, monsterPlacements: {}, story: [],
 }
 
 /** 번갈아 악용 검사용 최소 채집표 — 항상 성공(copper_ore)하는 무한 브라켓 하나. */
@@ -106,6 +106,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     equipped: { combat: 's1' },
     nextActionAt: 0,
     celebrated: [],
+    // 사슬은 이 스위트가 보는 판정이 아니다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    story: 0,
+    storyCount: 0,
     rewarded: [],
     weather: null,
     dialogueHistory: emptyDialogueHistory(),

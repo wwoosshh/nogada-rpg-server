@@ -13,6 +13,7 @@ import { parseGatherTables, suffixOfVariant } from './gatherTables.js'
 import type { ParsedMaps } from './maps.js'
 import { parseMaps } from './maps.js'
 import { parseMilestones } from './milestones.js'
+import { parseStory } from './story.js'
 import { parseInns } from './inns.js'
 import { parseMonsters } from './monsters.js'
 import type { MapTerrain } from './placements.js'
@@ -87,7 +88,7 @@ function baseTables(): GatherTables {
  */
 function baseData(): GameData {
   return {
-    inns: {}, monsters: {}, monsterPlacements: {},
+    inns: {}, monsters: {}, monsterPlacements: {}, story: [],
     items: {
       // 값은 출하 items.csv 의 그것이다 — 돈복사 금지 검사(산출 매도 ≤ 입력 매도합)가
       // 이 픽스처의 구리 레시피를 그대로 보므로, 임의의 숫자를 넣으면 정상 픽스처가
@@ -285,6 +286,10 @@ function loadRealGameData(): GameData {
     transitions: parseTransitions(readRealCsv('transitions.csv')),
     placements,
     milestones: parseMilestones(readRealCsv('milestones.csv'), recipes),
+    // 출하 스토리 표도 그대로 싣는다 — 강화표·문턱표와 같은 이유다: 이 픽스처의
+    // 값어치는 "지금 CSV 가 실제로 검증을 통과하는가" 이므로, 여기만 빈 배열이면
+    // 그 물음이 사슬에는 닿지 않는다.
+    story: parseStory(readRealCsv('story.csv')),
     speakers,
     shops: parseShops(readRealCsv('shops.csv'), readRealCsv('shop_stock.csv')),
     masters: parseMasters(readRealCsv('masters.csv')),

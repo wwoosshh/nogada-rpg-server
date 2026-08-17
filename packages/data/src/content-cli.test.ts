@@ -30,7 +30,7 @@ const FIXED_NOW = Date.UTC(2026, 2, 1, 12, 0, 0)
 
 function emptyGameData(): GameData {
   return {
-    inns: {}, monsters: {}, monsterPlacements: {},
+    inns: {}, monsters: {}, monsterPlacements: {}, story: [],
     items: {}, nodes: {}, recipes: {},
     // 화자 픽스처(testSpeaker)가 world 에 서 있다 — 등록부가 비어 있으면 "없는
     // 맵에 놓였다" 위반이 하나 더 섞여, 이 파일이 보려는 대사 위반이 흐려진다.

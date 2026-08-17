@@ -10,6 +10,21 @@ export type Direction = 'up' | 'down' | 'left' | 'right'
 export const DIRECTIONS: readonly Direction[] = ['up', 'down', 'left', 'right']
 
 /**
+ * 방향의 이름표 — SKILL_LABELS 와 같은 자리, 같은 이유(이름은 한 곳에서만 정한다).
+ *
+ * **화면의 위가 곧 북이다.** 이 게임에는 회전하는 카메라도 방위 표시도 없고,
+ * 맵은 언제나 같은 방향으로 놓인다 — 그래서 "위쪽 가장자리의 문" 과 "북문" 은
+ * 같은 문을 가리키는 두 이름이고, 플레이어에게 말할 때 쓰는 쪽이 뒤엣것이다
+ * ("↑ 로 나가라" 는 조작 설명이지 자리 설명이 아니다).
+ */
+export const DIRECTION_LABELS: Record<Direction, string> = {
+  up: '북',
+  down: '남',
+  left: '서',
+  right: '동',
+}
+
+/**
  * 타일 좌표. 이것이 플레이어 위치의 정본이다.
  *
  * 픽셀 좌표는 이 값을 그리기 위한 파생물이다. 순서가 뒤집히면 위치를 서버에

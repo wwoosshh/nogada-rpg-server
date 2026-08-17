@@ -76,7 +76,7 @@ function world(spec: WorldSpec): { data: GameData; terrains: Record<string, MapT
   return {
     terrains,
     data: {
-      inns: {}, monsters: {}, monsterPlacements: {},
+      inns: {}, monsters: {}, monsterPlacements: {}, story: [],
       shops: {}, masters: [], enhanceCosts: [], collection: {},
       items: {}, nodes: {}, recipes: {}, milestones: [], dialogue: [], routes: [],
       maps, transitions: [...(spec.transitions ?? [])], placements, speakers, places, schedules,

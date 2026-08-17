@@ -265,7 +265,7 @@ function gameData(over: Partial<GameData>): GameData {
     schedules: {},
     routes: [],
     dialogue: [],
-    inns: {}, monsters: {}, monsterPlacements: {},
+    inns: {}, monsters: {}, monsterPlacements: {}, story: [],
     ...over,
   }
 }

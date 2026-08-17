@@ -2,6 +2,7 @@ import type { CollectionTable } from './collection.js'
 import type { DialogueHistory, DialogueRule } from './dialogue.js'
 import type { MilestoneDef } from './milestones.js'
 import type { Direction, TilePos } from './movement.js'
+import type { StoryStepDef } from './story.js'
 import type { PlayerWeather, WeatherKind } from './weather.js'
 
 export type SkillId = 'ice' | 'wood' | 'mineral' | 'herb' | 'crafting'
@@ -150,6 +151,36 @@ export interface PlayerState {
    * 않기" 뿐이고 그건 틀려도 피해가 없다.
    */
   celebrated: string[]
+  /**
+   * 지금 걸려 있는 스토리 마디(`story.csv` 의 `step`). 신규는 0 이다.
+   *
+   * **이것은 유도할 수 없는 진짜 상태다.** 이정표는 지표가 전부 단조 증가라
+   * 달성 여부를 저장하지 않지만(celebrated 참고), "몇 번째 마디인가" 는 숙련도·
+   * 인벤토리 어디를 봐도 나오지 않는다 — 같은 얼음 40개를 캔 사람이 마디 2를
+   * 지나던 중일 수도, 이미 사슬을 끝냈을 수도 있다. 그래서 이정표 옆에 세운다
+   * (설계 ②: 세 종류를 가르는 진짜 축은 저장 여부다).
+   *
+   * 사슬을 끝내면 마디 수와 같아지고, 그때부터 띠는 뜨지 않는다.
+   *
+   * 스키마에는 `.default(0)` 이 붙는다(protocol.ts) — gold 와 같은 이유이고,
+   * **숫자는 값형이라 리터럴 기본값으로 족하다**: donated·dialogueHistory 가
+   * 함수를 쓰는 이유(참조형이면 세이브 여럿이 같은 객체를 물려받아 한 사람의
+   * 진행이 남에게 보인다)가 여기에는 없다.
+   */
+  story: number
+  /**
+   * 지금 마디를 시작한 뒤 **그 조건이 몇 번 일어났는가**. 마디가 넘어갈 때 0 이 된다.
+   *
+   * 델타를 세는 이유(설계 ②): 이정표처럼 평생 누적을 보면 "손에 익을 때까지
+   * 캐라 40회" 가 얼음 200,000 인 사람에게는 이미 지나간 일이 되어 마디가 뜨는
+   * 순간 끝난다. 사슬은 **지금 이 사람이 방금 한 것**을 세야 한다.
+   *
+   * 세지 않는 조건(`arrive`·`reach`)에서는 쓰이지 않고 0 에 머문다 — 그 둘이 왜
+   * 세지 않는지는 `StoryGoalKind` 에 적혀 있다.
+   *
+   * 기본값이 리터럴이어도 되는 이유는 `story` 와 같다.
+   */
+  storyCount: number
   /**
    * 이미 대금을 받은 달인 id(`masters.csv` 의 id).
    *
@@ -1002,6 +1033,18 @@ export interface GameData {
   placements: Record<string, NodePlacement>
   /** 정의 순서를 유지한다 — 이정표 탭이 동점 진척을 이 순서로 정렬한다(detailMenuTabs.ts) */
   milestones: MilestoneDef[]
+  /**
+   * 스토리 사슬의 마디들 — **슬롯이 아직 펴지지 않은 날것**이다(설계 ①).
+   *
+   * **이것은 GameData 에 싣는다.** 확률표를 뺀 이유(브라켓 경계가 곧 숨은 문턱이라
+   * F12 로 스포일된다)가 여기에는 없다 — 띠에 뜨는 글은 애초에 화면이 플레이어에게
+   * 읽어 주기로 한 것이고, 조건이 가리키는 맵·아이템·레시피·이정표도 전부 이미
+   * 번들에 있다. 이정표(milestones)를 싣는 그 저울이다.
+   *
+   * `milestones` 와 달리 배열 순서에는 뜻이 없다 — 차례는 `step` 이 정하고, 그것이
+   * 0 부터 빈틈없이 연속인지는 빌드가 계열마다 본다(validateStory).
+   */
+  story: StoryStepDef[]
   speakers: Record<string, SpeakerDef>
   /**
    * 상점 등록부. 키는 shopId 다.

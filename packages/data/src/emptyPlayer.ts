@@ -41,6 +41,10 @@ export function emptyPlayer(): PlayerState {
     equipped: {},
     nextActionAt: 0,
     celebrated: [],
+    // 사슬의 첫 마디에 서 있고 아직 아무것도 세지 않았다 — 숙련도 0 과 같은
+    // 성격의 "아직 아무것도 하지 않았다" 이고, 신규 캐릭터와 같은 값이다.
+    story: 0,
+    storyCount: 0,
     // 아직 어떤 달인의 문턱도 넘지 않은 사람이다 — celebrated 와 같은 성격의
     // "아직 아무 일도 없었다"이고, 시뮬레이터가 흉내 내는 것이 정확히 그 상태다.
     rewarded: [],

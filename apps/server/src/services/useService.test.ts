@@ -36,6 +36,9 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     // 행동 간격은 이 판정이 보지도 쓰지도 않는다 — 아래 그 검사가 따로 있다.
     nextActionAt: 0,
     celebrated: [],
+    // 사슬은 이 스위트가 보는 판정이 아니다 — PlayerState 의 필수 칸이라 채워만 둔다.
+    story: 0,
+    storyCount: 0,
     rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     // 이 판정은 맵을 보지 않는다 — PlayerState 의 필수 칸이라 채워만 둔다.

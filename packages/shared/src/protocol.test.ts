@@ -142,6 +142,43 @@ describe('PlayerStateSchema', () => {
     expect(parsed.success && parsed.data.rewarded).toEqual(['ice_master'])
   })
 
+  // 왜: story·storyCount 는 스토리 아크에서 생긴 필드다. gold 와 **정확히 같은
+  //     이유로** 기본값이 필요하고, 이 아크에서는 그 대가가 특히 크다 — 게임은
+  //     이미 공개돼 돌고 있어서 이 기본값이 없으면 **살아 있는 친구들 계정 전부**가
+  //     readPlayers 에서 통째로 버려진다. 사슬을 한 번도 못 본 세이브는 "첫 마디에
+  //     서 있다"와 같은 뜻이라 마이그레이션 없이 0 이 맞는 답이다.
+  //
+  //     그 사람들이 초보 안내를 안 받는 것은 이 기본값이 아니라 story.csv 의
+  //     catchUp 이 진다(설계 ⑦) — 여기 0 은 "아직 아무 판정도 안 돌았다"일 뿐이다.
+  it('story·storyCount 가 통째로 없는 옛 세이브를 첫 마디로 받아들인다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success).toBe(true)
+    expect(parsed.success && parsed.data.story).toBe(0)
+    expect(parsed.success && parsed.data.storyCount).toBe(0)
+  })
+
+  it('적혀 있는 마디와 델타는 그대로 읽는다', () => {
+    const parsed = PlayerStateSchema.safeParse({ ...validSave(), story: 3, storyCount: 77 })
+
+    expect(parsed.success && parsed.data.story).toBe(3)
+    expect(parsed.success && parsed.data.storyCount).toBe(77)
+  })
+
+  // 왜: 마디도 델타도 더하기로만 움직인다 — 음수나 소수는 어떤 경로로도 생기지
+  //     않으므로 있다면 손으로 고쳤거나 버그가 쓴 것이다(gold·stacks 와 같은 게이트).
+  it('음수·소수 마디는 거부한다', () => {
+    expect(PlayerStateSchema.safeParse({ ...validSave(), story: -1 }).success).toBe(false)
+    expect(PlayerStateSchema.safeParse({ ...validSave(), storyCount: 1.5 }).success).toBe(false)
+  })
+
+  // 왜: 사슬은 CSV 가 정하는 게임 값이라 길이가 늘어난다. 여기 상한을 박아 두면
+  //     사슬을 늘리는 날 이미 끝낸 사람의 세이브가 통째로 거절된다 — hp 에 상한
+  //     검증을 안 거는 것과 같은 자리다.
+  it('지금 사슬보다 큰 마디 번호도 읽는다 — 상한은 데이터의 것이지 게이트의 것이 아니다', () => {
+    expect(PlayerStateSchema.safeParse({ ...validSave(), story: 9999 }).success).toBe(true)
+  })
+
   // 왜: weather 는 제작 확장 아크에서 생긴 필드다. gold·rewarded 와 **정확히 같은
   //     이유로** 기본값이 필요하다 — 필수로 두면 그 전에 저장된 세이브가
   //     readPlayers 에서 통째로 버려진다. 가루를 쓴 적 없는 세이브는 "지금 하늘에
