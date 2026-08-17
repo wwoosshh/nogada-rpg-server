@@ -7,6 +7,7 @@ import { CodexPanel } from './CodexPanel.js'
 import { CraftPanel } from './CraftPanel.js'
 import { DeleteCharacterDialog } from './DeleteCharacterDialog.js'
 import { InnPanel } from './InnPanel.js'
+import { MapPanel } from './MapPanel.js'
 import { ShopPanel } from './ShopPanel.js'
 import { formatGold } from './shopModel.js'
 
@@ -72,6 +73,11 @@ export function TopBar(): JSX.Element {
       <BagPanel />
       <CraftPanel />
       <CodexPanel />
+      {/* 세계 지도(설계 ⑤ 후반부) — 여는 손만 다른 형제다. 나머지는 상단 바나
+          컨트롤러가 열지만 이것은 Phaser 의 미니맵을 눌러 연다(HudScene). 그려지는
+          자리가 여기인 이유는 다른 넷과 같다: App.tsx 가 불가침이라 게임 중 React
+          가 그릴 수 있는 자리가 상단 바뿐이다. */}
+      <MapPanel />
       <ShopPanel />
       <InnPanel />
       <DeleteCharacterDialog />

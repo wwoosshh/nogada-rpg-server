@@ -1789,6 +1789,187 @@
 }
 
 /*
+ * ─── 세계 지도 (MapPanel.tsx) ───────────────────────────────────────────────
+ *
+ * 미니맵을 누르면 열리는 전면 패널이고, 껍데기(.panel/.panel__card/.panel__header)는
+ * 가방·제작·상점·수집의 방이 입는 그것 그대로다.
+ *
+ * 본문이 두 단인 것이 이 화면의 설계 전부다(설계 ⑤): 왼쪽에 정사각 지도, 오른쪽에
+ * 목적지 등록부. 전체 출혈(top:0)을 안 쓰는 이유는 가독성이 아니라 **남는 가로**고,
+ * 그 남는 자리에 서는 등록부가 이 화면의 진짜 이유다 — 월드맵에는 문이 넷뿐이고
+ * 채집장은 하나도 월드맵에 없어서, 그림만 보여 주는 지도는 플레이어가 가고 싶은
+ * 곳을 한 곳도 못 찍는다.
+ *
+ * **실측(812×375, 브라우저 getBoundingClientRect):** 카드 780×319 @(16,40),
+ * 카드 안쪽 776×267 — 설계가 적어 둔 「본문 774×265」가 이 안쪽 상자다(2px 차는
+ * 테두리 계산의 어림이다). 여기서 아래 `padding` 이 세 면을 16px 씩 먹으므로 지도
+ * 상자는 253(테두리 포함), 그림은 **251px = 3.14px/타일**이 된다. 설계가 실측으로
+ * 적은 3.31 보다 5% 작지만 길·건물 넷·호수·해안은 그대로 또렷하다(눈으로 확인).
+ * 여백을 지우면 3.31 을 되찾을 수 있는데 그러지 않는 이유는 형제 패널들이 전부 같은
+ * 여백을 쓰기 때문이다 — 어느 패널이 열려도 같은 상자처럼 보이는 것이 더 크다.
+ * 등록부는 남는 475px 을 쓴다.
+ */
+.worldmap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/*
+ * 지도 상자 — **높이가 폭을 정한다.**
+ *
+ * `aspect-ratio` 를 쓰는 이유: 본문 높이는 `.panel` 껍데기(뷰포트 - 상단바 - 여백
+ * - 헤더)가 정하는 유동값이라 여기서 265 를 박으면 창을 리사이즈한 데스크톱과
+ * 노치가 다른 폰에서 지도만 상자를 벗어난다. 그림을 굽는 배율도 이 상자를 **재서**
+ * 나온다(MapPanel 의 WorldMapPicture).
+ */
+.worldmap__box {
+  flex: none;
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-ink);
+  border: 1px solid var(--c-panel-edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* 이름표가 그림 기준으로 서야 하므로 자리 기준이 상자가 아니라 그림이다. */
+.worldmap__frame {
+  position: relative;
+}
+
+.worldmap__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 축소도는 이미 기기 픽셀로 구워져 1:1 로 떨어진다 — 브라우저가 한 번 더
+     보간하면 그 또렷함이 사라진다(픽셀아트라 계단이 곧 그림이다). */
+  image-rendering: pixelated;
+}
+
+/*
+ * 마을 이름표 — 그림 위에 얹는 유일한 것.
+ *
+ * 265px 짜리 월드맵은 길·건물·호수·해안이 또렷하지만 어느 덩어리가 눈의 마을인지는
+ * 한 글자도 말하지 않는다. 미니맵이 같은 맵에서 이미 문 넷을 네모로 찍고 있으므로,
+ * 더 큰 화면이 그보다 적게 말하면 전체화면이 축소도의 하위 호환이 된다.
+ *
+ * `translate(-50%, -50%)` 로 밟는 칸의 가운데에 건다. 상자에 `overflow: hidden` 을
+ * 두는 것은 문이 가장자리로 옮겨 가는 날 이름표가 패널 밖으로 새지 않게 하려는
+ * 것이다 — 오늘 문 넷은 안쪽에 있어 새지 않는다.
+ */
+.worldmap__pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  color: var(--c-parchment);
+  background: rgb(36 28 28 / 75%);
+  border: 1px solid var(--c-accent);
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+/* 그림이 오기 전(첫 열림의 한 번)과 못 그렸을 때. 빈 상자로 두지 않는다. */
+.worldmap__note {
+  margin: 0;
+  padding: var(--space-2);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--c-parchment-dim);
+}
+
+.worldmap__list {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.worldmap__caption {
+  flex: none;
+  margin: 0 0 var(--space-1);
+  font-size: 11px;
+  color: var(--c-parchment-dim);
+}
+
+/*
+ * 열 줄이 **스크롤 없이** 들어간다 — 812×375 에서 이 칸의 안높이가 231px 이고
+ * 열 줄이 220px 이다(실측).
+ *
+ * 처음엔 줄마다 위아래 2px 을 뒀는데 그것이 240px 이라 **9px 이 넘쳤다.** 9px
+ * 짜리 스크롤은 최악의 종류다: 화면은 다 보이는 것처럼 생겼는데 마지막 줄만
+ * 잘려 있어, 열 곳 중 하나가 있는 줄도 모른다 — 「잠긴 것까지 전부 보인다」가
+ * 그 한 줄에서 조용히 깨진다.
+ *
+ * 그래도 `overflow-y: auto` 를 두는 이유는 그 여유가 데이터에 달려 있어서다 —
+ * 맵이 하나 늘면 줄도 하나 늘고, 열두 장이 되는 날 넘친다. 그날 잘리는 대신
+ * 스크롤되는 쪽이 같은 약속을 지키는 유일한 길이다.
+ */
+.worldmap__rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.worldmap__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 1px 0;
+  border-bottom: 1px solid rgb(107 86 70 / 35%);
+}
+
+/*
+ * 지금 서 있는 곳 — 이 화면이 답하는 물음이 「내가 어디 있는지 모르겠다」라서
+ * 그 한 줄만 밝다. 가/불가 구분이 아니다(설계 ⑨): 나머지 아홉 줄은 다 같은 밝기로,
+ * 안 가 본 곳도 이름을 그대로 적는다.
+ */
+.worldmap__row--here .worldmap__place,
+.worldmap__row--here .worldmap__hops {
+  color: var(--c-accent);
+}
+
+.worldmap__place {
+  flex: none;
+  width: 92px;
+  font-size: 13px;
+  color: var(--c-parchment);
+}
+
+.worldmap__hops {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  font-size: 13px;
+  color: var(--c-parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 거기서 열리는 것 — 상점 요구치와 결계. 없는 곳은 빈 칸이다(「없음」을 안 적는다). */
+.worldmap__opens {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--c-parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * ─── 세로로 든 화면 ─────────────────────────────────────────────────────────
  *
  * **레이아웃을 정하는 유일한 @media 다.** 반응형으로 가는 문을 여는 것이 아니다 —

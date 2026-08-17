@@ -189,6 +189,29 @@ export class HudScene extends Phaser.Scene {
       .setStrokeStyle(MINIMAP.border, PANEL_EDGE_COLOR, 1)
       .setVisible(false)
 
+    // **누르면 전체화면 세계 지도**(설계 ⑤ 후반부). 상자의 원점이 (0,0) 이라
+    // 히트 영역도 로컬 (0,0) 에서 시작하고, 크기가 고정이라(MINIMAP.size) 리사이즈
+    // 마다 다시 잡을 필요가 없다 — PanelScene 의 닫기 버튼과 같은 자리다.
+    //
+    // 여는 것은 **스토어 액션 한 줄**이고 그리는 것은 DOM(MapPanel)이다. 이 씬이
+    // 지도 화면을 직접 그리지 않는 이유는 그 화면의 절반이 열 줄짜리 표라서다 —
+    // Phaser 는 글자 줄만 그릴 수 있어(PanelScene) 두 단짜리 목록과 줄바꿈을 손으로
+    // 다시 만들게 되고, 그 벽은 가방·제작·상점·수집의 방이 이미 만나 같은 답을 낸
+    // 자리다(MapPanel 클래스 문서).
+    this.minimapBox.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, MINIMAP.size, MINIMAP.size),
+      Phaser.Geom.Rectangle.Contains,
+    )
+    this.minimapBox.on('pointerdown', () => {
+      // 잠긴 동안에는 미니맵이 안 보인다(applyVisibility). Phaser 는 안 보이는
+      // 오브젝트를 히트 테스트에서 거르지만, 그 사실에 기대지 않고 여기서도 묻는다 —
+      // 패널이 열려 있는데 그 밑의 칸을 누르는 것만으로 지도가 열리면, 대사창을
+      // 닫는 손가락이 지도를 여는 날이 온다(PanelScene 의 탭 hitZone 이 같은 이유로
+      // 같은 가드를 둔다).
+      if (this.locked) return
+      useGameStore.getState().setOpenPanel('map')
+    })
+
     this.box = this.add
       .rectangle(0, 0, 10, 10, PANEL_COLOR, BAND_ALPHA)
       .setOrigin(0, 0)

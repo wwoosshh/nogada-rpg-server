@@ -170,8 +170,9 @@ export interface MenuRequest {
  * 지금 열려 있는 전면 패널 — 열림 상태의 유일한 주인이다(설계 §8-앞 6).
  *
  * 값이 하나라서 상호배제는 공짜다: 가방을 연 채 메뉴를 열면 이전 값이 덮이며
- * 닫힌다. `bag`·`craft`·`codex` 는 DOM(React, TopBar 가 마운트)이 그리고 `menu` 는
- * Phaser(PanelScene)가 그린다 — 그리는 쪽이 둘이어도 읽는 값은 이것 하나다.
+ * 닫힌다. `bag`·`craft`·`codex`·`map` 은 DOM(React, TopBar 가 마운트)이 그리고
+ * `menu` 는 Phaser(PanelScene)가 그린다 — 그리는 쪽이 둘이어도 읽는 값은 이것
+ * 하나다.
  *
  * 입력 라우팅(I/C/ESC)은 여기가 아니라 PanelScene.applyInput 이 한다. DOM 에
  * 키보드 리스너를 두지 않는 이유는 대사창 계약(대화 중 I/C 삼킴) 때문이다 —
@@ -181,8 +182,13 @@ export interface MenuRequest {
  * 열려 있는 동안 세계 입력이 잠기고 가상 컨트롤러가 숨는 것도 전부 `openPanel !==
  * null` 하나를 보는 값 무관한 규칙이라(PanelScene.applyInput·applyWorldLock) 새
  * 패널은 그것을 공짜로 물려받는다 — 새 입력 키를 파지 않는 이유이기도 하다.
+ *
+ * **`'map'` 도 같은 자리다**(설계 ⑤ 후반부·⑧-9 — 미니맵을 누르면 열리는 전체화면
+ * 세계 지도). 여는 손이 상단 바가 아니라 Phaser(HudScene 의 미니맵)라는 것만 다른데,
+ * 그것도 톱니가 이미 낸 길의 반대 방향일 뿐이다 — 스토어 액션 한 줄을 부르고,
+ * 값의 주인은 여전히 여기 하나다.
  */
-export type OpenPanel = 'bag' | 'craft' | 'codex' | 'menu' | ShopPanelKey | InnPanelKey | null
+export type OpenPanel = 'bag' | 'craft' | 'codex' | 'map' | 'menu' | ShopPanelKey | InnPanelKey | null
 
 /**
  * 상점 패널의 열림 값 — 상점 **id 를 품은 문자열 키**다(설계 §6-앞 20).
