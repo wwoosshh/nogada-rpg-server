@@ -3,6 +3,8 @@ import { ENHANCE_CAP, SKILL_LABELS, type GameData, type PlayerState } from '@nog
 import { testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { MILESTONE_FOLD, SETTINGS_ACTION, TABS } from './detailMenuTabs.js'
+import { panelListRect } from './panelBox.js'
+import { ROW_GAP } from './scrollListGeometry.js'
 
 /** 아무것도 안 펼친 상태 — 접이 머리를 쓰지 않는 탭들이 넘기는 값이다. */
 const 접힘: ReadonlySet<string> = new Set()
@@ -207,18 +209,47 @@ describe('이정표 탭 — 묶음과 접기', () => {
     return lines(player, expanded).filter((l) => !l.groupId)
   }
 
+  /**
+   * **펼친 자루 하나의 내용만** — 그 머리 다음 줄부터 다음 머리 직전까지.
+   *
+   * 줄 배열은 평평하다(머리에만 groupId 가 붙는다). 자루의 경계를 여기서 자르지
+   * 않으면 「40개가 전부 나온다」처럼 **존재만** 보는 판이 되고, 그러면 두 자루의
+   * 내용물을 통째로 맞바꿔도 아무 판도 안 문다 — 실제로 그랬다.
+   */
+  function 자루(player: PlayerState, id: string) {
+    const all = lines(player, 펼침)
+    const head = all.findIndex((l) => l.groupId === id)
+    if (head < 0) throw new Error(`자루 머리를 못 찾았다: ${id}`)
+    const after = all.slice(head + 1)
+    const next = after.findIndex((l) => l.groupId)
+    return next < 0 ? after : after.slice(0, next)
+  }
+
+  /** 자루 안의 이름 줄(짝수)만 / 효과 줄(홀수)만 — 이정표 하나가 두 줄이다. */
+  const 이름줄 = (bag: readonly { text: string }[]) =>
+    bag.filter((_l, i) => i % 2 === 0).map((l) => l.text)
+  const 효과줄 = (bag: readonly { text: string }[]) =>
+    bag.filter((_l, i) => i % 2 === 1).map((l) => l.text)
+
   const 초보 = emptyPlayer()
 
-  // 왜: **실측이 정한 수다.** 이 목록의 줄 하나는 18px 이고 뷰포트는 812×375 에서
-  //     255px 다 — 열네 줄(252px)까지가 화면이고 열여섯 줄이면 288px 라 접이 머리
-  //     둘이 통째로 아래로 밀려난다. 그 둘이 나머지 서른넷에 닿는 유일한 손잡이라,
-  //     안 보이는 자리에 놓이면 접은 것이 아니라 지운 것이 된다.
-  it('신규의 첫 화면은 12줄 + 접힌 머리 둘 — 뷰포트 255px 에 들어가는 수다', () => {
+  // 왜: **실측이 정한 수다.** 첫 화면이 뷰포트를 넘으면 나머지 서른넷에 닿는
+  //     손잡이 둘이 처음에 안 보인다(사라지지는 않는다 — 이 목록은 끌어서 도는
+  //     ScrollList 다). 열네 줄까지가 화면이다.
+  //
+  //     **두 수를 여기서 손으로 다시 적지 않는다.** 뷰포트 높이는 화면이 쓰는 그
+  //     함수(panelListRect)에서, 줄 사이 여백은 ScrollList 가 쓰는 그 상수에서
+  //     그대로 가져온다 — 여백·헤더·패널 여백 중 무엇이 바뀌어도 화면과 이 판이
+  //     같이 움직여야 한다. 옮겨 적던 시절 이 식은 실제 contentHeight 보다 3px
+  //     작았다(buildRows 는 마지막 줄 뒤에도 ROW_GAP 을 더한다).
+  //     줄 높이 15 만 여기 상수로 남는다 — 그것은 Phaser 가 재는 값이라 이 판이
+  //     구할 수 없다(실기에서 읽은 수다).
+  it('신규의 첫 화면은 12줄 + 접힌 머리 둘 — 뷰포트에 스크롤 없이 들어간다', () => {
+    const 줄높이 = 15
     const first = lines(초보)
     expect(first.filter((l) => l.groupId)).toHaveLength(2)
     expect(first.filter((l) => !l.groupId)).toHaveLength(12)
-    // 줄 높이 15 + 줄 사이 3(ScrollList.ROW_GAP). 마지막 줄에는 뒤 여백이 없다.
-    expect(first.length * 18 - 3).toBeLessThanOrEqual(255)
+    expect(first.length * (줄높이 + ROW_GAP)).toBeLessThanOrEqual(panelListRect(812, 375).height)
   })
 
   // 왜: 이 아크가 고치려던 것이 정확히 이 문자열의 개수다 — 열넷이었다.
@@ -261,6 +292,46 @@ describe('이정표 탭 — 묶음과 접기', () => {
     expect(heads[0]!.text).toContain('그 뒤의 문 17개')
     expect(heads[1]!.text).toContain('칭호 17개')
     for (const head of heads) expect(head.text).toContain('[펼치기]')
+  })
+
+  // 왜: **두 자루의 내용을 통째로 맞바꿔도 나머지 판이 전부 초록이었다.** 신규
+  //     상태에서 두 자루가 우연히 정확히 17개씩이라 개수 판이 못 갈랐고, 「펼치면
+  //     40개가 전부 나온다」는 존재만 보고 어느 자루에서 나왔는지는 안 봤다. 즉
+  //     순수 칭호 열일곱이 「그 뒤의 문」에 들어가고 실제 문 열일곱이 「칭호」에
+  //     들어가는 — 이 아크가 고치려던 것을 정확히 뒤집은 — 화면이 관문을 통과했다.
+  //     자루의 이름과 내용을 여기서 못박는다.
+  it('자루 둘의 내용이 이름과 맞물린다 — 문 자루에 칭호가 없고, 칭호 자루는 전부 칭호다', () => {
+    const 문 = 자루(초보, MILESTONE_FOLD.gates)
+    const 칭호 = 자루(초보, MILESTONE_FOLD.titles)
+    expect(이름줄(문)).toHaveLength(17)
+    expect(이름줄(칭호)).toHaveLength(17)
+
+    // 문 자루의 효과 줄은 무엇이 열리는지를 말한다 — '칭호' 라는 글자가 한 번도
+    // 안 나온다(순수 칭호만 그 문장을 쓴다).
+    expect(효과줄(문).filter((t) => t.includes('칭호'))).toEqual([])
+    // 칭호 자루는 반대로 **전부** 그 문장이다.
+    expect(효과줄(칭호).every((t) => t.startsWith('칭호'))).toBe(true)
+
+    // 각 자루의 첫 항목까지 못박는다 — 묶음 순서(얼음이 먼저)와 자루 소속이
+    // 한 줄에 같이 걸린다.
+    expect(이름줄(문)[0]).toBe('얼음이 손에 익다   얼음 숙련 0 / 10,000')
+    expect(이름줄(칭호)[0]).toBe('얼음을 오래 다루다   얼음 숙련 0 / 50,000')
+  })
+
+  // 왜: **정렬 호출을 통째로 지워도 관문이 초록이었다.** 화면은 실제로 달라진다 —
+  //     milestones.csv 의 조합 행 순서는 200·500·1500·5000·10000(주괴)·25000·
+  //     10000(자동 반복, 18행)·100000·50000(파일 맨 끝)이라, 정렬이 없으면 펼친
+  //     자루에서 25,000 다음에 10,000 이 온다. 「정렬을 반대로 한 것」은 첫 화면
+  //     머리가 바뀌어 잡히지만 「정렬을 안 한 것」은 여기서만 잡힌다. 지금 화면이
+  //     옳은 것은 CSV 행 순서가 대체로 오름차순이라는 우연 위에 서 있고,
+  //     milestones.csv 는 정렬을 요구받지 않는 파일이다.
+  it('펼친 자루 안에서 같은 묶음의 문턱은 오름차순이다', () => {
+    const 조합 = 이름줄(자루(초보, MILESTONE_FOLD.gates))
+      .filter((t) => t.includes('조합 숙련'))
+      .map((t) => Number(/\/ ([\d,]+)$/.exec(t)![1]!.replace(/,/g, '')))
+    // 200 은 이 묶음의 머리라 자루에 없다. 같은 10,000 둘(미스릴 주괴·자동 반복)은
+    // 안정 정렬이라 CSV 행 순서를 그대로 지킨다.
+    expect(조합).toEqual([500, 1500, 5000, 10000, 10000, 25000, 50000])
   })
 
   // 왜: 접는 것과 숨기는 것은 다르다(설계 ④·⑥). 펼치면 40개가 전부, 잠긴 것까지
@@ -315,6 +386,28 @@ describe('이정표 탭 — 묶음과 접기', () => {
     const 위 = bodyLines(고인물)
     expect(위[0]!.text).toBe('얼음 결계를 넘을 수 있다   얼음 숙련 20,000 / 85,000')
     expect(위[1]!.text).toBe('달성하면 얼음 채집장의 결계가 더는 밀어내지 않는다')
+  })
+
+  // 왜: 머리가 자루에 담긴 **전부**를 세던 시절, 신규는 40개가 다 미달성이라 두
+  //     수가 우연히 같아서 그 어긋남이 안 보였다. 지금 서버에 살아 있는 얼음
+  //     200,000 테스터에게는 「그 뒤의 문 N개」의 N 안에 **이미 연 문**이 섞인다 —
+  //     이름과 수가 어긋나는 것이다. 그렇다고 넘은 것을 아예 안 적으면 「15개」라고
+  //     써 놓고 펼치면 열여덟 줄이 나온다. 그래서 남은 수를 앞에, 넘은 몫을 ✓ 로
+  //     뒤에 적는다. 이 판은 **고인물 상태**로만 물 수 있다.
+  it('머리는 남은 개수를 세고, 이미 넘은 것은 ✓ 로 따로 적는다', () => {
+    const 얼음장인: PlayerState = {
+      ...emptyPlayer(),
+      skills: { ice: 200000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+    }
+    const heads = lines(얼음장인).filter((l) => l.groupId)
+    // 얼음 묶음은 열 문이 안 남아 머리가 없다 — 문 셋(1,000·10,000·85,000)이
+    // 전부 자루로 들어가고 그 셋은 이미 열려 있다.
+    expect(heads[0]!.text).toContain('그 뒤의 문 15개 ✓3')
+    expect(heads[1]!.text).toContain('칭호 15개 ✓2')
+    // 신규에게는 넘은 것이 없으므로 ✓ 조각 자체가 안 붙는다.
+    for (const head of lines(초보).filter((l) => l.groupId)) {
+      expect(head.text).not.toContain('✓')
+    }
   })
 })
 

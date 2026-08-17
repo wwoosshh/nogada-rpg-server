@@ -27,6 +27,19 @@
  * 그것이었다.
  */
 
+/**
+ * 줄 사이 세로 여백. 폰트 크기와 무관하게 고정값을 쓴다 — 줄마다 폰트 크기가
+ * 달라도 리듬이 일정해야 읽기 편하다. `ScrollList.buildRows` 가 이 값으로 줄을
+ * 쌓는다.
+ *
+ * **ScrollList 가 아니라 여기 있는 이유는 이 파일이 Phaser 를 안 부르기 때문이다.**
+ * 「첫 화면이 스크롤 없이 들어가는가」를 무는 검사(detailMenuTabs.test.ts)가 이
+ * 수를 손으로 다시 적고 있었는데, 그 검사는 node 환경이라 ScrollList 를 import
+ * 하면 Phaser 가 `window` 를 찾다가 죽는다. 옮겨 적던 식은 실제 contentHeight
+ * 보다 3px 작았다 — buildRows 는 **마지막 줄 뒤에도** 이만큼을 더한다.
+ */
+export const ROW_GAP = 3
+
 /** 누를 수 있는 한 행이 내용 좌표에서 차지하는 세로 범위(ScrollList.buildRows 가 만든다). */
 export interface ScrollGroupBounds {
   id: string

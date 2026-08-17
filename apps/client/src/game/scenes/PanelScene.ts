@@ -9,7 +9,7 @@ import {
   type DetailMenuTab,
 } from '../detailMenuTabs.js'
 import { addText, FONT_SIZE } from '../gameText.js'
-import { PANEL_BOX, panelBoxRect } from '../panelBox.js'
+import { PANEL_BOX, panelBoxRect, panelListRect } from '../panelBox.js'
 import { ScrollList } from '../ScrollList.js'
 import { renderScale, viewSize } from '../viewport.js'
 import type { ControlScene } from './ControlScene.js'
@@ -46,10 +46,6 @@ const PANEL_ALPHA = 0.94
  */
 const TOP_MARGIN = PANEL_BOX.topMargin
 const HEADER_HEIGHT = PANEL_BOX.headerHeight
-/** 헤더 줄 바로 아래, 실제 내용(목록)이 시작되기 전 틈. */
-const CONTENT_GAP = 8
-/** 목록 좌우·아래 안쪽 여백. */
-const CONTENT_PADDING = 8
 
 /** 손가락 최소 크기 — ControlScene.MIN_BUTTON_DIAMETER 와 같은 스펙값이다(그 파일 상단 주석과 같은 이유로 이 파일도 리터럴을 다시 옮겨 적는다 — 두 파일은 상수를 공유하지 않는다). */
 const CLOSE_BUTTON_DIAMETER = 48
@@ -584,12 +580,9 @@ export class PanelScene extends Phaser.Scene {
       .setPosition(boxLeft + tabWidth * activeIndex + tabWidth / 2, boxTop + HEADER_HEIGHT - TAB_INDICATOR_HEIGHT)
       .setSize(tabWidth * 0.6, TAB_INDICATOR_HEIGHT)
 
-    // 목록 — 헤더 아래 남은 영역을 꽉 채운다.
-    const contentTop = boxTop + HEADER_HEIGHT
-    const listTop = contentTop + CONTENT_GAP
-    const listLeft = boxLeft + CONTENT_PADDING
-    const listWidth = boxWidth - CONTENT_PADDING * 2
-    const listHeight = Math.max(0, boxTop + boxHeight - CONTENT_PADDING - listTop)
-    this.scrollList.setViewport(listLeft, listTop, listWidth, listHeight)
+    // 목록 — 헤더 아래 남은 영역을 꽉 채운다. 그 사각형을 여기서 다시 계산하지
+    // 않는 이유는 검사도 같은 수를 봐야 하기 때문이다(panelBox.ts 의 panelListRect).
+    const list = panelListRect(width, height)
+    this.scrollList.setViewport(list.x, list.y, list.width, list.height)
   }
 }

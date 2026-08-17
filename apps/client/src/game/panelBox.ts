@@ -36,6 +36,10 @@ export interface ScreenRect {
  *   놓이고, 탭 라벨은 작아도 손끝으로 누를 칸은 이 줄 전체 높이만큼 크다.
  * - `maxWidth` 는 데스크톱에서 개발용 창을 비정상적으로 넓게 열었을 때 목록 줄이
  *   화면 끝까지 늘어지는 것만 막는 방어값이다(실기 화면은 여기 닿지 않는다).
+ * - `contentGap` 은 헤더 줄 바로 아래, 목록이 시작되기 전 틈이고 `contentPadding` 은
+ *   목록의 좌우·아래 안쪽 여백이다. 이 둘도 PanelScene 의 리터럴이었는데,
+ *   **뷰포트 높이를 무는 검사가 이 둘을 손으로 다시 옮겨 적고 있었다** — 셋 중
+ *   무엇이 바뀌어도 화면보다 검사가 먼저 거짓말을 하는 자리라 여기로 올렸다.
  */
 export const PANEL_BOX = {
   topMargin: 40,
@@ -44,6 +48,8 @@ export const PANEL_BOX = {
   minHeight: 64,
   maxWidth: 900,
   headerHeight: 48,
+  contentGap: 8,
+  contentPadding: 8,
 } as const
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi)
@@ -69,6 +75,25 @@ export function panelBoxRect(viewWidth: number, viewHeight: number): ScreenRect 
 export function panelHeaderRect(viewWidth: number, viewHeight: number): ScreenRect {
   const box = panelBoxRect(viewWidth, viewHeight)
   return { x: box.x, y: box.y, width: box.width, height: Math.min(PANEL_BOX.headerHeight, box.height) }
+}
+
+/**
+ * 카드 안 **목록 뷰포트** — 탭 내용(ScrollList)이 실제로 보이는 사각형.
+ *
+ * PanelScene.layout() 이 ScrollList.setViewport() 에 넘기는 그 수이고, 이정표 탭의
+ * 「첫 화면이 스크롤 없이 들어가는가」를 무는 검사도 같은 함수를 부른다. 812×375
+ * 에서 높이 255px 다. 두 자리가 각각 손으로 계산하면 폰트·여백이 바뀐 날 화면은
+ * 넘치는데 검사만 초록으로 남는다 — 그 어긋남이 실제로 있었다(3px).
+ */
+export function panelListRect(viewWidth: number, viewHeight: number): ScreenRect {
+  const box = panelBoxRect(viewWidth, viewHeight)
+  const top = box.y + PANEL_BOX.headerHeight + PANEL_BOX.contentGap
+  return {
+    x: box.x + PANEL_BOX.contentPadding,
+    y: top,
+    width: Math.max(0, box.width - PANEL_BOX.contentPadding * 2),
+    height: Math.max(0, box.y + box.height - PANEL_BOX.contentPadding - top),
+  }
 }
 
 /** 두 사각형이 실제로 겹치는 부분. 안 겹치면 null — 「0×0 이 닿았다」와 구분한다. */

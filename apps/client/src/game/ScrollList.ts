@@ -3,6 +3,7 @@ import { addText } from './gameText.js'
 import {
   dragDistance,
   groupAtPointer,
+  ROW_GAP,
   scrollAfterDrag,
   type ListCamera,
   type ScrollGroupBounds,
@@ -23,8 +24,6 @@ export interface ScrollListLine {
   groupId?: string | null
 }
 
-/** 줄 사이 세로 여백. 폰트 크기와 무관하게 고정값을 쓴다 — 줄마다 폰트 크기가 달라도 리듬이 일정해야 읽기 편하다. */
-const ROW_GAP = 3
 
 /**
  * 손가락이 이 거리(px)를 넘게 움직이면 "그룹을 쥐고 있다"를 놓고 순수
