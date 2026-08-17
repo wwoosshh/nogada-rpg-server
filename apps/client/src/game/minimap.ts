@@ -95,14 +95,19 @@ export function tileToScreen(fit: MinimapFit, x: number, y: number): { x: number
 }
 
 /**
- * 깃발 그림의 크기 — 깃대 높이와 깃폭·깃높이.
+ * 깃발 그림의 크기 — 깃대의 굵기·높이, 깃폭·깃높이, 그리고 깃대와 깃폭 사이의 틈.
  *
  * 화면 쪽 값인데 여기 있는 이유는 MINIMAP 과 같다: **이것이 상자를 넘지 않는가**를
  * 재려면 자가 이 수들을 봐야 한다. 깃발은 칸 위로 서므로 맨 윗줄의 칸에서는
  * 상자 밖(헤더 자리)으로 삐져나갈 수 있고, 그것은 화면에서 "테두리가 깨진 것"으로
  * 보인다 — 실제로 눈의마을 북문(맨 윗줄)에서 그렇게 나왔다.
+ *
+ * `poleWidth`·`bannerGap` 까지 여기 적는 이유는 그 세로 사고를 고치고도 **가로로는
+ * 같은 사고가 남아 있었기** 때문이다: 두 수가 HudScene 안의 리터럴이던 동안 자는
+ * 깃폭의 오른끝이 어디인지 아예 계산할 수 없었고, 맵 열한 장 중 아홉 장이 맨 오른쪽
+ * 칸에서 상자 밖 허공으로 삐져나가는 채로 초록이었다.
  */
-export const FLAG = { poleHeight: 9, bannerWidth: 7, bannerHeight: 6 } as const
+export const FLAG = { poleWidth: 1, poleHeight: 9, bannerWidth: 7, bannerHeight: 6, bannerGap: 1 } as const
 
 /** 깃발 하나를 어디에 어떻게 세우는가. */
 export interface FlagGlyph {
@@ -121,11 +126,34 @@ export interface FlagGlyph {
    * 맨 위라는 뜻이고, 상자는 112px 이라 아래로는 100px 넘게 남는다.
    */
   up: boolean
+  /**
+   * 깃폭이 깃대의 **오른쪽**에 달리는가.
+   *
+   * `up` 과 같은 사고의 가로판이고, 이쪽이 더 자주 난다: 맵의 맨 오른쪽 칸은
+   * 그림이 상자 오른끝에 닿는 자리라(contain-fit 이 한 축을 꽉 채운다) 깃폭 8px 이
+   * 통째로 상자 밖으로 나간다. 항구마을 동문 (59,13) 과 북동쪽마을 동문 (74,10) —
+   * 설계 ③ 표가 **시작 마을 넷 중 둘의 나가는 문**으로 적어 둔 바로 그 칸이다.
+   * 거기서 초록 삼각형이 미니맵과 띠 사이의 6px 틈에 떠 있었다.
+   *
+   * **넘칠 때만 뒤집는다** — 요구 숫자 라벨처럼 "상자의 어느 절반인가"로 정하지
+   * 않는다. 라벨은 글이라 어느 쪽에 붙든 읽히지만 깃발은 모양으로 알아보는
+   * 표식이라, 같은 표식이 맵마다 다른 모양이면 알아보는 데 시간이 든다. 뒤집기는
+   * 기하가 강제할 때만 일어나야 한다.
+   *
+   * 둘 중 하나는 언제나 자리가 있다: 밑동은 상자 안(11~123)이고 깃폭은 8px 이라,
+   * 오른쪽이 안 되려면 밑동이 115 보다 오른쪽이어야 하는데 그러면 왼쪽은 반드시 된다.
+   */
+  right: boolean
 }
 
 export function flagGlyph(fit: MinimapFit, x: number, y: number): FlagGlyph {
   const at = tileToScreen(fit, x, y)
-  return { x: at.x, y: at.y, up: at.y - MINIMAP_ORIGIN.y >= FLAG.poleHeight }
+  return {
+    x: at.x,
+    y: at.y,
+    up: at.y - MINIMAP_ORIGIN.y >= FLAG.poleHeight,
+    right: at.x + FLAG.bannerGap + FLAG.bannerWidth <= MINIMAP_ORIGIN.x + MINIMAP_INNER,
+  }
 }
 
 /** 지도 위의 문 하나. */
@@ -176,6 +204,16 @@ export function minimapMarks(
  *
  * 결계 문(`fromMap === toMap`)은 뺄 이유가 없어 그대로 찍는다. 그 문이 어디 있고
  * 얼마를 요구하는지는 오늘 벽 앞에 서야만 보이는 정보다.
+ *
+ * **`gateTide` 는 여기서 안 본다 — 그래도 되는 것이 아니라 아직 안 걸린 것이다.**
+ * `transitions` 에는 숙련 말고 물때로도 막는 칸이 있는데(`gateTide`), 표식은
+ * `gateValue` 만 읽으므로 **물때만** 지는 문이 생기면 미니맵은 그것을 「지금
+ * 지나갈 수 있는 문」인 노란 네모로 말한다. 요구치를 안 말하는 문은 설계 ⑥ 의
+ * 장치가 아니라 함정이다(채집장노인의 거짓말 네 줄을 고친 것과 같은 이유).
+ * 오늘 물때 칸이 찬 전환은 한 줄뿐이고 그 줄은 herb 85,000 도 함께 져서 붉게
+ * 찍히므로 화면은 아직 참이다 — **그 사실이 깨지는 날 먼저 말하라고 자를 걸어
+ * 두었다**(minimap.test.ts 의 「물때만 걸린 문이 아직 하나도 없다」). 그날 정할
+ * 것은 색·글자이지 이 함수의 모양이 아니라서, 없는 문에 대고 지금 짓지 않는다.
  */
 function doorsOn(data: GameData, mapId: string): MinimapDoor[] {
   const out: MinimapDoor[] = []

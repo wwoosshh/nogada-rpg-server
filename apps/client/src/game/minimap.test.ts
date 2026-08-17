@@ -130,23 +130,41 @@ describe('미니맵 — 배율', () => {
 })
 
 describe('미니맵 — 깃발 그림', () => {
-  it('어느 맵 어느 칸에 세워도 상자를 안 넘는다', () => {
+  it('어느 맵 어느 칸에 세워도 상자를 안 넘는다 — 네 변 전부', () => {
     // 브라우저에서 실제로 넘겼다: 눈의마을 북문은 맨 윗줄(y=0)이라 위로 세운
     // 깃대가 상자 위 헤더 자리로 삐져나갔고, 화면에서는 테두리가 깨진 것으로
     // 보였다. 그때부터 이 자가 **모든 맵의 모든 칸**을 돈다.
+    //
+    // **처음엔 세로만 쟀다**(y 를 다 돌고 x 는 양 끝 두 줄만). 그래서 같은 사고의
+    // 가로판 — 맨 오른쪽 칸에서 깃폭 8px 이 통째로 상자 밖으로 나가는 것 — 이
+    // 열한 장 중 아홉 장에서 나는 채로 초록이었다. 항구마을 동문(59,13)과
+    // 북동쪽마을 동문(74,10), 즉 시작 마을 넷 중 둘의 첫 60초가 거기 있었다.
+    // 이제 **네 변을 다 재고 칸도 전부 돈다** — 맵 열한 장 다 합쳐 2만 칸이다.
+    const left = MINIMAP_ORIGIN.x
+    const right = MINIMAP_ORIGIN.x + MINIMAP_INNER
     const top = MINIMAP_ORIGIN.y
     const bottom = MINIMAP_ORIGIN.y + MINIMAP_INNER
     for (const map of Object.values(data.maps)) {
       const fit = minimapFit(map.width, map.height)
       for (let y = 0; y < map.height; y++) {
-        for (const x of [0, map.width - 1]) {
+        for (let x = 0; x < map.width; x++) {
           const g = flagGlyph(fit, x, y)
+          const 그곳 = `${map.id} (${x},${y})`
+
           // 깃대는 밑동에서 반대쪽 끝까지, 깃발은 그 끝에 매달린다.
           const 끝 = g.up ? g.y - FLAG.poleHeight : g.y + FLAG.poleHeight
           const 위 = Math.min(g.y, g.up ? 끝 : 끝 - FLAG.bannerHeight)
           const 아래 = Math.max(g.y, g.up ? 끝 + FLAG.bannerHeight : 끝)
-          expect(위, `${map.id} (${x},${y}) 가 상자 위로 넘친다`).toBeGreaterThanOrEqual(top)
-          expect(아래, `${map.id} (${x},${y}) 가 상자 아래로 넘친다`).toBeLessThanOrEqual(bottom)
+          expect(위, `${그곳} 가 상자 위로 넘친다`).toBeGreaterThanOrEqual(top)
+          expect(아래, `${그곳} 가 상자 아래로 넘친다`).toBeLessThanOrEqual(bottom)
+
+          // 가로는 깃대(밑동을 가운데로 둔 굵기)와 깃폭(붙은 쪽에서 반대쪽으로)이다.
+          const 깃폭붙는곳 = g.x + (g.right ? FLAG.bannerGap : -FLAG.bannerGap)
+          const 깃폭끝 = 깃폭붙는곳 + (g.right ? FLAG.bannerWidth : -FLAG.bannerWidth)
+          const 왼 = Math.min(g.x - FLAG.poleWidth / 2, 깃폭붙는곳, 깃폭끝)
+          const 오른 = Math.max(g.x + FLAG.poleWidth / 2, 깃폭붙는곳, 깃폭끝)
+          expect(왼, `${그곳} 가 상자 왼쪽으로 넘친다`).toBeGreaterThanOrEqual(left)
+          expect(오른, `${그곳} 가 상자 오른쪽으로 넘친다`).toBeLessThanOrEqual(right)
         }
       }
     }
@@ -159,6 +177,16 @@ describe('미니맵 — 깃발 그림', () => {
     expect(flagGlyph(fit, 15, 0).up, '맨 윗줄인데 위로 섰다').toBe(false)
     expect(flagGlyph(fit, 15, 15).up, '한가운데인데 뒤집혔다').toBe(true)
     expect(flagGlyph(fit, 15, 30).up, '맨 아랫줄인데 뒤집혔다').toBe(true)
+  })
+
+  it('자리가 있으면 깃폭을 오른쪽에 편다 — 왼쪽 매달기는 맨 오른쪽에서만', () => {
+    // 위 검사의 가로판 짝이다. `right` 를 늘 false 로 두어도 넘침 검사는 통과하는
+    // 맵이 대부분이라(왼쪽은 대개 자리가 있다), 깃발이 통째로 거꾸로 달리는 것을
+    // 이 자가 막는다. 항구마을 60×40 — 동문이 x=59 다.
+    const fit = minimapFit(60, 40)
+    expect(flagGlyph(fit, 59, 13).right, '맨 오른쪽 칸인데 오른쪽으로 폈다').toBe(false)
+    expect(flagGlyph(fit, 30, 13).right, '한가운데인데 왼쪽에 매달았다').toBe(true)
+    expect(flagGlyph(fit, 0, 13).right, '맨 왼쪽 칸인데 왼쪽에 매달았다').toBe(true)
   })
 })
 
@@ -210,6 +238,40 @@ describe('미니맵 — 문', () => {
     }
     // 양성 대조군 — 결계 넷이 그 숫자를 지고 있다(85,000 × 4).
     expect(잰것, '요구 숫자를 진 문이 하나도 없다').toBe(4)
+  })
+
+  it('찍히는 문 중에 물때만 걸린 것이 없다 — 생기는 날 표식이 거짓말을 시작한다', () => {
+    // 표식은 `gateValue` 만 읽는다(doorsOn). 그러니 `gateTide` 로만 막힌 문은
+    // 「지금 지나갈 수 있는 문」인 노란 네모로 찍힌다 — 요구치를 안 말하는 문은
+    // 설계 ⑥ 의 장치가 아니라 함정이고, 시각은 플레이어가 올릴 수 있는 숫자도
+    // 아니라 그 앞에 선 사람은 뭘 해야 할지 알 방법조차 없다.
+    //
+    // **`transitions` 전체가 아니라 실제로 찍히는 문만 본다.** 개발맵으로 가는 문은
+    // 미니맵이 애초에 안 그리므로(설계 ⑤) 거기에 물때가 걸려도 화면은 거짓말을
+    // 하지 않는다. 자가 물어야 하는 것은 데이터의 모양이 아니라 **화면이 참인가**다.
+    //
+    // 오늘 그런 문은 0개라 화면은 참이다 — 그 줄 하나(허브 결계)가 herb 85,000 도
+    // 함께 져서 붉게 찍히기 때문이다. **이 자는 그 사실이 유지되는 동안만 조용하다.**
+    const 거짓말 = []
+    let 물때진문 = 0
+    for (const mapId of Object.keys(data.maps)) {
+      for (const door of minimapMarks(data, null, mapId).doors) {
+        const t = data.transitions.find(
+          (x) => x.fromMap === mapId && x.fromX === door.x && x.fromY === door.y,
+        )!
+        if (t.gateTide !== true) continue
+        물때진문++
+        if (door.gate === null) 거짓말.push(`${mapId} (${door.x},${door.y})`)
+      }
+    }
+    expect(
+      거짓말,
+      '물때만 지는 문이 지나갈 수 있는 문으로 찍힌다 — minimap.ts 의 doorsOn 을 보라',
+    ).toEqual([])
+
+    // 양성 대조군: 찍히는 문 중에 물때를 지는 것이 실재한다(허브 결계). 없는 것이
+    // 0 인 것은 검사가 아니다 — 그 칸이 사라진 날 이 줄이 먼저 말한다.
+    expect(물때진문, '찍히는 문 중에 물때를 지는 것이 없다 — 이 자가 잴 것이 없다').toBeGreaterThan(0)
   })
 })
 

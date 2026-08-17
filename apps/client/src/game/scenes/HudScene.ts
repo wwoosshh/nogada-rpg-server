@@ -86,8 +86,20 @@ const GATE_LABEL_GAP = 3
  */
 const MARK_DEPTH = { flag: 1, me: 2 } as const
 
-/** 구운 축소도가 올라가는 텍스처 키의 앞머리. 씬이 끝날 때 이 이름으로 지운다. */
-const MINIMAP_TEXTURE_PREFIX = 'minimap:'
+/**
+ * 구운 축소도가 올라가는 텍스처 키.
+ *
+ * **맵 id 와 기기 픽셀비 둘 다 들어간다 — 이것이 캐시다**(설계 ⑦). 텍스처는
+ * 게임 전역이라 씬이 끝나도 안 사라지므로, 같은 맵으로 되돌아오면 굽지 않고
+ * 그대로 다시 쓴다. 처음엔 씬이 끝날 때 지웠는데, 재 보니 굽는 값이 그 정리로
+ * 아낄 메모리보다 비쌌다(buildMinimap 문서의 실측표).
+ *
+ * 배율까지 키에 넣는 이유: `renderScale()` 은 `devicePixelRatio` 를 반올림한
+ * 값이라 **실행 중에 바뀔 수 있다**(창을 다른 배율의 모니터로 옮기거나 브라우저
+ * 확대를 건드리면). 맵 id 만으로 캐시하면 그날 1배로 구운 그림을 2배 화면에
+ * 늘려 쓰게 되고, 그것은 정확히 캔버스 안 글자만 흐리던 그 문제다.
+ */
+const minimapTextureKey = (mapId: string, density: number): string => `minimap:${mapId}@${density}`
 
 /**
  * 미니맵이 씬에서 읽어 가는 것 둘.
@@ -153,8 +165,6 @@ export class HudScene extends Phaser.Scene {
   private hasFlag = false
   /** 마지막으로 흰 점을 옮긴 칸. 같으면 다시 안 옮긴다. */
   private meTile: TilePos = { x: -1, y: -1 }
-  /** 이 씬이 올린 축소도 텍스처. 씬이 끝날 때 지운다 — 텍스처는 게임 전역이다. */
-  private textureKey: string | null = null
 
   constructor() {
     super({ key: 'Hud' })
@@ -168,7 +178,6 @@ export class HudScene extends Phaser.Scene {
     this.minimapImage = null
     this.fit = null
     this.source = null
-    this.textureKey = null
     this.meTile = { x: -1, y: -1 }
     this.hasFlag = false
 
@@ -218,13 +227,11 @@ export class HudScene extends Phaser.Scene {
       this.hub = null
       this.control = null
       this.source = null
-      // 도형은 씬과 함께 사라지지만 **텍스처는 게임 전역이라 안 사라진다.** 맵을
-      // 넘을 때마다 이 씬이 다시 서므로, 안 지우면 걸어 다닌 맵 수만큼 캔버스가
-      // 메모리에 쌓인다(월드맵 하나가 112×112×기기픽셀비² 다).
-      if (this.textureKey && this.textures.exists(this.textureKey)) {
-        this.textures.remove(this.textureKey)
-      }
-      this.textureKey = null
+      // **구운 텍스처는 안 지운다 — 그것이 캐시다**(설계 ⑦, minimapTextureKey).
+      // 도형은 씬과 함께 사라지지만 텍스처는 게임 전역이라 남고, 남는 것이 여기서는
+      // 값이다. 쌓이는 양은 걸어 다닌 맵 수만큼이고 한 장이 112×112×기기픽셀비²
+      // ×4바이트 = 배율 2 에서 200KB 다. 맵이 열한 장이니 다 돌아도 2.2MB 이고,
+      // 그것으로 사는 것은 아래 표의 굽는 값 전부다.
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup)
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup)
@@ -376,11 +383,33 @@ export class HudScene extends Phaser.Scene {
   }
 
   /**
-   * 이 맵의 축소도를 한 번 굽고, 그 위에 얹을 도형들을 세운다.
+   * 이 맵의 축소도를 **맵마다 딱 한 번** 굽고, 그 위에 얹을 도형들을 세운다.
    *
-   * **굽는 시점이 씬 진입 한 번뿐인 것이 이 아크의 성능 전부다**(설계 ⑤). 굽는
-   * 값은 마을 0.2~0.6ms · 월드맵 2.1~2.7ms(데스크톱 실측)이고, 그 뒤로는 프레임마다
-   * 이미지 한 장을 그릴 뿐이다.
+   * 프레임마다는 이미지 한 장을 그릴 뿐이다(설계 ⑤ — Phaser 두 번째 카메라를
+   * 쓰면 컬링이 안 먹어 0.1ms → 1.4ms 다).
+   *
+   * **처음엔 캐시 없이 씬 진입마다 구웠다. 그 판단은 덜 잰 숫자 위에 서 있었다.**
+   * Canvas2D 의 `drawImage` 는 명령을 쌓아 두고 나중에 칠하므로, `bakeMinimap`
+   * 직후에 시계를 멈추면 **기록 비용만** 잡힌다. 실물 dist·실제 타일셋으로 다시
+   * 쟀다(15회, 같은 크기 캔버스에 한 장만 그린 대조군을 뺀 값):
+   *
+   * ```
+   *              조각    기록만    래스터까지(대조군 뺀 값)
+   * 월드맵       9,382   26.7ms    40~45ms
+   * 항구마을     3,551    4.2ms    16~17ms
+   * 숲의마을     3,624    3.6ms    13~14ms
+   * 북동쪽마을   2,476    1.7ms    10~13ms
+   * 눈의마을     1,416    0.9ms     1~2ms
+   * ```
+   *
+   * 월드맵은 **기록만으로도 26.7ms** 라 설계 ⑦ 의 20ms 문턱을 데스크톱에서 이미
+   * 넘는다. 그래서 그 설계가 정해 둔 처방대로 `minimap:{맵id}@{배율}` 을 캐시로
+   * 쓴다 — 두 번째부터 0 이다. 폰에서 줄어들 여지도 없다: 밀도를 두 배로 올려도
+   * 값이 거의 안 움직이므로(픽셀 채우기가 아니라 **호출 9,382번 자체**가 값이다)
+   * 느린 기기에서는 더 나빠지기만 한다.
+   *
+   * 마을이 특히 아픈 자리다 — 항구·숲은 게임을 켤 때마다·채집장에서 돌아올
+   * 때마다 들어가는 씬인데 거기서 13~17ms 다. 캐시가 그 두 번째부터를 지운다.
    *
    * 맵 JSON 과 타일셋 그림은 **이미 메모리에 있다** — 둘 다 게임 전역 캐시라
    * (`cache.tilemap`·`textures`) WorldScene 이 방금 올린 것을 이 씬이 그대로
@@ -402,28 +431,28 @@ export class HudScene extends Phaser.Scene {
     // 짜리 그림을 올리면 기기 픽셀비 2 인 폰에서 두 배로 늘어나 뭉갠다 — 캔버스
     // 안의 글자만 흐리던 그 문제와 같은 것이다(viewport.ts 의 renderScale).
     const density = renderScale()
-    const canvas = document.createElement('canvas')
-    // 올림이다. 반올림하면 마지막 줄·칸이 반 px 잘리는데, 잘리는 쪽이 하필
-    // 지도의 가장자리라 "세계가 여기서 끝난다"가 흐려진다.
-    canvas.width = Math.ceil(fit.width * density)
-    canvas.height = Math.ceil(fit.height * density)
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('미니맵: 2d 컨텍스트를 못 얻었다')
+    const key = minimapTextureKey(mapId, density)
 
-    bakeMinimap(
-      ctx,
-      map,
-      (name) => (this.textures.exists(name) ? (this.textures.get(name).getSourceImage() as CanvasImageSource) : undefined),
-      fit.scale * density,
-    )
+    // **이미 구워 둔 것이 있으면 그대로 쓴다.** 텍스처는 게임 전역이라 앞선 방문의
+    // 것이 남아 있고, 축소도는 맵이 바뀌지 않는 한 같은 그림이다(얹는 것 셋은
+    // 텍스처가 아니라 도형이라 매번 다시 선다).
+    if (!this.textures.exists(key)) {
+      const canvas = document.createElement('canvas')
+      // 올림이다. 반올림하면 마지막 줄·칸이 반 px 잘리는데, 잘리는 쪽이 하필
+      // 지도의 가장자리라 "세계가 여기서 끝난다"가 흐려진다.
+      canvas.width = Math.ceil(fit.width * density)
+      canvas.height = Math.ceil(fit.height * density)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('미니맵: 2d 컨텍스트를 못 얻었다')
 
-    // 텍스처는 **게임 전역**이라 같은 이름이 남아 있으면 addCanvas 가 거절한다
-    // (같은 맵으로 되돌아오는 경우다). 지우고 다시 올린다 — 캐시로 재사용하지
-    // 않는 이유는 설계 ⑨ 다: 폰에서 몇 ms 인지 재기 전에는 손잡이를 늘리지 않는다.
-    const key = `${MINIMAP_TEXTURE_PREFIX}${mapId}`
-    if (this.textures.exists(key)) this.textures.remove(key)
-    this.textures.addCanvas(key, canvas)
-    this.textureKey = key
+      bakeMinimap(
+        ctx,
+        map,
+        (name) => (this.textures.exists(name) ? (this.textures.get(name).getSourceImage() as CanvasImageSource) : undefined),
+        fit.scale * density,
+      )
+      this.textures.addCanvas(key, canvas)
+    }
 
     this.minimapImage = this.add
       .image(MINIMAP_ORIGIN.x + fit.offsetX, MINIMAP_ORIGIN.y + fit.offsetY, key)
@@ -439,7 +468,7 @@ export class HudScene extends Phaser.Scene {
     // 가리킨다 — 첫 60초가 정확히 그 경우다). 그때 문 네모가 깃대 밑동을 덮으면
     // 깃발이 공중에 뜬 것처럼 보인다. 깊이로 못박아 만든 순서와 무관하게 한다.
     this.flagPole = this.add
-      .rectangle(0, 0, 1, FLAG.poleHeight, INK_SHAPE_COLOR, 1)
+      .rectangle(0, 0, FLAG.poleWidth, FLAG.poleHeight, INK_SHAPE_COLOR, 1)
       .setDepth(MARK_DEPTH.flag)
       .setVisible(false)
     this.flagBanner = this.add
@@ -496,12 +525,25 @@ export class HudScene extends Phaser.Scene {
     if (marks.flag) {
       // 깃대 밑동이 그 칸이다 — 깃발은 그 끝에 매달린다. 가리키는 곳이 그림의
       // 가운데가 아니라 밑동이라는 것이 깃발을 쓰는 이유다. 위로 설 자리가 없으면
-      // 아래로 뒤집는다(FlagGlyph.up) — 밑동은 그대로 두고 매다는 쪽만 바꾼다.
+      // 아래로 뒤집고(FlagGlyph.up) 오른쪽에 깃폭을 펼 자리가 없으면 왼쪽에
+      // 매단다(FlagGlyph.right) — 밑동은 그대로 두고 매다는 쪽만 바꾼다.
       const g = flagGlyph(fit, marks.flag.x, marks.flag.y)
       this.flagPole.setOrigin(0.5, g.up ? 1 : 0).setPosition(g.x, g.y)
+
+      // **왼쪽에 매달 때는 삼각형을 다시 그린다.** 원점만 뒤집으면 도형은 그대로
+      // 오른쪽을 향한 채 왼쪽으로 옮겨져, 뾰족한 꼭짓점이 깃대에 붙는다 — 그러면
+      // 그림이 깃발이 아니라 왼쪽을 가리키는 화살표로 읽힌다. 깃대에 붙는 변은
+      // 언제나 세로변이어야 한다.
+      const w = FLAG.bannerWidth
+      const h = FLAG.bannerHeight
+      if (g.right) this.flagBanner.setTo(0, 0, w, h / 2, 0, h)
+      else this.flagBanner.setTo(w, 0, 0, h / 2, w, h)
       this.flagBanner
-        .setOrigin(0, g.up ? 0 : 1)
-        .setPosition(g.x + 1, g.up ? g.y - FLAG.poleHeight : g.y + FLAG.poleHeight)
+        .setOrigin(g.right ? 0 : 1, g.up ? 0 : 1)
+        .setPosition(
+          g.x + (g.right ? FLAG.bannerGap : -FLAG.bannerGap),
+          g.up ? g.y - FLAG.poleHeight : g.y + FLAG.poleHeight,
+        )
     }
   }
 }

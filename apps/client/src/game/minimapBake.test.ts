@@ -14,7 +14,7 @@ import { bakeMinimap, type MinimapBrush } from './minimapBake.js'
  * 가짜 붓 하나로 충분한 이유는 `bakeMinimap` 이 Phaser 도 캔버스도 모르기
  * 때문이다.
  *
- * 잡으려는 실패가 넷이다:
+ * 잡으려는 실패가 다섯이다:
  * ① 한 장도 안 그리는 것 — 시트 짝짓기가 어긋나면 미니맵이 빈 상자로 서는데,
  *    화면에서 그것은 "어두운 맵" 과 구분되지 않는다.
  * ② 칸 사이에 틈이 생기는 것 — 배율이 정수가 아니라(1.40~4.67px/타일) 자리만
@@ -22,6 +22,10 @@ import { bakeMinimap, type MinimapBrush } from './minimapBake.js'
  * ③ 상자 밖으로 그리는 것.
  * ④ 남의 조각을 그리는 것 — 시트가 여섯 장이라 firstgid 를 한 칸만 잘못 골라도
  *    바닥이 지붕이 된다.
+ * ⑤ **겹치는 순서가 뒤집히는 것** — ①~④ 는 전부 "몇 장을 어디에" 만 묻는다.
+ *    그래서 레이어를 거꾸로 도는 붓도 열아홉 검사를 전부 통과했다(돌연변이로
+ *    확인했다). 그 화면은 ground 가 walls·overhead 를 덮은 "지붕만 없는 마을"
+ *    이고, ① 의 주석이 스스로 「눈으로도 잘 안 잡힌다」고 적어 둔 실패다.
  */
 
 const data = loadGameData()
@@ -186,6 +190,35 @@ describe('축소도 굽기 — 진짜 맵 열한 장', () => {
         )
         expect(맞는시트, `${id} 가 시트 밖 조각 (${m.sx}, ${m.sy}) 을 가리킨다`).toBe(true)
       }
+    })
+
+    it(`${id} — 레이어 순서대로 덮는다 (겹치는 칸의 나중 붓이 위 레이어다)`, () => {
+      const map = 맵을읽는다(id)
+      const brush = 가짜붓()
+
+      // **배율 1 로 굽는다.** 그러면 `dx = floor(x·1) = x` 이고 `dy = y` 라 붓자국이
+      // 곧 칸 좌표가 된다 — 자리 계산 두 줄을 여기서 다시 쓰지 않고도 **순서**를
+      // 정확히 물을 수 있다(그 두 줄은 위 「격자」 검사가 따로 못박는다).
+      bakeMinimap(brush, map, 그림있다, 1)
+
+      // 붓이 갔어야 하는 차례: 레이어 순서대로, 그 안에서는 색인 순서대로.
+      const 차례: string[] = []
+      for (const layer of map.layers) {
+        if (layer.type !== 'tilelayer' || layer.visible === false || !layer.data) continue
+        for (let i = 0; i < layer.data.length; i++) {
+          if (((layer.data[i] ?? 0) & 0x1fffffff) === 0) continue
+          차례.push(`${i % map.width},${Math.floor(i / map.width)}`)
+        }
+      }
+      expect(차례.length, `${id} 에 그릴 것이 없다`).toBeGreaterThan(0)
+      expect(brush.자국.map((m) => `${m.dx},${m.dy}`), `${id}: 겹치는 순서가 다르다`).toEqual(차례)
+
+      // 양성 대조군 — **실제로 겹치는 칸이 있어야** 이 자가 값을 낸다. 한 칸에
+      // 한 레이어만 있는 맵이라면 순서를 뒤집어도 화면이 같으므로, 위 등식은
+      // 통과해도 잡을 것이 없는 셈이다.
+      expect(new Set(차례).size, `${id}: 겹치는 칸이 없다 — 순서를 물을 것이 없다`).toBeLessThan(
+        차례.length,
+      )
     })
   }
 })
