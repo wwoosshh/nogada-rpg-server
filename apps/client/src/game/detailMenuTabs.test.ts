@@ -2,16 +2,19 @@ import { emptyPlayer, loadGameData } from '@nogada/data'
 import { ENHANCE_CAP, SKILL_LABELS, type GameData, type PlayerState } from '@nogada/shared'
 import { testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
-import { SETTINGS_ACTION, TABS } from './detailMenuTabs.js'
+import { MILESTONE_FOLD, SETTINGS_ACTION, TABS } from './detailMenuTabs.js'
+
+/** 아무것도 안 펼친 상태 — 접이 머리를 쓰지 않는 탭들이 넘기는 값이다. */
+const 접힘: ReadonlySet<string> = new Set()
 
 function settingsLines() {
   const tab = TABS.find((t) => t.id === 'settings')!
-  return tab.buildLines(loadGameData(), emptyPlayer())
+  return tab.buildLines(loadGameData(), emptyPlayer(), 접힘)
 }
 
 function skillLines(player: PlayerState, data: GameData = loadGameData()) {
   const tab = TABS.find((t) => t.id === 'skills')!
-  return tab.buildLines(data, player)
+  return tab.buildLines(data, player, 접힘)
 }
 
 /** 각 줄이 적은 간격 숫자만 뽑는다 — 화면에 뜨는 그 문자열 그대로다. */
@@ -123,7 +126,10 @@ describe('숙련도 탭', () => {
 describe('이정표 탭 — 결계 줄', () => {
   function milestoneLines(player: PlayerState) {
     const tab = TABS.find((t) => t.id === 'milestones')!
-    return tab.buildLines(loadGameData(), player)
+    // 자루 둘을 펼친 채로 묻는다 — 이 판이 보는 것은 **효과 줄의 글자**이고,
+    // 결계 넷은 신규에게 접힌 자루 안에 있다(첫 화면은 묶음마다 한 줄이다).
+    // 접혔을 때도 그 글자가 참이어야 한다는 것이 접기와 숨기기의 차이다.
+    return tab.buildLines(loadGameData(), player, new Set(Object.values(MILESTONE_FOLD)))
   }
 
   /** 그 이정표의 효과 줄 — 이름 줄 바로 다음 줄이다. */
@@ -181,6 +187,137 @@ describe('이정표 탭 — 결계 줄', () => {
   })
 })
 
+/**
+ * 이정표 탭의 40줄 벽 — 신규가 보던 첫 화면이 「칭호 — 효과는 없다」 열넷이었다.
+ *
+ * 정렬이 진척 비율 내림차순이었는데 신규는 40개가 전부 0.000 이라 그 정렬이
+ * 무효였고, 화면 순서가 문자 그대로 CSV 행 순서였다. 여기서 못박는 것은 그
+ * 화면이 다시 그렇게 되지 않는다는 것이다.
+ */
+describe('이정표 탭 — 묶음과 접기', () => {
+  const 펼침: ReadonlySet<string> = new Set(Object.values(MILESTONE_FOLD))
+
+  function lines(player: PlayerState, expanded: ReadonlySet<string> = 접힘) {
+    const tab = TABS.find((t) => t.id === 'milestones')!
+    return tab.buildLines(loadGameData(), player, expanded).map((l) => ({ ...l }))
+  }
+
+  /** 접이 머리가 아닌 줄들 — 이정표 본문 두 줄씩이다. */
+  function bodyLines(player: PlayerState, expanded?: ReadonlySet<string>) {
+    return lines(player, expanded).filter((l) => !l.groupId)
+  }
+
+  const 초보 = emptyPlayer()
+
+  // 왜: **실측이 정한 수다.** 이 목록의 줄 하나는 18px 이고 뷰포트는 812×375 에서
+  //     255px 다 — 열네 줄(252px)까지가 화면이고 열여섯 줄이면 288px 라 접이 머리
+  //     둘이 통째로 아래로 밀려난다. 그 둘이 나머지 서른넷에 닿는 유일한 손잡이라,
+  //     안 보이는 자리에 놓이면 접은 것이 아니라 지운 것이 된다.
+  it('신규의 첫 화면은 12줄 + 접힌 머리 둘 — 뷰포트 255px 에 들어가는 수다', () => {
+    const first = lines(초보)
+    expect(first.filter((l) => l.groupId)).toHaveLength(2)
+    expect(first.filter((l) => !l.groupId)).toHaveLength(12)
+    // 줄 높이 15 + 줄 사이 3(ScrollList.ROW_GAP). 마지막 줄에는 뒤 여백이 없다.
+    expect(first.length * 18 - 3).toBeLessThanOrEqual(255)
+  })
+
+  // 왜: 이 아크가 고치려던 것이 정확히 이 문자열의 개수다 — 열넷이었다.
+  //     머리 자리에 순수 칭호를 세우지 않으므로 첫 화면에는 한 줄도 안 남는다.
+  it('첫 화면에 「효과는 없다」가 한 줄도 없다 — 열넷이었다', () => {
+    expect(bodyLines(초보).filter((l) => l.text.includes('효과는 없다'))).toEqual([])
+  })
+
+  // 왜: `고르게` 셋은 전부 순수 칭호라 그 묶음에는 내보일 문이 없다. 없는 문을
+  //     지어내는 대신 머리를 안 내고 칭호 자루에 그대로 둔다 — 세 줄 다 거기 있다.
+  it('열 문이 없는 묶음은 머리를 안 낸다 — 대신 칭호 자루에 그대로 있다', () => {
+    expect(bodyLines(초보).some((l) => l.text.startsWith('고르게'))).toBe(false)
+    expect(bodyLines(초보, 펼침).some((l) => l.text.startsWith('고르게 익숙해지다'))).toBe(true)
+  })
+
+  // 왜: `gatedRecipesOf` 가 없으면 이 줄은 「칭호 — 효과는 없다」로 돌아간다.
+  //     얼음 1,000 은 신규가 3.4분에 처음 만나는 진짜 문이다(설계 ③ 마디 4).
+  it('얼음 1,000 은 칭호가 아니라 비 가루·눈 가루의 문이라고 말한다', () => {
+    const head = lines(초보).findIndex((l) => l.text.startsWith('얼음에 익숙해지다'))
+    expect(head).toBeGreaterThanOrEqual(0)
+    expect(lines(초보)[head + 1]!.text).toBe('달성하면 만들 수 있다 — 비 가루 · 눈 가루')
+  })
+
+  // 왜: 얼음 10,000 은 자동 반복과 레시피 둘을 **동시에** 연다. 한쪽만 적으면
+  //     나머지 한쪽은 화면 어디에도 없다 — effect 칸만 읽던 시절의 손실이다.
+  it('효과가 둘인 이정표는 둘 다 말한다', () => {
+    const all = lines(초보, 펼침)
+    const head = all.findIndex((l) => l.text.startsWith('얼음이 손에 익다'))
+    expect(all[head + 1]!.text).toBe(
+      '달성하면 누르고 있는 것만으로 계속된다 · 달성하면 만들 수 있다 — 굵은 비 가루 · 함박눈 가루',
+    )
+  })
+
+  // 왜: groupId 가 빠지면 머리는 그대로 보이는데 눌리지만 않는다 — 그러면 나머지
+  //     서른셋이 도달할 방법 없이 접힌 채로 남는다. 그건 접은 것이 아니라 지운 것이다.
+  it('접이 머리 둘은 누를 수 있고, 남은 개수를 세어 말한다', () => {
+    const heads = lines(초보).filter((l) => l.groupId)
+    expect(heads.map((l) => l.groupId)).toEqual([MILESTONE_FOLD.gates, MILESTONE_FOLD.titles])
+    // 문 23개 중 여섯이 머리로 나가 있고, 순수 칭호 17개는 하나도 안 나가 있다.
+    expect(heads[0]!.text).toContain('그 뒤의 문 17개')
+    expect(heads[1]!.text).toContain('칭호 17개')
+    for (const head of heads) expect(head.text).toContain('[펼치기]')
+  })
+
+  // 왜: 접는 것과 숨기는 것은 다르다(설계 ④·⑥). 펼치면 40개가 전부, 잠긴 것까지
+  //     이름 그대로 나와야 한다 — `???` 는 한 글자도 쓰지 않는다.
+  it('펼치면 40개가 전부 나온다 — ??? 는 한 글자도 없다', () => {
+    const data = loadGameData()
+    const all = lines(초보, 펼침)
+    for (const def of data.milestones) {
+      expect(all.some((l) => l.text.startsWith(def.name) || l.text === `✓ ${def.name}`)).toBe(true)
+    }
+    expect(all.filter((l) => !l.groupId)).toHaveLength(data.milestones.length * 2)
+    expect(all.some((l) => l.text.includes('???'))).toBe(false)
+    for (const head of all.filter((l) => l.groupId)) expect(head.text).toContain('[접기]')
+  })
+
+  // 왜: 「0 / 200」만 적혀 있으면 200 이 조합 숙련인지 망치 개수인지 화면 어디에도
+  //     없다. 이 탭은 무엇을 얼마나 캐야 하는지를 답하는 자리다.
+  it('진척 숫자 앞에 무엇을 재는 자인지 적는다', () => {
+    const all = lines(초보, 펼침).map((l) => l.text)
+    expect(all).toContain('얼음에 익숙해지다   얼음 숙련 0 / 1,000')
+    expect(all).toContain('구리 망치를 만들 수 있다   조합 숙련 0 / 200')
+    expect(all).toContain('흔한 것을 되살 수 있다   수집 총점 0 / 30')
+    expect(all).toContain('고르게 익숙해지다   이정표 0 / 4')
+  })
+
+  // 왜: 묶음 순서가 흔들리면 어제 본 자리에 오늘 다른 것이 있다. 그리고 광물·수집
+  //     묶음의 머리가 각각 1,000·10(둘 다 순수 칭호)으로 돌아가면 첫 화면의
+  //     「효과는 없다」가 없음에서 둘이 된다 — 머리 고르기 규칙이 사는 자리다.
+  it('첫 화면의 여섯 줄은 묶음 순서대로, 묶음마다 못한 첫 「문」이다', () => {
+    const heads = bodyLines(초보)
+      .filter((_l, i) => i % 2 === 0)
+      .map((l) => l.text)
+    expect(heads).toEqual([
+      '얼음에 익숙해지다   얼음 숙련 0 / 1,000',
+      '나무에 익숙해지다   나무 숙련 0 / 1,000',
+      '광물이 손에 익다   광물 숙련 0 / 10,000',
+      '약초에 익숙해지다   허브 숙련 0 / 1,000',
+      '구리 망치를 만들 수 있다   조합 숙련 0 / 200',
+      '흔한 것을 되살 수 있다   수집 총점 0 / 30',
+    ])
+  })
+
+  // 왜: 고인물의 첫 화면도 답이 있어야 한다. 얼음 20,000 인 사람의 얼음 줄은 이미
+  //     넘긴 1,000·10,000 이 아니라 **아직 안 넘긴 문** 이어야 하고, 그 문은
+  //     50,000(「얼음을 오래 다루다」— 순수 칭호)이 아니라 85,000(결계)이다.
+  //     가까운 장식보다 먼 문을 고른다는 것이 이 규칙의 값이다.
+  it('이미 넘긴 것은 머리가 아니고, 가까운 칭호보다 먼 문을 고른다', () => {
+    const 고인물: PlayerState = {
+      ...emptyPlayer(),
+      skills: { ice: 20000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+    }
+    const 위 = bodyLines(고인물)
+    expect(위[0]!.text).toBe('얼음 결계를 넘을 수 있다   얼음 숙련 20,000 / 85,000')
+    expect(위[1]!.text).toBe('달성하면 얼음 채집장의 결계가 더는 밀어내지 않는다')
+  })
+})
+
 describe('설정 탭', () => {
   // 왜: 이 두 줄이 계정을 놓는 유일한 문이다. groupId 가 빠지면 줄은 그대로
   //     보이는데 눌리지만 않아서, 화면만 봐서는 고장인지 원래 그런 것인지
@@ -212,7 +349,7 @@ describe('설정 탭', () => {
   it('지금 누구로 놀고 있는지 함께 보여준다', () => {
     const player = { ...emptyPlayer(), name: '항구사람' }
     const tab = TABS.find((t) => t.id === 'settings')!
-    const text = tab.buildLines(loadGameData(), player).map((l) => l.text).join(' ')
+    const text = tab.buildLines(loadGameData(), player, 접힘).map((l) => l.text).join(' ')
     expect(text).toContain('항구사람')
   })
 })

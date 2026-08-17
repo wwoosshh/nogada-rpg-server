@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { emptyDialogueHistory } from './dialogue.js'
 import { defaultCombatState } from './combatState.js'
-import type { PlayerState, TransitionDef } from './types.js'
+import type { PlayerState, RecipeDef, TransitionDef } from './types.js'
 import type { CollectionTable } from './collection.js'
 import {
   achievedIds,
   barrierDoorsOf,
+  gatedRecipesOf,
   isAchieved,
+  isPureTitle,
   metricValue,
   milestoneRatio,
   newlyAchieved,
@@ -122,10 +124,9 @@ describe('milestoneRatio', () => {
 
 /**
  * every 분기는 지금까지 nextMilestone 비교를 통해서만 간접적으로 돌았다 —
- * 직접 값을 확인하는 테스트가 없었다. 이 분기는 목록 정렬(buildMilestoneRows,
- * apps/client/src/game/detailMenuTabs.ts)이 화면 순서를 정하는 데도 그대로
- * 쓰이고, 병목(최솟값) 규칙은 이 모듈에서 가장 미묘한 설계 결정이다 — 그래서
- * 따로 판을 짠다.
+ * 직접 값을 확인하는 테스트가 없었다. 병목(최솟값) 규칙은 이 모듈에서 가장
+ * 미묘한 설계 결정이고, 합산 이정표가 "얼마나 왔는가"에 답하는 유일한 길이다 —
+ * 그래서 따로 판을 짠다.
  */
 describe('milestoneRatio — every', () => {
   it('둘이 다르게 진행 중이면 더 처진 쪽(최솟값)을 쓴다 — 평균이나 최댓값이 아니다', () => {
@@ -286,5 +287,83 @@ describe('barrierDoorsOf', () => {
   //     수 없으므로 짝지을 수 없고, 빌드가 그 조합 자체를 위반으로 잡는다.
   it('지표가 숙련도가 아니면 짝지을 계열이 없다', () => {
     expect(barrierDoorsOf({ ...iceBarrier, metric: { kind: 'collection' } }, [iceDoor])).toEqual([])
+  })
+})
+
+/**
+ * 레시피의 **두 번째 문**(채집 문턱)과 이정표의 짝 — 이 짝이 없어서 목록방이
+ * 문을 장식이라고 불렀다.
+ *
+ * `ice_1000` 은 effectKind 가 `title` 인데 실제로는 비 가루·눈 가루를 연다. 그
+ * 사실이 `effect` 칸이 아니라 `recipes.csv` 의 `gateSkill`·`gateValue` 에 있어서
+ * 이정표 탭은 그 자리에 「칭호 — 효과는 없다」를 적고 있었다.
+ */
+describe('gatedRecipesOf', () => {
+  const rainPowder: RecipeDef = {
+    id: 'rain_powder', name: '비 가루', category: '가루', skill: 'crafting',
+    requiredSkill: 0, baseChance: 0.6, inputs: [], output: { item: 'rain_powder', count: 1 },
+    skillGainMin: 1, skillGainMax: 2, gateSkill: 'ice', gateValue: 1000,
+  }
+  const snowPowder: RecipeDef = { ...rainPowder, id: 'snow_powder', name: '눈 가루' }
+  const compressedLog: RecipeDef = {
+    ...rainPowder, id: 'compressed_log', name: '압축 목재', gateSkill: 'wood', gateValue: 1000,
+  }
+  /** 문이 하나뿐인 레시피 — 조합 숙련만 본다. 채집 쪽 짝이 없다. */
+  const copperIngot: RecipeDef = {
+    ...rainPowder, id: 'copper_ingot', name: '구리 주괴', gateSkill: undefined, gateValue: undefined,
+  }
+  const table: Record<string, RecipeDef> = {
+    rain_powder: rainPowder, snow_powder: snowPowder,
+    compressed_log: compressedLog, copper_ingot: copperIngot,
+  }
+
+  it('계열과 문턱이 둘 다 맞는 레시피만 붙는다', () => {
+    expect(gatedRecipesOf(iceNovice, table).map((r) => r.name)).toEqual(['비 가루', '눈 가루'])
+  })
+
+  // 왜: 이 함수가 생긴 이유 그 자체다. effect 를 봤다면 title 인 ice_1000 은
+  //     빈 목록을 받고, 화면은 다시 「칭호 — 효과는 없다」로 돌아간다.
+  it('effect 가 title 이어도 문을 찾는다 — effectKind 를 아예 안 본다', () => {
+    expect(iceNovice.effect.kind).toBe('title')
+    expect(gatedRecipesOf(iceNovice, table)).toHaveLength(2)
+  })
+
+  // 왜: 숫자가 다르면 다른 문이다. 얼음 10,000 짜리 레시피를 1,000 줄에 적으면
+  //     플레이어는 1,000 에서 열릴 것을 기다리다 안 열리는 것을 본다.
+  it('문턱이 다르면 짝이 아니다', () => {
+    expect(gatedRecipesOf({ ...iceNovice, threshold: 10000 }, table)).toEqual([])
+  })
+
+  it('계열이 다르면 짝이 아니다', () => {
+    expect(gatedRecipesOf(mineralNovice, table)).toEqual([])
+  })
+
+  // 왜: 채집 문턱이 없는 레시피(조합 숙련 하나만이 문인 것)가 아무 이정표에나
+  //     붙으면, 목록이 열지도 않는 것을 열린다고 말한다.
+  it('gateSkill 이 없는 레시피는 어디에도 안 붙는다', () => {
+    const onlyIngot = { copper_ingot: copperIngot }
+    expect(gatedRecipesOf(iceNovice, onlyIngot)).toEqual([])
+    expect(gatedRecipesOf(mineralNovice, onlyIngot)).toEqual([])
+  })
+
+  // 왜: barrierDoorsOf 와 같은 이유다 — 총점·합산 지표에는 짝지을 계열이 없다.
+  it('지표가 숙련도가 아니면 짝지을 계열이 없다', () => {
+    expect(gatedRecipesOf(bothNovice, table)).toEqual([])
+  })
+
+  describe('isPureTitle', () => {
+    // 왜: 이정표 탭이 접을 것을 이 술어로 고른다. effect.kind === 'title' 만으로
+    //     물으면 실제 문 다섯(ice_1000·wood_1000·wood_50000·herb_1000·herb_50000)이
+    //     통째로 접힌 자루 안으로 들어간다 — 신규가 첫 3분에 만날 문들이다.
+    it('여는 레시피가 있으면 순수 칭호가 아니다', () => {
+      expect(isPureTitle(iceNovice, table)).toBe(false)
+    })
+    it('아무것도 안 열면 순수 칭호다', () => {
+      expect(isPureTitle(mineralNovice, table)).toBe(true)
+    })
+    it('title 이 아니면 애초에 칭호가 아니다', () => {
+      const repeat: MilestoneDef = { ...mineralNovice, effect: { kind: 'repeat', skill: 'mineral' } }
+      expect(isPureTitle(repeat, table)).toBe(false)
+    })
   })
 })

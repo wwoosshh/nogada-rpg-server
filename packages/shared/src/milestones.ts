@@ -1,6 +1,6 @@
 import { collectionScore, type CollectionTable } from './collection.js'
 import { clamp } from './formulas/clamp.js'
-import type { PlayerState, SkillId, TransitionDef } from './types.js'
+import type { PlayerState, RecipeDef, SkillId, TransitionDef } from './types.js'
 
 /**
  * 이정표가 무엇을 보는가.
@@ -95,6 +95,53 @@ export function barrierDoorsOf(
 }
 
 /**
+ * 그 이정표의 계열·문턱이 여는 **레시피** — 그 짝의 유일한 정의.
+ *
+ * `barrierDoorsOf` 와 같은 자리, 같은 자세다. 다른 것은 짝의 상대뿐이다: 저쪽은
+ * `transitions.csv` 의 `gateSkill`·`gateValue`, 이쪽은 `recipes.csv` 의 같은 이름
+ * 두 칸이다. 같은 질문을 하는 곳도 똑같이 둘이다 — 이정표 탭(무엇이 열리는지 한
+ * 줄로 적는다)과 빌드 검증(선언과 실물이 맞물리는지 본다).
+ *
+ * **왜 `effect` 를 안 보는가 — 이것이 이 함수가 생긴 이유다.** 오늘 `ice_1000` 의
+ * effectKind 는 `title` 이고, 그래서 이정표 탭은 그 줄에 「칭호 — 효과는 없다」를
+ * 적는다. 그런데 얼음 1,000 은 실제로 비 가루·눈 가루의 문이다(`rain_powder`·
+ * `snow_powder` 의 `gateSkill=ice`·`gateValue=1000`). 목록방이 문을 장식이라고
+ * 부르고 있는 것이다.
+ *
+ * 그렇다고 CSV 의 effectKind 를 `recipes` 로 고치면 **빌드가 깨진다**:
+ * `validate.ts` 의 recipes 검사가 `recipe.requiredSkill === milestone.threshold` 를
+ * 요구하는데 `rain_powder` 의 requiredSkill 은 0 이다(조합 숙련은 필요 없다).
+ * 두 숫자는 애초에 다른 것을 재고 있다 — `requiredSkill` 은 **조합** 문턱이고
+ * `gateValue` 는 **채집** 문턱이다(`RecipeDef.gateSkill` 문서: "문을 여는 두 번째
+ * 숫자"). 그래서 데이터를 비트는 대신 **표시 계층에서 둘을 합쳐 읽는다.**
+ *
+ * 지표가 숙련도가 아니면 빈 목록이다 — 짝지을 계열이 없다(`barrierDoorsOf` 와
+ * 같은 이유). `every`·`collection` 이정표가 여기 걸리는 일은 없다.
+ */
+export function gatedRecipesOf(
+  def: MilestoneDef,
+  recipes: Record<string, RecipeDef>,
+): RecipeDef[] {
+  if (def.metric.kind !== 'skill') return []
+  const { skill } = def.metric
+  return Object.values(recipes).filter(
+    (r) => r.gateSkill === skill && r.gateValue === def.threshold,
+  )
+}
+
+/**
+ * 이 이정표가 **아무것도 안 여는 순수 칭호인가** — 이정표 탭이 접을 것을 고르는 자.
+ *
+ * `effect.kind === 'title'` 하나로 묻지 않는 이유가 바로 위 함수다: 오늘 title 22개
+ * 중 다섯(`ice_1000`·`wood_1000`·`wood_50000`·`herb_1000`·`herb_50000`)은 레시피
+ * 문을 실제로 연다. 그 다섯을 칭호로 세어 접으면 신규 플레이어가 첫 3분에 만날
+ * 문 다섯이 통째로 접힌 자루 안으로 들어간다.
+ */
+export function isPureTitle(def: MilestoneDef, recipes: Record<string, RecipeDef>): boolean {
+  return def.effect.kind === 'title' && gatedRecipesOf(def, recipes).length === 0
+}
+
+/**
  * 지표가 세상에서 읽는 것 — 이정표 목록과 수집 문턱표.
  *
  * **왜 인자를 하나 더 늘리지 않고 이 객체인가**(§6-앞 8): `metricKind='collection'`
@@ -167,16 +214,23 @@ export function isAchieved(
 }
 
 /**
- * 이정표 탭(목록)이 쓰는 진척 비율. 0 에서 1 사이로 잘린다.
+ * 이정표 하나가 얼마나 왔는가. 0 에서 1 사이로 잘린다.
+ *
+ * **이정표 탭은 더 이상 이것으로 정렬하지 않는다.** 한동안 그랬는데, 신규
+ * 캐릭터는 40개가 **전부 0.000** 이라 정렬이 통째로 무효가 되고 화면 순서가
+ * 문자 그대로 CSV 행 순서였다 — 그래서 첫 화면 다섯 줄이 전부 「칭호 — 효과는
+ * 없다」였다. 지금 그 탭이 쓰는 것은 계열 묶음 + 문턱 오름차순이다(설계 ④,
+ * detailMenuTabs.ts 의 buildMilestoneLines). 계열 묶음은 40개 전부에 정의되고,
+ * 진척 비율은 아무것도 안 한 사람에게 아무 말도 못 한다.
+ *
+ * 그래도 이 함수를 지우지 않는 이유는 아래 `every` 규칙이다 — 합산 이정표가
+ * "얼마나 왔는가"에 답하는 유일한 방법이고, 그 답은 개수가 아니라 병목이다.
  *
  * `every` 는 metricValue(달성 개수)를 threshold 로 나누지 않는다. 그렇게 하면
  * 이미 달성한 항목 하나가 비율을 개수 단위(1/2, 1/3 …)로 크게 밀어올려, 실제로는
  * 한참 남은 나머지 항목이 있는데도 "가깝다" 고 말하게 된다 — 둘 중 하나를 이미
  * 달성하고 나머지가 10% 남았을 때, 개수 비율은 0.5 를 보고하지만 진짜 병목은
- * 0.1 이다. 이정표 탭은 이 비율로 못한 것을 정렬하므로(detailMenuTabs.ts 의
- * buildMilestoneRows), 그 병목의 정체가 다른 이정표(여기서는 나머지 하나 그
- * 자체)일 때 합산 쪽을 앞자리로 잘못 고르게 된다 — 심지어 그 합산은 병목이
- * 끝나기 전까지는 논리적으로 달성될 수도 없다.
+ * 0.1 이다. 그 합산은 병목이 끝나기 전까지는 논리적으로 달성될 수도 없다.
  *
  * 그래서 참조한 이정표들의 비율 중 threshold 번째로 큰 값을 쓴다. 전부를
  * 요구하는 지금 데이터(threshold === of.length)에서는 곧 최솟값이고, 가장 덜

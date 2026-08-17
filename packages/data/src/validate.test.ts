@@ -1999,6 +1999,80 @@ describe('validateGameData 의 결계 게이트 검사', () => {
   })
 })
 
+/**
+ * 레시피의 **두 번째 문**(`gateSkill`·`gateValue` = 채집 문턱)이 목록방에 실렸는가.
+ *
+ * 결계 게이트 바로 위와 같은 자세, 같은 이유다. 다른 것은 방향이 하나뿐이라는
+ * 점이다 — 이정표는 채집 문턱을 **선언하지 않으므로**(effect 에 그 칸이 없다)
+ * "선언만 있고 실물이 없다" 가 성립하지 않는다. 남는 것은 뒷방향이고, 그 방향이
+ * 정확히 이 검사의 존재 이유다: 문은 서 있는데 어느 이정표도 그 숫자를 말하지
+ * 않으면, 플레이어는 재료가 왜 안 나오는지 끝내 못 읽는다.
+ */
+describe('validateGameData 의 레시피 채집 문턱 검사', () => {
+  /** 채집 문턱이 붙은 레시피 하나와, 그 계열·그 숫자를 적은 이정표 하나. */
+  function gatedRecipeData(): GameData {
+    const data = registryData()
+    data.recipes.copper_ingot = {
+      ...data.recipes.copper_ingot!,
+      gateSkill: 'mineral',
+      gateValue: 1000,
+    }
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'mineral_1000', metric: { kind: 'skill', skill: 'mineral' }, threshold: 1000,
+        name: '광물에 익숙해지다', announce: '', effect: { kind: 'title' },
+      },
+    ]
+    return data
+  }
+
+  it('맞물린 한 쌍은 위반이 없다', () => {
+    expect(validateGameData(gatedRecipeData(), baseTables())).toEqual([])
+  })
+
+  // 왜: **이것이 이 검사의 존재 이유다.** 이정표 탭은 이 짝을 읽어 「얼음 1,000 →
+  //     비 가루·눈 가루를 만들 수 있다」를 적는다. 짝이 없으면 그 문은 목록방에서
+  //     조용히 빠지고, 화면은 그 자리에 다시 「칭호 — 효과는 없다」를 적는다.
+  it('문턱만 있고 그 숫자를 적은 이정표가 없으면 잡아낸다', () => {
+    const data = gatedRecipeData()
+    data.milestones = data.milestones.filter((m) => m.id !== 'mineral_1000')
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_ingot]: gateSkill=mineral·gateValue=1000 인데 그 계열·그 숫자를 가진 이정표가 하나도 없다 — 목록방에서 조용히 빠져 플레이어는 이 재료가 왜 안 나오는지 읽을 곳이 없다. milestones.csv 에 metricKind=skill·metricArg=mineral·threshold=1000 인 행이 있어야 한다',
+    )
+  })
+
+  // 왜: 숫자가 다르면 다른 문이다. 레시피 쪽만 올리고 이정표를 안 고친 날,
+  //     목록은 1,000 에서 열린다고 말하는데 제작은 그 위까지 안 열린다.
+  it('숫자가 어긋나면 잡아낸다', () => {
+    const data = gatedRecipeData()
+    data.recipes.copper_ingot = { ...data.recipes.copper_ingot!, gateValue: 12345 }
+    expect(
+      validateGameData(data, baseTables()).some((v) => v.startsWith('recipes[copper_ingot]:')),
+    ).toBe(true)
+  })
+
+  it('같은 짝을 이정표 둘이 가지면 잡아낸다 — 목록에 같은 문이 두 번 열린다', () => {
+    const data = gatedRecipeData()
+    data.milestones = [
+      ...data.milestones,
+      {
+        id: 'mineral_1000_again', metric: { kind: 'skill', skill: 'mineral' }, threshold: 1000,
+        name: '또 그 문', announce: '', effect: { kind: 'title' },
+      },
+    ]
+    expect(validateGameData(data, baseTables())).toContain(
+      'recipes[copper_ingot]: gateSkill=mineral·gateValue=1000 가 이정표 [mineral_1000,mineral_1000_again] 2개와 맞물린다 — 정확히 하나여야 한다. 목록에 같은 문이 두 번 열리는 것으로 보인다',
+    )
+  })
+
+  // 왜: 채집 문턱이 없는 레시피(조합 숙련 하나만이 문인 것)까지 이 검사가 물면,
+  //     출하 데이터의 레시피 스물셋이 전부 위반이 된다.
+  it('채집 문턱이 없는 레시피는 이 검사의 대상이 아니다', () => {
+    expect(validateGameData(registryData(), baseTables())).toEqual([])
+  })
+})
+
 describe('validateGameData 의 달인 등록부 검사', () => {
   it('없는 화자를 가리키는 달인을 잡아낸다', () => {
     const data = registryData()

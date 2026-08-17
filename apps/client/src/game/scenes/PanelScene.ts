@@ -1,7 +1,13 @@
 import Phaser from 'phaser'
 import type { InputHub } from '../../input/InputState.js'
 import { useGameStore } from '../../store/gameStore.js'
-import { DIM_COLOR, SETTINGS_ACTION, TABS, type DetailMenuTab } from '../detailMenuTabs.js'
+import {
+  DIM_COLOR,
+  MILESTONE_FOLD,
+  SETTINGS_ACTION,
+  TABS,
+  type DetailMenuTab,
+} from '../detailMenuTabs.js'
 import { addText, FONT_SIZE } from '../gameText.js'
 import { PANEL_BOX, panelBoxRect } from '../panelBox.js'
 import { ScrollList } from '../ScrollList.js'
@@ -133,6 +139,14 @@ export class PanelScene extends Phaser.Scene {
   /** 패널이 열리고 닫힐 때 컨트롤러를 같이 숨기고 보이는 통로 — bind() 참고. */
   private control: ControlScene | null = null
   private menuTab: DetailMenuTab = 'skills'
+  /**
+   * 지금 펼쳐 둔 접이 머리들(이정표 탭의 「그 뒤의 문」·「칭호」).
+   *
+   * 메뉴를 **닫을 때** 비운다(render() 참고) — 여는 것은 언제나 접힌 첫 화면이어야
+   * 한다. 탭을 오가는 동안은 남겨 둔다: 칭호를 펼쳐 놓고 숙련도를 잠깐 보고 돌아온
+   * 사람에게 자기가 편 것을 다시 접어 보이면, 화면이 사람이 한 일을 되돌리는 것이다.
+   */
+  private readonly expandedFolds = new Set<string>()
   private unsubscribeStore: (() => void) | null = null
 
   constructor() {
@@ -432,6 +446,10 @@ export class PanelScene extends Phaser.Scene {
       // 목록이 안 보이면 줄(Text 오브젝트)을 다음에 열릴 때까지 붙잡아 둘
       // 이유가 없다 — 여기서 바로 놓아준다(ScrollList.clear() 문서 참고).
       this.scrollList.clear()
+      // 펼침도 함께 놓는다 — 다음에 여는 사람이 보는 첫 화면은 언제나 접힌
+      // 것이어야 한다(expandedFolds 문서). 여는 쪽에서 비우지 않는 이유는
+      // render() 가 탭 전환에서도 불리기 때문이다.
+      this.expandedFolds.clear()
     }
   }
 
@@ -451,15 +469,33 @@ export class PanelScene extends Phaser.Scene {
 
     const tab = TABS.find((t) => t.id === this.menuTab)
     if (!tab) throw new Error(`알 수 없는 탭: ${this.menuTab}`)
-    this.scrollList.setLines(tab.buildLines(data, player))
+    this.scrollList.setLines(tab.buildLines(data, player, this.expandedFolds))
   }
 
   /**
-   * 메뉴가 열려 있는 동안 매 프레임: 설정 탭의 누를 수 있는 줄을 확인한다.
+   * 접이 머리를 눌렀을 때만 쓰는 다시 그리기 — **스크롤을 그대로 둔다.**
+   *
+   * `rebuildMenuContent()` 의 `setLines` 는 스크롤을 0 으로 되돌린다(그 문서: "새로
+   * 연다는 선언"). 접이 머리는 목록의 맨 아래에 있어서, 그걸로 그리면 「칭호
+   * [펼치기]」를 누른 사람이 자기가 편 것을 못 본 채 맨 위로 튕겨 나간다 —
+   * 제작 패널이 반복 제작 중에 `updateLines` 를 쓰는 것과 같은 이유다.
+   */
+  private refreshMenuLines(): void {
+    const { data, player } = useGameStore.getState()
+    if (!player) return
+    const tab = TABS.find((t) => t.id === this.menuTab)
+    if (!tab) throw new Error(`알 수 없는 탭: ${this.menuTab}`)
+    this.scrollList.updateLines(tab.buildLines(data, player, this.expandedFolds))
+  }
+
+  /**
+   * 메뉴가 열려 있는 동안 매 프레임: 누를 수 있는 줄(설정 탭의 둘, 이정표 탭의
+   * 접이 머리 둘)을 확인한다.
    *
    * **쥐고 있는 것(heldGroup)은 보지 않는다.** 반복해서 좋은 일이 아니라
    * 한 번만 일어나야 하는 일이고, 그중 하나는 캐릭터를 지우는 문이다 —
-   * 손가락을 얹고 있는 것만으로 계속 시도되면 안 된다.
+   * 손가락을 얹고 있는 것만으로 계속 시도되면 안 된다. 접이 머리도 같다:
+   * 얹고 있는 것만으로 매 프레임 접혔다 펴지면 그건 조작이 아니라 깜빡임이다.
    *
    * 여기서 하는 일은 요청을 남기는 것까지다. 실제 확인 창은 DOM 이 그린다
    * (TopBar) — 이름을 타이핑해야 하는데, 그 입력을 Phaser 캔버스 위에 만들면
@@ -468,6 +504,12 @@ export class PanelScene extends Phaser.Scene {
   private pollMenuPress(): void {
     const tapped = this.scrollList.consumeTap()
     if (!tapped) return
+    if (tapped === MILESTONE_FOLD.gates || tapped === MILESTONE_FOLD.titles) {
+      if (this.expandedFolds.has(tapped)) this.expandedFolds.delete(tapped)
+      else this.expandedFolds.add(tapped)
+      this.refreshMenuLines()
+      return
+    }
     const store = useGameStore.getState()
     if (tapped === SETTINGS_ACTION.logout) {
       void store.logout()

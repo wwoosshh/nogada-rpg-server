@@ -3,16 +3,19 @@ import {
   barrierDoorsOf,
   craftIntervalMs,
   equippedToolInfo,
+  gatedRecipesOf,
   gatherHandOf,
   gatherIntervalMs,
+  isPureTitle,
   metricValue,
-  milestoneRatio,
   SKILL_IDS,
   SKILL_LABELS,
   type GameData,
   type MilestoneDef,
   type MilestoneEffect,
   type PlayerState,
+  type RecipeDef,
+  type SkillId,
 } from '@nogada/shared'
 import type { ScrollListLine } from './ScrollList.js'
 import { FONT_SIZE } from './gameText.js'
@@ -72,15 +75,44 @@ function namesOf(ids: readonly string[], table: Record<string, { name: string }>
   return ids.map((id) => table[id]?.name ?? id).join(' · ')
 }
 
+/** 레시피 문 한 줄 — `recipes` 효과와 `gateSkill` 짝이 같은 글자를 쓴다. */
+function recipeSentence(recipes: readonly RecipeDef[], achieved: boolean): string {
+  const names = recipes.map((r) => r.name).join(' · ')
+  return achieved ? `만들 수 있다 — ${names}` : `달성하면 만들 수 있다 — ${names}`
+}
+
 /**
  * 이정표 하나의 효과를 한 줄로 설명한다.
  *
  * achieved 로 시제를 가른다 — 달성한 것은 "지금 이렇다", 못한 것은 "달성하면
  * 이렇게 된다". `title` 은 achieved 여부와 무관하게 효과가 없다는 사실 자체를
  * 그대로 말한다 — 보상을 암시하고 안 주는 줄은 아예 없는 줄보다 나쁘다.
+ *
+ * **`effect` 만으로는 부족하다.** 레시피의 채집 문턱(`gateSkill`·`gateValue`)은
+ * 이정표 쪽에 선언이 없어서, 여태 이 함수는 얼음 1,000 앞에서 「칭호 — 효과는
+ * 없다」를 적었다 — 그 숫자가 실제로는 비 가루·눈 가루의 문인데도. `gatedRecipesOf`
+ * 가 그 짝을 읽고(그 함수 문서에 CSV 를 못 고치는 이유가 적혀 있다), 여기서는
+ * 두 가지로 나뉜다:
+ *   - `title` 인데 여는 레시피가 있으면 **칭호 문장을 아예 버린다.** 「칭호 — 효과는
+ *     없다 · 달성하면 만들 수 있다 …」는 자기 앞뒤가 서로를 부정하는 줄이다.
+ *   - 그 밖의 효과(`repeat` 셋이 그렇다)는 **덧붙인다.** 얼음 10,000 은 자동 반복과
+ *     굵은 비·함박눈 가루를 동시에 열고, 둘 다 참이다.
  */
 function effectDescription(def: MilestoneDef, data: GameData, achieved: boolean): string {
+  const gated = gatedRecipesOf(def, data.recipes)
   const effect: MilestoneEffect = def.effect
+  if (effect.kind === 'title' && gated.length > 0) return recipeSentence(gated, achieved)
+  const base = baseEffectDescription(def, effect, data, achieved)
+  return gated.length > 0 ? `${base} · ${recipeSentence(gated, achieved)}` : base
+}
+
+/** `effect` 칸이 스스로 말하는 것만 — 레시피 짝을 얹는 일은 위 함수가 한다. */
+function baseEffectDescription(
+  def: MilestoneDef,
+  effect: MilestoneEffect,
+  data: GameData,
+  achieved: boolean,
+): string {
   switch (effect.kind) {
     case 'repeat':
       return achieved ? '누르고 있으면 계속된다' : '달성하면 누르고 있는 것만으로 계속된다'
@@ -129,53 +161,182 @@ function effectDescription(def: MilestoneDef, data: GameData, achieved: boolean)
   }
 }
 
-interface MilestoneRow {
-  def: MilestoneDef
-  achieved: boolean
-  current: number
-  ratio: number
+/**
+ * 이정표 묶음의 열쇠 — 계열 다섯 + 수집의 방 + 고르게.
+ *
+ * **왜 「남은 분(分)」이 아니라 이것인가:** 남은 시간은 채집 네 계열에만 정의된다.
+ * 조합 여덟·수집 넷·묶음 셋, 즉 40개 중 열다섯에 값이 없다. 계열 묶음은 40개
+ * 전부에 정의되고, `metric` 칸 하나에서 그대로 나온다.
+ */
+type MilestoneGroup = SkillId | 'collection' | 'every'
+
+/** 묶음이 화면에 서는 차례. 계열 다섯은 가방의 장비 슬롯·수집의 방과 같은 순서다. */
+const GROUP_ORDER: readonly MilestoneGroup[] = [...SKILL_IDS, 'collection', 'every']
+
+function groupOf(def: MilestoneDef): MilestoneGroup {
+  return def.metric.kind === 'skill' ? def.metric.skill : def.metric.kind
 }
 
 /**
- * 못한 것을 남은 비율이 작은 순(= 진척 ratio 가 큰 순)으로 먼저, 달성한 것을 뒤에 둔다.
+ * 「0 / 1,000」이 **무엇의** 숫자인지 — 진척 앞에 붙는 자의 이름.
  *
- * `data.milestones` 자체는 절대 정렬하지 않는다 — 이 함수 자신의 동점 처리(안정
- * 정렬이 원본 순서를 그대로 쓴다)와 `every` 이정표의 순환 없음 검증이 그 정의
- * 순서에 기댄다(packages/data/src/validate.ts). 여기서 만드는 것은 표시 전용 사본이다.
+ * 예전에는 이름 뒤에 벌거벗은 두 숫자만 있었다. 이름이 계열을 말해 주는 줄
+ * (「얼음에 익숙해지다」)에서는 그것으로 됐지만, 「구리 망치를 만들 수 있다
+ * 0 / 200」은 200 이 조합 숙련인지 망치 개수인지 화면 어디에도 없었다.
  */
-function buildMilestoneRows(data: GameData, player: PlayerState): MilestoneRow[] {
-  const achieved = achievedIds(data, player)
-  const rows: MilestoneRow[] = data.milestones.map((def) => ({
-    def,
-    achieved: achieved.has(def.id),
-    current: metricValue(def, player, data),
-    ratio: milestoneRatio(def, player, data),
-  }))
-
-  const pending = rows.filter((r) => !r.achieved).sort((a, b) => b.ratio - a.ratio)
-  const done = rows.filter((r) => r.achieved)
-  return [...pending, ...done]
+function metricLabel(def: MilestoneDef): string {
+  const m = def.metric
+  if (m.kind === 'skill') return `${SKILL_LABELS[m.skill]} 숙련`
+  if (m.kind === 'collection') return '수집 총점'
+  return '이정표'
 }
 
-/** 이정표 탭의 내용. 줄마다 이름+진척(또는 체크) 한 줄과 효과 설명 한 줄, 두 줄씩이다. */
-function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLine[] {
-  const lines: ScrollListLine[] = []
-  for (const row of buildMilestoneRows(data, player)) {
-    // "???" 를 쓰지 않는다 — 못한 것도 지금 값과 필요한 값을 그대로 적는다.
-    const head = row.achieved
-      ? `✓ ${row.def.name}`
-      : `${row.def.name}   ${fmt(row.current)} / ${fmt(row.def.threshold)}`
-    lines.push({
+interface MilestoneRow {
+  def: MilestoneDef
+  group: MilestoneGroup
+  achieved: boolean
+  current: number
+  /** 아무것도 안 여는 순수 칭호인가 — 접히는 자루를 가르는 자(shared 의 `isPureTitle`). */
+  pure: boolean
+}
+
+/**
+ * 접을 수 있는 머리의 id — PanelScene 이 `ScrollList.consumeTap()` 으로 받는다.
+ *
+ * SETTINGS_ACTION 과 같은 자리, 같은 이유다: 문자열을 두 파일에 각각 적으면 한쪽
+ * 오타가 "눌러도 아무 일도 없는 줄"이 되고, 그건 화면만 봐서는 고장인지 원래
+ * 그런 것인지 알 수 없다.
+ */
+export const MILESTONE_FOLD = {
+  gates: 'milestones:gates',
+  titles: 'milestones:titles',
+} as const
+
+/** 이정표 한 개가 차지하는 두 줄 — 이름+진척(또는 체크), 그리고 효과 설명. */
+function milestoneRowLines(row: MilestoneRow, data: GameData): ScrollListLine[] {
+  // "???" 를 쓰지 않는다 — 못한 것도, 접힌 자루에서 꺼낸 것도 지금 값과 필요한
+  // 값을 그대로 적는다. 접는 것과 숨기는 것은 다르다.
+  const head = row.achieved
+    ? `✓ ${row.def.name}`
+    : `${row.def.name}   ${metricLabel(row.def)} ${fmt(row.current)} / ${fmt(row.def.threshold)}`
+  return [
+    {
       text: head,
       color: row.achieved ? SUCCESS_COLOR : LABEL_COLOR,
       fontSize: ROW_NAME_FONT_SIZE,
-    })
-    lines.push({
+    },
+    {
       text: effectDescription(row.def, data, row.achieved),
       color: DIM_COLOR,
       fontSize: ROW_DETAIL_FONT_SIZE,
-    })
+    },
+  ]
+}
+
+/** 접힌 자루 하나 — 머리 한 줄(개수를 세어 말한다) + 펼쳤을 때의 내용. */
+function foldLines(
+  id: string,
+  label: string,
+  rows: readonly MilestoneRow[],
+  open: boolean,
+  data: GameData,
+): ScrollListLine[] {
+  // 비어 있으면 머리도 안 낸다 — 「칭호 0개 [펼치기]」는 눌러도 아무 일도 없는 줄이다.
+  if (rows.length === 0) return []
+  const lines: ScrollListLine[] = [
+    {
+      text: `─── ${label} ${rows.length}개   ${open ? '[접기]' : '[펼치기]'}`,
+      color: DIM_COLOR,
+      fontSize: ROW_NAME_FONT_SIZE,
+      groupId: id,
+    },
+  ]
+  if (!open) return lines
+  for (const row of rows) lines.push(...milestoneRowLines(row, data))
+  return lines
+}
+
+/**
+ * 이정표 탭의 내용 — 묶음마다 **지금 걸린 문 하나**, 나머지는 접힌 자루 둘에.
+ *
+ * **여태 무엇이 잘못됐는가.** 40항목 × 2줄 = 80줄이 한 덩어리였고, 정렬은 진척
+ * 비율 내림차순이었다. 신규는 40개가 **전부 비율 0.000** 이라 그 정렬이 무효가
+ * 되어 화면 순서가 문자 그대로 CSV 행 순서였고, 그래서 첫 다섯 줄이 전부
+ * 「칭호 — 효과는 없다」였다 — 그 문구가 한 화면에 열네 번 나왔다. 목록방이 잠긴
+ * 문 대신 잠긴 장식을 보여 주고 있었다.
+ *
+ * **묶음의 머리를 고르는 규칙: 못한 것 중 문턱이 가장 낮은 「문」.** 신규 화면에서
+ * 이 한 줄이 광물 묶음의 머리를 `mineral_1000`(칭호)에서 `mineral_10000`(자동
+ * 반복)으로, 수집 묶음을 `collection_10`(칭호)에서 `collection_30`(되사기 진열)으로
+ * 옮긴다. 여섯 줄이 전부 실제로 열리는 것을 말한다.
+ *
+ * **열 문이 안 남은 묶음은 머리를 아예 안 낸다.** `고르게`(every 셋)가 그렇다 —
+ * 전부 순수 칭호라 내보일 문이 하나도 없고, 없는 문을 지어내는 대신 그 셋을 칭호
+ * 자루에 그대로 둔다. 이 규칙에는 잰 근거가 하나 더 있다: 일곱 묶음이면 줄이
+ * 열여섯(288px)인데 목록 뷰포트는 812×375 에서 **255px** 이라, 접이 머리 둘이
+ * 통째로 화면 아래로 밀려난다(실측). 나머지 서른넷에 닿는 유일한 손잡이가 안
+ * 보이는 자리에 놓이는 것이다. 여섯 묶음이면 열넷(252px)이라 딱 들어간다.
+ * 다 캔 사람의 화면이 머리 없이 자루 둘만 남는 것도 참말이다 — 그에게는 열 문이
+ * 정말 없다.
+ *
+ * **접는 것과 숨기는 것은 다르다.** 남은 것은 사라지지 않고 자루 둘에 들어가며,
+ * 머리가 몇 개인지 세어 말하고, 펼치면 잠긴 것까지 전부 지금 값과 함께 나온다.
+ * `???` 는 한 글자도 없다.
+ *
+ * 문 목록은 줄이지 않는다 — 칭호를 접고 나면 남는 문이 스물셋뿐이라 애초에 40줄
+ * 벽이 없고, 목록방의 힘은 "내가 아직 못 여는 것이 저기 있다"를 **묻지 않아도
+ * 보는 것**이기 때문이다.
+ *
+ * `data.milestones` 자체는 절대 정렬하지 않는다 — `every` 이정표의 순환 없음
+ * 검증이 그 정의 순서에 기댄다(packages/data/src/validate.ts). 여기서 만드는 것은
+ * 표시 전용 사본이고, 같은 문턱끼리는 안정 정렬이 CSV 행 순서를 그대로 지킨다.
+ */
+function buildMilestoneLines(
+  data: GameData,
+  player: PlayerState,
+  expanded: ReadonlySet<string>,
+): ScrollListLine[] {
+  const achieved = achievedIds(data, player)
+  const rows: MilestoneRow[] = data.milestones.map((def) => ({
+    def,
+    group: groupOf(def),
+    achieved: achieved.has(def.id),
+    current: metricValue(def, player, data),
+    pure: isPureTitle(def, data.recipes),
+  }))
+
+  const ordered = GROUP_ORDER.flatMap((group) =>
+    rows.filter((r) => r.group === group).sort((a, b) => a.def.threshold - b.def.threshold),
+  )
+
+  const heads = new Set<string>()
+  for (const group of GROUP_ORDER) {
+    const head = ordered.find((r) => r.group === group && !r.achieved && !r.pure)
+    if (head) heads.add(head.def.id)
   }
+
+  const lines: ScrollListLine[] = []
+  for (const row of ordered) {
+    if (heads.has(row.def.id)) lines.push(...milestoneRowLines(row, data))
+  }
+
+  const rest = ordered.filter((r) => !heads.has(r.def.id))
+  lines.push(
+    ...foldLines(
+      MILESTONE_FOLD.gates,
+      '그 뒤의 문',
+      rest.filter((r) => !r.pure),
+      expanded.has(MILESTONE_FOLD.gates),
+      data,
+    ),
+    ...foldLines(
+      MILESTONE_FOLD.titles,
+      '칭호',
+      rest.filter((r) => r.pure),
+      expanded.has(MILESTONE_FOLD.titles),
+      data,
+    ),
+  )
   return lines
 }
 
@@ -193,7 +354,11 @@ function buildMilestoneLines(data: GameData, player: PlayerState): ScrollListLin
  * 됐다: 만강 망치를 든 사람에게 500ms 라고 적어 놓고 서버는 429ms 로 스탬프한다.
  * 망치의 티어는 여전히 이 숫자를 안 바꾼다(티어가 사는 것은 성공률이다).
  */
-function buildSkillLines(data: GameData, player: PlayerState): ScrollListLine[] {
+function buildSkillLines(
+  data: GameData,
+  player: PlayerState,
+  _expanded: ReadonlySet<string>,
+): ScrollListLine[] {
   return SKILL_IDS.map((skill) => {
     const value = player.skills[skill]
     const interval =
@@ -258,7 +423,11 @@ export const SETTINGS_ACTION = {
  * 늘 눌릴 자리에 "지운다"가 놓인다. 톱니 → 설정은 이미 "지금 하던 것을 멈추고
  * 들여다보는" 자리라, 되돌릴 수 없는 일이 있어야 할 곳이 있다면 여기다.
  */
-function buildSettingsLines(_data: GameData, player: PlayerState): ScrollListLine[] {
+function buildSettingsLines(
+  _data: GameData,
+  player: PlayerState,
+  _expanded: ReadonlySet<string>,
+): ScrollListLine[] {
   const lines: ScrollListLine[] = [
     { text: '노가다 RPG 팬메이드', color: LABEL_COLOR, fontSize: ROW_NAME_FONT_SIZE },
     {
@@ -317,7 +486,19 @@ function buildSettingsLines(_data: GameData, player: PlayerState): ScrollListLin
   return lines
 }
 
-type LineBuilder = (data: GameData, player: PlayerState) => ScrollListLine[]
+/**
+ * 탭 하나의 내용을 만드는 자.
+ *
+ * `expanded` 는 지금 펼쳐져 있는 접이 머리의 id 들이다 — 이정표 탭만 쓴다.
+ * 이 상태를 이 모듈이 들고 있지 않는 이유: 여기 두면 모듈 전역 변수가 되어
+ * 캐릭터를 바꿔도, 패널을 닫았다 열어도 지난 화면의 펼침이 따라온다. 화면
+ * 상태는 화면을 소유한 쪽(PanelScene)의 것이다.
+ */
+type LineBuilder = (
+  data: GameData,
+  player: PlayerState,
+  expanded: ReadonlySet<string>,
+) => ScrollListLine[]
 
 interface TabDef {
   id: string

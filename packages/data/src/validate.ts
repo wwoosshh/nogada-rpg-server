@@ -21,6 +21,7 @@ import {
   describeFactValueShape,
   factValueFitsShape,
   findFactSpec,
+  gatedRecipesOf,
   isSellTarget,
   matchesCondition,
   sellPrice,
@@ -1209,6 +1210,34 @@ export function validateGameData(
     } else if (carriers.length > 1) {
       violations.push(
         `recipes[${recipe.id}]: recipes 이정표 [${carriers.map((m) => m.id).join(',')}] ${carriers.length}개에 실렸다 — 정확히 하나여야 한다`,
+      )
+    }
+  }
+
+  // 레시피의 **두 번째 문**(gateSkill·gateValue = 채집 문턱)에 대한 역방향 검사 —
+  // 결계 게이트가 `transitions.csv` 에 대해 하는 것과 같은 자세, 같은 이유다.
+  //
+  // 이정표 탭은 `gatedRecipesOf` 로 이 짝을 읽어 「얼음 1,000 → 비 가루·눈 가루를
+  // 만들 수 있다」를 적는다. 그 짝이 어느 이정표와도 안 맞으면 그 레시피의 채집
+  // 문턱은 목록방에서 조용히 빠지고, 플레이어는 재료가 안 나오는 이유를 제작 화면
+  // 앞에서 끝내 못 읽는다 — 요구치를 숫자로 말하는 문의 반대다.
+  //
+  // 앞방향(이정표 → 레시피)은 검사할 것이 없다. 이정표는 채집 문턱을 **선언하지
+  // 않고**(effect 에 그 칸이 없다) 레시피 쪽 두 칸에서 유도될 뿐이라, 짝이 없는
+  // 이정표는 그냥 여는 레시피가 없는 이정표다.
+  for (const recipe of Object.values(data.recipes)) {
+    if (recipe.gateSkill === undefined || recipe.gateValue === undefined) continue
+    const carriers = data.milestones.filter(
+      (m) => gatedRecipesOf(m, { [recipe.id]: recipe }).length === 1,
+    )
+    const at = `recipes[${recipe.id}]`
+    if (carriers.length === 0) {
+      violations.push(
+        `${at}: gateSkill=${recipe.gateSkill}·gateValue=${recipe.gateValue} 인데 그 계열·그 숫자를 가진 이정표가 하나도 없다 — 목록방에서 조용히 빠져 플레이어는 이 재료가 왜 안 나오는지 읽을 곳이 없다. milestones.csv 에 metricKind=skill·metricArg=${recipe.gateSkill}·threshold=${recipe.gateValue} 인 행이 있어야 한다`,
+      )
+    } else if (carriers.length > 1) {
+      violations.push(
+        `${at}: gateSkill=${recipe.gateSkill}·gateValue=${recipe.gateValue} 가 이정표 [${carriers.map((m) => m.id).join(',')}] ${carriers.length}개와 맞물린다 — 정확히 하나여야 한다. 목록에 같은 문이 두 번 열리는 것으로 보인다`,
       )
     }
   }
