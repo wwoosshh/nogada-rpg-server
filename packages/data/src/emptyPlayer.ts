@@ -45,6 +45,12 @@ export function emptyPlayer(): PlayerState {
     // 성격의 "아직 아무것도 하지 않았다" 이고, 신규 캐릭터와 같은 값이다.
     story: 0,
     storyCount: 0,
+    // **마을도 아직 안 골랐다.** 빈 문자열은 "모른다" 이지 눈의마을이 아니다
+    // (PlayerState.startVillage) — 여기 마을 하나를 적으면 이 함수를 바탕으로
+    // 재는 것들이 전부 그 마을 사람이 되고, 그중에는 "마을을 무엇으로 유도하는가"
+    // 를 재는 검사들이 있다. 아래 `location` 이 시작 맵인 것과 어긋나지 않는다:
+    // 유도는 서 있는 자리를 보므로(storyVillage ②) 같은 답을 낸다.
+    startVillage: '',
     // 아직 어떤 달인의 문턱도 넘지 않은 사람이다 — celebrated 와 같은 성격의
     // "아직 아무 일도 없었다"이고, 시뮬레이터가 흉내 내는 것이 정확히 그 상태다.
     rewarded: [],

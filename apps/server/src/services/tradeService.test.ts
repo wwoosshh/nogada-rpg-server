@@ -193,6 +193,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     // 사슬은 이 스위트가 보는 판정이 아니다 — PlayerState 의 필수 칸이라 채워만 둔다.
     story: 0,
     storyCount: 0,
+    startVillage: '',
     rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: 채집장, x: 0, y: 0 },

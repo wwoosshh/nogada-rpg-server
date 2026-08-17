@@ -2564,3 +2564,41 @@ describe('validateShopTalk — 이미 열린 문 앞에서 미루지 않는다',
     expect(validateShopTalk(loadRealGameData())).toEqual([])
   })
 })
+
+/**
+ * **검증이 빌드에 실제로 배선돼 있는가.**
+ *
+ * 위의 수백 판이 전부 검증 함수를 **직접** 부른다 — 그래서 `build.ts` 에서 그
+ * 함수를 부르는 한 줄을 지워도 전부 초록이다(돌연변이로 확인했다). 그날부터
+ * 그 그물은 살아 있으면서 아무것도 안 막고, 어긋난 데이터는 게임까지 그대로
+ * 걸어 들어간다 — `validateShopTalk` 이 잡겠다고 한 「이미 열린 문 앞에서
+ * 미룬다」가 네 계열 전부에서 실제로 났던 그 상태다.
+ *
+ * 이름 하나를 못박는 대신 **목록끼리** 견준다: 검증 함수를 새로 쓰고 배선을
+ * 잊는 것이 지우는 것보다 흔한 사고이고, 그 사고는 이름을 적어 두는 자로는
+ * 절대 안 잡힌다.
+ */
+describe('빌드 배선 — 검증이 실제로 불리는가', () => {
+  const 소스폴더 = dirname(fileURLToPath(import.meta.url))
+
+  it('packages/data 의 모든 validate* 를 build.ts 가 부른다', () => {
+    const 검증함수: { name: string; file: string }[] = []
+    for (const file of readdirSync(소스폴더)) {
+      if (!file.endsWith('.ts') || file.endsWith('.test.ts') || file === 'build.ts') continue
+      const src = readFileSync(join(소스폴더, file), 'utf8')
+      for (const m of src.matchAll(/^export function (validate\w+)/gm)) {
+        검증함수.push({ name: m[1]!, file })
+      }
+    }
+    // 양성 대조군 — 정규식이 아무것도 못 찾으면 이 판은 통과해도 잰 것이 없다.
+    expect(검증함수.length, 'validate* 를 하나도 못 찾았다').toBeGreaterThan(5)
+
+    const build = readFileSync(join(소스폴더, 'build.ts'), 'utf8')
+    // `import` 줄에 이름만 적힌 것은 부르는 것이 아니다 — 여는 괄호까지 본다.
+    const 안불리는것 = 검증함수.filter(({ name }) => !build.includes(`${name}(`))
+    expect(
+      안불리는것.map((v) => `${v.name}(${v.file})`),
+      'build.ts 가 이 검증들을 안 부른다 — 그물이 살아 있으면서 아무것도 안 막는다',
+    ).toEqual([])
+  })
+})

@@ -117,12 +117,16 @@ describe('스토리 훅 — 이동(새 훅이다)', () => {
     expect(result).toEqual({ ok: false, code: 'locked' })
   })
 
-  // 왜: 훅은 **자리를 옮긴 뒤**에 돌아야 한다(moveService 의 훅 자리 주석). 사슬
-  //     유도는 숙련 0 인 사람에게 서 있는 자리를 보므로(`storyVillage` 의 ②), 앞에서
-  //     부르면 사슬이 "떠나온 곳" 기준으로 선다 — 월드맵에는 그 사람이 어느 마을에서
-  //     났는지 말해 주는 정보가 없어서 유도가 늘 같은 답(눈의마을)으로 떨어진다.
-  //     그 한 줄을 위로 올려도 2,300 이 전부 초록이던 자리다.
-  it('훅은 자리를 옮긴 뒤에 돈다 — 월드맵에서 넘어오면 사슬은 도착한 마을 것이다', () => {
+  // 왜: 훅은 **자리를 옮긴 뒤**에 돌아야 한다(moveService 의 훅 자리 주석). 그
+  //     한 줄을 위로 올려도 2,300 이 전부 초록이던 자리다.
+  //
+  //     이 검사가 재는 사람은 **시작 마을이 안 적힌 옛 세이브**(친구들 계정)다 —
+  //     아크 F 가 그 칸을 늘린 뒤로 순서가 값을 바꾸는 사람이 그들뿐이기 때문이다.
+  //     적힌 사람은 유도가 아예 안 돌아 어디서 부르든 같은 사슬이 서고, 안 적힌
+  //     사람에게만 유도가 서 있는 자리를 본다(`storyVillage` 의 ②). 훅을 위에서
+  //     부르면 그 사람은 월드맵에 서 있고, 월드맵에는 어느 마을에서 났는지 말해
+  //     주는 정보가 없어 유도가 늘 같은 답(눈의마을)으로 떨어진다.
+  it('훅은 자리를 옮긴 뒤에 돈다 — 옛 세이브의 사슬은 도착한 마을 것이다', () => {
     // 마디 0 을 「{마을}에 닿아라」로 둔다. 사슬이 어느 마을 것으로 폈는지가
     // 그대로 값이 된다 — 눈의마을 것으로 폈으면 항구마을 도착은 아무것도 안 끝낸다.
     const rows = [{ ...ROWS[0]!, goalArg: '{마을}', objective: '{마을}로 돌아가라' }]
@@ -130,11 +134,34 @@ describe('스토리 훅 — 이동(새 훅이다)', () => {
     expect(validateStory(homeward)).toEqual([])
 
     const door = data.transitions.find((t) => t.fromMap === WORLD_MAP_ID && t.toMap === '항구마을')!
-    // 숙련이 전부 0 이라 유도는 오직 서 있는 자리로만 갈린다(storyVillage ②·③).
-    const player = novice({ location: { mapId: WORLD_MAP_ID, x: door.fromX, y: door.fromY } })
+    // 숙련이 전부 0 · 시작 마을 미기록이라 유도는 오직 서 있는 자리로만 갈린다.
+    const player = novice({
+      startVillage: '',
+      location: { mapId: WORLD_MAP_ID, x: door.fromX, y: door.fromY },
+    })
 
     const result = moveThroughTransition({ player, data: homeward, now: 0, x: door.fromX, y: door.fromY })
     expect(result.ok && result.outcome.player.story).toBe(1)
+    // 그리고 같은 순서가 **못박기**도 진다: 도착한 자리가 유도에 근거를 준다.
+    expect(result.ok && result.outcome.player.startVillage).toBe('항구마을')
+  })
+
+  // 왜: 위 검사의 반대편이다 — 시작 마을이 **적힌** 사람은 남의 마을에 넘어가도
+  //     자기 사슬을 걷는다. 이것이 없으면 `storyVillage` 가 저장된 값을 무시하고
+  //     유도로 되돌아가도 아무도 안 짖는다(월드맵→항구마을 이동은 유도 ② 로도
+  //     항구마을을 내므로, 위 검사만으로는 두 구현이 구별되지 않는다).
+  it('시작 마을이 적힌 사람은 남의 마을에 넘어가도 자기 사슬이다', () => {
+    const rows = [{ ...ROWS[0]!, goalArg: '{마을}', objective: '{마을}로 돌아가라' }]
+    const homeward: GameData = { ...data, story: parseStory(rows) }
+
+    const door = data.transitions.find((t) => t.fromMap === WORLD_MAP_ID && t.toMap === '항구마을')!
+    // 눈의마을에서 난 사람이다(novice). 숙련은 전부 0 이라 유도라면 도착한
+    // 항구마을을 낼 자리인데, 적힌 값이 있으므로 사슬은 여전히 눈의마을 것이다.
+    const player = novice({ location: { mapId: WORLD_MAP_ID, x: door.fromX, y: door.fromY } })
+
+    const result = moveThroughTransition({ player, data: homeward, now: 0, x: door.fromX, y: door.fromY })
+    expect(result.ok && result.outcome.player.story).toBe(0)
+    expect(result.ok && result.outcome.player.startVillage).toBe('눈의마을')
   })
 })
 

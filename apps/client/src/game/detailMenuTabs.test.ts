@@ -3,11 +3,29 @@ import { ENHANCE_CAP, SKILL_LABELS, type GameData, type PlayerState } from '@nog
 import { testTool } from '@nogada/shared/testing'
 import { describe, expect, it } from 'vitest'
 import { MILESTONE_FOLD, SETTINGS_ACTION, TABS } from './detailMenuTabs.js'
+import { FONT_SIZE } from './gameText.js'
 import { panelListRect } from './panelBox.js'
 import { ROW_GAP } from './scrollListGeometry.js'
 
 /** 아무것도 안 펼친 상태 — 접이 머리를 쓰지 않는 탭들이 넘기는 값이다. */
 const 접힘: ReadonlySet<string> = new Set()
+
+/**
+ * 한 줄이 화면에서 차지하는 높이(px). **글자 크기에 딸린 값이라 상수가 아니다.**
+ *
+ * Phaser 의 `Text.height` 는 그 글꼴의 **어센트+디센트**이고(MeasureText), 그것은
+ * 이 판이 브라우저 없이 구할 수 없다. 그래서 실측을 적되 **그때의 글자 크기와
+ * 함께** 적고 `FONT_SIZE.body` 로 다시 곱한다 — 15 하나만 적어 두면 크기를 올린
+ * 날 이 판이 옛 높이로 재고, 뷰포트 여유가 3px 뿐이라 그날 스크롤이 생기는데도
+ * 초록이 된다.
+ *
+ * **비례가 성립하는 것도 잰 것이다**(브라우저, Neo둥근모 Pro):
+ * 16px → 어센트 12 + 디센트 3 = 15 · 32px → 24 + 6 = 30 · 12px → 9 + 2 = 11.
+ * 어센트가 0.75·크기, 디센트가 0.1875·크기로 딱 떨어진다 — 16 단위 격자로 설계된
+ * 비트맵 계열이라 그렇고(tokens.css 의 글꼴 주석), 이 프로젝트가 16 의 배수만 쓰는
+ * 이유도 같다.
+ */
+const 줄높이 = (FONT_SIZE.body * 15) / 16
 
 function settingsLines() {
   const tab = TABS.find((t) => t.id === 'settings')!
@@ -242,10 +260,12 @@ describe('이정표 탭 — 묶음과 접기', () => {
   //     그대로 가져온다 — 여백·헤더·패널 여백 중 무엇이 바뀌어도 화면과 이 판이
   //     같이 움직여야 한다. 옮겨 적던 시절 이 식은 실제 contentHeight 보다 3px
   //     작았다(buildRows 는 마지막 줄 뒤에도 ROW_GAP 을 더한다).
-  //     줄 높이 15 만 여기 상수로 남는다 — 그것은 Phaser 가 재는 값이라 이 판이
-  //     구할 수 없다(실기에서 읽은 수다).
+  //
+  //     **줄 높이도 이제 상수가 아니다.** 15 를 그대로 적어 두던 동안 이 판은
+  //     `FONT_SIZE.body` 를 올려도 초록이었다 — 여유가 3px 뿐이라(14줄 × 18px =
+  //     252, 뷰포트 255) 글자를 한 단계만 키워도 스크롤이 생기는데 아무도 안 짖는
+  //     자리였다. 아래 `줄높이` 를 참고.
   it('신규의 첫 화면은 12줄 + 접힌 머리 둘 — 뷰포트에 스크롤 없이 들어간다', () => {
-    const 줄높이 = 15
     const first = lines(초보)
     expect(first.filter((l) => l.groupId)).toHaveLength(2)
     expect(first.filter((l) => !l.groupId)).toHaveLength(12)

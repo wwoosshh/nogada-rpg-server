@@ -18,6 +18,7 @@ import { startVillages, villageField, WORLD_MAP_ID } from './maps.js'
 import { parseCsv } from './parse.js'
 import {
   parseStory,
+  pinStartVillage,
   runStoryHook,
   storyChainOf,
   storySlots,
@@ -484,6 +485,106 @@ const CHAIN_ROWS = [
   }),
 ]
 
+/**
+ * 저장된 시작 마을이 유도를 **이긴다** — 아크 F 가 늘린 셋째 칸의 존재 이유다.
+ *
+ * 유도만으로는 못 세우는 사람이 하나 있다: 숙련이 전부 0 인 채로 월드맵·사냥터에
+ * 서 있는 사람. 그 자리에는 어느 마을에서 났는지 말해 주는 값이 세계 어디에도
+ * 없어서 유도가 늘 같은 답(전환표 첫 마을)을 냈고, 띠와 깃발은 그 답을 말했다.
+ */
+describe('startVillage — 적힌 마을이 유도를 이긴다', () => {
+  const data = loadGameData()
+
+  it('네 마을 각각이 자기 사슬을 걷는다', () => {
+    for (const village of startVillages(data)) {
+      const p = villager({ startVillage: village.id })
+      expect([village.id, storyVillage(data, p).id]).toEqual([village.id, village.id])
+    }
+  })
+
+  // 왜: 이것이 이 필드가 생긴 이유 그 자체다. 유도는 이 자리에서 늘 눈의마을을
+  //     냈고(숙련 0 · 마을도 채집장도 아닌 맵), 그래서 북동쪽마을을 고른 사람이
+  //     「눈의 마을 북문으로 나가라」를 읽었다.
+  it('월드맵·사냥터·개발맵에 서 있어도 안 바뀐다 — 유도가 늘 눈의마을을 내던 자리다', () => {
+    for (const mapId of [WORLD_MAP_ID, '사냥터', '개발맵']) {
+      for (const village of startVillages(data)) {
+        const p = villager({ startVillage: village.id, location: { mapId, x: 1, y: 1 } })
+        expect([mapId, village.id, storyVillage(data, p).id]).toEqual([mapId, village.id, village.id])
+      }
+    }
+  })
+
+  // 왜: 저장된 값이 있으면 유도는 **아예 안 돈다**. 위 검사들은 유도가 우연히 같은
+  //     답을 낼 수 있는 자리라 그것만으로는 두 구현을 못 가른다 — 여기서는 유도
+  //     ①(숙련 최고)과 ②(서 있는 자리)가 **둘 다** 다른 마을을 가리키게 세운다.
+  it('유도가 정반대를 가리켜도 적힌 마을이 답이다', () => {
+    const p = villager({
+      startVillage: '북동쪽마을',
+      skills: { ice: 200000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      location: { mapId: '얼음채집장', x: 1, y: 1 },
+    })
+    expect(storyVillage(data, p).id).toBe('북동쪽마을')
+    expect(storyChainOf(data, p)[0]!.objective).toBe('북동쪽 마을 동문으로 나가라')
+  })
+
+  // 왜: 마을을 개명하거나 월드맵에서 그 마을로 가는 전환을 지우면 적힌 값이 더는
+  //     마을을 안 가리킨다. 그대로 넘기면 storySlots 가 던져 그 사람의 게임이
+  //     통째로 선다 — resolvePlayerLocation 이 없어진 맵을 되돌리는 그 자리다.
+  it('시작 마을이 아닌 값은 없는 것으로 치고 유도로 내려간다', () => {
+    const p = villager({ startVillage: '사냥터', location: { mapId: '항구마을', x: 1, y: 1 } })
+    expect(storyVillage(data, p).id).toBe('항구마을')
+  })
+})
+
+describe('pinStartVillage — 옛 세이브를 한 번 못박는다', () => {
+  const data = loadGameData()
+
+  it('값이 없으면 유도해서 적는다', () => {
+    const p = villager({ location: { mapId: '숲의마을', x: 1, y: 1 } })
+    pinStartVillage(data, p)
+    expect(p.startVillage).toBe('숲의마을')
+  })
+
+  it('이미 적힌 값은 안 건드린다 — 남의 마을에 놀러 가도 그대로다', () => {
+    const p = villager({ startVillage: '북동쪽마을', location: { mapId: '숲의마을', x: 1, y: 1 } })
+    pinStartVillage(data, p)
+    expect(p.startVillage).toBe('북동쪽마을')
+  })
+
+  // 왜: **적는 것이 안 적는 것보다 나쁜 유일한 경우다.** 유도 ③ 은 근거가 없어
+  //     늘 같은 답(전환표 첫 마을)을 내는데, 그것을 세이브에 적으면 북동쪽마을
+  //     사람이 눈의마을에 영구히 못박힌다. 안 적으면 그 사람이 자기 마을로
+  //     돌아오는 순간 ②가 스스로 고친다.
+  it('근거 없는 유도(숙련 0 · 월드맵)는 안 적는다 — 지어낸 답을 못박지 않는다', () => {
+    const p = villager({ location: { mapId: WORLD_MAP_ID, x: 1, y: 1 } })
+    pinStartVillage(data, p)
+    expect(p.startVillage).toBe('')
+    // 그리고 그 사람이 자기 마을에 닿으면 그때 적힌다.
+    p.location = { mapId: '북동쪽마을', x: 1, y: 1 }
+    pinStartVillage(data, p)
+    expect(p.startVillage).toBe('북동쪽마을')
+  })
+
+  it('판정 훅이 부른다 — 옛 세이브는 첫 훅 한 번으로 채워진다', () => {
+    const p = villager({ location: { mapId: '허브채집장', x: 1, y: 1 } })
+    runStoryHook({ data, player: p, before: structuredClone(p), event: null })
+    expect(p.startVillage).toBe('항구마을')
+  })
+
+  // 왜: 표가 비면 마을 유도 자체가 답 없는 계산이고, 두 칸짜리 리터럴로 짓는
+  //     서비스 테스트들이 `startVillages` 의 던짐에 걸린다(storyChainOf 문서).
+  it('표가 비면 못박지도 않는다', () => {
+    const p = villager({ location: { mapId: '허브채집장', x: 1, y: 1 } })
+    runStoryHook({
+      data: { ...data, story: [] },
+      player: p,
+      before: structuredClone(p),
+      event: null,
+    })
+    expect(p.startVillage).toBe('')
+  })
+})
+
 describe('storyVillage — 시작 마을을 되찾는다', () => {
   const data = loadGameData()
 
@@ -680,20 +781,26 @@ describe('출하 사슬 — 설계 ③ 의 두 표를 그대로 잰다', () => {
 
   // 설계 ③ 의 마디 표(0~5)와 계열별 표를 한 줄에 담는다. 이 네 줄이 어긋나는 날은
   // 사슬을 고친 날이고, 그때 이 표도 함께 고쳐져야 한다.
+  //
+  // **넷째 칸은 「수집 1단」이 아니라 「마디 3 이 요구하는 개수」다.** 셋은 여전히
+  // `{t1}` 슬롯이 채우지만 광물만 CSV 에 100 이 그대로 적혀 있다 — 수집표의 1단은
+  // **최종 브라켓 · 최적손 30분**을 겨냥해 교정된 눈금이라(collection.ts) 초반
+  // 마디가 그대로 빌려 쓰면 광물만 마디 3 이 14초로 스쳐 지나간다(설계 ③ 의 정정).
+  // 그래서 이름을 `t1` 에서 바꿨다: 두 값이 갈라진 지금 옛 이름은 거짓말이다.
   const FIELDS = [
     ['눈의마을', 'ice', 'ice_shard', 200, 'ice_1000', 'snow_powder'],
     ['숲의마을', 'wood', 'soft_log', 200, 'wood_1000', 'compressed_log'],
     ['항구마을', 'herb', 'common_herb', 150, 'herb_1000', 'herb_extract'],
-    ['북동쪽마을', 'mineral', 'copper_ore', 50, 'crafting_200', 'copper_hammer'],
+    ['북동쪽마을', 'mineral', 'copper_ore', 100, 'crafting_200', 'copper_hammer'],
   ] as const
 
-  it.each(FIELDS)('%s 의 사슬이 마디 0~5 로 끝까지 선다', (village, skill, item, t1, reach, recipe) => {
+  it.each(FIELDS)('%s 의 사슬이 마디 0~5 로 끝까지 선다', (village, skill, item, 헌납수, reach, recipe) => {
     const chain = chainOfVillage(village)
     expect(chain.map((s) => s.step)).toEqual([0, 1, 2, 3, 4, 5])
     expect(chain[0]!.goal).toEqual({ kind: 'arrive', arg: villageField(data, village).map.id })
     expect(chain[1]!.goal).toEqual({ kind: 'gather', arg: skill, count: 1 })
     expect(chain[2]!.goal).toEqual({ kind: 'gather', arg: skill, count: 40 })
-    expect(chain[3]!.goal).toEqual({ kind: 'donate', arg: item, count: t1 })
+    expect(chain[3]!.goal).toEqual({ kind: 'donate', arg: item, count: 헌납수 })
     expect(chain[4]!.goal).toEqual({ kind: 'reach', arg: reach })
     expect(chain[5]!.goal).toEqual({ kind: 'craft', arg: recipe, count: 1 })
   })
@@ -760,7 +867,7 @@ describe('출하 사슬 — 설계 ③ 의 두 표를 그대로 잰다', () => {
    * 패널에 없는 물건을 만들라고 시킨다. 슬롯이 아니라 손으로 적은 이름이라
    * `fillText` 도 이것을 못 잡는다.
    */
-  it.each(FIELDS)('%s 의 마디 5 는 그 레시피의 이름을 그대로 적는다', (village, _skill, _item, _t1, _reach, recipe) => {
+  it.each(FIELDS)('%s 의 마디 5 는 그 레시피의 이름을 그대로 적는다', (village, _skill, _item, _헌납수, _reach, recipe) => {
     const def = data.recipes[recipe]!
     expect(chainOfVillage(village)[5]!.objective).toContain(def.name)
   })

@@ -681,36 +681,46 @@ export function validateStory(data: GameData): string[] {
 }
 
 /**
- * 이 플레이어의 사슬은 **어느 마을의 것인가**.
+ * 유도 한 번의 결과 — 어느 마을인가, 그리고 **그 답에 근거가 있었는가**.
  *
- * 시작 마을은 어디에도 저장돼 있지 않다 — `PlayerState` 가 늘리기로 한 칸은
- * `story`·`storyCount` 둘뿐이고(설계 ⑦), 셋째를 늘리는 것은 이 아크가 안 하기로
- * 한 일이다. 그래서 세계의 생김새와 그 사람의 숫자에서 되찾는다. 순서가 곧 규칙이다:
+ * `grounded` 를 함께 내는 이유는 `pinStartVillage` 하나 때문이다: 근거 없이 낸
+ * 답(아래 ③)을 세이브에 적으면 그 순간 영구히 못박히는데, 못 박지 않으면 그
+ * 사람이 자기 마을로 돌아오는 순간 ②가 스스로 바로잡는다. **적는 것이 안 적는
+ * 것보다 나쁜 유일한 경우**라 답과 함께 그 사실을 들고 다닌다.
+ */
+interface Derived {
+  village: MapDef
+  grounded: boolean
+}
+
+/**
+ * 저장된 값이 없을 때 **세계의 생김새와 그 사람의 숫자에서 되찾는다.** 순서가 곧
+ * 규칙이다:
  *
  * **① 그 계열의 숙련도.** 시작 마을을 고른다는 것은 곧 첫 숙련도를 고르는 것이고
  * (`villageField`), 그 숫자는 줄어들지 않는다. 마디 1 을 지난 사람부터는 이것 하나로
  * 답이 정해진다 — 그리고 마디 3·4·5(바칠 것 · 요구 문턱 · 레시피)가 계열을 실제로
- * 필요로 하는 것이 정확히 그 뒤다.
+ * 필요로 하는 것이 정확히 그 뒤다. **이미 놀고 있는 사람**(친구들 계정)에게 옳고
+ * 안정적인 것이 이 줄이다.
  *
  * **② 서 있는 자리.** ①이 못 가르는 자리는 하나뿐이다: **아직 아무것도 안 캔
- * 사람**(네 숫자가 모두 0). 그 사람은 마디 0 에 서 있고, 마디 0 은 마을 안에서
- * 시작해 채집장에서 끝나므로 그 두 맵 중 하나에 서 있다. `moveService` 가 자리를
- * 옮긴 **뒤에** 훅을 부르는 것이 이 줄과 짝이다 — 문을 넘은 사람은 이미 자기
- * 채집장에 서 있어서, 「{채집장}으로 나가라」가 방금 도착한 그 맵으로 펴진다.
+ * 사람**(네 숫자가 모두 0). 그 사람이 자기 마을이나 자기 채집장에 서 있으면
+ * 그것이 답이다. `moveService` 가 자리를 옮긴 **뒤에** 훅을 부르는 것이 이 줄과
+ * 짝이다 — 문을 넘은 사람은 이미 자기 채집장에 서 있어서, 「{채집장}으로 나가라」가
+ * 방금 도착한 그 맵으로 펴진다.
  *
- * **③ 전환표 순서.** 위 둘이 다 침묵하는 경우는 하나뿐이다 — 숙련 0 인 사람이
- * 월드맵·사냥터에 서 있을 때. 그 상태에는 **이 사람이 어느 마을에서 났는지를 말해
- * 주는 정보가 세계 어디에도 없다.** 유도의 한계가 아니라 정보가 없는 것이고, 그래서
- * 여기서는 답을 지어내는 대신 늘 같은 답(전환표에 먼저 적힌 마을)을 낸다. 그 사람이
- * 자기 마을로 돌아오는 순간 ②가 답을 바로잡는다.
+ * **③ 전환표 순서 — 근거가 없다.** 위 둘이 다 침묵하는 경우는 하나뿐이다: 숙련 0
+ * 인 사람이 월드맵·사냥터·개발맵에 서 있을 때. 그 상태에는 **이 사람이 어느
+ * 마을에서 났는지를 말해 주는 정보가 세계 어디에도 없다.** 유도의 한계가 아니라
+ * 정보가 없는 것이고, 그래서 답을 지어내는 대신 늘 같은 답(전환표에 먼저 적힌
+ * 마을)을 낸다. **이 답은 세이브에 안 적힌다**(`grounded: false`) — 적으면
+ * 북동쪽마을 사람이 눈의마을에 영구히 못박히고, 안 적으면 그 사람이 마을로
+ * 돌아오는 순간 ②가 고친다.
  *
- * 되돌아오는 대가도 정직하게 적는다: 얼음으로 시작해 나무를 더 캔 사람은 ①이
- * 숲의마을을 가리킨다. 사슬이 3.5분짜리이고(설계 ③) 그 안에서 남의 계열을 자기
- * 계열보다 많이 캘 방법이 없으므로 아크 1 에서는 일어나지 않는다. 아크 2 의 마디
- * (`discoverable=false`)까지 사슬이 길어지면 그때는 답이 흔들릴 수 있고, 그 값이
- * 셋째 상태 필드보다 비싸지는 날 필드를 늘리면 된다.
+ * 오늘 이 함수가 실제로 불리는 자리는 **`startVillage` 가 빈 옛 세이브** 하나뿐이다
+ * (신규는 만들 때 이미 적힌다 — `createInitialPlayer`).
  */
-export function storyVillage(data: GameData, player: PlayerState): MapDef {
+function deriveStartVillage(data: GameData, player: PlayerState): Derived {
   const chains = startVillages(data).map((village) => ({
     village,
     field: villageField(data, village.id),
@@ -719,15 +729,54 @@ export function storyVillage(data: GameData, player: PlayerState): MapDef {
   // ① 그 계열의 숙련도 — 최고를 가진 마을만 남긴다. 하나면 그것이 답이다.
   const top = Math.max(...chains.map((c) => player.skills[c.field.skill]))
   const leaders = chains.filter((c) => player.skills[c.field.skill] === top)
+  if (leaders.length === 1) return { village: leaders[0]!.village, grounded: true }
 
   // ② 남은 것이 여럿이면(아직 아무것도 안 캔 사람은 넷이 다 0 이다) 서 있는 자리 —
   //    마을이거나 그 마을의 채집장이거나.
   const here = leaders.find(
     (c) => c.village.id === player.location.mapId || c.field.map.id === player.location.mapId,
   )
+  if (here) return { village: here.village, grounded: true }
 
-  // ③ 그것도 침묵하면 정보가 없다. 지어내지 않고 늘 같은 답을 낸다.
-  return (here ?? leaders[0]!).village
+  // ③ 그것도 침묵하면 정보가 없다. 지어내지 않고 늘 같은 답을 내되, 못 박지 않는다.
+  return { village: leaders[0]!.village, grounded: false }
+}
+
+/**
+ * 이 플레이어의 사슬은 **어느 마을의 것인가**.
+ *
+ * **저장된 값이 있으면 그것이 답이고, 유도는 아예 안 돈다.** 시작 마을은 캐릭터를
+ * 만들 때 이미 아는 값이라(`PlayerState.startVillage`) 되찾을 것이 없다 — 유도가
+ * 도는 것은 그 필드가 생기기 전의 세이브뿐이다.
+ *
+ * 저장된 id 가 **지금도 시작 마을인지**는 여기서 본다. 마을을 개명하거나 월드맵에서
+ * 그 마을로 가는 전환을 지우면 그 값은 더 이상 마을을 가리키지 않고, 그대로 넘기면
+ * `storySlots` 가 "맵 등록부에 없다" 로 던져 그 사람의 게임이 통째로 선다.
+ * `resolvePlayerLocation` 이 없어진 맵을 시작 맵으로 되돌리는 것과 같은 자리다 —
+ * 모르는 값은 모르는 것으로 치고 유도로 내려간다.
+ */
+export function storyVillage(data: GameData, player: PlayerState): MapDef {
+  const saved = startVillages(data).find((village) => village.id === player.startVillage)
+  return saved ?? deriveStartVillage(data, player).village
+}
+
+/**
+ * 시작 마을을 **세이브에 못박는다** — 값이 없고, 유도에 근거가 있을 때만.
+ *
+ * 판정 훅이 부른다(`runStoryHook`). 신규에게는 할 일이 없고(만들 때 적혔다),
+ * 이 함수가 실제로 무언가 하는 것은 **이 필드가 생기기 전의 세이브가 처음
+ * 판정을 지날 때** 한 번뿐이다. 그 자리는 부팅의 `POST /api/me/enter` 이므로
+ * 친구들 계정은 다음 접속 첫 왕복에서 전부 채워진다.
+ *
+ * 근거 없는 답(유도 ③)을 안 적는 이유는 `Derived` 에 있다.
+ *
+ * **제자리에서 고친다** — `advanceStory` 가 `player` 를 다루는 자세 그대로이고,
+ * 서비스 넷은 그 사본을 그대로 저장한다.
+ */
+export function pinStartVillage(data: GameData, player: PlayerState): void {
+  if (startVillages(data).some((village) => village.id === player.startVillage)) return
+  const derived = deriveStartVillage(data, player)
+  if (derived.grounded) player.startVillage = derived.village.id
 }
 
 /** 날것 한 행의 슬롯을 그 마을 값으로 편다. */
@@ -809,5 +858,13 @@ export interface StoryHookArgs {
  * 있는 이유와 같다 — 규칙은 세계 데이터를 향해 의존하지 않는다.
  */
 export function runStoryHook({ data, player, before, event }: StoryHookArgs): StoryAdvance {
+  // 사슬을 펴기 전에 시작 마을을 못박는다 — 이 필드가 생기기 전의 세이브가
+  // 여기서 한 번 채워지고, 그 뒤로는 유도가 안 돈다(pinStartVillage).
+  //
+  // **표가 비면 안 부른다.** `storyChainOf` 가 같은 자리에서 멈추는 그 이유
+  // 그대로다: 마디가 없는 세계에서 마을을 유도하는 것은 답 없는 계산이고,
+  // 두 칸짜리 리터럴로 짓는 서비스 테스트들이 `startVillages` 의 "월드맵에서
+  // 나가는 전환이 하나도 없다" 에 걸린다.
+  if (data.story.length > 0) pinStartVillage(data, player)
   return advanceStory({ chain: storyChainOf(data, player), player, before, world: data, event })
 }

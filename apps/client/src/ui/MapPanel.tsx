@@ -117,6 +117,15 @@ function WorldMapPicture({ data }: { data: GameData }): JSX.Element {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [boxSize, setBoxSize] = useState(0)
+  /**
+   * 지금 화면의 기기 픽셀비(`renderScale`). **상자 크기와 나란히 상태다.**
+   *
+   * 함수를 아래 효과 안에서 그냥 부르면 그 값은 의존 배열에 안 실린다 — 창을
+   * 다른 배율의 모니터로 옮겨도 효과가 안 돌아 옛 밀도로 구운 그림이 그대로
+   * 늘어난다. `worldMapImage` 가 캐시 키에 밀도를 넣어 둔 것은 그 날을 위한
+   * 것인데, 부르는 쪽이 새 밀도로 부르지 않으면 그 키는 한 번도 안 갈린다.
+   */
+  const [density, setDensity] = useState(renderScale)
   const [drawn, setDrawn] = useState<{ width: number; height: number } | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
 
@@ -125,7 +134,12 @@ function WorldMapPicture({ data }: { data: GameData }): JSX.Element {
   useLayoutEffect(() => {
     const box = boxRef.current
     if (!box) return
-    const measure = (): void => setBoxSize(Math.round(box.clientWidth))
+    const measure = (): void => {
+      setBoxSize(Math.round(box.clientWidth))
+      // 밀도도 같은 자리에서 다시 읽는다 — 배율이 다른 모니터로 창을 옮기면
+      // 브라우저가 창을 다시 레이아웃하므로 이 관찰자가 함께 불린다.
+      setDensity(renderScale())
+    }
     measure()
     // 창 크기·주소 표시줄·화면 회전 — 높이가 움직이면 정사각인 이 상자의 폭도
     // 함께 움직인다. 그때 다시 굽지 않으면 그림만 옛 크기로 늘어난다.
@@ -137,7 +151,7 @@ function WorldMapPicture({ data }: { data: GameData }): JSX.Element {
   useEffect(() => {
     if (boxSize <= 0) return
     let alive = true
-    worldMapImage(boxSize, renderScale())
+    worldMapImage(boxSize, density)
       .then((image) => {
         const canvas = canvasRef.current
         // 패널이 그새 닫혔으면 그릴 곳이 없다. 구운 것은 모듈이 붙잡아 두므로
@@ -156,7 +170,7 @@ function WorldMapPicture({ data }: { data: GameData }): JSX.Element {
     return () => {
       alive = false
     }
-  }, [boxSize])
+  }, [boxSize, density])
 
   return (
     <div className="worldmap__box" ref={boxRef}>

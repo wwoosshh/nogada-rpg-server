@@ -1,4 +1,13 @@
-import { START_MAP_ID, emptyPlayer, loadGameData, startLocation, startVillages } from '@nogada/data'
+import {
+  START_MAP_ID,
+  WORLD_MAP_ID,
+  emptyPlayer,
+  loadGameData,
+  startLocation,
+  startVillages,
+  storyChainOf,
+  storyVillage,
+} from '@nogada/data'
 import { DEFAULT_APPEARANCE, SKILL_IDS, type SkillId } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { createInitialPlayer } from './newCharacter.js'
@@ -133,5 +142,29 @@ describe('createInitialPlayer', () => {
   //     다른 캐릭터가 생기고 아무도 그것을 모른다.
   it('없는 마을로는 캐릭터를 만들지 않는다', () => {
     expect(() => born('local', '없는마을')).toThrow('없는마을')
+  })
+
+  // 왜: 고른 마을은 **유도로 복원이 안 되는 사실**이다(PlayerState.startVillage).
+  //     여기서 안 적으면 세계 어디에도 안 남고, 숙련이 전부 0 인 채로 월드맵에
+  //     한 칸 나가는 순간 유도가 전환표 첫 마을(눈의마을)을 낸다 — 북동쪽마을을
+  //     고른 사람이 「눈의 마을 북문으로 나가라」를 읽는다. 자리(location)만으로는
+  //     안 된다: 그 값은 걸을 때마다 바뀐다.
+  it('고른 마을을 상태에 적는다 — 걸어 나가도 안 지워지는 유일한 기록이다', () => {
+    for (const village of startVillages(loadGameData())) {
+      expect(born('local', village.id).startVillage).toBe(village.id)
+    }
+  })
+
+  // 왜: 그리고 그 값이 실제로 **그 마을의 사슬**을 편다. 위 검사는 글자가 적혔다는
+  //     것만 말하고, 그 글자를 아무도 안 읽어도 초록이다.
+  it('네 마을이 각자 자기 사슬을 걷는다 — 자리가 어디든', () => {
+    const data = loadGameData()
+    for (const village of startVillages(data)) {
+      const p = born('local', village.id)
+      // 마을에서 한 칸 나갔다. 유도라면 여기서 전부 눈의마을이 된다.
+      p.location = { mapId: WORLD_MAP_ID, x: 1, y: 1 }
+      expect([village.id, storyVillage(data, p).id]).toEqual([village.id, village.id])
+      expect(storyChainOf(data, p)[0]!.objective).toContain(village.name)
+    }
   })
 })

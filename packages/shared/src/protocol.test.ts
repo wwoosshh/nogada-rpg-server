@@ -172,6 +172,32 @@ describe('PlayerStateSchema', () => {
     expect(PlayerStateSchema.safeParse({ ...validSave(), storyCount: 1.5 }).success).toBe(false)
   })
 
+  // 왜: 아크 F 가 늘린 셋째 칸이다. **기본값이 마을 이름이 아니라 빈 문자열인
+  //     것이 요점**이라 그 값을 글자로 못박는다: '눈의마을' 로 두면 키 없는 세이브
+  //     전부가 눈의마을 사람이 되고, 그것이 이 필드가 고치려고 생긴 사고다.
+  //     빈 문자열은 maps.csv 가 만들 수 없는 id 라 어떤 마을과도 안 겹친다.
+  it('startVillage 가 없는 옛 세이브는 "모른다" 로 읽는다 — 눈의마을이 아니다', () => {
+    const parsed = PlayerStateSchema.safeParse(validSave())
+
+    expect(parsed.success && parsed.data.startVillage).toBe('')
+  })
+
+  it('적혀 있는 시작 마을은 그대로 읽는다', () => {
+    const parsed = PlayerStateSchema.safeParse({ ...validSave(), startVillage: '북동쪽마을' })
+
+    expect(parsed.success && parsed.data.startVillage).toBe('북동쪽마을')
+  })
+
+  // 왜: 마을 목록은 packages/data 의 것이라 이 문이 알 수 없고(shared 는 data 를
+  //     못 본다), 여기서 열거하면 마을을 고쳐 그린 날 이 문만 옛 목록으로 남아
+  //     세이브를 통째로 거절한다 — hp 상한·이름 규칙을 여기서 안 보는 그 자리다.
+  //     모르는 마을은 storyVillage 가 없는 값으로 치고 유도로 내려간다.
+  it('지금 없는 마을 이름도 읽는다 — 마을 목록은 이 문의 것이 아니다', () => {
+    expect(PlayerStateSchema.safeParse({ ...validSave(), startVillage: '없어진마을' }).success).toBe(true)
+    // 문자열이 아닌 것은 거절한다 — 모양은 여전히 이 문의 것이다.
+    expect(PlayerStateSchema.safeParse({ ...validSave(), startVillage: 3 }).success).toBe(false)
+  })
+
   // 왜: 사슬은 CSV 가 정하는 게임 값이라 길이가 늘어난다. 여기 상한을 박아 두면
   //     사슬을 늘리는 날 이미 끝낸 사람의 세이브가 통째로 거절된다 — hp 에 상한
   //     검증을 안 거는 것과 같은 자리다.

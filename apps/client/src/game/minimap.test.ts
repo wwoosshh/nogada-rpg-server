@@ -79,9 +79,16 @@ describe('미니맵 — 자리', () => {
   })
 
   it('왼쪽 여백과 오른쪽 여백이 같다 — 설계 폭 812 에서', () => {
-    // 미니맵 왼쪽에 남긴 만큼 띠 오른쪽에도 남는다(HudScene 의 EDGE_MARGIN_RIGHT).
-    // 이 등식이 깨지면 한쪽만 화면 끝에 붙어 보인다.
-    expect(BAND.x + BAND.width + MINIMAP.x).toBe(812)
+    // 미니맵 왼쪽에 남긴 만큼 띠 오른쪽에도 남는다. 이 등식이 깨지면 한쪽만
+    // 화면 끝에 붙어 보인다.
+    //
+    // **두 줄인 이유**: 첫 줄은 「812 를 꽉 채운다」이고 둘째 줄이 「그 남은 몫을
+    // 실제로 여백 상수가 쓴다」이다. 예전엔 첫 줄이 `MINIMAP.x` 를 오른쪽 여백
+    // 자리에 대신 넣어 재고 있었고(두 값이 우연히 같다) — 그래서 띠가 실제로 쓰는
+    // `BAND.edgeRight` 는 아무 값으로 바꿔도 전부 초록이었다. 그 수가 쓰이는 곳은
+    // **좁은 창**이라(HudScene.layout) 화면 폭이 812 가 아닌 기기에서만 어긋난다.
+    expect(BAND.x + BAND.width + BAND.edgeRight).toBe(812)
+    expect(BAND.edgeRight, '띠 오른쪽 여백이 미니맵 왼쪽 여백과 다르다').toBe(MINIMAP.x)
   })
 
   it('안쪽 그림판이 테두리를 뺀 나머지다', () => {
@@ -113,6 +120,29 @@ describe('미니맵 — 배율', () => {
     const scales = Object.values(data.maps).map((map) => minimapFit(map.width, map.height).scale)
     expect(Math.min(...scales)).toBeCloseTo(1.4, 2)
     expect(Math.max(...scales)).toBeCloseTo(4.67, 2)
+  })
+
+  // 왜: 얹는 것들(흰 점·문 네모·깃발)이 전부 원점 0.5 의 도형이라, 칸의 왼쪽 위에
+  //     놓으면 배율이 큰 맵(사냥터 4.67px/타일)에서 반 칸씩 왼쪽 위로 쏠린다.
+  //     아래 「상자 안에 찍힌다」는 경계만 보므로 그 반 칸을 못 잡는다 — `+0.5` 를
+  //     `+0` 으로 바꿔도 여전히 상자 안이다. 그래서 **가운데인가**를 따로 묻는다.
+  it('칸의 가운데를 찍는다 — 반 칸씩 쏠리지 않는다', () => {
+    for (const map of Object.values(data.maps)) {
+      const fit = minimapFit(map.width, map.height)
+      const 왼끝 = MINIMAP_ORIGIN.x + fit.offsetX
+      const 위끝 = MINIMAP_ORIGIN.y + fit.offsetY
+
+      // 첫 칸의 가운데는 그림 왼쪽 위에서 **반 칸** 떨어져 있다.
+      const 첫칸 = tileToScreen(fit, 0, 0)
+      expect(첫칸.x - 왼끝, map.id).toBeCloseTo(fit.scale / 2, 9)
+      expect(첫칸.y - 위끝, map.id).toBeCloseTo(fit.scale / 2, 9)
+
+      // 그리고 마지막 칸도 반대편 끝에서 같은 만큼 떨어져 있다 — 이 대칭이
+      // 「가운데」의 다른 얼굴이라, 한쪽만 재면 `+0.5` 를 `+1` 로 민 구현이 통과한다.
+      const 끝칸 = tileToScreen(fit, map.width - 1, map.height - 1)
+      expect(왼끝 + fit.width - 끝칸.x, map.id).toBeCloseTo(fit.scale / 2, 9)
+      expect(위끝 + fit.height - 끝칸.y, map.id).toBeCloseTo(fit.scale / 2, 9)
+    }
   })
 
   it('네 모서리 칸이 전부 상자 안에 찍힌다', () => {

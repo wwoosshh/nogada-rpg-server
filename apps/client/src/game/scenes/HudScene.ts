@@ -43,9 +43,6 @@ const INK_SHAPE_COLOR = 0x241c1c
  */
 const BAND_ALPHA = 0.8
 
-/** 화면 오른쪽 끝에 띠가 딱 붙지 않게 남기는 여백. 미니맵의 왼쪽 여백(설계 ⑤ 의 left:9)과 같다. */
-const EDGE_MARGIN_RIGHT = 9
-
 /**
  * 미니맵의 반투명도 — **띠보다 진하다.**
  *
@@ -59,10 +56,11 @@ const MINIMAP_ALPHA = 0.94
 /*
  * 얹는 것들의 색 — 전부 tokens.css 다(위 팔레트 주석과 같은 이유로 리터럴이다).
  *
- * 넷이 서로 안 겹치는 것이 이 목록의 요점이다: 흰 점은 나(--c-parchment 가 아니라
- * 순백이다 — 파치먼트는 상자 안 어디에나 있는 글자색이다), 노랑은 문(--c-accent),
- * 붉음은 숙련을 요구하는 문(--c-danger — 오늘 못 지나가는 문이라는 뜻이고, 그
- * 요구치를 옆에 숫자로 적는다), 초록은 지금 갈 곳(--c-success).
+ * 넷이 서로 안 겹치는 것이 이 목록의 요점이다: 흰 점은 나(--c-me — --c-parchment 가
+ * 아니라 순백이다. 파치먼트는 상자 안 어디에나 있는 글자색이라 그 색으로 찍은
+ * 점은 「나」가 아니라 또 하나의 글자가 된다), 노랑은 문(--c-accent), 붉음은
+ * 숙련을 요구하는 문(--c-danger — 오늘 못 지나가는 문이라는 뜻이고, 그 요구치를
+ * 옆에 숫자로 적는다), 초록은 지금 갈 곳(--c-success).
  */
 const ME_COLOR = 0xffffff
 const DOOR_COLOR = 0xd9a441
@@ -279,6 +277,13 @@ export class HudScene extends Phaser.Scene {
     this.hub = hub
     this.control = control
     this.source = world
+    // **잠금의 지금 값을 여기서 받아 둔다.** `create()` 가 비우는 여섯 필드와 같은
+    // 성격의 기억인데 그 자리에서는 못 비운다 — 값의 주인이 `hub` 이고 hub 는 이
+    // 줄에서야 온다. 안 받아 두면 아래 `render()` 가 **이전 맵에서 남은 잠금**으로
+    // 띠를 보이거나 숨기고, `update()` 는 값이 **바뀔 때만** 다시 그리므로 그
+    // 오판이 한 프레임 화면에 남는다. 하필 이 씬이 다시 서는 자리가 전환 중 —
+    // 즉 잠금이 참인 구간 — 이라 그 한 프레임은 패널 위에 뜬 띠가 된다.
+    this.locked = hub.worldInputLocked
 
     this.buildMinimap(world.mapId)
 
@@ -400,7 +405,7 @@ export class HudScene extends Phaser.Scene {
    * 검사가 빌드에서 지킨다(questBand.test.ts 의 폭 예산 — 마을 넷 × 마디 전부).
    */
   private layout(width: number): void {
-    const bandWidth = Math.min(BAND.width, Math.max(0, width - BAND.x - EDGE_MARGIN_RIGHT))
+    const bandWidth = Math.min(BAND.width, Math.max(0, width - BAND.x - BAND.edgeRight))
     this.box.setPosition(BAND.x, BAND.y).setSize(bandWidth, BAND.height)
     this.label.setPosition(BAND.x + BAND.padding, BAND.y + BAND.height / 2)
   }
@@ -509,9 +514,18 @@ export class HudScene extends Phaser.Scene {
    * 문과 깃발을 지금 상태대로 다시 세운다.
    *
    * 매번 도형을 버리고 다시 만드는 이유: 문은 맵이 정하므로 개수가 안 바뀌지만
-   * 이 함수는 마디가 넘어갈 때마다 불리고, "몇 개까지 만들어 뒀는가"를 기억하는
-   * 쪽이 그 재사용으로 아끼는 것보다 비싸다 — 이 씬이 사는 동안 실제로 도는 횟수는
-   * 마디 수만큼(여섯 번 이하)이다.
+   * "몇 개까지 만들어 뒀는가"를 기억하는 쪽이 그 재사용으로 아끼는 것보다 비싸다.
+   *
+   * **얼마나 자주 도는가 — 마디 수만큼이 아니다.** 부르는 쪽은 `render()` 이고
+   * 그것은 스토어의 `player` **참조가 바뀔 때마다** 돈다(bind 의 구독) — 채집·
+   * 전투·이동·제작·헌납 **응답 하나하나**가 새 객체를 싣고 오므로, 40회를 캐는
+   * 마디 2 하나에서만 마흔 번이다. 예전 이 자리에 「이 씬이 사는 동안 여섯 번
+   * 이하」라고 적혀 있었는데 그것은 **깃발이 실제로 옮겨 가는 횟수**이지 이 함수가
+   * 도는 횟수가 아니었다.
+   *
+   * 그래도 재사용을 안 하는 이유는 값을 실제로 쟀기 때문이다: **1회 0.087ms ·
+   * 오브젝트 10개 고정**(브라우저 실측 — 누수 없다). 채집 간격의 하한이 50ms 라
+   * 가장 빠른 손에서도 그 사이에 한 번이고, 문 표식은 맵마다 두세 개다.
    */
   private drawMarks(data: GameData, player: PlayerState | null, mapId: string): void {
     const fit = this.fit

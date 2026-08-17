@@ -42,6 +42,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     celebrated: [],
     story: 0,
     storyCount: 0,
+    startVillage: '',
     rewarded: [],
     dialogueHistory: emptyDialogueHistory(),
     location: { mapId: '눈의마을', x: 0, y: 0 },

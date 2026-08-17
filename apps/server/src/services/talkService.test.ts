@@ -127,6 +127,7 @@ function player(overrides: Partial<PlayerState> = {}): PlayerState {
     // 사슬은 이 스위트가 보는 판정이 아니다 — PlayerState 의 필수 칸이라 채워만 둔다.
     story: 0,
     storyCount: 0,
+    startVillage: '',
     // 아직 아무 달인에게도 대금을 받지 않았다 — 대금 테스트가 여기에 값을 넣어
     // "이미 받은 사람"을 만든다.
     rewarded: [],

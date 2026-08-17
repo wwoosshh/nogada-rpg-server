@@ -2,7 +2,10 @@ step,field,objective,goalKind,goalArg,goalCount,announce,discoverable,catchUpKin
 0,,{마을} {문방향}문으로 나가라,arrive,{채집장},,,1,skill,{계열},1
 1,,{노드} 앞에서 A,gather,{계열},1,,1,skill,{계열},80
 2,,손에 익을 때까지 캐라,gather,{계열},40,,1,skill,{계열},160
-3,,가방에서 [바치기] — {아이템},donate,{아이템},{t1},수집의 방에 첫 별이 붙었다,1,skill,{계열},3000
+3,ice,가방에서 [바치기] — {아이템},donate,{아이템},{t1},수집의 방에 첫 별이 붙었다,1,skill,{계열},3000
+3,wood,가방에서 [바치기] — {아이템},donate,{아이템},{t1},수집의 방에 첫 별이 붙었다,1,skill,{계열},3000
+3,herb,가방에서 [바치기] — {아이템},donate,{아이템},{t1},수집의 방에 첫 별이 붙었다,1,skill,{계열},3000
+3,mineral,가방에서 [바치기] — {아이템},donate,{아이템},100,수집의 방에 첫 별이 붙었다,1,skill,{계열},3000
 4,ice,{계열} 숙련을 올려라,reach,ice_1000,,제작에 비 가루와 눈 가루가 생겼다,1,skill,{계열},3000
 4,wood,{계열} 숙련을 올려라,reach,wood_1000,,제작에 압축 목재가 생겼다,1,skill,{계열},3000
 4,herb,{계열} 숙련을 올려라,reach,herb_1000,,제작에 허브 농축액이 생겼다,1,skill,{계열},3000

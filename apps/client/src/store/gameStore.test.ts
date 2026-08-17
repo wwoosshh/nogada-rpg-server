@@ -1243,3 +1243,65 @@ describe('전투 — fight 액션은 gather 와 같은 모양이다(전투 §7·
     expect(useGameStore.getState().player?.nextActionAt).toBe(12_345)
   })
 })
+
+/*
+ * **부팅이 어느 문으로 들어가는가.**
+ *
+ * 이 한 줄이 지는 것이 설계 ⑦ 의 밀어올림 전부다: 얼음 200,000 인 사람이
+ * 게임을 켜면 세이브의 `story` 는 아직 0 이고, 서버가 그 사람의 사슬을 미는
+ * 것은 첫 채집·전환 뒤다 — 그 사이에 헤더 밑 띠가 「마을 북문으로 나가라」를
+ * 적는다. 그래서 부팅은 읽기(`GET /api/me`)가 아니라 **쓰기 문**
+ * (`POST /api/me/enter`)으로 들어간다.
+ *
+ * 검토가 `GameClient.enter()` 를 `GameClient.me()` 로 바꿔도 118 파일 2,495 개가
+ * 전부 초록이던 자리다. 스토어의 상태만 재면 두 문이 같은 답(`{character}`)을
+ * 주므로 구별되지 않는다 — 그래서 **나간 요청 자체**를 잰다.
+ */
+describe('부팅 — 세 문이 전부 POST /api/me/enter 로 들어간다(설계 ⑦)', () => {
+  /** 나간 요청의 `메서드 경로` 목록. 절대 URL 에서 경로만 남긴다. */
+  function recordRequests(body: unknown): string[] {
+    const seen: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        seen.push(`${init?.method ?? 'GET'} ${new URL(url, 'http://x').pathname}`)
+        return jsonResponse(body)
+      }),
+    )
+    return seen
+  }
+
+  it('이어서 하기', async () => {
+    const seen = recordRequests({ character: emptyPlayer() })
+    await useGameStore.getState().resume()
+    expect(seen).toEqual(['POST /api/me/enter'])
+  })
+
+  it('로그인', async () => {
+    const seen = recordRequests({ token: 't', character: emptyPlayer() })
+    vi.stubGlobal('window', fakeWindow())
+    await useGameStore.getState().authenticate('login', 'a', 'b')
+    expect(seen).toEqual(['POST /api/auth/login', 'POST /api/me/enter'])
+  })
+
+  it('가입', async () => {
+    const seen = recordRequests({ token: 't', character: emptyPlayer() })
+    vi.stubGlobal('window', fakeWindow())
+    await useGameStore.getState().authenticate('register', 'a', 'b')
+    expect(seen).toEqual(['POST /api/auth/register', 'POST /api/me/enter'])
+  })
+
+  // 왜: 반대쪽도 못박는다. `connect` 는 **토큰이 아직 유효한가**만 묻는 자리라
+  //     읽기 라우트여야 한다 — 여기에 쓰기 문을 달면 서버가 넘어졌는지 보는
+  //     한 번의 왕복이 매번 세이브를 민다. 설계 ⑦ 이 「접속 시 재판정」을 기각한
+  //     이유가 그것이고, 두 검사가 함께 있어야 `me`↔`enter` 를 서로 맞바꾸는
+  //     돌연변이가 양쪽에서 물린다.
+  it('토큰 확인(connect)은 읽기 문이다 — 세이브를 안 민다', async () => {
+    const seen = recordRequests({ character: emptyPlayer() })
+    vi.stubGlobal('window', fakeWindow())
+    writeToken('t')
+    await useGameStore.getState().connect()
+    expect(seen).toContain('GET /api/me')
+    expect(seen).not.toContain('POST /api/me/enter')
+  })
+})
