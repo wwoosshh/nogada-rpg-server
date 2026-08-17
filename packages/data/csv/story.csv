@@ -1,1 +1,13 @@
 step,field,objective,goalKind,goalArg,goalCount,announce,discoverable,catchUpKind,catchUpArg,catchUpThreshold
+0,,{마을} {문방향}문으로 나가라,arrive,{채집장},,,1,skill,{계열},1
+1,,{노드} 앞에서 A,gather,{계열},1,,1,skill,{계열},80
+2,,손에 익을 때까지 캐라,gather,{계열},40,,1,skill,{계열},160
+3,,가방에서 [바치기] — {아이템} {t1}개,donate,{아이템},{t1},수집의 방에 첫 별이 붙었다,1,collection,,1
+4,ice,{계열} 숙련 1000,reach,ice_1000,,제작에 비 가루와 눈 가루가 생겼다,1,skill,{계열},1000
+4,wood,{계열} 숙련 1000,reach,wood_1000,,제작에 압축 목재가 생겼다,1,skill,{계열},1000
+4,herb,{계열} 숙련 1000,reach,herb_1000,,제작에 허브 농축액이 생겼다,1,skill,{계열},1000
+4,mineral,조합 숙련 200,reach,crafting_200,,제작에 구리 망치가 생겼다,1,skill,crafting,200
+5,ice,제작에서 눈 가루를 만들어라,craft,snow_powder,1,{계열} 5000이면 채집장 노인이 값을 쳐 준다,1,skill,crafting,200
+5,wood,제작에서 압축 목재를 만들어라,craft,compressed_log,1,{계열} 5000이면 벌목꾼이 값을 쳐 준다,1,skill,crafting,200
+5,herb,제작에서 허브 농축액을 만들어라,craft,herb_extract,1,{계열} 5000이면 약초밭 지기가 값을 쳐 준다,1,skill,crafting,200
+5,mineral,제작에서 구리 망치를 만들어라,craft,copper_hammer,1,{계열} 5000이면 광산 노인이 값을 쳐 준다,1,skill,crafting,500

@@ -24,6 +24,7 @@ import {
   collectDialogueNotices,
   validateGameData,
   validateMapSpawns,
+  validateShopTalk,
   validateSpeakerPlacements,
 } from './validate.js'
 
@@ -2421,5 +2422,71 @@ describe('collectDialogueNotices', () => {
     // 이 목록으로 미끄러져도 조용히 지나가지 않는다.
     const notices = collectDialogueNotices(loadRealGameData())
     expect(notices).toEqual([])
+  })
+})
+
+/**
+ * **문이 이미 열린 사람에게 문이 멀었다고 말하지 않는가**(퀘스트 설계 ⑥ 강화 ②).
+ *
+ * 이 검사가 생긴 이유는 실제로 일어난 거짓말 넷이다 — 네 계열 주인이 전부
+ * `skill.{계열}>=5000` 아래에서 「보여줄 물건이 있긴 한데… 아직은 아닐세」라고
+ * 말했는데, 상점 넷의 `unlockSkill` 이 전부 정확히 5,000 이었다. 그 말을 듣는
+ * 사람의 상점은 이미 열려 있었고, 상점을 못 찾은 사람은 그 말을 믿고 돌아섰다.
+ */
+describe('validateShopTalk — 이미 열린 문 앞에서 미루지 않는다', () => {
+  /** 상점 주인 하나와 그 사람의 규칙 하나만 있는 세계. */
+  function shopTalkData(rule: DialogueRule): GameData {
+    const data = registryData()
+    data.shops = { 광물상점: mineralShop() }
+    data.dialogue = [unconditionalGreet(), rule]
+    return data
+  }
+
+  function greetAt(op: DialogueRule['conditions'][number]['op'], value: number, ...lines: string[]): DialogueRule {
+    return dRule({
+      id: 'gate', event: 'greet', conditions: [{ fact: 'skill.mineral', op, value }], lines,
+      source: { file: '노인.dlg', line: 7 },
+    })
+  }
+
+  it('해금치 위에서만 나오는 규칙이 미루면 위반이다', () => {
+    expect(
+      validateShopTalk(shopTalkData(greetAt('>=', 5000, '보여줄 물건이 있긴 한데… 아직은 이르네.'))),
+    ).toEqual([
+      '노인.dlg:7행: 이 규칙은 skill.mineral 가 5000 이상일 때만 나오는데 상점 "광물 상점" 는 5000 에 열린다 — 이 말을 듣는 사람의 상점은 이미 열려 있다. 그런데 「보여줄 물건이 있긴 한데… 아직은 이르네.」 가 "아직" 로 미룬다. 미루려면 조건의 아래끝을 5000 아래로 내리고, 이미 열렸다고 말할 참이면 그 낱말을 바꾼다',
+    ])
+  })
+
+  // 왜: 해금치 **바로 아래**가 이 그물의 경계다. 문턱을 넘기 전의 사람에게
+  //     "아직" 이라고 말하는 것은 참말이고, 그것까지 막으면 거래 암시를 쓸 자리가
+  //     사라진다 — 광산노인의 `skill.mineral>=1000` 자랑 줄이 실제로 그 자리다.
+  it('해금치 아래에서 미루는 것은 참말이다', () => {
+    expect(validateShopTalk(shopTalkData(greetAt('>=', 4999, '아직은 이르네.')))).toEqual([])
+  })
+
+  it('그 계열에 아래끝을 안 건 규칙은 대상이 아니다 — 숙련 0 인 사람도 듣는 말이다', () => {
+    expect(validateShopTalk(shopTalkData(dRule({
+      id: 'bare2', event: 'greet', conditions: [], lines: ['아직 곡괭이도 안 잡아 봤군.'],
+    })))).toEqual([])
+  })
+
+  // 왜: `>` 는 아래끝이 값+1 이라, 해금치 바로 아래를 적어도 실제로 나오는 자리는
+  //     해금치 위다. 연산자마다 아래끝을 따로 세지 않으면 그 한 칸으로 그물이 샌다.
+  it('> 는 아래끝이 한 칸 위다', () => {
+    expect(validateShopTalk(shopTalkData(greetAt('>', 4999, '아직은 이르네.')))).toHaveLength(1)
+  })
+
+  it('= 도 아래끝이다 — 값을 못박은 조건은 그 값에서만 나온다', () => {
+    expect(validateShopTalk(shopTalkData(greetAt('=', 5000, '아직은 이르네.')))).toHaveLength(1)
+  })
+
+  it('미루는 줄이 둘이면 둘 다 말한다 — 하나만 고치고 다시 돌렸을 때 남은 것을 못 보지 않게', () => {
+    expect(
+      validateShopTalk(shopTalkData(greetAt('>=', 5000, '아직은 이르네.', '지금은 아닐세.'))),
+    ).toHaveLength(2)
+  })
+
+  it('출하 데이터에는 미루는 말이 하나도 없다 — 거짓말 넷을 고친 자리다', () => {
+    expect(validateShopTalk(loadRealGameData())).toEqual([])
   })
 })

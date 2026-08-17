@@ -1459,3 +1459,92 @@ export function validateVillageFields(data: GameData): string[] {
 
   return violations
 }
+
+/**
+ * **뒤로 미루는 말** — 「아직 못 준다」는 뜻이 되는 낱말들.
+ *
+ * 목록을 세는 것 말고 다른 방법이 없다: 사람의 문장이 무엇을 뜻하는지는 데이터에
+ * 안 적혀 있고, 조건과 등록부만 봐서는 「보여줄 물건이 있긴 한데… 아직은 아닐세」와
+ * 「이제 내 계산대가 열리네」가 구분되지 않는다. 두 줄의 조건은 글자 하나까지 같다.
+ *
+ * 이 파일은 오탐을 싫어한다(findDeadDialogueRules: "작가에게 오탐 하나는 그것이
+ * 막아 준 진짜 오류보다 비싸다"). 그래서 **그물이 닿는 범위를 최소로 깎았다** —
+ * 상점 주인 다섯 명의, 그 상점 계열 숙련에 건 아래끝이 해금치 이상인 규칙만 본다.
+ * 그 자리는 「상점이 이미 열린 사람만 듣는 말」이고, 거기서 미루는 말을 할 참인
+ * 문장은 없다. 오탐이 나더라도 고칠 것은 낱말 하나이고, 이 검사가 막는 것은
+ * 화면이 플레이어에게 하는 거짓말이다.
+ */
+const POSTPONING_WORDS: readonly string[] = ['아직', '지금은'] as const
+
+/**
+ * 이 규칙이 그 사실에 건 **아래끝** — 이 규칙이 나올 수 있는 가장 작은 값.
+ *
+ * 없으면 `null`(그 사실에 아래끝을 안 걸었다는 뜻이고, 그때 이 규칙은 숙련이
+ * 0 인 사람에게도 나올 수 있으므로 아래 검사의 대상이 아니다).
+ *
+ * `=` 도 아래끝이다 — 값을 못박은 조건은 그 값 하나에서만 참이라 아래끝이자
+ * 위끝이다. 위끝(`<`·`<=`)은 보지 않는다: 「해금치 위에서만 나오는가」를 묻는
+ * 데에는 아래끝 하나면 충분하고, 위끝은 그 구간이 어디서 끝나는지만 말한다.
+ */
+function lowerBoundOf(rule: DialogueRule, fact: string): number | null {
+  let bound: number | null = null
+  for (const condition of rule.conditions) {
+    if (condition.fact !== fact || typeof condition.value !== 'number') continue
+    const here =
+      condition.op === '>=' || condition.op === '='
+        ? condition.value
+        : condition.op === '>'
+          ? condition.value + 1
+          : null
+    if (here === null) continue
+    bound = bound === null ? here : Math.max(bound, here)
+  }
+  return bound
+}
+
+/**
+ * **문이 이미 열린 사람에게 문이 멀었다고 말하지 않는가**(퀘스트 설계 ⑥ 강화 ②).
+ *
+ * 이 검사가 생긴 이유는 실제로 일어난 거짓말 넷이다. 채집장 노인의
+ * `skill.ice>=5000` 대사는 「보여줄 물건이 있긴 한데… 아직은 아닐세」였는데,
+ * 얼음상점의 `unlockSkill` 이 **정확히 5,000** 이라(shops.csv) 그 말을 듣는
+ * 사람의 상점은 이미 열려 있었다. 광산노인·숲마을벌목꾼·항구약초지기도 같은
+ * 문장 구조였다 — 네 계열 전부에서, 상점을 찾지 못한 사람이 그 말을 믿고
+ * 돌아섰다.
+ *
+ * **왜 대사가 아니라 등록부가 문을 여는가가 이 검사의 전제다**(설계 §6-앞 1):
+ * 상점은 `shopAccess` 하나가 열고 대사는 그것을 설명할 뿐이라, 둘이 어긋나도
+ * 어느 화면 하나 이상해지지 않는다. 어긋남이 보이는 곳은 플레이어의 머릿속뿐이고
+ * 그 자리는 되짚을 수 없다 — recipes 의 gateSkill 과 산출물 계열을 묶어 둔 검사가
+ * 이미 쓴 저울이고, 여기는 그 저울을 「말」 쪽에 댄 것이다.
+ *
+ * 고치는 길은 둘이고 메시지가 둘 다 말한다: 미루려면 조건의 아래끝을 해금치
+ * **아래**로 내리고, 이미 열렸다고 말하려면 그 낱말을 바꾼다.
+ */
+export function validateShopTalk(data: GameData): string[] {
+  const violations: string[] = []
+
+  for (const shop of Object.values(data.shops)) {
+    // combat 상점의 눈금은 skills 가 아니라 combat.proficiency 라(shopAccess)
+    // `skill.combat` 이라는 사실 자체가 없다 — 아래끝이 언제나 null 이라 이
+    // 상점의 대사는 조용히 지나간다. 분기를 따로 쓰지 않는 이유는 그것이
+    // 사실 목록(DECLARED_FACTS)이 이미 지고 있는 답이기 때문이다.
+    const fact = `skill.${shop.skill}`
+
+    for (const rule of data.dialogue) {
+      if (rule.speaker !== shop.speakerId) continue
+      const bound = lowerBoundOf(rule, fact)
+      if (bound === null || bound < shop.unlockSkill) continue
+
+      for (const line of rule.lines) {
+        const word = POSTPONING_WORDS.find((candidate) => line.includes(candidate))
+        if (word === undefined) continue
+        violations.push(
+          `${dialogueLocation(rule.source.file, rule.source.line)}: 이 규칙은 ${fact} 가 ${bound} 이상일 때만 나오는데 상점 "${shop.name}" 는 ${shop.unlockSkill} 에 열린다 — 이 말을 듣는 사람의 상점은 이미 열려 있다. 그런데 「${line}」 가 "${word}" 로 미룬다. 미루려면 조건의 아래끝을 ${shop.unlockSkill} 아래로 내리고, 이미 열렸다고 말할 참이면 그 낱말을 바꾼다`,
+        )
+      }
+    }
+  }
+
+  return violations
+}

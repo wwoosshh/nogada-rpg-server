@@ -413,8 +413,18 @@ describe('runDialogueCommand — 왜 안 나왔는가', () => {
     expect(out).not.toContain('weather 에 값이 없다. 이 사실을 채워 주는 곳이 아직 없다')
   })
 
+  // `talkedBefore` 를 함께 준다: 시뮬레이터의 기본 플레이어는 아무와도 말해 본
+  // 적이 없어서 초면 인사(`@greet talkedBefore=false`, 조건 하나)가 이 빗날
+  // 인사와 동점이 되고, 그러면 이 검사가 seed 하나에 매달린 동전던지기가 된다.
+  // 동점을 남겨 둔 이유는 채집장노인.dlg 에 적혀 있고, 시뮬레이터가 존재하는
+  // 이유가 정확히 이런 자리를 인자 하나로 갈라 보는 것이다.
   it('--weather=rain 오버라이드로 잠들어 있던 비 오는 날 대사를 볼 수 있다', () => {
-    const out = runDialogueCommand(realData, '채집장노인', { weather: 'rain' }, { now: FIXED_NOW, seed: 0 })
+    const out = runDialogueCommand(
+      realData,
+      '채집장노인',
+      { weather: 'rain', talkedBefore: true },
+      { now: FIXED_NOW, seed: 0 },
+    )
     expect(out).toContain('"이런 날엔 얼음이 잘 안 잡히지."')
   })
 

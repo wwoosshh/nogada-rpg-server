@@ -29,6 +29,7 @@ import {
   collectDialogueNotices,
   validateGameData,
   validateMapSpawns,
+  validateShopTalk,
   validateSpeakerPlacements,
   validateVillageFields,
 } from './validate.js'
@@ -225,6 +226,10 @@ const violations = [
   // 사슬은 한 벌인데 마을은 넷이다 — 슬롯이 넷 전부에서 펴지는지를 여기서 본다
   // (퀘스트 설계 ⑧-2: 이 검사가 이 아크에서 가장 값이 크다).
   ...validateStory(data),
+  // 문이 이미 열린 사람에게 문이 멀었다고 말하지 않는가(설계 ⑥ 강화 ②) —
+  // 상점을 여는 것은 등록부이고 대사는 그것을 설명할 뿐이라, 둘이 어긋나도
+  // 어느 화면 하나 이상해지지 않는다. 네 계열 전부가 실제로 어긋나 있었다.
+  ...validateShopTalk(data),
 ]
 if (violations.length > 0) fail(violations)
 

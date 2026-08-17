@@ -77,10 +77,21 @@ describe('스토리 훅 — 전제', () => {
     expect(validateStory(data)).toEqual([])
   })
 
-  it('출하 표가 비어 있어도 훅은 아무것도 안 한다 — 마디를 아직 안 쓴 오늘이 그 상태다', () => {
-    const player = novice()
-    const result = moveThroughTransition({ player, data: loadGameData(), now: 0, x: 15, y: 0 })
+  // 왜: 마디를 다 쓴 지금도 이 갈래는 살아 있어야 한다 — `storyChainOf` 는 표가
+  //     비면 마을 유도를 아예 안 돌고, 그 한 줄이 세계를 두 칸짜리 리터럴로 짓는
+  //     다른 서비스 테스트들을 `startVillages` 의 던짐에서 지킨다.
+  it('표를 비우면 훅이 아무것도 안 한다', () => {
+    const empty: GameData = { ...loadGameData(), story: [] }
+    const result = moveThroughTransition({ player: novice(), data: empty, now: 0, x: 15, y: 0 })
     expect(result.ok && result.outcome.player.story).toBe(0)
+  })
+
+  // 왜: 위아래의 검사들은 전부 **이 파일이 지은 표**를 민다. 출하 표가 실제로 훅에
+  //     걸리는지는 그것과 다른 물음이고, 그 답이 아니면 게임 안에서는 아무 일도 안
+  //     일어난다 — 마디 12행이 선 지금 그 물음을 여기서 한 번 묻는다.
+  it('출하 표에서도 문을 넘으면 마디 0 이 끝난다', () => {
+    const result = moveThroughTransition({ player: novice(), data: loadGameData(), now: 0, x: 15, y: 0 })
+    expect(result.ok && result.outcome.player.story).toBe(1)
   })
 })
 
