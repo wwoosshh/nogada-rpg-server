@@ -1,3 +1,4 @@
+import { runStoryHook } from '@nogada/data'
 import { transitionGate, type GameData, type PlayerState } from '@nogada/shared'
 
 export interface MoveOutcome {
@@ -70,5 +71,18 @@ export function moveThroughTransition(args: MoveArgs): MoveResult {
   if (gate && !gate.open) return { ok: false, code: 'locked' }
 
   player.location = { mapId: transition.toMap, x: transition.toX, y: transition.toY }
+
+  // 스토리 사슬의 **새 판정 자리**다(설계 ⑧-4). 채집·제작·헌납은 이미 이정표를
+  // 재판정하던 자리에 한 줄이 붙었지만, 이동은 오늘까지 이정표를 아예 안 봤다 —
+  // 지표가 전부 단조 증가라 문을 넘는 것으로는 아무 문턱도 안 움직였기 때문이다.
+  // 사슬은 다르다: 마디 0 이 「{마을} {방향}문으로 나가라」이고, 그것을 끝내는
+  // 사건은 오직 이 줄 위쪽의 전환 하나뿐이다.
+  //
+  // **자리를 옮긴 뒤**에 부른다. 사슬 유도가 숙련 0 인 사람에게는 서 있는 자리를
+  // 보므로(`storyVillage` 의 ②), 이 순서라야 판정이 본 세계와 응답에 실려 저장되는
+  // 세계가 같다 — 앞에서 부르면 사슬이 "떠나온 곳"을 기준으로 서고, 그 답이 저장된
+  // 자리와 어긋나는 날 왜 그런지 되짚을 자리가 없다.
+  runStoryHook(args.data, player, { kind: 'arrive', mapId: transition.toMap })
+
   return { ok: true, outcome: { player } }
 }

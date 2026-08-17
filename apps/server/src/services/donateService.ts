@@ -1,3 +1,4 @@
+import { runStoryHook } from '@nogada/data'
 import {
   newlyAchieved,
   type GameData,
@@ -113,6 +114,14 @@ export function performDonate(args: PerformDonateArgs): DonateResult {
   // 느낀다. 채집·제작과 같은 자리, 같은 무조건이다.
   const achieved = newlyAchieved(args.data, player, player.celebrated)
   for (const m of achieved) player.celebrated.push(m.id)
+
+  // 스토리 사슬도 같은 자리에서 재판정한다(설계 ⑧-4) — 마디 3 이 「가방에서
+  // [바치기]」이고, 그 마디가 여는 것이 수집의 방 첫 별이다(설계 ③).
+  //
+  // 세는 것은 **개수**다(advanceStory 의 `storyCount` 문서) — 한 번에 200개를
+  // 바치면 200 이 오른다. 실제로 그렇게 바친다: [바치기] 는 가진 것을 통째로 넣는
+  // 손짓이라, 한 개씩 세는 규칙이면 10분치 가방을 바친 사람의 사슬이 1 만 오른다.
+  runStoryHook(args.data, player, { kind: 'donate', itemId: args.itemId, count: args.count })
 
   return { ok: true, outcome: { player, achieved } }
 }

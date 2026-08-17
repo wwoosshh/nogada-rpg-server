@@ -1,5 +1,5 @@
-import type { MilestoneMetric } from './milestones.js'
-import type { SkillId } from './types.js'
+import { isAchieved, metricValueOf, type MilestoneMetric, type MilestoneWorld } from './milestones.js'
+import type { PlayerState, SkillId } from './types.js'
 
 /**
  * 스토리 사슬 — **세계에 정확히 하나**이고 `PlayerState.story` 정수 하나로 돈다
@@ -36,8 +36,6 @@ export const COUNTED_GOAL_KINDS: readonly StoryGoalKind[] = ['gather', 'donate',
  * `arg` 가 어느 등록부의 id 인지는 `kind` 가 정한다 — arrive→맵, gather→계열,
  * donate→아이템, craft→레시피, reach→이정표. 그 id 가 실재하는지는 빌드 검증이
  * 마을 넷 전부에서 본다(`validateStory` 의 참조 무결성).
- *
- * 펴진 쪽이라 아직 부르는 데가 없다 — `StoryStep` 의 주석을 볼 것.
  */
 export interface StoryGoal {
   kind: StoryGoalKind
@@ -58,9 +56,11 @@ export interface StoryGoal {
  * 화자 없는 자리에서 못 부른다. 그래서 **이정표의 지표 그대로**로 제한한다 —
  * 지표 셋(skill·every·collection)이 전부 단조 증가라는 것은 이정표가 이미 지고
  * 있는 약속이고(`milestones.ts` 의 MilestoneMetric), 값을 읽는 함수도
- * `metricValue` 하나를 그대로 쓴다. 단조가 아닌 문턱은 **적을 방법 자체가 없다.**
+ * `metricValueOf` 하나를 그대로 쓴다. 단조가 아닌 문턱은 **적을 방법 자체가 없다.**
  *
- * 펴진 쪽이라 아직 부르는 데가 없다 — `StoryStep` 의 주석을 볼 것.
+ * **문턱은 그 마디가 스스로 만드는 값보다 위여야 한다** — 아래 `advanceStory` 의
+ * 순서 문단을 볼 것. 「그 마디를 하면 넘는 문턱」을 걸면 그 마디는 끝난 것이
+ * 아니라 지나친 것이 되어, 해낸 사람이 `announce` 를 못 듣는다.
  */
 export interface StoryCatchUp {
   metric: MilestoneMetric
@@ -73,12 +73,9 @@ export interface StoryCatchUp {
  * 날것(`StoryStepDef`)의 슬롯이 전부 펴져 있다: `objective`·`announce` 에는
  * 이름이, `goal.arg` 에는 id 가 들어가 있다.
  *
- * **펴진 쪽 세 벌(`StoryStep`·`StoryGoal`·`StoryCatchUp`)은 아직 부르는 데가
- * 없다** — 이 모양을 받는 것은 판정 훅 `advanceStory`(설계 ⑧-4)와 띠(⑧-6)이고,
- * 그 둘은 이 아크의 다음 태스크다. 지금 이 셋이 선 채로 `*Def` 쪽에 칸이 하나
- * 늘면 짝을 손으로 맞춰야 하는데, 쓰는 데가 없으니 안 맞아도 타입 검사조차
- * 조용하다. 고아 타입으로 오해하지 말 것 — 다음 사람이 지울 것이 아니라, 칸을
- * 늘릴 때 함께 늘려야 하는 두 번째 모양이다.
+ * 펴는 것은 `storyChainOf`(packages/data — 마을을 알아야 슬롯이 서므로 거기
+ * 있다), 받아서 판정하는 것은 아래 `advanceStory` 다. 띠(설계 ⑧-6)도 같은
+ * 모양을 받는다.
  */
 export interface StoryStep {
   step: number
@@ -198,4 +195,192 @@ export function fillText(template: string, slots: StorySlots): string {
 /** 기계가 가리키는 자리(`goal.arg`·`goal.count`·`catchUp.arg`)의 슬롯을 편다. */
 export function fillArg(template: string, slots: StorySlots): string {
   return fillSlots(template, slots, 'id')
+}
+
+/**
+ * 판정 훅이 사슬에게 알리는 사건 — **방금 무엇을 했는가**(설계 ⑧-4).
+ *
+ * `reach` 가 없는 것이 이 목록의 요점이다: 이정표 도달은 사건이 아니라
+ * **상태**다(단조 지표라 지나간 순간을 다시 물을 필요가 없다). 그래서 훅이
+ * 전할 것이 없고, 아래 `advanceStory` 가 매번 세계에서 직접 읽는다 — 실패한
+ * 손질도 숙련을 올려 문턱을 넘길 수 있으므로(gatherService 의 ③), 사건이
+ * 없어도 사슬은 나아갈 수 있어야 한다. 그것이 `event: null` 의 뜻이다.
+ */
+export type StoryEvent =
+  | { kind: 'arrive'; mapId: string }
+  | { kind: 'gather'; skill: SkillId }
+  | { kind: 'donate'; itemId: string; count: number }
+  | { kind: 'craft'; recipeId: string }
+
+/**
+ * 이번 훅에서 사슬이 지나간 마디들.
+ *
+ * **둘을 나누는 이유는 화면이다**(설계 ⑥ 방어②): `completed` 는 플레이어가
+ * 방금 해낸 것이라 `announce` 를 말해야 하고, `skipped` 는 "이미 지나쳤다고
+ * 본 것"이라 말하면 안 된다 — 얼음 200,000 인 테스터에게 여섯 줄이 한꺼번에
+ * 쏟아지는 것은 안내가 아니라 소음이다.
+ */
+export interface StoryAdvance {
+  /** 이번 훅으로 **실제로 끝낸** 마디들. 순서는 지나간 순서다. */
+  completed: StoryStep[]
+  /** `catchUp` 이 이미 지나쳤다고 판정해 건너뛴 마디들. */
+  skipped: StoryStep[]
+}
+
+export interface AdvanceStoryArgs {
+  /** 이 플레이어의 사슬 — 슬롯이 펴진 뒤의 것(`storyChainOf`). 비면 아무 일도 없다. */
+  chain: readonly StoryStep[]
+  /**
+   * **제자리에서 고친다**(`story`·`storyCount` 둘뿐이다).
+   *
+   * 부르는 쪽이 전부 `structuredClone` 뒤의 사본을 들고 있는 서비스라(채집·제작·
+   * 헌납·이동) 새 객체를 하나 더 만들어 돌려주면 서비스마다 "어느 쪽을 응답에
+   * 실을 것인가" 를 다시 정해야 한다. 이정표 재판정이 `celebrated` 에 직접
+   * push 하는 그 자리, 그 자세다.
+   */
+  player: PlayerState
+  /** `reach` 와 `catchUp` 이 읽는 세계. `GameData` 가 그대로 이 모양이다. */
+  world: MilestoneWorld
+  /** 방금 한 것. 없으면(실패한 손질처럼) 상태에서 유도되는 것만 다시 본다. */
+  event: StoryEvent | null
+}
+
+/** 이 마디를 이미 지나쳤다고 볼 수 있는가 — 단조 지표 문턱을 넘었는가. */
+function caughtUp(step: StoryStep, player: PlayerState, world: MilestoneWorld): boolean {
+  const at = step.catchUp
+  return at !== undefined && metricValueOf(at.metric, player, world) >= at.threshold
+}
+
+/**
+ * 사건 없이 **상태만 보고** 끝나는 마디인가 — `reach` 하나뿐이다.
+ *
+ * 가리키는 이정표가 지금 데이터에 없으면 거짓이다. 빌드가 막지만(참조 무결성),
+ * 막지 못했을 때 조용히 달성되는 것보다 조용히 안 되는 편이 낫다 —
+ * `metricValue` 의 `every` 가 없는 이정표를 세지 않는 그 원칙이다.
+ */
+function metByState(step: StoryStep, player: PlayerState, world: MilestoneWorld): boolean {
+  if (step.goal.kind !== 'reach') return false
+  const def = world.milestones.find((m) => m.id === step.goal.arg)
+  return def !== undefined && isAchieved(def, player, world)
+}
+
+/** 이 사건이 이 마디의 델타에 몇을 더하는가. 안 세는 마디·엉뚱한 사건은 0 이다. */
+function countedBy(step: StoryStep, event: StoryEvent | null): number {
+  if (!event) return 0
+  const goal = step.goal
+  // 계열·아이템·레시피가 정확히 같을 때만 센다. 남의 계열을 캐거나 다른 것을
+  // 바치는 것은 이 마디가 시킨 일이 아니다.
+  if (goal.kind === 'gather') return event.kind === 'gather' && event.skill === goal.arg ? 1 : 0
+  if (goal.kind === 'craft') return event.kind === 'craft' && event.recipeId === goal.arg ? 1 : 0
+  if (goal.kind === 'donate') {
+    return event.kind === 'donate' && event.itemId === goal.arg ? event.count : 0
+  }
+  return 0
+}
+
+/**
+ * 사슬을 판정해 나아간다 — **서버만 부른다**(설계 ②: 진행 판정이 도는 곳은
+ * gather·craft·donate·move 넷이고, 클라이언트는 결과를 받을 뿐이다).
+ *
+ * ## `storyCount` 가 세는 것
+ *
+ * **지금 걸린 마디가 시작된 뒤부터의 델타**다(설계 ②의 "세는 방식" 줄). 마디가
+ * 넘어갈 때마다 0 으로 돌아가고, 그래서 평생 누적을 보는 이정표와 겹치지 않는다.
+ * 저장하는 수가 하나뿐이므로 **지금 마디의 것만** 셀 수 있다 — 마디마다 따로
+ * 세려면 `Record<step, number>` 가 되어야 하는데, 그것은 서브 퀘스트의 모양이고
+ * 이 아크는 그것을 안 짓는다(설계 ⑨).
+ *
+ * 무엇이 1인가는 종류마다 다르다:
+ * - `gather` — **손에 든 것**(성공한 채집) 하나가 1이다. 실패한 손질은 안 센다.
+ *   설계 ③ 이 마디 1을 「첫 채집 · 얼음 조각이 가방에 들어온다」로 적었기
+ *   때문이고, 그래야 띠의 `n / 40` 이 가방에 쌓인 수와 같은 수가 된다. 대가는
+ *   실패가 이어지는 동안 띠가 멈춰 보이는 것인데, 대신 "40번 눌렀는데 아무것도
+ *   없다" 는 화면이 사라진다.
+ * - `donate` — **개수**다. 한 번에 200개를 바치면 200이 오른다.
+ * - `craft` — 성공한 제작 하나가 1이다.
+ *
+ * **한 사건은 한 마디만 민다.** 400개를 바쳐 200짜리 마디를 끝내도 남는 200은
+ * 버린다 — 이어 붙이려면 "남은 사건" 이라는 개념이 생기고, 그것을 들고 다닐
+ * 자리는 세 번째 상태 필드다.
+ *
+ * ## 순서 — **사건이 먼저다**
+ *
+ * ① 지금 마디에 사건을 적용한다 → ② 그 뒤에 밀어올림(`catchUp`)과 상태로 끝나는
+ * 마디(`reach`)를 지나갈 수 있는 만큼 지나간다.
+ *
+ * **밀어올림을 뒤에 두는 이유**: 훅은 **행동이 상태를 이미 바꾼 뒤**에 돈다
+ * (헌납은 `donated` 를, 채집은 숙련을 먼저 올린다). 밀어올림을 먼저 재면 방금
+ * 그 행동이 만든 값을 "예전부터 그랬다" 로 읽는다 — 얼음 조각 200개를 처음
+ * 바친 신규가 `collection>=1` 문턱에 걸려, 그 마디를 **끝낸** 것이 아니라
+ * **지나친** 것이 되고 첫 별의 `announce` 가 통째로 사라진다(설계 ⑦ 이 예로
+ * 든 문턱이 정확히 그것이다). 사건을 먼저 쓰면 그 사람의 마디는 자기 손으로
+ * 끝나고, 밀어올림은 그 뒤에 남은 것만 본다.
+ *
+ * **그래도 고인물이 초보 안내를 한 마디씩 밟지 않는 이유**(설계 ⑦, 실기 확인
+ * 1번): 사건은 **지금 마디 하나에만** 닿는다. 얼음 200,000 인 사람의 첫 훅이
+ * 채집이면 그의 마디 0 은 「나가라」(arrive)라서 채집이 닿을 자리가 없고, ②가
+ * 그 자리에서 사슬을 끝까지 민다. 그 첫 훅이 하필 문을 넘는 것이라면 마디 0 은
+ * 실제로 그 사람이 방금 한 일이므로 끝난 것으로 세는 편이 옳다.
+ *
+ * **`catchUp` 문턱은 그 마디가 스스로 만드는 값보다 위여야 한다.** 위 순서가
+ * 신규의 주 경로를 지켜 주지만, `gather ×1` 마디에 `skill.{계열}>=1` 처럼 그
+ * 마디의 **실패한 시도**만으로 넘는 문턱을 걸면 여전히 `skipped` 로 샌다. 표를
+ * 쓰는 쪽의 규칙이라 여기서 막지 않는다 — 문턱이 얼마여야 하는지는 계열마다
+ * 다르고, 그 답은 서버만 아는 확률표 안에 있다.
+ *
+ * **매 훅마다 미는 것이 "첫 판정 훅이 돌 때 한 번"과 같은 뜻인 이유**: 문턱이
+ * 전부 단조 지표라(StoryCatchUp) 한 번 밀리고 나면 그 뒤의 훅은 같은 답을 보고
+ * 아무것도 안 한다. "이번이 첫 훅인가" 를 기억하려면 세 번째 상태 필드가 필요한데,
+ * 그 필드가 사는 값은 이미 단조가 공짜로 주고 있다. 그리고 이 자리는 **읽기
+ * 전용 라우트가 아니다** — 설계가 기각한 「접속 시 재판정」이 안 되는 이유는
+ * `GET /api/state` 가 세이브를 쓰게 되기 때문이지, 미는 횟수 때문이 아니다.
+ */
+export function advanceStory({ chain, player, world, event }: AdvanceStoryArgs): StoryAdvance {
+  const out: StoryAdvance = { completed: [], skipped: [] }
+
+  /** 마디를 넘긴다 — 델타는 새 마디의 것이므로 0 으로 돌아간다. */
+  const pass = (step: StoryStep, into: StoryStep[]): void => {
+    into.push(step)
+    player.story += 1
+    player.storyCount = 0
+  }
+
+  // ① 사건 — **지금 마디 하나에만** 닿는다.
+  //
+  // 세이브의 `story` 가 사슬 길이를 넘으면(마디를 지운 날의 옛 세이브) 여기서
+  // undefined 가 나와 사슬이 끝난 것으로 본다 — celebrated 가 없는 이정표를
+  // 무시하는 그 자세다. 길이를 따로 재지 않는 것은 색인 하나가 이미 그 답이라서다.
+  const step = chain[player.story]
+  if (step && appliesTo(step, player, event)) pass(step, out.completed)
+
+  // ② 사건 없이 지나갈 수 있는 만큼.
+  while (player.story < chain.length) {
+    const next = chain[player.story]!
+    if (caughtUp(next, player, world)) pass(next, out.skipped)
+    // 끝낸 마디 뒤에 **이미 넘긴 이정표**가 걸려 있을 수 있다(마지막 얼음 조각을
+    // 바치는 순간 이미 숙련 1,000 인 사람).
+    else if (metByState(next, player, world)) pass(next, out.completed)
+    else break
+  }
+
+  return out
+}
+
+/**
+ * 이 사건이 이 마디를 끝내는가. 세는 마디면 **델타를 먼저 올리고** 답한다.
+ *
+ * 델타를 여기서 올리는 이유: "몇이 올랐는가" 와 "그래서 끝났는가" 는 같은 판정의
+ * 앞뒤라, 나누면 부르는 쪽이 둘의 순서를 다시 정해야 한다.
+ */
+function appliesTo(step: StoryStep, player: PlayerState, event: StoryEvent | null): boolean {
+  if (step.goal.kind === 'arrive') {
+    return event?.kind === 'arrive' && event.mapId === step.goal.arg
+  }
+  const gained = countedBy(step, event)
+  if (gained === 0) return false
+  player.storyCount += gained
+  // `count` 는 세는 종류에 반드시 있다(parseStory 의 짝 강제). 없는 데이터가
+  // 여기까지 오면 **영원히 안 끝나는 마디**로 두는 편이 낫다 — 0 으로 접으면
+  // 사슬이 첫 채집 한 번에 끝까지 굴러가고, 그 사고는 화면에 흔적을 안 남긴다.
+  return step.goal.count !== undefined && player.storyCount >= step.goal.count
 }

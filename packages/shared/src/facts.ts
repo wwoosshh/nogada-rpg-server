@@ -83,6 +83,24 @@ export function buildFacts(sources: FactSources): Facts {
   // 기술이 늘어날 때(명상·낚시·헌혈) 그 기술만 조건에서 조용히 죽는다.
   for (const skill of SKILL_IDS) facts[`skill.${skill}`] = player.skills[skill]
 
+  // 스토리 사슬의 지금 마디(설계 ⑦). `weather` 에 이어 **두 번째로 공급자를 얻은**
+  // 미공급 사실이다.
+  //
+  // 여기 한 줄이 전부인 이유: 이 함수는 이미 `player` 를 통째로 받으므로 시그니처도
+  // 호출부도 하나도 안 흔들린다 — 그래서 서버가 대화를 판정할 때와 시뮬레이터가
+  // 작가에게 보여줄 때가 그날부터 같은 값을 본다(`pnpm content dialogue 채집장노인
+  // --story=4`). justAchieved 가 인자 대신 상태에서 유도되기를 택한 그 이유이자
+  // 그 이득이다(packages/data 의 facts.test.ts 가 그 자리를 지킨다).
+  //
+  // `storyCount` 는 **안 싣는다.** 그 수는 "지금 마디에서 몇 번째" 라 마디가 넘어갈
+  // 때마다 0 으로 돌아간다 — 사실로 실으면 `@story storyCount=3` 같은 조건을 쓸 수
+  // 있게 되는데, 그 조건이 가리키는 것은 사슬의 어느 지점도 아니다. 대사가 물어야
+  // 하는 것은 언제나 "어디까지 왔는가" 이고 그 답은 `story` 하나다.
+  //
+  // `quest.*` 는 여전히 안 싣는다(공급자가 없다고 선언돼 있다) — 서브 퀘스트는 아크
+  // 2 이고, 그때까지 빌드가 「대사 N줄이 quest.X 를 기다린다」로 빚을 세어 준다.
+  facts.story = player.story
+
   // 달성 여부는 저장된 값이 아니라 계산이다(milestones.ts) — 여기서도 그대로
   // 계산해서, 대사가 보는 달성과 이정표 목록이 보는 달성이 같은 함수에서 나온다.
   const achieved = achievedIds(world, player)

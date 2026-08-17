@@ -1,3 +1,4 @@
+import { runStoryHook } from '@nogada/data'
 import {
   barrierSeparates,
   EFFICIENCY_MULTIPLIER,
@@ -197,6 +198,15 @@ export function performGather(args: PerformGatherArgs): GatherResult {
   // 이번 응답에 그 사실이 실려야 플레이어가 "그 행동 때문에 열렸다" 를 느낀다.
   const achieved = newlyAchieved(data, player, player.celebrated)
   for (const m of achieved) player.celebrated.push(m.id)
+
+  // ③' 스토리 사슬도 같은 자리에서 재판정한다(설계 ⑧-4) — **여기도 무조건**이다.
+  // 마디 4 는 숙련 문턱(`reach {계열}_1000`)이라 실패한 손질이 넘길 수 있으므로,
+  // 성공했을 때만 부르면 마지막 광석을 실패로 캔 사람의 사슬이 그 자리에 선다.
+  //
+  // 다만 **세는 사건은 성공했을 때만** 실린다: 마디 1·2 가 세는 것은 손에 들어온
+  // 것이고(설계 ③ — 「첫 채집. 얼음 조각이 가방에 들어온다」), 그래야 띠의
+  // `n / 40` 이 가방에 쌓인 수와 같은 수가 된다(advanceStory 의 `storyCount` 문서).
+  runStoryHook(data, player, success ? { kind: 'gather', skill: node.skill } : null)
 
   if (!success) {
     return { ok: true, outcome: { success: false, gained: null, skillGained, achieved, player } }

@@ -119,13 +119,21 @@ function byId(all: readonly MilestoneDef[], id: string): MilestoneDef | undefine
   return all.find((m) => m.id === id)
 }
 
-/** 그 이정표의 지표가 지금 얼마인가. */
-export function metricValue(
-  def: MilestoneDef,
+/**
+ * 그 **지표**가 지금 얼마인가 — 이정표를 거치지 않고 지표만 묻는 문.
+ *
+ * 아래 `metricValue` 에서 갈라 나온 이유: 스토리 사슬의 밀어올림 문턱
+ * (`StoryCatchUp`)은 지표와 문턱만 있고 이정표가 아니다(설계 ⑦ — 자유 문법 대신
+ * **이정표의 지표 그대로**로 제한한 것이 곧 단조 제한이다). 그쪽에서 읽으려고
+ * `MilestoneDef` 모양의 가짜를 하나 지어 넘기면, 그 가짜의 id·name·effect 가
+ * 무엇이든 상관없다는 사실이 부르는 자리마다 다시 설명되어야 한다 — 그리고
+ * 언젠가 그 가짜가 `world.milestones` 에 섞여 든다.
+ */
+export function metricValueOf(
+  m: MilestoneMetric,
   player: PlayerState,
   world: MilestoneWorld,
 ): number {
-  const m = def.metric
   if (m.kind === 'skill') return player.skills[m.skill]
   // 방의 총점은 세이브에 저장된 값이 아니라 계산이다 — 서버 판정도 화면도
   // 같은 `collectionScore` 를 부른다(§6-앞 11).
@@ -139,6 +147,15 @@ export function metricValue(
     if (other && isAchieved(other, player, world)) count += 1
   }
   return count
+}
+
+/** 그 이정표의 지표가 지금 얼마인가. */
+export function metricValue(
+  def: MilestoneDef,
+  player: PlayerState,
+  world: MilestoneWorld,
+): number {
+  return metricValueOf(def.metric, player, world)
 }
 
 export function isAchieved(

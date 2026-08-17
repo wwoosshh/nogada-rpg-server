@@ -136,8 +136,8 @@ export interface FactSpec {
  * 조건에 쓸 수 있는 사실 이름의 전체 목록.
  *
  * `season`·`hour`·`dayOfSeason`·`skill.*`·`milestone.*`·`talkedBefore`·
- * `daysSinceLastTalk`·`justAchieved`·`place`·`weather` 는 지금 공급자가 있다
- * (설계 문서 6.1). `affinity`·`quest.*`·`story`·`activity`·`location` 은 자리만
+ * `daysSinceLastTalk`·`justAchieved`·`place`·`weather`·`story` 는 지금 공급자가
+ * 있다(설계 문서 6.1). `affinity`·`quest.*`·`activity`·`location` 은 자리만
  * 만들어 뒀다(6.2) — 그 값을 만들 스펙(호감도·퀘스트) 자체가 아직 없어서, 그
  * 이름을 쓴 조건은 파싱은 되지만 절대 맞지 않는다.
  *
@@ -180,10 +180,19 @@ export const DECLARED_FACTS: readonly FactSpec[] = [
   // 약속 그대로): 목록은 WEATHER_KINDS(weather.ts) 하나가 소유하고, 그래서
   // `weather=fog` 같은 오타를 빌드가 잡는다.
   { name: 'weather', prefix: false, supplied: true, value: { kind: 'enum', values: WEATHER_KINDS } },
-  // 아래 다섯은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
+  // story 는 그 뒤를 따라 **두 번째로** 공급자를 얻었다(설계 ⑦). 값을 만드는 곳은
+  // 스토리 사슬의 판정 훅 넷(서버의 runStoryHook)이고, buildFacts 가 `player.story`
+  // 를 그대로 싣는다. weather 와 다른 점 하나: **언제나 있다.** 사슬을 한 번도 못
+  // 본 사람도 0 번 마디에 서 있어서, 이 사실이 없어지는 상태가 없다.
+  //
+  // 값의 모양도 이때 함께 정해졌다: 마디 번호는 수다. 그래서 `story=넷` 을 빌드가
+  // 잡는다. 다만 `@story` 는 once 사건이라 조건에 `=` 만 쓸 수 있으므로(validate.ts)
+  // 마디마다 규칙을 따로 써야 하고 `>=` 로 묶을 수 없다 — 설계 ⑦ 이 "스케일했을 때의
+  // 값"으로 미리 세어 둔 것이 그 제약이다.
+  { name: 'story', prefix: false, supplied: true, value: { kind: 'number' } },
+  // 아래 넷은 공급자가 없다 — 값의 모양도 그 스펙이 생길 때 함께 정해진다.
   { name: 'affinity', prefix: false, supplied: false, value: { kind: 'unspecified' } },
   { name: 'quest.', prefix: true, supplied: false, value: { kind: 'unspecified' } },
-  { name: 'story', prefix: false, supplied: false, value: { kind: 'unspecified' } },
   { name: 'activity', prefix: false, supplied: false, value: { kind: 'unspecified' } },
   { name: 'location', prefix: false, supplied: false, value: { kind: 'unspecified' } },
 ] as const

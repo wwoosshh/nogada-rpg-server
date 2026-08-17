@@ -2,17 +2,23 @@ import {
   COUNTED_GOAL_KINDS,
   DIRECTION_LABELS,
   SKILL_LABELS,
+  advanceStory,
   fillArg,
   fillText,
   slotsUsedBy,
   type Direction,
   type GameData,
   type MapDef,
+  type PlayerState,
   type SkillId,
+  type StoryAdvance,
   type StoryCatchUpDef,
+  type StoryEvent,
+  type StoryGoal,
   type StoryGoalDef,
   type StoryGoalKind,
   type StorySlots,
+  type StoryStep,
   type StoryStepDef,
 } from '@nogada/shared'
 import { DEV_ONLY_MAP_IDS, startVillages, villageField } from './maps.js'
@@ -27,6 +33,14 @@ const FILE = 'story.csv'
 const DISCOVERABLE_MARK = '1'
 
 const GOAL_KINDS: readonly StoryGoalKind[] = ['arrive', 'gather', 'donate', 'craft', 'reach'] as const
+
+/**
+ * 밀어올림 문턱이 쓰는 칸 이름 — `toMilestoneMetric` 이 오류 문구에 적는 것들.
+ *
+ * 검증과 런타임 해석이 **같은 상수**를 쓴다. 한쪽만 `metricArg` 라고 적으면
+ * 작가는 빌드에서 본 칸 이름과 다른 이름으로 혼나게 된다.
+ */
+const CATCH_UP_FIELDS = { kind: 'catchUpKind', arg: 'catchUpArg' } as const
 
 function toGoalKind(value: string, ctx: string): StoryGoalKind {
   if (!(GOAL_KINDS as readonly string[]).includes(value)) {
@@ -633,7 +647,7 @@ export function validateStory(data: GameData): string[] {
             def.catchUp.kind,
             fillArg(def.catchUp.arg, slots),
             at,
-            { kind: 'catchUpKind', arg: 'catchUpArg' },
+            CATCH_UP_FIELDS,
           )
           // `every` 가 가리키는 이정표는 표 전체가 모여야 판단할 수 있어(전방 참조)
           // 지표를 만든 뒤에 본다 — milestones.ts 가 같은 이유로 미뤄 둔 검사다.
@@ -664,4 +678,123 @@ export function validateStory(data: GameData): string[] {
   }
 
   return violations
+}
+
+/**
+ * 이 플레이어의 사슬은 **어느 마을의 것인가**.
+ *
+ * 시작 마을은 어디에도 저장돼 있지 않다 — `PlayerState` 가 늘리기로 한 칸은
+ * `story`·`storyCount` 둘뿐이고(설계 ⑦), 셋째를 늘리는 것은 이 아크가 안 하기로
+ * 한 일이다. 그래서 세계의 생김새와 그 사람의 숫자에서 되찾는다. 순서가 곧 규칙이다:
+ *
+ * **① 그 계열의 숙련도.** 시작 마을을 고른다는 것은 곧 첫 숙련도를 고르는 것이고
+ * (`villageField`), 그 숫자는 줄어들지 않는다. 마디 1 을 지난 사람부터는 이것 하나로
+ * 답이 정해진다 — 그리고 마디 3·4·5(바칠 것 · 요구 문턱 · 레시피)가 계열을 실제로
+ * 필요로 하는 것이 정확히 그 뒤다.
+ *
+ * **② 서 있는 자리.** ①이 못 가르는 자리는 하나뿐이다: **아직 아무것도 안 캔
+ * 사람**(네 숫자가 모두 0). 그 사람은 마디 0 에 서 있고, 마디 0 은 마을 안에서
+ * 시작해 채집장에서 끝나므로 그 두 맵 중 하나에 서 있다. `moveService` 가 자리를
+ * 옮긴 **뒤에** 훅을 부르는 것이 이 줄과 짝이다 — 문을 넘은 사람은 이미 자기
+ * 채집장에 서 있어서, 「{채집장}으로 나가라」가 방금 도착한 그 맵으로 펴진다.
+ *
+ * **③ 전환표 순서.** 위 둘이 다 침묵하는 경우는 하나뿐이다 — 숙련 0 인 사람이
+ * 월드맵·사냥터에 서 있을 때. 그 상태에는 **이 사람이 어느 마을에서 났는지를 말해
+ * 주는 정보가 세계 어디에도 없다.** 유도의 한계가 아니라 정보가 없는 것이고, 그래서
+ * 여기서는 답을 지어내는 대신 늘 같은 답(전환표에 먼저 적힌 마을)을 낸다. 그 사람이
+ * 자기 마을로 돌아오는 순간 ②가 답을 바로잡는다.
+ *
+ * 되돌아오는 대가도 정직하게 적는다: 얼음으로 시작해 나무를 더 캔 사람은 ①이
+ * 숲의마을을 가리킨다. 사슬이 3.5분짜리이고(설계 ③) 그 안에서 남의 계열을 자기
+ * 계열보다 많이 캘 방법이 없으므로 아크 1 에서는 일어나지 않는다. 아크 2 의 마디
+ * (`discoverable=false`)까지 사슬이 길어지면 그때는 답이 흔들릴 수 있고, 그 값이
+ * 셋째 상태 필드보다 비싸지는 날 필드를 늘리면 된다.
+ */
+export function storyVillage(data: GameData, player: PlayerState): MapDef {
+  const chains = startVillages(data).map((village) => ({
+    village,
+    field: villageField(data, village.id),
+  }))
+
+  // ① 그 계열의 숙련도 — 최고를 가진 마을만 남긴다. 하나면 그것이 답이다.
+  const top = Math.max(...chains.map((c) => player.skills[c.field.skill]))
+  const leaders = chains.filter((c) => player.skills[c.field.skill] === top)
+
+  // ② 남은 것이 여럿이면(아직 아무것도 안 캔 사람은 넷이 다 0 이다) 서 있는 자리 —
+  //    마을이거나 그 마을의 채집장이거나.
+  const here = leaders.find(
+    (c) => c.village.id === player.location.mapId || c.field.map.id === player.location.mapId,
+  )
+
+  // ③ 그것도 침묵하면 정보가 없다. 지어내지 않고 늘 같은 답을 낸다.
+  return (here ?? leaders[0]!).village
+}
+
+/** 날것 한 행의 슬롯을 그 마을 값으로 편다. */
+function resolveStep(def: StoryStepDef, slots: StorySlots, ctx: string): StoryStep {
+  const goal: StoryGoal = { kind: def.goal.kind, arg: fillArg(def.goal.arg, slots) }
+  // 펴고 나서 수가 된다 — 정수인지는 빌드가 마을마다 이미 봤다(validateStory).
+  if (def.goal.count !== undefined) goal.count = Number(fillArg(def.goal.count, slots))
+
+  const step: StoryStep = {
+    step: def.step,
+    objective: fillText(def.objective, slots),
+    goal,
+    announce: fillText(def.announce, slots),
+    discoverable: def.discoverable,
+  }
+  if (def.catchUp) {
+    step.catchUp = {
+      metric: toMilestoneMetric(def.catchUp.kind, fillArg(def.catchUp.arg, slots), ctx, CATCH_UP_FIELDS),
+      threshold: def.catchUp.threshold,
+    }
+  }
+  return step
+}
+
+/**
+ * 이 플레이어가 실제로 걷는 사슬 — 마을이 정해지고 슬롯이 다 펴진 것.
+ *
+ * **색인이 곧 마디 번호다**(`chain[player.story]`). 그 등식을 지키는 것은 여기
+ * 정렬 한 줄이 아니라 빌드다 — `validateStory` 가 계열마다 `step` 이 0 부터
+ * 빈틈없이 연속인지 보고, 비면 빌드가 선다.
+ *
+ * **표가 비면 여기서 끝난다.** 마디를 아직 안 쓴 오늘(Q3 전)이 그 상태이고, 그때
+ * 마을을 유도하는 것은 답 없는 계산일 뿐 아니라 **비용**이다 — 훅은 채집마다
+ * 도는 자리다. 그리고 이 한 줄이 있어서, 세계를 두 칸짜리 리터럴로 짓는 서비스
+ * 테스트들이 `startVillages` 의 "월드맵에서 나가는 전환이 하나도 없다" 에
+ * 걸리지 않는다.
+ *
+ * 띠(설계 ⑧-6)도 이 함수를 부른다 — 화면이 적는 목적과 서버가 재는 목적이 같은
+ * 자리에서 나와야 「얼음 조각 200개」를 적어 놓고 다른 것을 세는 날이 없다.
+ */
+export function storyChainOf(data: GameData, player: PlayerState): StoryStep[] {
+  if (data.story.length === 0) return []
+
+  const village = storyVillage(data, player)
+  const slots = storySlots(data, village.id)
+  const skill = villageField(data, village.id).skill
+
+  return chainOf(data.story, skill)
+    .slice()
+    .sort((a, b) => a.step - b.step)
+    .map((def) => resolveStep(def, slots, `${FILE}[마디 ${def.step}](${skill}(${village.id}))`))
+}
+
+/**
+ * 판정 훅 하나 — **서비스가 부르는 한 줄**(설계 ⑧-4).
+ *
+ * 사슬을 이 플레이어의 것으로 펴서 `advanceStory`(packages/shared)에게 넘긴다.
+ * 판정 규칙이 shared 에 있고 마을 유도가 여기 있는 이유는 `villageField` 가 여기
+ * 있는 이유와 같다 — 규칙은 세계 데이터를 향해 의존하지 않는다.
+ *
+ * `player` 를 제자리에서 고친다(advanceStory 문서). 부르는 자리는 전부
+ * `structuredClone` 뒤의 사본을 들고 있는 서비스다.
+ */
+export function runStoryHook(
+  data: GameData,
+  player: PlayerState,
+  event: StoryEvent | null,
+): StoryAdvance {
+  return advanceStory({ chain: storyChainOf(data, player), player, world: data, event })
 }

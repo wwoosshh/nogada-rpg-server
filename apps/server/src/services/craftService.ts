@@ -1,3 +1,4 @@
+import { runStoryHook } from '@nogada/data'
 import {
   armorDefenseOf,
   calcCraftSuccess,
@@ -196,6 +197,15 @@ export function performCraft(args: PerformCraftArgs): CraftResult {
   // 플레이어가 "그 행동 때문에 열렸다" 를 느낀다.
   const achieved = newlyAchieved(data, player, player.celebrated)
   for (const m of achieved) player.celebrated.push(m.id)
+
+  // 스토리 사슬도 같은 자리에서 재판정한다(설계 ⑧-4) — 마디 5 가 「제작에서
+  // {레시피} 를 만들어라」이고, 그 마디를 끝내는 순간 띠가 꺼진다(설계 ③).
+  //
+  // **채집과 달리 실패 경로에는 안 붙인다.** 제작 실패는 숙련을 한 톨도 안 올리고
+  // (skillGained 0) 재료만 축내므로 사슬이 볼 것이 하나도 바뀌지 않는다 — 부르면
+  // 매번 같은 답을 다시 계산할 뿐이다. 채집이 그 반대인 이유는 위 ②(숙련 증가는
+  // 성패 무관)가 실패한 손질에도 문턱을 넘길 힘을 주기 때문이다.
+  runStoryHook(data, player, { kind: 'craft', recipeId })
 
   return {
     ok: true,

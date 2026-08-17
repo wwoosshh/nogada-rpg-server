@@ -267,20 +267,26 @@ describe('findFactSpec', () => {
     // weather 는 place 와 또 다른 셋째 모양이다: 값이 플레이어 상태
     // (player.weather)에서 오지만 **만료 전일 때만** 들어온다. "공급자가 있다"가
     // "언제나 값이 있다"는 뜻이 아니라는 것을 place 에 이어 한 번 더 못박는다.
+    // story 는 그 셋과 반대로 **언제나 있다** — 사슬을 한 번도 못 본 사람도 0 번
+    // 마디에 서 있어서 이 사실이 없어지는 상태가 없다(설계 ⑦).
     expect(suppliedNames).toEqual([
-      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved', 'place', 'weather',
+      'season', 'hour', 'dayOfSeason', 'skill.', 'milestone.', 'talkedBefore', 'daysSinceLastTalk', 'justAchieved', 'place', 'weather', 'story',
     ])
-    // 남은 다섯은 사정이 다르다 — 가리키는 값 자체를 만드는 스펙(호감도·퀘스트)이
+    // 남은 넷은 사정이 다르다 — 가리키는 값 자체를 만드는 스펙(호감도·퀘스트)이
     // 아직 없어서, 유도할 상태조차 없다.
     expect(unsuppliedNames).toEqual([
-      'affinity', 'quest.', 'story', 'activity', 'location',
+      'affinity', 'quest.', 'activity', 'location',
     ])
   })
 
   it('공급자가 없는 사실만 값의 모양을 정해 두지 않는다 — 그 모양은 안 만든 스펙이 정한다', () => {
-    // 지금 추측해서 못박으면(예: story 는 숫자다) 나중에 그 스펙이 다른 모양을
+    // 지금 추측해서 못박으면(예: affinity 는 숫자다) 나중에 그 스펙이 다른 모양을
     // 고르는 순간, 이미 쓰여 있던 대사들이 빌드에서 막힌다. 반대로 공급자가
     // 있는 사실은 그 공급자가 넣는 값이 곧 모양이라 비워 둘 이유가 없다.
+    //
+    // story 가 그 규칙대로 건너간 자리다 — 오래 `unspecified` 였다가 사슬이 서면서
+    // 「마디 번호는 수다」가 함께 정해졌다. 추측으로 미리 적어 뒀다면 그 순간에
+    // 맞았을지 틀렸을지는 아무도 모를 일이었다.
     //
     // justAchieved 가 공급자를 얻으면서 이 규칙의 예외가 사라졌다 — 예전에는
     // "값의 모양은 아는데 공급자가 없다"는 어중간한 자리에 혼자 있었다.

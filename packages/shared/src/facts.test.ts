@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyDialogueHistory } from './dialogue.js'
+import { emptyDialogueHistory, selectDialogue, type DialogueRule } from './dialogue.js'
 import { defaultCombatState } from './combatState.js'
 import { buildFacts } from './facts.js'
 import type { MilestoneDef } from './milestones.js'
@@ -223,5 +223,51 @@ describe('buildFacts', () => {
   it('가루를 쓴 적 없으면 weather 를 넣지 않는다', () => {
     const facts = buildFacts({ speaker: SPEAKER, player: player(), world: { milestones: [], collection: {} }, nowMs: NOW })
     expect(Object.hasOwn(facts, 'weather')).toBe(false)
+  })
+})
+
+describe('story 사실 — 사슬이 대사에 닿는 유일한 길', () => {
+  const world = { milestones: [], collection: {} }
+
+  it('지금 마디를 그대로 싣는다', () => {
+    const facts = buildFacts({ speaker: SPEAKER, player: player({ story: 4 }), world, nowMs: NOW })
+    expect(facts.story).toBe(4)
+  })
+
+  it('0 번 마디도 싣는다 — weather 와 달리 없어지는 상태가 없다', () => {
+    // 0 을 "아직 아무 일도 없다" 로 읽어 빼면, `@story story=0` 을 건 첫 대사가
+    // 영원히 안 나온다. 사슬을 한 번도 못 본 사람도 0 번 마디에 서 있는 것이다.
+    const facts = buildFacts({ speaker: SPEAKER, player: player(), world, nowMs: NOW })
+    expect([Object.hasOwn(facts, 'story'), facts.story]).toEqual([true, 0])
+  })
+
+  it('storyCount 는 안 싣는다 — 마디마다 0 으로 돌아가는 수는 사슬의 어느 지점도 아니다', () => {
+    const facts = buildFacts({ speaker: SPEAKER, player: player({ story: 2, storyCount: 37 }), world, nowMs: NOW })
+    expect(Object.hasOwn(facts, 'storyCount')).toBe(false)
+  })
+
+  // 왜: 공급자가 값을 만드는 것과 조건이 그 값을 읽는 것은 다른 일이다. 모양이
+  //     어긋나면(숫자 자리에 글자) 사실은 조용히 만들어지고 그 뒤로 어떤 조건과도
+  //     맞지 않는데, 그 대사는 "규칙 없음" 으로만 보인다.
+  it('그 마디에 건 대사가 실제로 뽑히고, 다른 마디에서는 안 뽑힌다', () => {
+    const atFour: DialogueRule = {
+      id: 'atFour', speaker: SPEAKER, event: 'story', source: { file: '노인.dlg', line: 1 },
+      conditions: [{ fact: 'story', op: '=', value: 4 }], lines: ['그 얘기 들었나'],
+    }
+    const always: DialogueRule = {
+      id: 'always', speaker: SPEAKER, event: 'greet', source: { file: '노인.dlg', line: 5 },
+      conditions: [], lines: ['어서 오게'],
+    }
+    const pick = (story: number) =>
+      selectDialogue(
+        SPEAKER,
+        [atFour, always],
+        buildFacts({ speaker: SPEAKER, player: player({ story }), world, nowMs: NOW }),
+        emptyDialogueHistory(),
+        () => 0,
+      )?.rule.id
+
+    expect(pick(4)).toBe('atFour')
+    expect(pick(3)).toBe('always')
   })
 })

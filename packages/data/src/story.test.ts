@@ -2,12 +2,20 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import type { GameData, MapDef, StoryStepDef } from '@nogada/shared'
+import type { GameData, MapDef, PlayerState, StoryStepDef } from '@nogada/shared'
 import { fillArg, fillText } from '@nogada/shared'
+import { emptyPlayer } from './emptyPlayer.js'
 import { loadGameData } from './load.js'
-import { WORLD_MAP_ID } from './maps.js'
+import { startVillages, WORLD_MAP_ID } from './maps.js'
 import { parseCsv } from './parse.js'
-import { parseStory, storySlots, validateStory } from './story.js'
+import {
+  parseStory,
+  runStoryHook,
+  storyChainOf,
+  storySlots,
+  storyVillage,
+  validateStory,
+} from './story.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -439,5 +447,127 @@ describe('validateStory — ④ catchUp 은 단조 지표다', () => {
         ]),
       ),
     ).toEqual([])
+  })
+})
+
+/**
+ * 아래부터는 **런타임** 쪽이다 — 빌드가 아니라 판정 훅이 부르는 자리
+ * (`storyVillage`·`storyChainOf`·`runStoryHook`).
+ */
+
+/** 그 마을 사람 하나. 숙련·자리만 손댄다. */
+function villager(overrides: Partial<PlayerState> = {}): PlayerState {
+  return { ...emptyPlayer(), ...overrides }
+}
+
+/** 설계 ③ 의 마디 0~2 를 슬롯으로만 적은 사슬. 마을 넷 전부에서 선다. */
+const CHAIN_ROWS = [
+  row({ step: '0' }),
+  row({
+    step: '1', objective: '{노드} 앞에서 A', goalKind: 'gather', goalArg: '{계열}', goalCount: '1',
+  }),
+  row({
+    step: '2', objective: '{아이템} 을 {t1} 개 바쳐라', goalKind: 'donate', goalArg: '{아이템}',
+    goalCount: '{t1}', catchUpKind: 'collection', catchUpArg: '', catchUpThreshold: '1',
+  }),
+]
+
+describe('storyVillage — 시작 마을을 되찾는다', () => {
+  const data = loadGameData()
+
+  it('① 그 계열의 숙련도가 가장 높은 마을이다', () => {
+    const p = villager({ skills: { ice: 0, wood: 0, mineral: 3, herb: 0, crafting: 0 } })
+    expect(storyVillage(data, p).id).toBe('북동쪽마을')
+  })
+
+  it('① 은 서 있는 자리를 이긴다 — 남의 마을에 놀러 간 사람의 사슬은 안 바뀐다', () => {
+    const p = villager({
+      skills: { ice: 5000, wood: 0, mineral: 0, herb: 0, crafting: 0 },
+      location: { mapId: '항구마을', x: 1, y: 1 },
+    })
+    expect(storyVillage(data, p).id).toBe('눈의마을')
+  })
+
+  // 왜: 아직 아무것도 안 캔 사람은 네 숫자가 전부 0 이라 ① 이 침묵한다. 그 사람은
+  //     마디 0 에 서 있고, 마디 0 은 마을 안에서 시작한다 — 그래서 자리가 답이다.
+  //     이것이 없으면 새 계정 넷 중 셋이 남의 마을 안내를 받는다(설계 ①).
+  it('② 숙련이 전부 0 이면 서 있는 마을이다', () => {
+    for (const village of startVillages(data)) {
+      const p = villager({ location: { mapId: village.id, x: 1, y: 1 } })
+      expect([village.id, storyVillage(data, p).id]).toEqual([village.id, village.id])
+    }
+  })
+
+  it('② 는 채집장에 서 있어도 답한다 — 문을 넘은 직후가 그 자리다', () => {
+    const p = villager({ location: { mapId: '허브채집장', x: 1, y: 1 } })
+    expect(storyVillage(data, p).id).toBe('항구마을')
+  })
+
+  it('③ 정보가 없으면(숙련 0 · 월드맵) 늘 같은 답을 낸다 — 지어내지 않는다', () => {
+    const p = villager({ location: { mapId: WORLD_MAP_ID, x: 1, y: 1 } })
+    expect(storyVillage(data, p).id).toBe(startVillages(data)[0]!.id)
+  })
+})
+
+describe('storyChainOf — 마을이 정해진 뒤의 사슬', () => {
+  it('표가 비면 빈 사슬이다 — 마디를 아직 안 쓴 오늘이 그 상태다', () => {
+    expect(storyChainOf(loadGameData(), villager())).toEqual([])
+  })
+
+  it('색인이 곧 마디 번호다 — advanceStory 가 chain[player.story] 로 읽는다', () => {
+    const chain = storyChainOf(worldWith(CHAIN_ROWS), villager())
+    expect(chain.map((s) => s.step)).toEqual([0, 1, 2])
+  })
+
+  it('한 벌짜리 표가 마을마다 다른 사슬로 펴진다 — 그것이 슬롯의 존재 이유다', () => {
+    const data = worldWith(CHAIN_ROWS)
+    const ice = storyChainOf(data, villager({ location: { mapId: '눈의마을', x: 1, y: 1 } }))
+    const herb = storyChainOf(data, villager({ location: { mapId: '항구마을', x: 1, y: 1 } }))
+
+    expect(ice[0]!.objective).toBe('눈의 마을 북문으로 나가라')
+    expect(ice[0]!.goal).toEqual({ kind: 'arrive', arg: '얼음채집장' })
+    expect(ice[2]!.goal).toEqual({ kind: 'donate', arg: 'ice_shard', count: 200 })
+
+    expect(herb[0]!.objective).toBe('항구 마을 동문으로 나가라')
+    expect(herb[0]!.goal).toEqual({ kind: 'arrive', arg: '허브채집장' })
+    // 개수까지 마을이 정한다 — 허브의 1단은 150 이다.
+    expect(herb[2]!.goal).toEqual({ kind: 'donate', arg: 'common_herb', count: 150 })
+  })
+
+  it('밀어올림 문턱의 슬롯도 편다 — 지표가 그 마을의 계열을 가리킨다', () => {
+    const chain = storyChainOf(worldWith(CHAIN_ROWS), villager({ location: { mapId: '숲의마을', x: 1, y: 1 } }))
+    expect(chain[0]!.catchUp).toEqual({ metric: { kind: 'skill', skill: 'wood' }, threshold: 1 })
+    // collection 은 인자가 없는 것이 정상이다 — 방은 하나뿐이다.
+    expect(chain[2]!.catchUp).toEqual({ metric: { kind: 'collection' }, threshold: 1 })
+  })
+
+  it('그 계열의 행만 실린다 — 남의 계열 마디는 이 사람의 사슬에 없다', () => {
+    const data = worldWith([
+      ...CHAIN_ROWS,
+      row({ step: '3', field: 'ice', goalKind: 'reach', goalArg: 'ice_1000', discoverable: '', objective: '', announce: '얼음에 익숙해졌다', catchUpKind: '', catchUpArg: '', catchUpThreshold: '' }),
+      row({ step: '3', field: 'wood', goalKind: 'reach', goalArg: 'wood_1000', discoverable: '', objective: '', announce: '나무에 익숙해졌다', catchUpKind: '', catchUpArg: '', catchUpThreshold: '' }),
+      row({ step: '3', field: 'mineral', goalKind: 'reach', goalArg: 'crafting_200', discoverable: '', objective: '', announce: '조합에 익숙해졌다', catchUpKind: '', catchUpArg: '', catchUpThreshold: '' }),
+      row({ step: '3', field: 'herb', goalKind: 'reach', goalArg: 'herb_1000', discoverable: '', objective: '', announce: '허브에 익숙해졌다', catchUpKind: '', catchUpArg: '', catchUpThreshold: '' }),
+    ])
+    // 전제: 이 표는 실제로 빌드를 통과한다 — 통과 못 하는 표로 런타임을 재면 뜻이 없다.
+    expect(validateStory(data)).toEqual([])
+
+    const chain = storyChainOf(data, villager({ location: { mapId: '눈의마을', x: 1, y: 1 } }))
+    expect(chain.map((s) => s.goal.arg)).toEqual(['얼음채집장', 'ice', 'ice_shard', 'ice_1000'])
+  })
+})
+
+describe('runStoryHook — 서비스가 부르는 한 줄', () => {
+  it('사건이 사슬을 민다', () => {
+    const data = worldWith(CHAIN_ROWS)
+    const p = villager({ location: { mapId: '얼음채집장', x: 1, y: 1 } })
+    runStoryHook(data, p, { kind: 'arrive', mapId: '얼음채집장' })
+    expect(p.story).toBe(1)
+  })
+
+  it('표가 비면 아무 일도 없다', () => {
+    const p = villager()
+    runStoryHook(loadGameData(), p, { kind: 'arrive', mapId: '얼음채집장' })
+    expect([p.story, p.storyCount]).toEqual([0, 0])
   })
 })
