@@ -583,15 +583,22 @@ export class WorldScene extends Phaser.Scene {
     dialogue.events.once(Phaser.Scenes.Events.CREATE, () => dialogue.bind(this.hub, control))
     this.dialogue = dialogue
 
-    // 띠(설계 ⑧-6)도 같은 자세다. control 을 함께 넘기는 이유만 다르다 — 패널·
-    // 대사창은 컨트롤러를 숨기려고 받지만, 이쪽은 마디 1 동안 A 에 테두리를
-    // 붙이려고 받는다(HudScene.bind 문서).
+    // 띠(설계 ⑧-6)와 미니맵(⑧-7)도 같은 자세다. control 을 함께 넘기는 이유만
+    // 다르다 — 패널·대사창은 컨트롤러를 숨기려고 받지만, 이쪽은 마디 1 동안 A 에
+    // 테두리를 붙이려고 받는다(HudScene.bind 문서).
+    //
+    // 세 번째 인자가 미니맵이 읽는 것 둘이다. `mapId` 를 값으로 넘겨도 되는 이유는
+    // 이 필드가 씬이 사는 동안 안 바뀌기 때문이고(맵이 바뀐다는 것은 곧 씬을 다시
+    // 시작한다는 뜻이다 — 위 필드 문서), `tile` 을 함수로 넘기는 이유는 그 반대다:
+    // 그 칸은 매 프레임 움직이는데 스토어에는 없다(맵 안의 걸음은 서버로 안 간다).
     this.scene.launch('Hud')
     const hud = this.scene.get('Hud')
     if (!(hud instanceof HudScene)) {
       throw new Error('Hud 씬을 찾을 수 없다: PhaserGame.ts 의 씬 배열을 확인하라')
     }
-    hud.events.once(Phaser.Scenes.Events.CREATE, () => hud.bind(this.hub, control))
+    hud.events.once(Phaser.Scenes.Events.CREATE, () =>
+      hud.bind(this.hub, control, { mapId: this.mapId, tile: () => this.mover.tile }),
+    )
 
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
     // Systems.destroy() 만 부르고 Systems.shutdown() 은 부르지 않으므로 DESTROY 만

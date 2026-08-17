@@ -77,25 +77,45 @@ export interface QuestBandView {
 const NOTHING: QuestBandView = { line: null, teachAction: false }
 
 /**
- * 지금 이 사람의 띠.
+ * **유도등이 지금 가리키는 마디** — 꺼져 있으면 null.
+ *
+ * 띠(아래)와 미니맵 깃발(minimap.ts)이 나눠 쓰는 스위치 하나다. 두 화면이 각자
+ * 이 판단을 지으면 설계 ⑥ 방어①이 남긴 손잡이("`discoverable` 칸 하나를 비우면
+ * 유도등이 꺼진다")를 내려도 한쪽만 꺼진다 — 띠는 사라졌는데 지도에는 여전히
+ * 깃발이 서 있는 화면이 그것이다.
  *
  * `player` 가 null 인 경우가 있는 이유는 스토어의 `player` 가 로그인 전·전환 중에
  * 비기 때문이다(gameStore) — 씬이 그 검사를 하지 않고 여기 한 곳에서 답한다.
+ */
+export function guidingStep(data: GameData, player: PlayerState | null): StoryStep | null {
+  return player ? litStep(storyChainOf(data, player), player.story) : null
+}
+
+/**
+ * 사슬을 이미 손에 쥔 쪽이 부르는 같은 판단. 위와 나뉘어 있는 이유는 비용이다 —
+ * `storyChainOf` 는 마을 유도와 슬롯 펴기를 포함하므로 한 번의 답에 두 번 돌지
+ * 않게 한다.
+ */
+function litStep(chain: readonly StoryStep[], story: number): StoryStep | null {
+  // 색인이 곧 마디 번호다(storyChainOf). 넘어서면 사슬이 끝난 것이고, 유도등은
+  // 그날로 꺼져 다시 안 켜진다 — `story` 는 줄지 않으므로 그 약속을 여기서
+  // 따로 기억할 필요가 없다.
+  const step = chain[story]
+  if (!step) return null
+  // `discoverable` 이 아닌 마디는 화면에 아무 말도 안 한다 — 목적도, 테두리도,
+  // 깃발도.
+  return step.discoverable ? step : null
+}
+
+/**
+ * 지금 이 사람의 띠.
  */
 export function questBandView(data: GameData, player: PlayerState | null): QuestBandView {
   if (!player) return NOTHING
 
   const chain = storyChainOf(data, player)
-  // 색인이 곧 마디 번호다(storyChainOf). 넘어서면 사슬이 끝난 것이고, 띠는
-  // 그날로 사라져 다시 안 뜬다 — `story` 는 줄지 않으므로 그 약속을 여기서
-  // 따로 기억할 필요가 없다.
-  const step = chain[player.story]
+  const step = litStep(chain, player.story)
   if (!step) return NOTHING
-
-  // `discoverable` 이 아닌 마디는 화면에 아무 말도 안 한다 — 목적도, 테두리도.
-  // 설계 ⑥ 방어①이 남긴 손잡이는 "이 칸 하나를 비우면 유도등이 꺼진다" 이고,
-  // 테두리만 남으면 그 손잡이가 반만 도는 것이 된다.
-  if (!step.discoverable) return NOTHING
 
   return { line: lineOf(step, player, data), teachAction: teachesAction(chain, player.story) }
 }
