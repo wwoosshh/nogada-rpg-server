@@ -232,7 +232,15 @@ async function request<T>(path: string, init?: RequestInit, options: RequestOpti
     res = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
-        'Content-Type': 'application/json',
+        // **본문이 있을 때만 적는다.** 없는데 적으면 Fastify 가 그 요청을
+        // 400 으로 거절한다(`FST_ERR_CTP_EMPTY_JSON_BODY` — "content-type 이
+        // json 인데 본문이 비었다"). 실측으로 잡았다: 본문 없는 `POST
+        // /api/auth/logout` 이 그동안 **줄곧 400** 이었고, 부르는 쪽이 실패를
+        // 삼키도록 짜여 있어(gameStore.logout — "서버 쪽이 실패해도 토큰은
+        // 버린다") 화면에는 아무것도 안 보인 채 서버의 세션 행만 안 지워졌다.
+        // 서버 테스트가 못 잡은 이유는 `app.inject` 가 본문 없는 요청에
+        // content-type 을 안 붙이기 때문이다 — 브라우저의 fetch 와 다르다.
+        ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       signal: abortSignalFor(init, options.timeoutMs),
@@ -300,8 +308,24 @@ export const GameClient = {
   /**
    * 내 캐릭터 — **없으면 null 이다.** 그 null 이 곧 "캐릭터를 만들 차례" 라는
    * 화면 분기이고, 부팅이 서버에 묻는 것은 이 한 번뿐이다(설계 §5).
+   *
+   * 토큰이 아직 유효한지 보는 자리(gameStore.connect)가 이것을 쓴다. 실제로
+   * 들어가는 자리는 아래 `enter` 다.
    */
   me: () => request<MeResponse>('/api/me', undefined, { timeoutMs: BOOT_TIMEOUT_MS }),
+
+  /**
+   * **세계에 들어선다** — `me` 와 같은 답을 주되, 주기 전에 서버가 스토리 사슬을
+   * 지금 상태에 맞춘다(서버 routes/me.ts 의 `POST /api/me/enter`).
+   *
+   * 왜 `me` 로 못 하는가: 밀어올림은 세이브를 **쓰는** 일이고 `GET /api/me` 는
+   * 읽기 라우트다(설계 ⑦ 이 「접속 시 재판정」을 기각한 이유). 왜 부팅이 이쪽을
+   * 부르는가: 그러지 않으면 얼음 200,000 인 사람이 게임을 켤 때마다 헤더 밑
+   * 띠가 「마을 북문으로 나가라」를 적는다 — 서버가 그 사람의 사슬을 미는 것은
+   * 첫 채집·전환 뒤이기 때문이다.
+   */
+  enter: () =>
+    request<MeResponse>('/api/me/enter', { method: 'POST' }, { timeoutMs: BOOT_TIMEOUT_MS }),
 
   createCharacter: (req: CreateCharacterRequest) =>
     request<{ player: PlayerState }>(

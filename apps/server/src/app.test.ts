@@ -1,4 +1,4 @@
-import { loadGameData, startLocation } from '@nogada/data'
+import { loadGameData, startLocation, storyChainOf } from '@nogada/data'
 import {
   GAME_EPOCH_MS,
   REAL_MS_PER_GAME_MINUTE,
@@ -8,6 +8,7 @@ import {
   isSellTarget,
   type ItemDef,
   type NodePlacement,
+  type PlayerState,
   type ShopDef,
   type TransitionDef,
 } from '@nogada/shared'
@@ -355,6 +356,74 @@ describe('GET /api/state', () => {
     const second = await me.inject({ method: 'GET', url: '/api/state' })
 
     expect(second.json()).toEqual(first.json())
+
+    await app.close()
+  })
+})
+
+/**
+ * **설계 ⑧ 실기 확인 1번의 나머지 반쪽** — 「얼음 3,000+ 기존 캐릭터 접속 → 띠가
+ * 안 뜬다」.
+ *
+ * 앞의 반쪽(밀어올림 문턱이 합쳐서 사슬을 끝까지 미는가)은 packages/data 의
+ * story.test.ts 가 훅을 손으로 불러서 잰다. 여기서 재는 것은 **아무 훅도 안 부른
+ * 사람**이다 — 게임을 켜기만 한 사람의 세이브는 `story=0` 이고 숙련은 200,000
+ * 이라, 그 둘이 함께 오는 상태를 아무도 재지 않으면 띠는 화면에서 「마을 북문으로
+ * 나가라」를 적는다. 검토가 실측으로 잡아낸 자리다.
+ */
+describe('POST /api/me/enter', () => {
+  it('숙련 200,000 인 옛 세이브는 왕복 하나로 사슬 끝까지 밀린다 — 띠가 적을 마디가 안 남는다', async () => {
+    const before = await buildTestApp()
+    const me = await asPlayer(before)
+    const file = saveFileOf(before)
+
+    // 200,000 을 캐서 올릴 수는 없으므로 세이브에 직접 심는다(결계 테스트와 같은 자세).
+    const raw = rawSaveOf(before)[me.id] as { skills: Record<string, number>; story: number }
+    // **이 한 줄이 이 검사의 전제다**: 옛 세이브에는 `story` 가 아예 없었고 zod
+    // 기본값이 0 을 준다(설계 ⑦). 갓 만든 캐릭터도 같은 0 이라 여기서 못 박는다.
+    expect(raw.story).toBe(0)
+    raw.skills.ice = 200_000
+    writeRawCharacter(file, me.id, raw)
+
+    // 같은 세이브 위에 앱을 다시 세우고 **그 사람의 토큰 그대로** 들어선다 —
+    // 30일짜리 토큰으로 돌아오는 사람은 로그인을 안 지나므로, 재현하려면
+    // 로그인이 아니라 이 길이어야 한다.
+    const app = await buildTestApp({ dataFile: file })
+    const veteran = await asPlayer(app, { resume: me })
+    const res = await veteran.inject({ method: 'POST', url: '/api/me/enter' })
+
+    expect(res.statusCode).toBe(200)
+    const player = (res.json() as { character: PlayerState }).character
+    // 사슬 길이를 숫자로 안 적는다 — 마디를 하나 더 쓰는 날 이 단정이 거짓이 된다.
+    expect(player.story).toBe(storyChainOf(loadGameData(), player).length)
+
+    // 세이브에도 남았는가. 안 남으면 다음 부팅이 같은 일을 다시 하고, 그 사이에
+    // 도는 판정 훅이 「이미 지나쳤다」 대신 「방금 해냈다」를 낼 수 있다.
+    const state = await veteran.inject({ method: 'GET', url: '/api/state' })
+    expect((state.json() as { player: PlayerState }).player.story).toBe(player.story)
+
+    await app.close()
+    await before.close()
+  })
+
+  it('갓 만든 캐릭터는 안 밀린다 — 밀어올림이 신규의 마디를 집어 가면 유도등이 통째로 꺼진다', async () => {
+    const app = await buildTestApp()
+    const me = await asPlayer(app)
+    const res = await me.inject({ method: 'POST', url: '/api/me/enter' })
+
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { character: PlayerState }).character.story).toBe(0)
+
+    await app.close()
+  })
+
+  it('캐릭터가 없으면 404 가 아니라 null 이다 — GET /api/me 와 같은 답이라야 부팅이 갈린다', async () => {
+    const app = await buildTestApp()
+    const 계정만 = await asPlayer(app, { withoutCharacter: true })
+    const res = await 계정만.inject({ method: 'POST', url: '/api/me/enter' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ character: null })
 
     await app.close()
   })

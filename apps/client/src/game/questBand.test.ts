@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { emptyPlayer, loadGameData, startVillages, storyChainOf } from '@nogada/data'
-import type { GameData, PlayerState, StoryStepDef } from '@nogada/shared'
+import type { GameData, PlayerState, StoryStep, StoryStepDef } from '@nogada/shared'
 import { describe, expect, it } from 'vitest'
 import { FONT_SIZE } from './gameText.js'
 import { BAND, questBandView } from './questBand.js'
@@ -212,6 +212,28 @@ function 글폭(text: string): number {
   return sum
 }
 
+/**
+ * 그 마디의 **진행 숫자가 가장 클 때** 선 사람.
+ *
+ * 가장 긴 줄은 델타가 요구치까지 찬 때다 — 「200 / 200」이 「0 / 200」보다 길다.
+ * 그런데 **마디마다 그 수가 사는 곳이 다르다**: 세는 마디는 `storyCount` 이고
+ * `reach` 마디는 세이브에 그 수가 아예 없어 이정표의 지표에서 읽는다
+ * (questBand 의 progressOf). 그래서 `storyCount` 만 올리면 숙련 마디는 계속
+ * 「0 / 1,000」을 재게 되고, 그 줄은 실제로 재려던 「1,000 / 1,000」보다
+ * 모형폭으로 32px 짧다 — 자가 자기 주석보다 무른 상태다(검토가 실측으로 잡았다).
+ */
+function 진행이가장클때(player: PlayerState, step: number, def: StoryStep): PlayerState {
+  const 사람 = 마디에서(player, step, def.goal.count ?? 0)
+  if (def.goal.kind !== 'reach') return 사람
+  const milestone = data.milestones.find((m) => m.id === def.goal.arg)
+  expect(milestone, `마디 ${step} 이 가리키는 이정표가 없다`).toBeDefined()
+  const metric = milestone!.metric
+  expect(metric.kind, '이 자는 숙련도 지표를 전제한다 — 아니면 문턱을 못 심는다').toBe('skill')
+  if (metric.kind !== 'skill') return 사람
+  사람.skills = { ...player.skills, [metric.skill]: milestone!.threshold }
+  return 사람
+}
+
 describe('띠 — 폭 예산', () => {
   it('마을 넷 × 마디 전부가 672px 안에 들어간다 — 진행 숫자가 가장 클 때까지', () => {
     // 안쪽 폭. 왼쪽 여백만큼 오른쪽도 비워 둔다(HudScene.layout).
@@ -219,13 +241,15 @@ describe('띠 — 폭 예산', () => {
     for (const player of 마을사람들()) {
       const chain = storyChainOf(data, player)
       for (const [step, def] of chain.entries()) {
-        // 가장 긴 순간은 델타가 요구치까지 찬 때다 —「200 / 200」이 「0 / 200」보다
-        // 길다. 숙련 마디는 그 이정표의 문턱이 그 자리에 온다.
-        const 최대 =
-          def.goal.count ??
-          data.milestones.find((m) => m.id === def.goal.arg)?.threshold ??
-          0
-        const line = questBandView(data, 마디에서(player, step, 최대)).line ?? ''
+        const line = questBandView(data, 진행이가장클때(player, step, def)).line ?? ''
+        // **정말 가장 큰 수를 쟀는가**를 줄 자체에 묻는다. 안 물으면 위 함수가
+        // 조용히 0 을 재는 날(지표 종류가 바뀌거나 자리를 잘못 심는 날) 이 검사는
+        // 초록인 채로 짧은 줄을 재고 있게 된다.
+        const 최대 = def.goal.count ?? data.milestones.find((m) => m.id === def.goal.arg)?.threshold
+        if (최대 !== undefined && 최대 > 1) {
+          const 자릿점 = 최대.toLocaleString('ko-KR')
+          expect(line, `마디 ${step}`).toContain(`${자릿점} / ${자릿점}`)
+        }
         expect(글폭(line), `마디 ${step}: "${line}"`).toBeLessThanOrEqual(예산)
       }
     }

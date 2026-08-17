@@ -1,13 +1,14 @@
-import { startVillages } from '@nogada/data'
+import { runStoryHook, startVillages } from '@nogada/data'
 import {
   CreateCharacterRequestSchema,
   DeleteCharacterRequestSchema,
   normalizeDisplayName,
   type GameData,
+  type PlayerState,
 } from '@nogada/shared'
 import type { FastifyInstance } from 'fastify'
 import { requireAccount } from '../auth/sessions.js'
-import { NO_CHARACTER } from '../state/applyToCharacter.js'
+import { NO_CHARACTER, applyToCharacter } from '../state/applyToCharacter.js'
 import { createInitialPlayer } from '../state/newCharacter.js'
 import type { Persistence } from '../state/persistence.js'
 import { BAD_REQUEST } from './auth.js'
@@ -29,6 +30,50 @@ export function registerMeRoutes(app: FastifyInstance, store: Persistence, data:
     // **없으면 null 이다** — 404 가 아니다. 캐릭터가 없다는 것은 오류가 아니라
     // "이제 캐릭터를 만들 차례"라는 화면 분기다(설계 §5).
     return { character: await store.getCharacter(characterId) }
+  })
+
+  /**
+   * **세계에 들어선다** — 캐릭터를 주기 전에 사슬을 지금 상태에 맞춘다(설계 ⑦).
+   *
+   * 왜 문이 하나 더 필요한가: 밀어올림(`catchUp`)은 「첫 판정 훅이 돌 때」 돈다
+   * (설계 ⑦). 그 규칙만으로는 **화면이 먼저 뜬다** — 얼음 200,000 인 테스터가
+   * 게임을 켜면 세이브의 `story` 는 아직 0 이고, 헤더 밑 띠(설계 ⑧-6)가 그 0 을
+   * 읽어 「눈의 마을 북문으로 나가라」를 적는다. 첫 채집·제작·헌납·전환 전까지
+   * 그대로 남고, 마을 안에서만 서성이는 사람은 계속 본다(이동 훅은 걸음마다가
+   * 아니라 **전환**에서만 돈다). 설계 ⑧ 실기 확인 1번이 「띠가 안 뜬다」로 정한
+   * 바로 그 자리다.
+   *
+   * **`GET /api/me`·`GET /api/state` 에 얹지 않는 이유**는 설계 ⑦ 이 「접속 시
+   * 재판정」을 기각한 그 이유 그대로다 — 읽기 라우트가 세이브를 쓰면 안 된다.
+   * 그래서 읽기는 읽기로 두고, 들어서는 순간을 **쓰기 문 하나**로 세운다.
+   *
+   * **로그인에 얹지 않는 이유**(검토가 권한 자리다): 이 게임의 토큰은 30일이라
+   * 돌아오는 사람은 `POST /api/auth/login` 을 안 지난다 — 클라이언트는 저장된
+   * 토큰으로 곧장 「이어서 하기」로 들어간다(gameStore.connect). 가입·로그인·
+   * 이어서 하기 셋이 **모두** 지나는 자리는 캐릭터를 받아 오는 이 한 곳뿐이다.
+   *
+   * `event: null` 이라 사건은 하나도 안 세고, 도는 것은 밀어올림과 상태로 끝나는
+   * 마디(`reach`)뿐이다(advanceStory 의 drift). 문턱이 전부 단조 지표라
+   * (StoryCatchUp) 두 번째 부름부터는 아무것도 안 바꾼다.
+   *
+   * 캐릭터가 없으면 **404 가 아니라 `character: null`** 이다 — `GET /api/me` 와
+   * 같은 답이라야 부팅이 한 번의 왕복으로 "만들 차례" 를 알 수 있다.
+   */
+  app.post('/api/me/enter', async (request) => {
+    const { characterId } = requireAccount(request)
+    const entered = await applyToCharacter<{ player: PlayerState }, never>(
+      store,
+      characterId,
+      (stored) => {
+        // 서비스 넷과 같은 자세다: 사본을 밀고, 밀어올림에는 **손대기 전**의 그
+        // 사람을 준다(AdvanceStoryArgs.before). 여기서는 둘이 같은 상태이지만
+        // 자리를 바꿔 넣어도 타입이 안 짖으므로 규칙 쪽을 따른다.
+        const player = structuredClone(stored)
+        runStoryHook({ data, player, before: stored, event: null })
+        return { ok: true, outcome: { player } }
+      },
+    )
+    return { character: entered.ok ? entered.outcome.player : null }
   })
 
   app.post('/api/me/character', async (request, reply) => {

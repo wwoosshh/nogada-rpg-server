@@ -1016,9 +1016,14 @@ async function runGateStep(
  * 가입·로그인·이어서 하기 셋이 같은 이 길을 탄다. 갈라 두면 "가입 직후에만
  * 캐릭터 생성으로 간다" 같은 규칙이 생기고, 그러면 캐릭터를 지운 사람이
  * 로그인해서 갈 곳이 없어진다.
+ *
+ * **`me` 가 아니라 `enter` 를 부른다.** 셋이 같은 길을 탄다는 바로 그 사실이
+ * 이유다 — 스토리 사슬의 밀어올림이 걸릴 자리가 여기 하나뿐이라(GameClient.enter),
+ * 30일짜리 토큰으로 로그인 없이 돌아오는 사람도 이 길로는 반드시 지난다.
+ * 없으면 얼음 200,000 인 사람이 게임을 켤 때마다 헤더 밑 띠가 초보 안내를 적는다.
  */
 async function loadCharacterOrCreate(set: SetFn): Promise<void> {
-  const { character } = await GameClient.me()
+  const { character } = await GameClient.enter()
   if (character) {
     set({ player: character, ...gate('playing'), session: 'ready' })
     return

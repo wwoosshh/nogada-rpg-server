@@ -45,8 +45,8 @@ const EDGE_MARGIN_RIGHT = 9
  *
  * **띠는 셋 중 하나라도 참이면 안 뜬다**: 사슬이 끝났다 · 지금 마디가
  * `discoverable` 이 아니다(둘 다 questBandView 가 null 로 답한다) · 세계 입력이
- * 잠겼다(패널·대사창). 마지막 것을 이 씬이 스스로 재는 이유는 update() 문서에
- * 적었다.
+ * 잠겼다(패널·대사창·**맵 전환 중**). 마지막 것을 이 씬이 스스로 재는 이유는
+ * update() 문서에 적었다.
  */
 export class HudScene extends Phaser.Scene {
   private box!: Phaser.GameObjects.Rectangle
@@ -140,6 +140,13 @@ export class HudScene extends Phaser.Scene {
 
   /**
    * 세계 입력이 잠겨 있으면 띠를 숨긴다.
+   *
+   * **주인이 셋이다.** `worldInputLocked` 는 dialogue·panel·**transition** 의
+   * 합이다(InputState 의 lockedBy) — 그래서 띠는 문을 넘는 서버 왕복 동안에도
+   * 꺼졌다가 씬이 다시 서면 돌아온다. 하필 마디 0→1 이 넘어가는 그 순간이지만
+   * 씬이 통째로 재시작하는 구간이라 눈에 띄지는 않는다. 여기 적어 두는 이유는
+   * 다음 사람이 이 세 번째 주인을 모른 채 "패널만 보는 값"으로 읽지 않게 하려는
+   * 것이다(전환이 거절되면 — 결계에 막히면 — 잠금이 풀려 띠가 돌아온다).
    *
    * **패널·대사창이 이 씬을 부르지 않는다.** 잠금의 주인은 hub 하나이고
    * (InputHub.setWorldInputLocked), 그 값은 한 프레임짜리 신호가 아니라 상태라

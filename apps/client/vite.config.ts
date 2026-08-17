@@ -36,12 +36,28 @@ function serveGeneratedMaps(): Plugin {
     createReadStream(file).pipe(res)
   }
 
+  /**
+   * 이 설정이 **진짜 빌드**를 위한 것인가. `closeBundle` 이 그것만 보고 돈다.
+   *
+   * vitest 도 vite 설정을 읽고 실행이 끝날 때 `closeBundle` 을 낸다 — 그래서
+   * 가드가 없으면 **테스트를 한 번 돌린 것만으로** `dist/maps` 가 생기고, `dist`
+   * 가 생겼다는 이유로 다음 `pnpm vitest run` 이 「빌드된 dist」 검사를 켠다.
+   * 그 dist 에는 index.html 이 없으므로 두 번째 실행부터 관문이 빨개진다
+   * (실측: dist 를 지우고 한 번 돌리면 초록, 그대로 다시 돌리면 빨강).
+   * 테스트를 돌리는 것이 빌드 생성물을 남기지 않아야 한다.
+   */
+  let 빌드다 = false
+
   return {
     name: 'serve-generated-maps',
+    configResolved(config) {
+      빌드다 = config.command === 'build'
+    },
     configureServer(server: ViteDevServer) {
       server.middlewares.use('/maps', handler)
     },
     closeBundle() {
+      if (!빌드다) return
       // 빌드 생성물이라 없을 수 있다. 그대로 cpSync 에 맡기면 ENOENT 만 나와서
       // "무엇을 먼저 돌려야 하는가"를 말해 주지 않는다.
       if (!existsSync(generatedMaps)) {

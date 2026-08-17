@@ -88,7 +88,16 @@ export interface StoryCatchUp {
  */
 export interface StoryStep {
   step: number
-  /** 띠에 뜨는 글. `discoverable` 이 아니면 빈 글이다 — 목적을 적지 않는다(설계 ⑥). */
+  /**
+   * 띠에 뜨는 글.
+   *
+   * **적을지 말지를 정하는 것은 이 칸이 아니라 `discoverable` 이다.** 파서는
+   * `discoverable` 인데 이 칸이 비면 던지지만(빈 띠가 선다), 반대는 강제하지
+   * 않는다 — 설계 ⑥ 방어①이 남긴 손잡이가 "칸 하나를 비우면 유도등이 꺼진다"라
+   * 짝까지 강제하면 그 손잡이가 두 칸이 된다(packages/data 의 parseStory).
+   * 그래서 `discoverable` 이 아닌 마디에도 글이 남아 있을 수 있다. 화면(띠·앞으로
+   * 미니맵 깃발)이 `objective === ''` 로 판단하면 손잡이를 내려도 유도등이 안 꺼진다.
+   */
   objective: string
   goal: StoryGoal
   /** 달성한 뒤 한 줄. 보상 문장은 여기에만 있고 `objective` 에는 없다(설계 ⑥ 방어②). */
