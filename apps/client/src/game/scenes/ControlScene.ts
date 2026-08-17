@@ -17,11 +17,27 @@ const PANEL_EDGE_COLOR = 0x6b5646
 const ACCENT_COLOR = 0xd9a441
 const LABEL_COLOR = '#e8dcc0'
 const INK_COLOR = '#241c1c'
+/** LABEL_COLOR 와 같은 색(tokens.css 의 --c-parchment)의 숫자꼴 — Phaser 도형은 문자열 색을 안 받는다. */
+const HIGHLIGHT_COLOR = 0xe8dcc0
 
 /** 평소 반투명도. 별도 띠 없이 게임 화면 위에 겹치므로 아래가 비쳐야 한다. */
 const BASE_ALPHA = 0.55
 /** 눌렸을 때. 겉보기로도 손가락이 인식됐다는 걸 알려준다. */
 const PRESSED_ALPHA = 0.85
+
+/** 평소 테두리. 굵기와 불투명도 둘 다 여기서 나온다. */
+const BASE_EDGE_WIDTH = 2
+const BASE_EDGE_ALPHA = 0.9
+/**
+ * 강조됐을 때의 테두리(setHighlighted).
+ *
+ * A 는 이미 강조색(ACCENT_COLOR)으로 칠해져 있어 **테두리 색만 바꾸면 잘 안
+ * 보인다** — 그래서 색(파치먼트)과 굵기를 함께 올리고 불투명하게 둔다. 눌림
+ * 표시는 채움색을 쓰므로(setPressed) 이 둘은 서로 덮지 않는다: 강조된 A 를
+ * 눌러도 두 표시가 함께 보인다.
+ */
+const HIGHLIGHT_EDGE_WIDTH = 4
+const HIGHLIGHT_EDGE_ALPHA = 1
 
 /** 손가락 최소 크기. 스펙이 명시한 값이다 — 이 아래로 내려가지 않는다. */
 const MIN_BUTTON_DIAMETER = 48
@@ -82,6 +98,11 @@ interface ButtonVisual {
   readonly label: Phaser.GameObjects.Text
   reposition(x: number, y: number): void
   setPressed(pressed: boolean): void
+  /**
+   * 이 버튼을 **지금 눌러야 하는 버튼**으로 표시한다 — 눌림(setPressed)과 나란한
+   * 두 번째 시각 상태이고, 서로 다른 속성(테두리 ↔ 채움)을 쓰므로 겹쳐도 된다.
+   */
+  setHighlighted(highlighted: boolean): void
 }
 
 /**
@@ -102,7 +123,7 @@ function createButtonVisual(
 ): ButtonVisual {
   const shape = scene.add
     .circle(0, 0, radius, fillColor, BASE_ALPHA)
-    .setStrokeStyle(2, PANEL_EDGE_COLOR, 0.9)
+    .setStrokeStyle(BASE_EDGE_WIDTH, PANEL_EDGE_COLOR, BASE_EDGE_ALPHA)
 
   const label = addText(scene, 0, 0, labelText, {
     fontSize: `${fontSize}px`,
@@ -122,6 +143,10 @@ function createButtonVisual(
     },
     setPressed(pressed) {
       shape.setFillStyle(fillColor, pressed ? PRESSED_ALPHA : BASE_ALPHA)
+    },
+    setHighlighted(highlighted) {
+      if (highlighted) shape.setStrokeStyle(HIGHLIGHT_EDGE_WIDTH, HIGHLIGHT_COLOR, HIGHLIGHT_EDGE_ALPHA)
+      else shape.setStrokeStyle(BASE_EDGE_WIDTH, PANEL_EDGE_COLOR, BASE_EDGE_ALPHA)
     },
   }
 }
@@ -328,6 +353,21 @@ export class ControlScene extends Phaser.Scene {
       if (visible) obj.setInteractive()
       else obj.disableInteractive()
     }
+  }
+
+  /**
+   * A 에 테두리를 붙이거나 뗀다 — 스토리 사슬이 A 를 처음 요구하는 마디 동안만
+   * 참이다(HudScene 이 부른다. questBandView 의 teachAction).
+   *
+   * **A 가 무엇을 하는지 적힌 곳이 게임 안에 한 군데도 없다** — 이 버튼의 라벨은
+   * 'A' 뿐이고, 대사 45줄에도 튜토리얼에도 그 말이 없다. 이 테두리가 그것을 처음
+   * 말한다(설계 ⑧-6).
+   *
+   * 새 시각 상태를 하나 더 쓸 뿐 새 기계를 만들지 않는다(설계 ⑧-6) — 눌림 표시가
+   * 쓰는 그 ButtonVisual 의 두 번째 상태다(setHighlighted).
+   */
+  setActionHighlighted(highlighted: boolean): void {
+    this.btnAction.setHighlighted(highlighted)
   }
 
   /**

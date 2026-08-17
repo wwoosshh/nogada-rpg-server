@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { ControlScene } from './scenes/ControlScene.js'
 import { DialogueScene } from './scenes/DialogueScene.js'
+import { HudScene } from './scenes/HudScene.js'
 import { PanelScene } from './scenes/PanelScene.js'
 import { WorldScene } from './scenes/WorldScene.js'
 import { renderScale } from './viewport.js'
@@ -68,7 +69,11 @@ export function createPhaserGame(parent: HTMLElement): Phaser.Game {
     // DialogueScene 은 맨 끝이다. 대사창도 같은 이유로 세계 위여야 하고(밤에
     // 어두워지면 안 되는 글이다), 열려 있는 동안은 패널도 컨트롤러도 화면에
     // 없으므로 이 자리를 두고 다툴 것이 없다.
-    scene: [WorldScene, PanelScene, ControlScene, DialogueScene],
+    //
+    // HudScene(띠)은 World 바로 뒤다. 세계 위여야 하는 이유는 셋과 같고(낮밤
+    // 명암 밖의 글이다), 뒤의 셋과의 상대 순서는 다툴 것이 없다 — 패널이든
+    // 대사창이든 열리면 세계 입력이 잠기고 띠는 스스로 숨는다(HudScene.update).
+    scene: [WorldScene, HudScene, PanelScene, ControlScene, DialogueScene],
   })
 
   // NONE 모드는 부모가 커지고 줄어드는 것을 스스로 따라가지 않는다. 창 리사이즈뿐

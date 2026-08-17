@@ -36,6 +36,7 @@ import { WeatherSky } from '../WeatherSky.js'
 import { fixedToCamera, renderScale } from '../viewport.js'
 import { ControlScene } from './ControlScene.js'
 import { DialogueScene } from './DialogueScene.js'
+import { HudScene } from './HudScene.js'
 import { PanelScene } from './PanelScene.js'
 
 const TILE = 32
@@ -582,6 +583,16 @@ export class WorldScene extends Phaser.Scene {
     dialogue.events.once(Phaser.Scenes.Events.CREATE, () => dialogue.bind(this.hub, control))
     this.dialogue = dialogue
 
+    // 띠(설계 ⑧-6)도 같은 자세다. control 을 함께 넘기는 이유만 다르다 — 패널·
+    // 대사창은 컨트롤러를 숨기려고 받지만, 이쪽은 마디 1 동안 A 에 테두리를
+    // 붙이려고 받는다(HudScene.bind 문서).
+    this.scene.launch('Hud')
+    const hud = this.scene.get('Hud')
+    if (!(hud instanceof HudScene)) {
+      throw new Error('Hud 씬을 찾을 수 없다: PhaserGame.ts 의 씬 배열을 확인하라')
+    }
+    hud.events.once(Phaser.Scenes.Events.CREATE, () => hud.bind(this.hub, control))
+
     // 씬이 끝나는 유일한 경로는 App.tsx 의 game.destroy(true) 다. Phaser 는 이 경로에서
     // Systems.destroy() 만 부르고 Systems.shutdown() 은 부르지 않으므로 DESTROY 만
     // 발생하고 SHUTDOWN 은 절대 발생하지 않는다. shutdown 에만 걸면 정리가 전혀 돌지
@@ -592,9 +603,9 @@ export class WorldScene extends Phaser.Scene {
     // 불려도 안전하도록 가드한다.
     // 이 정리는 이제 씬이 **끝날** 때만이 아니라 맵을 넘을 때마다 돈다.
     // scene.restart() 가 SHUTDOWN 을 일으키기 때문이다. 그 뒤 create() 가 처음부터
-    // 다시 도므로 세 씬은 다시 launch 되고 구독도 다시 걸린다 — Phaser 의 씬
+    // 다시 도므로 네 씬은 다시 launch 되고 구독도 다시 걸린다 — Phaser 의 씬
     // 작업 큐가 [stop World, start World] 순서로 처리되고, stop 이 여기서 큐에
-    // 넣은 stop Control/Panel/Dialogue 가 start World 안의 launch 보다 앞서
+    // 넣은 stop Control/Panel/Dialogue/Hud 가 start World 안의 launch 보다 앞서
     // 들어가므로 "껐다가 켠다" 순서도 지켜진다.
     let cleanedUp = false
     const cleanup = (): void => {
@@ -609,6 +620,7 @@ export class WorldScene extends Phaser.Scene {
       this.scene.stop('Control')
       this.scene.stop('Panel')
       this.scene.stop('Dialogue')
+      this.scene.stop('Hud')
       this.dayNight.destroy()
       this.weatherSky.destroy()
       this.keyboard.destroy()
